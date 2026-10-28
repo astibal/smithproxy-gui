@@ -6,8 +6,9 @@ describe('DrawerStore', () => {
     const store = new DrawerStore();
     store.open({kind: 'policy', id: 'office', title: 'office'});
     store.open({kind: 'address', id: 'office-net', title: 'office-net'});
+    store.open({kind: 'port', id: 'https', title: 'https'});
 
-    expect(store.entries.map(entry => entry.kind)).toEqual(['policy', 'address']);
+    expect(store.entries.map(entry => entry.kind)).toEqual(['policy', 'address', 'port']);
   });
 
   it('returns to an already open entry without duplicating it', () => {

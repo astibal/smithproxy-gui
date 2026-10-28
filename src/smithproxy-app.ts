@@ -2,7 +2,13 @@ import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {ApiConfigClient} from './api/config-client';
 import {FakeConfigClient} from './api/fake-client';
-import type {AddressObject, ConfigSnapshot, PolicySummary} from './api/models';
+import type {
+  AddressObject,
+  ConfigSnapshot,
+  PolicySummary,
+  PortObject,
+  ProtocolObject,
+} from './api/models';
 import {
   SystemClient,
   type RuntimeMetricsSnapshot,
@@ -64,6 +70,7 @@ export class SmithproxyApp extends LitElement {
   private systemClient?: SystemClient;
   private systemProbeTimer: number | undefined;
   private systemProbeInFlight = false;
+  private systemProbePending = false;
   private drawerHistoryDepth = 0;
   private drawerOrigins: HTMLElement[] = [];
   private pendingReturnFocus: HTMLElement | undefined;
@@ -188,6 +195,8 @@ export class SmithproxyApp extends LitElement {
     .domain-card dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
     .object-row { grid-template-columns: minmax(150px, 1.2fr) 110px minmax(180px, 1fr) 90px; }
     .object-value { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .object-section + .object-section { margin-top: 24px; }
+    .object-section h3 { margin: 0 0 9px; font-size: 15px; }
     .system-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; }
     .system-grid .domain-card dl { grid-template-columns: minmax(110px, .6fr) minmax(150px, 1fr); }
     .system-grid .domain-card dd { overflow-wrap: anywhere; }
@@ -357,7 +366,11 @@ export class SmithproxyApp extends LitElement {
 
   private async probeSystem(): Promise<void> {
     this.clearSystemProbe();
-    if (!this.systemClient || this.systemProbeInFlight || document.visibilityState === 'hidden') return;
+    if (!this.isConnected || !this.systemClient || document.visibilityState === 'hidden') return;
+    if (this.systemProbeInFlight) {
+      this.systemProbePending = true;
+      return;
+    }
     this.systemProbeInFlight = true;
     try {
       this.systemStatus = statusFromSnapshot(await this.systemClient.status());
@@ -394,7 +407,12 @@ export class SmithproxyApp extends LitElement {
       };
     } finally {
       this.systemProbeInFlight = false;
-      this.scheduleSystemProbe();
+      if (this.systemProbePending) {
+        this.systemProbePending = false;
+        void this.probeSystem();
+      } else {
+        this.scheduleSystemProbe();
+      }
     }
   }
 
@@ -457,6 +475,28 @@ export class SmithproxyApp extends LitElement {
     this.syncDrawers(true);
   }
 
+  private openPort(id: string, origin?: HTMLElement): void {
+    const port = this.snapshot?.ports.find(item => item.id === id);
+    if (!port) return;
+    this.openObjectDrawer({kind: 'port', id: port.id, title: port.name}, origin);
+  }
+
+  private openProtocol(id: string, origin?: HTMLElement): void {
+    const protocol = this.snapshot?.protocols.find(item => item.id === id);
+    if (!protocol) return;
+    this.openObjectDrawer({kind: 'protocol', id: protocol.id, title: protocol.name}, origin);
+  }
+
+  private openObjectDrawer(entry: DrawerEntry, origin?: HTMLElement): void {
+    this.drawerStore.open(entry);
+    this.drawerOrigins = [
+      ...this.drawerOrigins.slice(0, this.drawerStore.entries.length - 1),
+      ...(origin ? [origin] : []),
+    ];
+    this.focusMode = false;
+    this.syncDrawers(true);
+  }
+
   private closeDrawer(index: number): void {
     const levels = this.drawerStore.entries.length - index;
     const returnFocus = this.drawerOrigins[index];
@@ -500,15 +540,15 @@ export class SmithproxyApp extends LitElement {
     this.drawerOrigins = [];
     let valid = true;
     for (const entry of route) {
-      if (entry.kind === 'policy') {
-        const policy = this.snapshot.policies.find(item => item.id === entry.id);
-        if (!policy) { valid = false; break; }
-        this.drawerStore.open({kind: 'policy', id: policy.id, title: policy.name});
-      } else {
-        const address = this.snapshot.addresses.find(item => item.id === entry.id);
-        if (!address) { valid = false; break; }
-        this.drawerStore.open({kind: 'address', id: address.id, title: address.name});
-      }
+      const candidate = entry.kind === 'policy'
+        ? this.snapshot.policies.find(item => item.id === entry.id)
+        : entry.kind === 'address'
+          ? this.snapshot.addresses.find(item => item.id === entry.id)
+          : entry.kind === 'port'
+            ? this.snapshot.ports.find(item => item.id === entry.id)
+            : this.snapshot.protocols.find(item => item.id === entry.id);
+      if (!candidate) { valid = false; break; }
+      this.drawerStore.open({kind: entry.kind, id: candidate.id, title: candidate.name});
     }
     if (!valid || (hasRouteParameter && route.length === 0)) {
       this.drawerStore.clear();
@@ -523,7 +563,7 @@ export class SmithproxyApp extends LitElement {
     }
     this.drawers = [...this.drawerStore.entries];
     if (this.drawers[0]?.kind === 'policy') this.activeSection = 'Policy';
-    if (this.drawers[0]?.kind === 'address') this.activeSection = 'Objects';
+    if (this.drawers[0] && this.drawers[0].kind !== 'policy') this.activeSection = 'Objects';
     this.focusMode = false;
     void this.updateComplete.then(() => this.focusActiveDrawer());
   }
@@ -605,24 +645,58 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="content">
         <div class="section-head">
-          <div><h2>Address objects</h2><p>Reusable sources and destinations referenced by policy</p></div>
+          <div><h2>Configuration objects</h2><p>Reusable values referenced by policy</p></div>
           <button class="primary" type="button"
             ?disabled=${this.snapshot?.source === 'live' && !this.configWriteAvailable}>New address object</button>
         </div>
-        <div class="table" role="group" aria-label="Address objects">
-          <div class="row object-row heading" aria-hidden="true">
-            <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
+        <section class="object-section">
+          <h3>Address objects</h3>
+          <div class="table" role="group" aria-label="Address objects">
+            <div class="row object-row heading" aria-hidden="true">
+              <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
+            </div>
+            ${this.snapshot?.addresses.map(address => html`
+              <button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
+                <strong>${address.name}</strong>
+                <span class="action">${address.type}</span>
+                <span class="object-value">${address.value}</span>
+                <span>${address.usedBy.length}</span>
+              </button>
+            `)}
           </div>
-          ${this.snapshot?.addresses.map(address => html`
-            <button class="row object-row" type="button"
-              @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
-              <strong>${address.name}</strong>
-              <span class="action">${address.type}</span>
-              <span class="object-value">${address.value}</span>
-              <span>${address.usedBy.length}</span>
-            </button>
-          `)}
-        </div>
+        </section>
+        <section class="object-section">
+          <h3>Port objects</h3>
+          <div class="table" role="group" aria-label="Port objects">
+            <div class="row object-row heading" aria-hidden="true">
+              <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
+            </div>
+            ${this.snapshot?.ports.map(port => html`
+              <button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => this.openPort(port.id, event.currentTarget as HTMLElement)}>
+                <strong>${port.name}</strong><span>Port range</span>
+                <span class="object-value">${port.start === port.end ? port.start : `${port.start}–${port.end}`}</span>
+                <span>${port.usedBy.length}</span>
+              </button>
+            `)}
+          </div>
+        </section>
+        <section class="object-section">
+          <h3>Protocol objects</h3>
+          <div class="table" role="group" aria-label="Protocol objects">
+            <div class="row object-row heading" aria-hidden="true">
+              <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
+            </div>
+            ${this.snapshot?.protocols.map(protocol => html`
+              <button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
+                <strong>${protocol.name}</strong><span>IP protocol</span>
+                <span class="object-value">${protocol.number}</span><span>${protocol.usedBy.length}</span>
+              </button>
+            `)}
+          </div>
+        </section>
       </div>
     `;
   }
@@ -945,6 +1019,7 @@ export class SmithproxyApp extends LitElement {
     const policy = this.snapshot?.policies.find(item => item.id === entry.id);
     if (!policy) return nothing;
     const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
+    const protocol = this.snapshot?.protocols.find(item => item.name === policy.protocol);
     return html`
       <div class="form-grid">
         <label for="policy-name-${entry.id}">Name</label>
@@ -966,10 +1041,29 @@ export class SmithproxyApp extends LitElement {
       </div>
       <div class="section">
         <h3>Advanced</h3>
-        <p>Protocol: ${policy.protocol} · Source ports: ${policy.sourcePorts.join(', ')} ·
-          Destination ports: ${policy.destinationPorts.join(', ')}</p>
+        <div class="form-grid">
+          <label>Protocol</label>
+          ${protocol ? html`<button class="reference" type="button"
+            @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
+            <span>${protocol.name}</span><span aria-hidden="true">→</span>
+          </button>` : html`<span>${policy.protocol}</span>`}
+          <label>Source ports</label>
+          ${this.renderPortReferences(policy.sourcePorts)}
+          <label>Destination ports</label>
+          ${this.renderPortReferences(policy.destinationPorts)}
+        </div>
       </div>
     `;
+  }
+
+  private renderPortReferences(names: ReadonlyArray<string>) {
+    return html`<div class="reference-stack">${names.map(name => {
+      const port = this.snapshot?.ports.find(item => item.name === name);
+      return port ? html`<button class="reference" type="button"
+        @click=${(event: MouseEvent) => this.openPort(port.id, event.currentTarget as HTMLElement)}>
+        <span>${port.name}</span><span aria-hidden="true">→</span>
+      </button>` : html`<span>${name}</span>`;
+    })}</div>`;
   }
 
   private renderAddressEditor(entry: DrawerEntry) {
@@ -1003,6 +1097,60 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderPortEditor(entry: DrawerEntry) {
+    const port = this.snapshot?.ports.find(item => item.id === entry.id);
+    if (!port) return nothing;
+    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
+    return html`
+      <div class="form-grid">
+        <label for="port-name-${entry.id}">Name</label>
+        <input id="port-name-${entry.id}" .value=${port.name} .readOnly=${readOnly} />
+        <label for="port-start-${entry.id}">Start</label>
+        <input id="port-start-${entry.id}" type="number" min="0" max="65535"
+          .value=${String(port.start)} .readOnly=${readOnly} />
+        <label for="port-end-${entry.id}">End</label>
+        <input id="port-end-${entry.id}" type="number" min="0" max="65535"
+          .value=${String(port.end)} .readOnly=${readOnly} />
+      </div>
+      ${this.renderObjectUsage(port)}
+    `;
+  }
+
+  private renderProtocolEditor(entry: DrawerEntry) {
+    const protocol = this.snapshot?.protocols.find(item => item.id === entry.id);
+    if (!protocol) return nothing;
+    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
+    return html`
+      <div class="form-grid">
+        <label for="protocol-name-${entry.id}">Name</label>
+        <input id="protocol-name-${entry.id}" .value=${protocol.name} .readOnly=${readOnly} />
+        <label for="protocol-number-${entry.id}">IP protocol number</label>
+        <input id="protocol-number-${entry.id}" type="number" min="0" max="255"
+          .value=${String(protocol.number)} .readOnly=${readOnly} />
+      </div>
+      ${this.renderObjectUsage(protocol)}
+    `;
+  }
+
+  private renderObjectUsage(object: PortObject | ProtocolObject) {
+    return html`
+      <div class="section">
+        <h3>Impact</h3>
+        <div class="impact">This shared object is used by ${object.usedBy.length} policies.</div>
+        <ul class="usage">
+          ${object.usedBy.map(reference => html`<li><strong>${reference.name}</strong> · policy</li>`)}
+        </ul>
+      </div>
+    `;
+  }
+
+  private renderDrawerBody(entry: DrawerEntry) {
+    if (entry.kind === 'policy') return this.renderPolicyEditor(entry);
+    if (entry.kind === 'address') return this.renderAddressEditor(entry);
+    if (entry.kind === 'port') return this.renderPortEditor(entry);
+    return this.renderProtocolEditor(entry);
+  }
+
   private renderDrawer(entry: DrawerEntry, index: number) {
     const saved = this.draftObjects.has(`${entry.kind}:${entry.id}`);
     const editLabel = `Edit ${entry.title}`;
@@ -1025,7 +1173,7 @@ export class SmithproxyApp extends LitElement {
           <button class="icon-button" type="button" aria-label=${closeLabel} @click=${() => this.closeDrawer(index)}>×</button>
         </header>
         <div class="drawer-body">
-          ${entry.kind === 'policy' ? this.renderPolicyEditor(entry) : this.renderAddressEditor(entry)}
+          ${this.renderDrawerBody(entry)}
         </div>
         <footer class="drawer-foot">
           <span class="validation">${readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready'}</span>

@@ -73,8 +73,18 @@ const snapshot: ConfigSnapshot = {
       usedBy: [{id: 'policy-quarantine', kind: 'policy', name: 'quarantine'}],
     },
   ],
-  ports: [],
-  protocols: [],
+  ports: [{
+    id: 'port-https', name: 'https', start: 443, end: 443,
+    usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
+  }],
+  protocols: [{
+    id: 'protocol-tcp', name: 'tcp', number: 6,
+    usedBy: [
+      {id: 'policy-office', kind: 'policy', name: 'office'},
+      {id: 'policy-guest', kind: 'policy', name: 'guest'},
+      {id: 'policy-quarantine', kind: 'policy', name: 'quarantine'},
+    ],
+  }],
 };
 
 export class FakeConfigClient implements ConfigClient {

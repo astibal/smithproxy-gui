@@ -7,6 +7,7 @@ export interface DrawerRouteEntry {
 
 const maximumDepth = 6;
 const safeIdentifier = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
+const drawerKinds = new Set<DrawerKind>(['policy', 'address', 'port', 'protocol']);
 
 export function parseDrawerRoute(search: string): ReadonlyArray<DrawerRouteEntry> {
   const encoded = new URLSearchParams(search).get('edit');
@@ -18,11 +19,11 @@ export function parseDrawerRoute(search: string): ReadonlyArray<DrawerRouteEntry
     if (separator <= 0 || separator !== segment.lastIndexOf(':')) return [];
     const kind = segment.slice(0, separator);
     const id = segment.slice(separator + 1);
-    if ((kind !== 'policy' && kind !== 'address') || !safeIdentifier.test(id)) return [];
+    if (!drawerKinds.has(kind as DrawerKind) || !safeIdentifier.test(id)) return [];
     const identity = `${kind}:${id}`;
     if (identities.has(identity) || result.length >= maximumDepth) return [];
     identities.add(identity);
-    result.push({kind, id});
+    result.push({kind: kind as DrawerKind, id});
   }
   return result;
 }

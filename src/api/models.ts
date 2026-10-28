@@ -31,12 +31,14 @@ export interface PortObject {
   name: string;
   start: number;
   end: number;
+  usedBy: ReadonlyArray<{id: string; kind: 'policy'; name: string}>;
 }
 
 export interface ProtocolObject {
   id: string;
   name: string;
   number: number;
+  usedBy: ReadonlyArray<{id: string; kind: 'policy'; name: string}>;
 }
 
 export interface ConfigSnapshot {

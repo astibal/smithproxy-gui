@@ -9,9 +9,10 @@ import type {
 } from './models';
 
 type JsonObject = Record<string, unknown>;
-type MutableAddress = Omit<AddressObject, 'usedBy'> & {
-  usedBy: Array<{id: string; kind: 'policy' | 'routing-rule'; name: string}>;
-};
+type Usage = {id: string; kind: 'policy'; name: string};
+type MutableAddress = Omit<AddressObject, 'usedBy'> & {usedBy: Usage[]};
+type MutablePort = Omit<PortObject, 'usedBy'> & {usedBy: Usage[]};
+type MutableProtocol = Omit<ProtocolObject, 'usedBy'> & {usedBy: Usage[]};
 
 const MAX_POLICIES = 4096;
 const MAX_OBJECTS = 4096;
@@ -173,19 +174,26 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     }
   }
 
-  const ports = boundedArray(value.ports, 'port collection', MAX_OBJECTS).map((item): PortObject => {
+  const ports = boundedArray(value.ports, 'port collection', MAX_OBJECTS).map((item): MutablePort => {
     if (!isObject(item)) throw new Error('Invalid port object.');
     const start = safeInteger(item.start, 'port start', 65535);
     const end = safeInteger(item.end, 'port end', 65535);
     if (start > end) throw new Error('Invalid port range.');
-    return {id: safeString(item.id, 'port ID', 128), name: safeString(item.name, 'port name', 128), start, end};
+    return {
+      id: safeString(item.id, 'port ID', 128),
+      name: safeString(item.name, 'port name', 128),
+      start,
+      end,
+      usedBy: [],
+    };
   });
-  const protocols = boundedArray(value.protocols, 'protocol collection', MAX_OBJECTS).map((item): ProtocolObject => {
+  const protocols = boundedArray(value.protocols, 'protocol collection', MAX_OBJECTS).map((item): MutableProtocol => {
     if (!isObject(item)) throw new Error('Invalid protocol object.');
     return {
       id: safeString(item.id, 'protocol ID', 128),
       name: safeString(item.name, 'protocol name', 128),
       number: safeInteger(item.number, 'protocol number', 255),
+      usedBy: [],
     };
   });
   for (const collection of [ports, protocols]) {
@@ -195,6 +203,15 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       if (ids.has(item.id) || names.has(item.name)) throw new Error('Duplicate configuration object.');
       ids.add(item.id);
       names.add(item.name);
+    }
+  }
+  const portsByName = new Map(ports.map(item => [item.name, item]));
+  const protocolsByName = new Map(protocols.map(item => [item.name, item]));
+  for (const policy of policies) {
+    const usage: Usage = {id: policy.id, kind: 'policy', name: policy.name};
+    protocolsByName.get(policy.protocol)?.usedBy.push(usage);
+    for (const name of new Set([...policy.sourcePorts, ...policy.destinationPorts])) {
+      portsByName.get(name)?.usedBy.push(usage);
     }
   }
 

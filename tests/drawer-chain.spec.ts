@@ -90,6 +90,12 @@ test('loads authenticated runtime configuration as a read-only view', async ({pa
   await expect(editor.getByText('Read-only runtime view')).toBeVisible();
   await expect(editor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
   await expect(page.getByText('Config: Ready')).toBeVisible();
+  await editor.getByRole('button', {name: 'tcp', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit tcp'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await editor.getByRole('button', {name: 'https', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit https'})).toBeVisible();
+  await page.keyboard.press('Escape');
   await editor.getByRole('button', {name: 'office', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
 });
@@ -188,8 +194,16 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Protocol objects'})).toBeVisible();
   await page.getByRole('button', {name: /office-net subnet/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('group', {name: 'Port objects'}).getByRole('button', {name: /https Port range 443/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit https'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('group', {name: 'Protocol objects'}).getByRole('button', {name: /tcp IP protocol 6/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit tcp'})).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.getByRole('button', {name: 'System', exact: true}).click();

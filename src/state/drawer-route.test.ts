@@ -6,12 +6,14 @@ describe('drawer route', () => {
     const search = drawerRouteSearch('?view=compact', [
       {kind: 'policy', id: 'policy-office'},
       {kind: 'address', id: 'address-office-net'},
+      {kind: 'port', id: 'port-https'},
     ]);
 
     expect(search).toContain('view=compact');
     expect(parseDrawerRoute(search)).toEqual([
       {kind: 'policy', id: 'policy-office'},
       {kind: 'address', id: 'address-office-net'},
+      {kind: 'port', id: 'port-https'},
     ]);
   });
 
