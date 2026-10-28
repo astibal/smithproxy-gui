@@ -215,6 +215,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     let content: ProfileObject['content'] = null;
     let ssh: ProfileObject['ssh'] = null;
     let dns: ProfileObject['dns'] = null;
+    let script: ProfileObject['script'] = null;
+    let authentication: ProfileObject['authentication'] = null;
     if (type === 'routing') {
       if (!isObject(item.routing)) throw new Error('Invalid routing profile.');
       const loadBalancingMethod = safeString(item.routing.load_balancing_method, 'routing load-balancing method', 32);
@@ -331,6 +333,30 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     } else if (item.dns !== null) {
       throw new Error('Invalid non-DNS profile details.');
     }
+    if (type === 'script') {
+      if (!isObject(item.script)) throw new Error('Invalid script profile.');
+      const runtime = safeString(item.script.runtime, 'script runtime', 16);
+      if (!['python', 'go', 'unknown'].includes(runtime)) throw new Error('Invalid script runtime.');
+      script = {
+        runtime: runtime as 'python' | 'go' | 'unknown',
+        modulePathConfigured: safeBoolean(item.script.module_path_configured, 'script module-path state'),
+      };
+    } else if (item.script !== null) {
+      throw new Error('Invalid non-script profile details.');
+    }
+    if (type === 'authentication') {
+      if (!isObject(item.authentication) || item.authentication.deprecated !== true) {
+        throw new Error('Invalid authentication profile.');
+      }
+      authentication = {
+        authenticate: safeBoolean(item.authentication.authenticate, 'authentication state'),
+        resolve: safeBoolean(item.authentication.resolve, 'authentication resolution state'),
+        identityCount: safeInteger(item.authentication.identity_count, 'authentication identity count', MAX_REFERENCES),
+        deprecated: true,
+      };
+    } else if (item.authentication !== null) {
+      throw new Error('Invalid non-authentication profile details.');
+    }
     return {
       id: safeString(item.id, 'profile ID', 128),
       name: safeString(item.name, 'profile name', 128),
@@ -341,6 +367,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       content,
       ssh,
       dns,
+      script,
+      authentication,
       usedBy: [],
     };
   });

@@ -119,6 +119,18 @@ export interface DnsProfileDetails {
   cachedResponses: boolean;
 }
 
+export interface ScriptProfileDetails {
+  runtime: 'python' | 'go' | 'unknown';
+  modulePathConfigured: boolean;
+}
+
+export interface AuthenticationProfileDetails {
+  authenticate: boolean;
+  resolve: boolean;
+  identityCount: number;
+  deprecated: true;
+}
+
 export interface ProfileObject {
   id: string;
   name: string;
@@ -129,6 +141,8 @@ export interface ProfileObject {
   content: ContentProfileDetails | null;
   ssh: SshProfileDetails | null;
   dns: DnsProfileDetails | null;
+  script: ScriptProfileDetails | null;
+  authentication: AuthenticationProfileDetails | null;
   usedBy: ReadonlyArray<ConfigUsage>;
 }
 

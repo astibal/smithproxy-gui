@@ -36,6 +36,8 @@ const liveSnapshot = {
       content: null,
       ssh: null,
       dns: null,
+      script: null,
+      authentication: null,
     },
     {
       id: 'routing-0', name: 'main', type: 'routing',
@@ -48,11 +50,13 @@ const liveSnapshot = {
       content: null,
       ssh: null,
       dns: null,
+      script: null,
+      authentication: null,
     },
     {
       id: 'detection-0', name: 'default', type: 'detection', routing: null, tls: null,
       detection: {mode: 2, engines_enabled: true, knowledge_base_enabled: false}, content: null,
-      ssh: null, dns: null,
+      ssh: null, dns: null, script: null, authentication: null,
     },
     {
       id: 'content-0', name: 'capture', type: 'content', routing: null, tls: null, detection: null,
@@ -64,6 +68,8 @@ const liveSnapshot = {
       },
       ssh: null,
       dns: null,
+      script: null,
+      authentication: null,
     },
   ],
 };

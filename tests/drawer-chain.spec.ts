@@ -106,6 +106,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           content: null,
           ssh: null,
           dns: null,
+          script: null,
+          authentication: null,
         },
         {
           id: 'routing-0', name: 'main', type: 'routing',
@@ -118,6 +120,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           content: null,
           ssh: null,
           dns: null,
+          script: null,
+          authentication: null,
         },
       ],
     }}));
@@ -288,6 +292,15 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /safe-dns dns Typed details/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit safe-dns'}).getByText('Randomize upstream ID')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await profiles.getByRole('button', {name: /audit script Typed details/i}).click();
+  const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
+  await expect(scriptEditor.getByText('Configured · path redacted')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await profiles.getByRole('button', {name: /legacy-auth authentication Typed details/i}).click();
+  const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
+  await expect(authenticationEditor.getByText('Deprecated compatibility profile')).toBeVisible();
+  await expect(authenticationEditor.getByText('2 redacted entries')).toBeVisible();
   await page.keyboard.press('Escape');
 
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCSS('border-radius', '4px');

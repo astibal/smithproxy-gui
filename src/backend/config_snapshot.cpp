@@ -16,6 +16,8 @@ constexpr std::size_t maximum_name_length = 128U;
 constexpr std::size_t maximum_value_length = 1024U;
 constexpr std::size_t maximum_rule_length = 65536U;
 
+bool valid_name(const std::string& value);
+
 std::optional<Json> section_value(const std::string_view payload, const char* section) {
     const auto document = Json::parse(payload, nullptr, false);
     if (document.is_discarded() || !document.is_object()) return std::nullopt;
@@ -79,6 +81,16 @@ std::optional<std::size_t> optional_object_array_size(const Json& object, const 
     if (!value->is_array() || value->size() > maximum_references) return std::nullopt;
     for (const auto& item : *value) {
         if (!item.is_object()) return std::nullopt;
+    }
+    return value->size();
+}
+
+std::optional<std::size_t> optional_named_object_size(const Json& object, const char* key) {
+    const auto value = object.find(key);
+    if (value == object.end()) return 0U;
+    if (!value->is_object() || value->size() > maximum_references) return std::nullopt;
+    for (const auto& [name, item] : value->items()) {
+        if (!valid_name(name) || !item.is_object()) return std::nullopt;
     }
     return value->size();
 }
@@ -285,6 +297,8 @@ ConfigProfileParseResult parse_config_profiles(
         std::optional<ConfigContentProfile> content;
         std::optional<ConfigSshProfile> ssh;
         std::optional<ConfigDnsProfile> dns;
+        std::optional<ConfigScriptProfile> script;
+        std::optional<ConfigAuthProfile> authentication;
         if (type == "routing") {
             const auto addresses = string_array(profile, "dnat_address", true);
             const auto ports = string_array(profile, "dnat_port", true);
@@ -402,10 +416,29 @@ ConfigProfileParseResult parse_config_profiles(
                 return {std::nullopt, "Smithproxy returned an invalid DNS ALG profile"};
             }
             dns = ConfigDnsProfile{*match, *randomize, *cached};
+        } else if (type == "script") {
+            const auto configured_type = bounded_string(profile, "type", 4U, true);
+            const auto module_path = bounded_string(profile, "script-file", maximum_value_length, true);
+            if (!configured_type ||
+                (*configured_type != "" && *configured_type != "-1" &&
+                 *configured_type != "0" && *configured_type != "1") || !module_path) {
+                return {std::nullopt, "Smithproxy returned an invalid script profile"};
+            }
+            const auto runtime = *configured_type == "0" ? "python" :
+                                 *configured_type == "1" ? "go" : "unknown";
+            script = ConfigScriptProfile{runtime, !module_path->empty()};
+        } else if (type == "authentication") {
+            const auto authenticate = boolean_scalar(profile, "authenticate", false);
+            const auto resolve = boolean_scalar(profile, "resolve", true);
+            const auto identity_count = optional_named_object_size(profile, "identities");
+            if (!authenticate || !resolve || !identity_count) {
+                return {std::nullopt, "Smithproxy returned an invalid authentication profile"};
+            }
+            authentication = ConfigAuthProfile{*authenticate, *resolve, *identity_count};
         }
         result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type),
                           std::move(routing), std::move(tls), std::move(detection), std::move(content),
-                          std::move(ssh), std::move(dns)});
+                          std::move(ssh), std::move(dns), std::move(script), std::move(authentication)});
     }
     return {std::move(result), {}};
 }

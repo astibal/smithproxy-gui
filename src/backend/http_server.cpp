@@ -336,6 +336,25 @@ private:
                             ",\"randomize_id\":" + (dns.randomize_id ? "true" : "false") +
                             ",\"cached_responses\":" + (dns.cached_responses ? "true" : "false") + "}";
             }
+            profiles += ",\"script\":";
+            if (!profile.script) {
+                profiles += "null";
+            } else {
+                profiles += "{\"runtime\":" + json_string(profile.script->runtime) +
+                            ",\"module_path_configured\":" +
+                            (profile.script->module_path_configured ? "true" : "false") + "}";
+            }
+            profiles += ",\"authentication\":";
+            if (!profile.authentication) {
+                profiles += "null";
+            } else {
+                const auto& authentication = *profile.authentication;
+                profiles += "{\"authenticate\":" +
+                            std::string(authentication.authenticate ? "true" : "false") +
+                            ",\"resolve\":" + (authentication.resolve ? "true" : "false") +
+                            ",\"identity_count\":" + std::to_string(authentication.identity_count) +
+                            ",\"deprecated\":true}";
+            }
             profiles += '}';
         }
         profiles += ']';

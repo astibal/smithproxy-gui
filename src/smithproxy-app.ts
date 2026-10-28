@@ -774,7 +774,8 @@ export class SmithproxyApp extends LitElement {
               <button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
                 <strong>${profile.name}</strong><span class="action">${profile.type}</span>
-                <span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh || profile.dns
+                <span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh ||
+                  profile.dns || profile.script || profile.authentication
                   ? 'Typed details' : 'Metadata only'}</span><span>${profile.usedBy.length}</span>
               </button>
             `)}
@@ -1329,6 +1330,8 @@ export class SmithproxyApp extends LitElement {
     const content = profile.content;
     const ssh = profile.ssh;
     const dns = profile.dns;
+    const script = profile.script;
+    const authentication = profile.authentication;
     return html`
       <div class="form-grid">
         <label>Name</label><span>${profile.name}</span>
@@ -1396,9 +1399,17 @@ export class SmithproxyApp extends LitElement {
           <label>Match request ID</label><span>${dns.matchRequestId ? 'Enabled' : 'Disabled'}</span>
           <label>Randomize upstream ID</label><span>${dns.randomizeId ? 'Enabled' : 'Disabled'}</span>
           <label>Cached responses</label><span>${dns.cachedResponses ? 'Enabled' : 'Disabled'}</span>
+        ` : script ? html`
+          <label>Runtime</label><span>${script.runtime}</span>
+          <label>Module path</label><span>${script.modulePathConfigured ? 'Configured · path redacted' : 'Not configured'}</span>
+        ` : authentication ? html`
+          <label>Lifecycle</label><span>Deprecated compatibility profile</span>
+          <label>Authenticate</label><span>${authentication.authenticate ? 'Enabled' : 'Disabled'}</span>
+          <label>Resolve identities</label><span>${authentication.resolve ? 'Enabled' : 'Disabled'}</span>
+          <label>Identity mappings</label><span>${authentication.identityCount} redacted entries</span>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
-      ${routing || tls || detection || content || ssh || dns ? nothing : html`<div class="privacy-note section">
+      ${routing || tls || detection || content || ssh || dns || script || authentication ? nothing : html`<div class="privacy-note section">
         Profile values remain inside the GUI core until a typed, redacted editor is available.
       </div>`}
       ${tls ? html`<div class="privacy-note section">
@@ -1409,6 +1420,12 @@ export class SmithproxyApp extends LitElement {
       </div>` : nothing}
       ${ssh ? html`<div class="privacy-note section">
         The private host-key path stays inside the GUI core.
+      </div>` : nothing}
+      ${script ? html`<div class="privacy-note section">
+        The script module path stays inside the GUI core.
+      </div>` : nothing}
+      ${authentication ? html`<div class="privacy-note section">
+        Authentication profiles are obsolete in Smithproxy; identity names and profile bindings stay inside the GUI core.
       </div>` : nothing}
       ${this.renderObjectUsage(profile)}
     `;

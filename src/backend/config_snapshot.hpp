@@ -93,6 +93,17 @@ struct ConfigDnsProfile {
     bool cached_responses{};
 };
 
+struct ConfigScriptProfile {
+    std::string runtime;
+    bool module_path_configured{};
+};
+
+struct ConfigAuthProfile {
+    bool authenticate{};
+    bool resolve{};
+    std::uint64_t identity_count{};
+};
+
 struct ConfigProfile {
     std::string id;
     std::string name;
@@ -103,6 +114,8 @@ struct ConfigProfile {
     std::optional<ConfigContentProfile> content;
     std::optional<ConfigSshProfile> ssh;
     std::optional<ConfigDnsProfile> dns;
+    std::optional<ConfigScriptProfile> script;
+    std::optional<ConfigAuthProfile> authentication;
 };
 
 struct ConfigPolicy {

@@ -198,6 +198,23 @@ int main() {
     assert(!parse_config_profiles(
         R"({"success":{"ssh_profiles":{"bad":{"host_key":"/key","shell":"allow"}}}})",
         "ssh_profiles", "ssh").profiles);
+    const auto script_profiles = parse_config_profiles(
+        R"({"success":{"script_profiles":{"audit":{"type":"0","script-file":"/sensitive/audit.py"}}}})",
+        "script_profiles", "script");
+    assert(script_profiles.profiles);
+    assert(script_profiles.profiles->front().script);
+    assert(script_profiles.profiles->front().script->runtime == "python");
+    assert(script_profiles.profiles->front().script->module_path_configured);
+    const auto auth_profiles = parse_config_profiles(
+        R"({"success":{"auth_profiles":{"legacy":{"authenticate":"true","resolve":"false","identities":{"alice":{"tls_profile":"inspect"},"bob":{}}}}}})",
+        "auth_profiles", "authentication");
+    assert(auth_profiles.profiles);
+    assert(auth_profiles.profiles->front().authentication);
+    assert(auth_profiles.profiles->front().authentication->identity_count == 2U);
+    assert(!auth_profiles.profiles->front().authentication->resolve);
+    assert(!parse_config_profiles(
+        R"({"success":{"script_profiles":{"bad":{"type":"7"}}}})",
+        "script_profiles", "script").profiles);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

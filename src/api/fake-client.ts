@@ -19,7 +19,7 @@ const snapshot: ConfigSnapshot = {
       features: ['sinkhole'],
       action: 'inspect',
       nat: '', routing: '', tlsProfile: 'inspect', sshProfile: 'default-ssh', detectionProfile: 'default',
-      contentProfile: 'capture', authProfile: '', dnsProfile: 'safe-dns', scriptProfile: '',
+      contentProfile: 'capture', authProfile: 'legacy-auth', dnsProfile: 'safe-dns', scriptProfile: 'audit',
       enabled: true,
     },
     {
@@ -106,6 +106,8 @@ const snapshot: ConfigSnapshot = {
       content: null,
       ssh: null,
       dns: null,
+      script: null,
+      authentication: null,
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
@@ -119,6 +121,8 @@ const snapshot: ConfigSnapshot = {
       content: null,
       ssh: null,
       dns: null,
+      script: null,
+      authentication: null,
       usedBy: [],
     },
     {
@@ -127,6 +131,8 @@ const snapshot: ConfigSnapshot = {
       content: null,
       ssh: null,
       dns: null,
+      script: null,
+      authentication: null,
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
@@ -139,6 +145,8 @@ const snapshot: ConfigSnapshot = {
       },
       ssh: null,
       dns: null,
+      script: null,
+      authentication: null,
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
@@ -150,12 +158,28 @@ const snapshot: ConfigSnapshot = {
         remoteForward: false, x11: false, agent: false,
       },
       dns: null,
+      script: null,
+      authentication: null,
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
       id: 'dns-0', name: 'safe-dns', type: 'dns', routing: null, tls: null,
       detection: null, content: null, ssh: null,
       dns: {matchRequestId: true, randomizeId: true, cachedResponses: false},
+      script: null,
+      authentication: null,
+      usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
+    },
+    {
+      id: 'script-0', name: 'audit', type: 'script', routing: null, tls: null,
+      detection: null, content: null, ssh: null, dns: null,
+      script: {runtime: 'python', modulePathConfigured: true}, authentication: null,
+      usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
+    },
+    {
+      id: 'authentication-0', name: 'legacy-auth', type: 'authentication', routing: null, tls: null,
+      detection: null, content: null, ssh: null, dns: null, script: null,
+      authentication: {authenticate: true, resolve: true, identityCount: 2, deprecated: true},
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
   ],
