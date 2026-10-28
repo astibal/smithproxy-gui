@@ -7,6 +7,7 @@ describe('drawer route', () => {
       {kind: 'policy', id: 'policy-office'},
       {kind: 'address', id: 'address-office-net'},
       {kind: 'port', id: 'port-https'},
+      {kind: 'profile', id: 'tls-inspect'},
     ]);
 
     expect(search).toContain('view=compact');
@@ -14,6 +15,7 @@ describe('drawer route', () => {
       {kind: 'policy', id: 'policy-office'},
       {kind: 'address', id: 'address-office-net'},
       {kind: 'port', id: 'port-https'},
+      {kind: 'profile', id: 'tls-inspect'},
     ]);
   });
 

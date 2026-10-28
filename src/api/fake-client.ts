@@ -85,6 +85,13 @@ const snapshot: ConfigSnapshot = {
       {id: 'policy-quarantine', kind: 'policy', name: 'quarantine'},
     ],
   }],
+  profiles: [
+    {
+      id: 'tls-0', name: 'inspect', type: 'tls',
+      usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
+    },
+    {id: 'routing-0', name: 'main', type: 'routing', usedBy: []},
+  ],
 };
 
 export class FakeConfigClient implements ConfigClient {

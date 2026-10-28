@@ -33,6 +33,11 @@ credentials return HTTP 401. The response contains a bounded and validated
 runtime view of policies and address, port, and protocol objects. It does not
 contain Smithproxy API credentials, gateway secrets, or filesystem data.
 
+The snapshot also includes a metadata-only inventory of detection, content,
+TLS, SSH, DNS, authentication, and routing profiles. This inventory contains
+stable IDs, names, categories, and derived policy usage. Profile field values
+are not exposed until a typed endpoint defines explicit redaction semantics.
+
 GUI nesmí odhadovat podporu funkce pouze z čísla verze. Capability odpověď určuje
 dostupné endpointy, limity a feature flags.
 

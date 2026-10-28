@@ -19,6 +19,10 @@ const liveSnapshot = {
   ],
   ports: [{id: 'port-0', name: 'https', start: 443, end: 443}],
   protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
+  profiles: [
+    {id: 'tls-0', name: 'inspect', type: 'tls'},
+    {id: 'routing-0', name: 'main', type: 'routing'},
+  ],
 };
 
 function response(value: unknown, status = 200): Response {
@@ -42,6 +46,7 @@ describe('ApiConfigClient', () => {
     expect(snapshot.ports[0]).toMatchObject({start: 443, end: 443});
     expect(snapshot.ports[0]?.usedBy).toEqual([{id: 'policy-0', kind: 'policy', name: 'Policy 1'}]);
     expect(snapshot.protocols[0]?.usedBy).toEqual([{id: 'policy-0', kind: 'policy', name: 'Policy 1'}]);
+    expect(snapshot.profiles.map(item => item.usedBy.length)).toEqual([1, 1]);
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/config/snapshot',
       expect.objectContaining({cache: 'no-store', credentials: 'same-origin', redirect: 'error'}),

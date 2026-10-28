@@ -2,8 +2,10 @@
 
 #include <curl/curl.h>
 
+#include <array>
 #include <condition_variable>
 #include <future>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <string_view>
@@ -207,6 +209,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                         config.addresses = std::move(previous_config.addresses);
                         config.ports = std::move(previous_config.ports);
                         config.protocols = std::move(previous_config.protocols);
+                        config.profiles = std::move(previous_config.profiles);
                     }
                     latest.config_snapshot = std::move(config);
                 } else {
@@ -469,6 +472,21 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     auto addresses_future = std::async(std::launch::async, fetch_section, "address_objects");
     auto ports_future = std::async(std::launch::async, fetch_section, "port_objects");
     auto protocols_future = std::async(std::launch::async, fetch_section, "proto_objects");
+    const std::array profile_categories{
+        std::pair{"detection_profiles", "detection"},
+        std::pair{"content_profiles", "content"},
+        std::pair{"tls_profiles", "tls"},
+        std::pair{"ssh_profiles", "ssh"},
+        std::pair{"alg_dns_profiles", "dns"},
+        std::pair{"auth_profiles", "authentication"},
+        std::pair{"routing", "routing"},
+    };
+    std::vector<std::future<SectionResponse>> profile_futures;
+    profile_futures.reserve(profile_categories.size());
+    for (const auto& [section, type] : profile_categories) {
+        (void)type;
+        profile_futures.emplace_back(std::async(std::launch::async, fetch_section, section));
+    }
     auto policies = policies_future.get();
     auto addresses = addresses_future.get();
     auto ports = ports_future.get();
@@ -486,6 +504,23 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     if (!parsed.snapshot) {
         snapshot.detail = std::move(parsed.error);
         return snapshot;
+    }
+    for (std::size_t index = 0; index < profile_categories.size(); ++index) {
+        auto response = profile_futures[index].get();
+        if (!response.body) {
+            snapshot.detail = response.error;
+            return snapshot;
+        }
+        const auto& [section, type] = profile_categories[index];
+        auto profiles = parse_config_profiles(*response.body, section, type);
+        if (!profiles.profiles) {
+            snapshot.detail = std::move(profiles.error);
+            return snapshot;
+        }
+        parsed.snapshot->profiles.insert(
+            parsed.snapshot->profiles.end(),
+            std::make_move_iterator(profiles.profiles->begin()),
+            std::make_move_iterator(profiles.profiles->end()));
     }
     parsed.snapshot->checked_at = snapshot.checked_at;
     return std::move(*parsed.snapshot);

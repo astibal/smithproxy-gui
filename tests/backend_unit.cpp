@@ -115,6 +115,13 @@ int main() {
         R"({"success":{"policy":[]}})", R"({"success":{"address_objects":{}}})",
         R"({"success":{"port_objects":{"bad":{"start":"2","end":"1"}}}})",
         R"({"success":{"proto_objects":{}}})").snapshot);
+    const auto profiles = parse_config_profiles(
+        R"({"success":{"tls_profiles":{"inspect":{},"bypass":{}}}})",
+        "tls_profiles", "tls");
+    assert(profiles.profiles);
+    assert(profiles.profiles->size() == 2U);
+    assert(profiles.profiles->front().type == "tls");
+    assert(!parse_config_profiles("{}", "tls_profiles", "tls").profiles);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

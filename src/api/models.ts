@@ -41,6 +41,13 @@ export interface ProtocolObject {
   usedBy: ReadonlyArray<{id: string; kind: 'policy'; name: string}>;
 }
 
+export interface ProfileObject {
+  id: string;
+  name: string;
+  type: string;
+  usedBy: ReadonlyArray<{id: string; kind: 'policy'; name: string}>;
+}
+
 export interface ConfigSnapshot {
   source: 'preview' | 'live';
   state: 'ready' | 'starting' | 'unavailable' | 'unconfigured';
@@ -52,6 +59,7 @@ export interface ConfigSnapshot {
   addresses: ReadonlyArray<AddressObject>;
   ports: ReadonlyArray<PortObject>;
   protocols: ReadonlyArray<ProtocolObject>;
+  profiles: ReadonlyArray<ProfileObject>;
 }
 
 export interface ConfigClient {

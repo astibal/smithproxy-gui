@@ -232,6 +232,16 @@ private:
         }
         protocols += ']';
 
+        std::string profiles{"["};
+        for (std::size_t index = 0; index < snapshot.profiles.size(); ++index) {
+            if (index != 0U) profiles += ',';
+            const auto& profile = snapshot.profiles[index];
+            profiles += "{\"id\":" + json_string(profile.id) +
+                        ",\"name\":" + json_string(profile.name) +
+                        ",\"type\":" + json_string(profile.type) + "}";
+        }
+        profiles += ']';
+
         return {200, "application/json; charset=utf-8",
                 "{\"state\":" + json_string(snapshot.state) +
                     ",\"detail\":" + json_string(snapshot.detail) +
@@ -239,7 +249,7 @@ private:
                     ",\"last_success_at_unix_ms\":" + timestamp_json(snapshot.last_success_at) +
                     ",\"view\":\"runtime\",\"revision\":null,\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
-                    ",\"protocols\":" + protocols + "}"};
+                    ",\"protocols\":" + protocols + ",\"profiles\":" + profiles + "}"};
     }
 
     Response status() const {

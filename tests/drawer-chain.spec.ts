@@ -82,6 +82,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       ],
       ports: [{id: 'port-0', name: 'https', start: 443, end: 443}],
       protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
+      profiles: [
+        {id: 'tls-0', name: 'inspect', type: 'tls'},
+        {id: 'routing-0', name: 'main', type: 'routing'},
+      ],
     }}));
   }
 }
@@ -101,6 +105,10 @@ test('loads authenticated runtime configuration as a read-only view', async ({pa
   await page.keyboard.press('Escape');
   await editor.getByRole('button', {name: 'https', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit https'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await editor.getByRole('button', {name: 'inspect', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit inspect'})).toBeVisible();
+  await expect(page.getByText(/profile values remain inside the GUI core/i)).toBeVisible();
   await page.keyboard.press('Escape');
   await editor.getByRole('button', {name: 'office', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
@@ -206,6 +214,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Protocol objects'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Profiles and routing'})).toBeVisible();
   await page.getByRole('button', {name: /office-net subnet/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toBeVisible();
   await page.keyboard.press('Escape');

@@ -7,6 +7,7 @@ import type {
   ConfigSnapshot,
   PolicySummary,
   PortObject,
+  ProfileObject,
   ProtocolObject,
 } from './api/models';
 import {
@@ -514,6 +515,12 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({kind: 'protocol', id: protocol.id, title: protocol.name}, origin);
   }
 
+  private openProfile(id: string, origin?: HTMLElement): void {
+    const profile = this.snapshot?.profiles.find(item => item.id === id);
+    if (!profile) return;
+    this.openObjectDrawer({kind: 'profile', id: profile.id, title: profile.name}, origin);
+  }
+
   private openObjectDrawer(entry: DrawerEntry, origin?: HTMLElement): void {
     this.drawerStore.open(entry);
     this.drawerOrigins = [
@@ -567,13 +574,7 @@ export class SmithproxyApp extends LitElement {
     this.drawerOrigins = [];
     let valid = true;
     for (const entry of route) {
-      const candidate = entry.kind === 'policy'
-        ? this.snapshot.policies.find(item => item.id === entry.id)
-        : entry.kind === 'address'
-          ? this.snapshot.addresses.find(item => item.id === entry.id)
-          : entry.kind === 'port'
-            ? this.snapshot.ports.find(item => item.id === entry.id)
-            : this.snapshot.protocols.find(item => item.id === entry.id);
+      const candidate = this.drawerCandidate(entry);
       if (!candidate) { valid = false; break; }
       this.drawerStore.open({kind: entry.kind, id: candidate.id, title: candidate.name});
     }
@@ -593,6 +594,15 @@ export class SmithproxyApp extends LitElement {
     if (this.drawers[0] && this.drawers[0].kind !== 'policy') this.activeSection = 'Objects';
     this.focusMode = false;
     void this.updateComplete.then(() => this.focusActiveDrawer());
+  }
+
+  private drawerCandidate(entry: Pick<DrawerEntry, 'kind' | 'id'>) {
+    if (!this.snapshot) return undefined;
+    if (entry.kind === 'policy') return this.snapshot.policies.find(item => item.id === entry.id);
+    if (entry.kind === 'address') return this.snapshot.addresses.find(item => item.id === entry.id);
+    if (entry.kind === 'port') return this.snapshot.ports.find(item => item.id === entry.id);
+    if (entry.kind === 'protocol') return this.snapshot.protocols.find(item => item.id === entry.id);
+    return this.snapshot.profiles.find(item => item.id === entry.id);
   }
 
   private focusActiveDrawer(): void {
@@ -720,6 +730,21 @@ export class SmithproxyApp extends LitElement {
                 @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
                 <strong>${protocol.name}</strong><span>IP protocol</span>
                 <span class="object-value">${protocol.number}</span><span>${protocol.usedBy.length}</span>
+              </button>
+            `)}
+          </div>
+        </section>
+        <section class="object-section">
+          <h3>Profiles and routing</h3>
+          <div class="table" role="group" aria-label="Profiles and routing">
+            <div class="row object-row heading" aria-hidden="true">
+              <span>Name</span><span>Type</span><span>Value exposure</span><span>Uses</span>
+            </div>
+            ${this.snapshot?.profiles.map(profile => html`
+              <button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
+                <strong>${profile.name}</strong><span class="action">${profile.type}</span>
+                <span>Metadata only</span><span>${profile.usedBy.length}</span>
               </button>
             `)}
           </div>
@@ -1119,6 +1144,10 @@ export class SmithproxyApp extends LitElement {
           ${this.renderPortReferences(policy.sourcePorts)}
           <label>Destination ports</label>
           ${this.renderPortReferences(policy.destinationPorts)}
+          <label>TLS profile</label>
+          ${this.renderProfileReference('tls', policy.tlsProfile)}
+          <label>Routing profile</label>
+          ${this.renderProfileReference('routing', policy.routing)}
         </div>
       </div>
     `;
@@ -1132,6 +1161,15 @@ export class SmithproxyApp extends LitElement {
         <span>${port.name}</span><span aria-hidden="true">→</span>
       </button>` : html`<span>${name}</span>`;
     })}</div>`;
+  }
+
+  private renderProfileReference(type: string, name: string) {
+    if (name.length === 0 || name === 'none') return html`<span>None</span>`;
+    const profile = this.snapshot?.profiles.find(item => item.type === type && item.name === name);
+    return profile ? html`<button class="reference" type="button"
+      @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
+      <span>${profile.name}</span><span aria-hidden="true">→</span>
+    </button>` : html`<span>${name}</span>`;
   }
 
   private renderAddressEditor(entry: DrawerEntry) {
@@ -1200,7 +1238,23 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
-  private renderObjectUsage(object: PortObject | ProtocolObject) {
+  private renderProfileEditor(entry: DrawerEntry) {
+    const profile = this.snapshot?.profiles.find(item => item.id === entry.id);
+    if (!profile) return nothing;
+    return html`
+      <div class="form-grid">
+        <label>Name</label><span>${profile.name}</span>
+        <label>Profile type</label><span class="action">${profile.type}</span>
+        <label>Value exposure</label><span>Metadata only</span>
+      </div>
+      <div class="privacy-note section">
+        Profile values remain inside the GUI core until a typed, redacted editor is available.
+      </div>
+      ${this.renderObjectUsage(profile)}
+    `;
+  }
+
+  private renderObjectUsage(object: PortObject | ProtocolObject | ProfileObject) {
     return html`
       <div class="section">
         <h3>Impact</h3>
@@ -1216,7 +1270,8 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'policy') return this.renderPolicyEditor(entry);
     if (entry.kind === 'address') return this.renderAddressEditor(entry);
     if (entry.kind === 'port') return this.renderPortEditor(entry);
-    return this.renderProtocolEditor(entry);
+    if (entry.kind === 'protocol') return this.renderProtocolEditor(entry);
+    return this.renderProfileEditor(entry);
   }
 
   private renderDrawer(entry: DrawerEntry, index: number) {

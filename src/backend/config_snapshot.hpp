@@ -29,6 +29,12 @@ struct ConfigProtocolObject {
     std::uint64_t number{};
 };
 
+struct ConfigProfile {
+    std::string id;
+    std::string name;
+    std::string type;
+};
+
 struct ConfigPolicy {
     std::string id;
     std::string name;
@@ -53,6 +59,7 @@ struct ConfigSnapshot {
     std::vector<ConfigAddressObject> addresses;
     std::vector<ConfigPortObject> ports;
     std::vector<ConfigProtocolObject> protocols;
+    std::vector<ConfigProfile> profiles;
 };
 
 struct ConfigSnapshotParseResult {
@@ -65,5 +72,15 @@ ConfigSnapshotParseResult parse_config_snapshot(
     std::string_view address_payload,
     std::string_view port_payload,
     std::string_view protocol_payload);
+
+struct ConfigProfileParseResult {
+    std::optional<std::vector<ConfigProfile>> profiles;
+    std::string error;
+};
+
+ConfigProfileParseResult parse_config_profiles(
+    std::string_view payload,
+    std::string_view section,
+    std::string_view type);
 
 } // namespace smithproxy::gui

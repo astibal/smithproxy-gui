@@ -1,4 +1,4 @@
-export type DrawerKind = 'policy' | 'address' | 'port' | 'protocol';
+export type DrawerKind = 'policy' | 'address' | 'port' | 'protocol' | 'profile';
 
 export interface DrawerEntry {
   kind: DrawerKind;

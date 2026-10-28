@@ -5,6 +5,7 @@ import type {
   ConfigSnapshot,
   PolicySummary,
   PortObject,
+  ProfileObject,
   ProtocolObject,
 } from './models';
 
@@ -13,6 +14,7 @@ type Usage = {id: string; kind: 'policy'; name: string};
 type MutableAddress = Omit<AddressObject, 'usedBy'> & {usedBy: Usage[]};
 type MutablePort = Omit<PortObject, 'usedBy'> & {usedBy: Usage[]};
 type MutableProtocol = Omit<ProtocolObject, 'usedBy'> & {usedBy: Usage[]};
+type MutableProfile = Omit<ProfileObject, 'usedBy'> & {usedBy: Usage[]};
 
 const MAX_POLICIES = 4096;
 const MAX_OBJECTS = 4096;
@@ -196,7 +198,16 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       usedBy: [],
     };
   });
-  for (const collection of [ports, protocols]) {
+  const profiles = boundedArray(value.profiles, 'profile collection', MAX_OBJECTS).map((item): MutableProfile => {
+    if (!isObject(item)) throw new Error('Invalid profile.');
+    return {
+      id: safeString(item.id, 'profile ID', 128),
+      name: safeString(item.name, 'profile name', 128),
+      type: safeString(item.type, 'profile type', 32),
+      usedBy: [],
+    };
+  });
+  for (const collection of [ports, protocols, profiles]) {
     const ids = new Set<string>();
     const names = new Set<string>();
     for (const item of collection) {
@@ -207,9 +218,12 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   }
   const portsByName = new Map(ports.map(item => [item.name, item]));
   const protocolsByName = new Map(protocols.map(item => [item.name, item]));
+  const profilesByIdentity = new Map(profiles.map(item => [`${item.type}:${item.name}`, item]));
   for (const policy of policies) {
     const usage: Usage = {id: policy.id, kind: 'policy', name: policy.name};
     protocolsByName.get(policy.protocol)?.usedBy.push(usage);
+    profilesByIdentity.get(`tls:${policy.tlsProfile}`)?.usedBy.push(usage);
+    profilesByIdentity.get(`routing:${policy.routing}`)?.usedBy.push(usage);
     for (const name of new Set([...policy.sourcePorts, ...policy.destinationPorts])) {
       portsByName.get(name)?.usedBy.push(usage);
     }
@@ -226,6 +240,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     addresses,
     ports,
     protocols,
+    profiles,
   };
 }
 

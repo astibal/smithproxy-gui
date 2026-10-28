@@ -224,4 +224,27 @@ ConfigSnapshotParseResult parse_config_snapshot(
     return {std::move(result), {}};
 }
 
+ConfigProfileParseResult parse_config_profiles(
+    const std::string_view payload,
+    const std::string_view section,
+    const std::string_view type) {
+    if (!valid_name(std::string(section)) || !valid_name(std::string(type))) {
+        return {std::nullopt, "Invalid configuration profile category"};
+    }
+    const auto value = section_value(payload, std::string(section).c_str());
+    if (!value || !value->is_object() || value->size() > maximum_named_objects) {
+        return {std::nullopt, "Smithproxy returned an invalid profile collection"};
+    }
+    std::vector<ConfigProfile> result;
+    result.reserve(value->size());
+    std::size_t index{};
+    for (const auto& [name, profile] : value->items()) {
+        if (!valid_name(name) || !profile.is_object()) {
+            return {std::nullopt, "Smithproxy returned an invalid profile entry"};
+        }
+        result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type)});
+    }
+    return {std::move(result), {}};
+}
+
 } // namespace smithproxy::gui

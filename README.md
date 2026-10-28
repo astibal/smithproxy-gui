@@ -88,8 +88,11 @@ The C++ backend can now retrieve a bounded, validated runtime configuration
 snapshot through the authenticated Smithproxy API. Frontend activation remains
 capability-gated until the trusted gateway handoff is configured. Configuration
 writes remain disabled while the versioned draft and commit contract is being
-completed. Control-plane health and listener monitoring use the production C++
-backend. Live session monitoring is aggregated by transport inside the GUI core;
+completed. Profile and routing inventories expose names, categories, and policy
+usage only; profile values remain server-side until their typed redaction rules
+and editors are implemented. Control-plane health and listener monitoring use
+the production C++ backend. Live session monitoring is aggregated by transport
+inside the GUI core;
 endpoint addresses, ports, session identifiers, and policy names are never sent
 to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The
