@@ -128,8 +128,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
         features: ['sinkhole'],
         action: 'accept', nat: '', routing: 'main', tls_profile: 'inspect',
-        ssh_profile: 'default-ssh', detection_profile: 'detect', content_profile: 'capture', auth_profile: '',
-        dns_profile: 'resolver', script_profile: '',
+        ssh_profile: 'default-ssh', detection_profile: 'detect', content_profile: 'capture', auth_profile: 'legacy-auth',
+        dns_profile: 'resolver', script_profile: 'audit',
       }],
       addresses: [
         {id: 'address-0', name: 'office', type: 'cidr', value: '10.0.0.0/24'},
@@ -199,6 +199,16 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
             local_forward: false, remote_forward: false, x11: false, agent: false,
           },
           dns: null, script: null, authentication: null,
+        },
+        {
+          id: 'script-0', name: 'audit', type: 'script', routing: null, tls: null,
+          detection: null, content: null, ssh: null, dns: null,
+          script: {runtime: 'python', module_path_configured: true}, authentication: null,
+        },
+        {
+          id: 'authentication-0', name: 'legacy-auth', type: 'authentication', routing: null, tls: null,
+          detection: null, content: null, ssh: null, dns: null, script: null,
+          authentication: {authenticate: true, resolve: true, identity_count: 2, deprecated: true},
         },
       ],
       settings: {
@@ -308,6 +318,23 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(sshEditor.getByText('Saved to draft')).toBeVisible();
   await expect(page.getByText('Draft: 44 changes')).toBeVisible();
   await sshEditor.getByRole('button', {name: 'Cancel'}).click();
+  await editor.getByRole('button', {name: 'audit', exact: true}).click();
+  const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
+  await expect(scriptEditor.getByText('Configured · path redacted · unchanged')).toBeVisible();
+  await scriptEditor.getByLabel('Runtime').selectOption('go');
+  await scriptEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(scriptEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(page.getByText('Draft: 46 changes')).toBeVisible();
+  await scriptEditor.getByRole('button', {name: 'Cancel'}).click();
+  await editor.getByRole('button', {name: 'legacy-auth', exact: true}).click();
+  const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
+  await expect(authenticationEditor.getByText('2 redacted entries · unchanged')).toBeVisible();
+  await authenticationEditor.getByLabel('Authenticate').selectOption('false');
+  await authenticationEditor.getByLabel('Resolve identities').selectOption('false');
+  await authenticationEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(authenticationEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(page.getByText('Draft: 49 changes')).toBeVisible();
+  await authenticationEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'detect', exact: true}).click();
   const detectionEditor = page.getByRole('dialog', {name: 'Edit detect'});
   await detectionEditor.getByLabel('Detection phase').selectOption('2');
@@ -315,7 +342,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await detectionEditor.getByLabel('Knowledge base').selectOption('true');
   await detectionEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(detectionEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 48 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 53 changes')).toBeVisible();
   await detectionEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'resolver', exact: true}).click();
   const dnsEditor = page.getByRole('dialog', {name: 'Edit resolver'});
@@ -324,7 +351,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await dnsEditor.getByLabel('Cached responses').selectOption('true');
   await dnsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(dnsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 52 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 57 changes')).toBeVisible();
   await dnsEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'main', exact: true}).click();
   const routingEditor = page.getByRole('dialog', {name: 'Edit main'});
@@ -333,11 +360,11 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await routingEditor.getByLabel('Rewrite SNI match').fill('old.example');
   await routingEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(routingEditor.getByText(/SNI rewrite requires both values/i)).toBeVisible();
-  await expect(page.getByText('Draft: 52 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 57 changes')).toBeVisible();
   await routingEditor.getByLabel('Rewrite SNI target').fill('new.example');
   await routingEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(routingEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 58 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 63 changes')).toBeVisible();
   await routingEditor.getByRole('button', {name: 'internet', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
   await page.keyboard.press('Escape');
@@ -348,12 +375,12 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await addressEditor.getByLabel('Address').fill('10.0.1.0/24');
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(addressEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 61 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 66 changes')).toBeVisible();
   await addressEditor.getByRole('button', {name: 'Cancel'}).click();
   await expect(addressEditor).not.toBeVisible();
   await editor.getByRole('button', {name: 'Cancel'}).click();
   await expect(editor).not.toBeVisible();
-  await page.getByRole('button', {name: 'Review draft · 61'}).click();
+  await page.getByRole('button', {name: 'Review draft · 66'}).click();
   await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('address_objects.[0].value');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.0/24');
@@ -364,10 +391,12 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('tls_profiles.[0].allow_invalid_certs');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('content_profiles.[0].write_format');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('ssh_profiles.[0].hostkey_policy');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('script_profiles.[0].type');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('auth_profiles.[0].authenticate');
   await page.getByRole('button', {name: 'Discard draft'}).click();
-  await expect(page.getByRole('button', {name: 'Confirm discard 61 changes'})).toBeVisible();
-  await expect(page.getByText('Draft: 61 changes')).toBeVisible();
-  await page.getByRole('button', {name: 'Confirm discard 61 changes'}).click();
+  await expect(page.getByRole('button', {name: 'Confirm discard 66 changes'})).toBeVisible();
+  await expect(page.getByText('Draft: 66 changes')).toBeVisible();
+  await page.getByRole('button', {name: 'Confirm discard 66 changes'}).click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
 });
@@ -506,12 +535,14 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /audit script Typed details/i}).click();
   const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
-  await expect(scriptEditor.getByText('Configured · path redacted')).toBeVisible();
+  await expect(scriptEditor.getByText('Configured · path redacted · unchanged')).toBeVisible();
+  await expect(scriptEditor.getByLabel('Runtime')).toHaveValue('python');
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /legacy-auth authentication Typed details/i}).click();
   const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
   await expect(authenticationEditor.getByText('Deprecated compatibility profile')).toBeVisible();
-  await expect(authenticationEditor.getByText('2 redacted entries')).toBeVisible();
+  await expect(authenticationEditor.getByText('2 redacted entries · unchanged')).toBeVisible();
+  await expect(authenticationEditor.getByLabel('Authenticate')).toHaveValue('true');
   await page.keyboard.press('Escape');
 
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCSS('border-radius', '4px');

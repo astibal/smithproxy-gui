@@ -617,6 +617,16 @@ export class SmithproxyApp extends LitElement {
         const item = this.snapshot?.profiles.filter(profile => profile.ssh !== null)[Number(ssh[1])];
         if (item) objects.add(`profile:${item.id}`);
       }
+      const script = /^script_profiles\.\[(\d+)\]\./u.exec(change.path);
+      if (script) {
+        const item = this.snapshot?.profiles.filter(profile => profile.script !== null)[Number(script[1])];
+        if (item) objects.add(`profile:${item.id}`);
+      }
+      const authentication = /^auth_profiles\.\[(\d+)\]\./u.exec(change.path);
+      if (authentication) {
+        const item = this.snapshot?.profiles.filter(profile => profile.authentication !== null)[Number(authentication[1])];
+        if (item) objects.add(`profile:${item.id}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -1034,6 +1044,35 @@ export class SmithproxyApp extends LitElement {
           {path: `ssh_profiles.[${index}].name`, value: name.value.trim()},
           {path: `ssh_profiles.[${index}].hostkey_policy`, value: policy.value},
           ...changes,
+        ];
+      }
+      if (profile.script) {
+        const profiles = this.snapshot.profiles.filter(item => item.script !== null);
+        const index = profiles.findIndex(item => item.id === entry.id);
+        const runtime = this.renderRoot.querySelector<HTMLSelectElement>(`#script-runtime-${entry.id}`);
+        if (index < 0 || !runtime || !['python', 'go', 'unknown'].includes(runtime.value)) {
+          this.draftError = 'Script runtime is invalid.';
+          return undefined;
+        }
+        const configuredType = runtime.value === 'python' ? '0' : runtime.value === 'go' ? '1' : '-1';
+        return [
+          {path: `script_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `script_profiles.[${index}].type`, value: configuredType},
+        ];
+      }
+      if (profile.authentication) {
+        const profiles = this.snapshot.profiles.filter(item => item.authentication !== null);
+        const index = profiles.findIndex(item => item.id === entry.id);
+        const authenticate = this.renderRoot.querySelector<HTMLSelectElement>(`#auth-authenticate-${entry.id}`);
+        const resolve = this.renderRoot.querySelector<HTMLSelectElement>(`#auth-resolve-${entry.id}`);
+        if (index < 0 || !authenticate || !resolve ||
+            ![authenticate.value, resolve.value].every(value => value === 'true' || value === 'false')) {
+          return undefined;
+        }
+        return [
+          {path: `auth_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `auth_profiles.[${index}].authenticate`, value: authenticate.value === 'true'},
+          {path: `auth_profiles.[${index}].resolve`, value: resolve.value === 'true'},
         ];
       }
       if (profile.detection) {
@@ -1953,7 +1992,7 @@ export class SmithproxyApp extends LitElement {
     const dns = profile.dns;
     const script = profile.script;
     const authentication = profile.authentication;
-    const mapped = Boolean(routing || tls || detection || content || ssh || dns);
+    const mapped = Boolean(routing || tls || detection || content || ssh || dns || script || authentication);
     const mappedReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class=${tls || content || ssh ? 'form-grid wide-form-grid' : 'form-grid'}>
@@ -2109,13 +2148,20 @@ export class SmithproxyApp extends LitElement {
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
         ` : script ? html`
-          <label>Runtime</label><span>${script.runtime}</span>
-          <label>Module path</label><span>${script.modulePathConfigured ? 'Configured · path redacted' : 'Not configured'}</span>
+          <label for="script-runtime-${entry.id}">Runtime</label>
+          <select id="script-runtime-${entry.id}" .value=${script.runtime} ?disabled=${mappedReadOnly}>
+            <option value="python">Python</option><option value="go">Go</option>
+            <option value="unknown">Unspecified</option>
+          </select>
+          <label>Module path</label>
+          <span>${script.modulePathConfigured ? 'Configured · path redacted · unchanged' : 'Not configured'}</span>
         ` : authentication ? html`
           <label>Lifecycle</label><span>Deprecated compatibility profile</span>
-          <label>Authenticate</label><span>${authentication.authenticate ? 'Enabled' : 'Disabled'}</span>
-          <label>Resolve identities</label><span>${authentication.resolve ? 'Enabled' : 'Disabled'}</span>
-          <label>Identity mappings</label><span>${authentication.identityCount} redacted entries</span>
+          <label for="auth-authenticate-${entry.id}">Authenticate</label>
+          ${this.renderBooleanSelect(`auth-authenticate-${entry.id}`, authentication.authenticate, mappedReadOnly)}
+          <label for="auth-resolve-${entry.id}">Resolve identities</label>
+          ${this.renderBooleanSelect(`auth-resolve-${entry.id}`, authentication.resolve, mappedReadOnly)}
+          <label>Identity mappings</label><span>${authentication.identityCount} redacted entries · unchanged</span>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
       ${routing || tls || detection || content || ssh || dns || script || authentication ? nothing : html`<div class="privacy-note section">
@@ -2171,7 +2217,8 @@ export class SmithproxyApp extends LitElement {
       ? this.snapshot?.profiles.find(item => item.id === entry.id)
       : undefined;
     const mappedProfile = Boolean(
-      profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns,
+      profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns ||
+      profile?.script || profile?.authentication,
     );
     const draftable = this.snapshot?.source !== 'live' ||
       (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
