@@ -124,19 +124,21 @@ and port references, load-balancing method, and paired SNI rewrite values while
 preserving nested links to the referenced objects. Detection and DNS ALG profile
 batches cover their names and all currently exposed typed mode/boolean fields.
 TLS profile batches cover the exposed validation, negotiation, timeout, client
-certificate, alert, and diagnostic controls. The redacted SNI bypass collection
-is explicitly left unchanged. Content profile batches cover capture, webhook,
-and JA4 controls while redacted session filters and content rules remain
-unchanged. SSH profile batches cover the host-key policy and channel, forwarding,
-X11, and agent actions while the redacted private host-key path remains unchanged.
-Script profile batches cover the runtime while the module path remains redacted
-and unchanged. Deprecated authentication profile batches cover authentication
+certificate, alert, and diagnostic controls. Redacted SNI bypass collections
+support write-only replacement and clearing. Content profile batches cover capture,
+webhook, JA4 controls, and write-only session-filter replacement while content
+rules remain unchanged. SSH profile batches cover the host-key policy and channel,
+forwarding, X11, agent actions, and write-only private host-key path rotation.
+Script profile batches cover the runtime and write-only module-path rotation.
+Certificate-authority batches cover names and write-only path rotation.
+Deprecated authentication profile batches cover authentication
 and identity resolution while redacted identity mappings remain unchanged.
 System-setting batches cover listener admission, fail-open behavior, worker
 pools, TLS detection, HTTP API posture, and webhook switches. Capture batches
 cover enablement, formats, quota, tunnel TTL, and checksum behavior. Nameservers,
-API credentials and allowed addresses, webhook URLs, capture paths, remote
-destinations, and bound interfaces remain redacted and unchanged.
+API credentials, webhook URLs, capture paths, remote destinations, and bound
+interfaces use explicit write-only replacement or clearing. Allowed addresses
+and other non-secret lists use bounded typed editors.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.

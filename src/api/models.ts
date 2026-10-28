@@ -237,7 +237,14 @@ export interface DebugSettings {
   moduleOverrideCount: number;
 }
 
+export interface CertificateAuthoritySummary {
+  id: string;
+  name: string;
+  pathConfigured: boolean;
+}
+
 export interface SecurityAssets {
+  certificateAuthorities: ReadonlyArray<CertificateAuthoritySummary>;
   certificateAuthorityCount: number;
   certificateAuthorityPathCount: number;
   starttlsSignatureCount: number;

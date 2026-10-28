@@ -638,6 +638,11 @@ export class SmithproxyApp extends LitElement {
         const item = this.snapshot?.profiles.filter(profile => profile.authentication !== null)[Number(authentication[1])];
         if (item) objects.add(`profile:${item.id}`);
       }
+      const authority = /^tls_ca\.\[(\d+)\]\./u.exec(change.path);
+      if (authority) {
+        const item = this.snapshot?.securityAssets?.certificateAuthorities[Number(authority[1])];
+        if (item) objects.add(`authority:${item.id}`);
+      }
       if (change.path.startsWith('settings.')) objects.add('settings:settings');
       if (change.path.startsWith('captures.')) objects.add('captures:captures');
     }
@@ -688,7 +693,8 @@ export class SmithproxyApp extends LitElement {
       (path.startsWith('ssh_profiles.[') && path.endsWith('].host_key')) ||
       (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
       (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
-      (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter'));
+      (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
+      (path.startsWith('tls_ca.[') && path.endsWith('].path'));
     if (sensitivePaths.has(path) || indexedSensitivePath) {
       if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared · redacted';
       const count = Array.isArray(value) ? ` · ${value.length} item${value.length === 1 ? '' : 's'}` : '';
@@ -740,6 +746,12 @@ export class SmithproxyApp extends LitElement {
     const profile = this.snapshot?.profiles.find(item => item.id === id);
     if (!profile) return;
     this.openObjectDrawer({kind: 'profile', id: profile.id, title: profile.name}, origin);
+  }
+
+  private openAuthority(id: string, origin?: HTMLElement): void {
+    const authority = this.snapshot?.securityAssets?.certificateAuthorities.find(item => item.id === id);
+    if (!authority) return;
+    this.openObjectDrawer({kind: 'authority', id: authority.id, title: authority.name}, origin);
   }
 
   private openSystemDrawer(kind: 'settings' | 'captures', origin?: HTMLElement): void {
@@ -818,7 +830,9 @@ export class SmithproxyApp extends LitElement {
     }
     this.drawers = [...this.drawerStore.entries];
     if (this.drawers[0]?.kind === 'policy') this.activeSection = 'Policy';
-    if (this.drawers[0] && ['settings', 'captures'].includes(this.drawers[0].kind)) this.activeSection = 'System';
+    if (this.drawers[0] && ['settings', 'captures', 'authority'].includes(this.drawers[0].kind)) {
+      this.activeSection = 'System';
+    }
     else if (this.drawers[0] && this.drawers[0].kind !== 'policy') this.activeSection = 'Objects';
     this.focusMode = false;
     void this.updateComplete.then(() => this.focusActiveDrawer());
@@ -835,6 +849,9 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'captures' && entry.id === 'captures' && this.snapshot.captures) {
       return {id: 'captures', name: 'Capture settings'};
+    }
+    if (entry.kind === 'authority') {
+      return this.snapshot.securityAssets?.certificateAuthorities.find(item => item.id === entry.id);
     }
     return this.snapshot.profiles.find(item => item.id === entry.id);
   }
@@ -862,7 +879,8 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
-      if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile') {
+      if (entry.kind === 'settings' || entry.kind === 'captures' ||
+          entry.kind === 'profile' || entry.kind === 'authority') {
         this.renderRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
           '[id*="-write-"][id$="-value"], #settings-api-keys-value',
         ).forEach(input => { input.value = ''; });
@@ -883,6 +901,36 @@ export class SmithproxyApp extends LitElement {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'settings') return this.systemSettingsDraftChanges();
     if (entry.kind === 'captures') return this.captureSettingsDraftChanges();
+    if (entry.kind === 'authority') {
+      const authorities = this.snapshot.securityAssets?.certificateAuthorities ?? [];
+      const index = authorities.findIndex(item => item.id === entry.id);
+      const name = this.renderRoot.querySelector<HTMLInputElement>(`#authority-name-${entry.id}`);
+      const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#authority-write-path-${entry.id}-mode`);
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#authority-write-path-${entry.id}-value`);
+      if (index < 0 || !name || !mode || !input ||
+          !['unchanged', 'replace', 'clear'].includes(mode.value)) return undefined;
+      const normalizedName = name.value.trim();
+      if (normalizedName.length === 0 || normalizedName.length > 128 ||
+          /[\u0000-\u001f\u007f]/u.test(normalizedName)) {
+        this.draftError = 'A certificate authority name up to 128 characters is required.';
+        return undefined;
+      }
+      const replacement = input.value;
+      if (mode.value === 'replace' &&
+          (replacement.length === 0 || replacement.length > 1024 || !replacement.startsWith('/') ||
+           /[\u0000-\u001f\u007f]/u.test(replacement))) {
+        this.draftError = 'An absolute replacement CA path up to 1024 characters is required.';
+        return undefined;
+      }
+      return [
+        {path: `tls_ca.[${index}].name`, value: normalizedName},
+        ...(mode.value === 'replace'
+          ? [{path: `tls_ca.[${index}].path`, value: replacement}]
+          : mode.value === 'clear'
+            ? [{path: `tls_ca.[${index}].path`, value: ''}]
+            : []),
+      ];
+    }
     if (entry.kind === 'policy') {
       const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
       const name = this.renderRoot.querySelector<HTMLInputElement>(`#policy-name-${entry.id}`);
@@ -2291,6 +2339,19 @@ export class SmithproxyApp extends LitElement {
                 <dt>Detection signatures</dt><dd>${securityAssets.detectionSignatureCount}</dd>
                 <dt>Detection flow steps</dt><dd>${securityAssets.detectionFlowStepCount}</dd>
               </dl>
+              <div class="reference-stack section" role="group" aria-label="Certificate authorities">
+                ${securityAssets.certificateAuthorities.length === 0
+                  ? html`<span>No certificate authorities configured.</span>`
+                  : securityAssets.certificateAuthorities.map(authority => html`
+                    <button class="reference" type="button"
+                      @click=${(event: MouseEvent) => this.openAuthority(
+                        authority.id, event.currentTarget as HTMLElement,
+                      )}>
+                      <span><strong>${authority.name}</strong> · ${authority.pathConfigured ? 'path configured' : 'path missing'}</span>
+                      <span aria-hidden="true">→</span>
+                    </button>
+                  `)}
+              </div>
             </article>
           ` : nothing}
         </div>
@@ -2958,10 +3019,38 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderCertificateAuthorityEditor(entry: DrawerEntry) {
+    const authority = this.snapshot?.securityAssets?.certificateAuthorities.find(item => item.id === entry.id);
+    if (!authority) return nothing;
+    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    return html`
+      <div class="form-grid">
+        <label for="authority-name-${entry.id}">Name</label>
+        <input id="authority-name-${entry.id}" .value=${authority.name} .readOnly=${disabled} />
+        <label for="authority-write-path-${entry.id}-mode">CA path</label>
+        <div class="write-only-control">
+          <select id="authority-write-path-${entry.id}-mode" ?disabled=${disabled}>
+            <option value="unchanged">${authority.pathConfigured ? 'Keep configured path' : 'Keep empty'}</option>
+            <option value="replace">Replace</option><option value="clear">Clear</option>
+          </select>
+          <input id="authority-write-path-${entry.id}-value" aria-label="CA path replacement"
+            placeholder="New absolute path (write-only)" autocomplete="off" .readOnly=${disabled} />
+        </div>
+      </div>
+      <div class="privacy-note section">
+        The current certificate-authority path stays inside the GUI core. Replacements are write-only.
+      </div>
+    `;
+  }
+
   private originPrefix(entry: DrawerEntry): string | undefined {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'settings') return 'settings.';
     if (entry.kind === 'captures') return 'captures.';
+    if (entry.kind === 'authority') {
+      const index = this.snapshot.securityAssets?.certificateAuthorities.findIndex(item => item.id === entry.id) ?? -1;
+      return index < 0 ? undefined : `tls_ca.[${index}].`;
+    }
     if (entry.kind === 'policy') {
       const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
       return index < 0 ? undefined : `policy.[${index}].`;
@@ -3029,6 +3118,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'protocol') return this.renderProtocolEditor(entry);
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
+    if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);
     return this.renderProfileEditor(entry);
   }
 
@@ -3039,7 +3129,7 @@ export class SmithproxyApp extends LitElement {
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
     const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = [
-      'policy', 'address', 'port', 'protocol', 'settings', 'captures',
+      'policy', 'address', 'port', 'protocol', 'settings', 'captures', 'authority',
     ];
     const profile = entry.kind === 'profile'
       ? this.snapshot?.profiles.find(item => item.id === entry.id)

@@ -712,6 +712,9 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
     }
 
     std::uint64_t authority_paths{};
+    std::vector<ConfigCertificateAuthority> certificate_authorities;
+    certificate_authorities.reserve(authorities->size());
+    std::size_t authority_index{};
     for (const auto& [name, authority] : authorities->items()) {
         if (!valid_name(name) || !authority.is_object()) {
             return {std::nullopt, "Smithproxy returned an invalid certificate authority entry"};
@@ -719,6 +722,9 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
         const auto path = bounded_string(authority, "path", maximum_value_length, true);
         if (!path) return {std::nullopt, "Smithproxy returned an invalid certificate authority path"};
         if (!path->empty()) ++authority_paths;
+        certificate_authorities.push_back(ConfigCertificateAuthority{
+            stable_id("certificate-authority", authority_index++), name, !path->empty(),
+        });
     }
 
     const auto flow_steps = [](const Json& signatures) -> std::optional<std::uint64_t> {
@@ -742,7 +748,8 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
         return {std::nullopt, "Smithproxy returned an invalid signature flow"};
     }
     return {ConfigSecurityAssets{
-                authorities->size(), authority_paths, starttls->size(), *starttls_steps,
+                std::move(certificate_authorities), authorities->size(), authority_paths,
+                starttls->size(), *starttls_steps,
                 detection->size(), *detection_steps,
             }, {}};
 }

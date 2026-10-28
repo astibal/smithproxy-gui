@@ -8,7 +8,7 @@ export interface DrawerRouteEntry {
 const maximumDepth = 6;
 const safeIdentifier = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const drawerKinds = new Set<DrawerKind>([
-  'policy', 'address', 'port', 'protocol', 'profile', 'settings', 'captures',
+  'policy', 'address', 'port', 'protocol', 'profile', 'settings', 'captures', 'authority',
 ]);
 
 export function parseDrawerRoute(search: string): ReadonlyArray<DrawerRouteEntry> {

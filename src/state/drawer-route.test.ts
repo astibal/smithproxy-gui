@@ -26,6 +26,9 @@ describe('drawer route', () => {
   it('accepts system configuration editors', () => {
     expect(parseDrawerRoute('?edit=settings:settings')).toEqual([{kind: 'settings', id: 'settings'}]);
     expect(parseDrawerRoute('?edit=captures:captures')).toEqual([{kind: 'captures', id: 'captures'}]);
+    expect(parseDrawerRoute('?edit=authority:certificate-authority-0')).toEqual([
+      {kind: 'authority', id: 'certificate-authority-0'},
+    ]);
   });
 
   it.each([

@@ -229,7 +229,14 @@ struct ConfigCaptureSettings {
     bool calculate_checksums{};
 };
 
+struct ConfigCertificateAuthority {
+    std::string id;
+    std::string name;
+    bool path_configured{};
+};
+
 struct ConfigSecurityAssets {
+    std::vector<ConfigCertificateAuthority> certificate_authorities;
     std::uint64_t certificate_authority_count{};
     std::uint64_t certificate_authority_path_count{};
     std::uint64_t starttls_signature_count{};

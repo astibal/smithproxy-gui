@@ -102,11 +102,11 @@
     {
       "name": "tls_ca",
       "origin": "reference_config",
-      "read": "metadata",
-      "edit": "none",
+      "read": "partial",
+      "edit": "partial",
       "sensitivity": "secret-bearing",
-      "tracked_fields": ["count", "configured_path_count"],
-      "notes": "Only aggregate certificate-authority counts reach the browser; key and certificate paths remain server-side."
+      "tracked_fields": ["name", "path_configured"],
+      "notes": "Authority names and path posture are exposed; filesystem paths support write-only replace or clear and never reach the browser."
     },
     {
       "name": "tls_profiles",

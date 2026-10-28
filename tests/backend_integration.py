@@ -532,6 +532,9 @@ def main() -> int:
             ):
                 assert private_value not in config_body
             assert config_snapshot["security_assets"] == {
+                "certificate_authorities": [
+                    {"id": "certificate-authority-0", "name": "default", "path_configured": True},
+                ],
                 "certificate_authority_count": 1,
                 "certificate_authority_path_count": 1,
                 "starttls_signature_count": 1,
@@ -616,6 +619,7 @@ def main() -> int:
                     {"path": "script_profiles.[0].script-file", "value": "/new/private/audit.py"},
                     {"path": "tls_profiles.[0].sni_filter_bypass", "value": ["private.example"]},
                     {"path": "content_profiles.[0].rules_session_filter", "value": "secret session expression"},
+                    {"path": "tls_ca.[0].path", "value": "/new/private/ca/default"},
                 ],
             })
             status, _, body = request(
@@ -624,22 +628,24 @@ def main() -> int:
             assert status == 200
             batch_snapshot = json.loads(body)
             assert batch_snapshot["version"] == 2
-            assert batch_snapshot["changes"][-8] == {
+            assert batch_snapshot["changes"][-9] == {
                 "path": "policy.[0].dst", "value": ["internet", "backup"]}
-            assert batch_snapshot["changes"][-7] == {
+            assert batch_snapshot["changes"][-8] == {
                 "path": "settings.certs_ca_key_password", "value": "[redacted]"}
-            assert batch_snapshot["changes"][-6] == {
+            assert batch_snapshot["changes"][-7] == {
                 "path": "settings.http_api.keys", "value": "[redacted]"}
-            assert batch_snapshot["changes"][-5] == {
+            assert batch_snapshot["changes"][-6] == {
                 "path": "captures.local.dir", "value": "[redacted]"}
-            assert batch_snapshot["changes"][-4] == {
+            assert batch_snapshot["changes"][-5] == {
                 "path": "ssh_profiles.[0].host_key", "value": "[redacted]"}
-            assert batch_snapshot["changes"][-3] == {
+            assert batch_snapshot["changes"][-4] == {
                 "path": "script_profiles.[0].script-file", "value": "[redacted]"}
-            assert batch_snapshot["changes"][-2] == {
+            assert batch_snapshot["changes"][-3] == {
                 "path": "tls_profiles.[0].sni_filter_bypass", "value": "[redacted]"}
-            assert batch_snapshot["changes"][-1] == {
+            assert batch_snapshot["changes"][-2] == {
                 "path": "content_profiles.[0].rules_session_filter", "value": "[redacted]"}
+            assert batch_snapshot["changes"][-1] == {
+                "path": "tls_ca.[0].path", "value": "[redacted]"}
             assert b"new-private-password" not in body
             assert b"new-api-key" not in body
             assert b"overlap-api-key" not in body
@@ -648,6 +654,7 @@ def main() -> int:
             assert b"/new/private/audit.py" not in body
             assert b"private.example" not in body
             assert b"secret session expression" not in body
+            assert b"/new/private/ca/default" not in body
             clear_change = json.dumps({"expected_version": 2})
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",

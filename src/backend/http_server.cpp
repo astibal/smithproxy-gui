@@ -97,7 +97,8 @@ bool sensitive_draft_path(const std::string_view path) {
     return (path.starts_with("ssh_profiles.[") && path.ends_with("].host_key")) ||
            (path.starts_with("script_profiles.[") && path.ends_with("].script-file")) ||
            (path.starts_with("tls_profiles.[") && path.ends_with("].sni_filter_bypass")) ||
-           (path.starts_with("content_profiles.[") && path.ends_with("].rules_session_filter"));
+           (path.starts_with("content_profiles.[") && path.ends_with("].rules_session_filter")) ||
+           (path.starts_with("tls_ca.[") && path.ends_with("].path"));
 }
 
 bool confined_to_root(const std::filesystem::path& root, const std::filesystem::path& candidate) {
@@ -667,7 +668,18 @@ private:
         std::string security_assets{"null"};
         if (snapshot.security_assets) {
             const auto& value = *snapshot.security_assets;
-            security_assets = "{\"certificate_authority_count\":" +
+            std::string authorities{"["};
+            for (std::size_t index = 0; index < value.certificate_authorities.size(); ++index) {
+                if (index != 0U) authorities += ',';
+                const auto& authority = value.certificate_authorities[index];
+                authorities += "{\"id\":" + json_string(authority.id) +
+                               ",\"name\":" + json_string(authority.name) +
+                               ",\"path_configured\":" +
+                               (authority.path_configured ? "true" : "false") + "}";
+            }
+            authorities += ']';
+            security_assets = "{\"certificate_authorities\":" + authorities +
+                              ",\"certificate_authority_count\":" +
                               std::to_string(value.certificate_authority_count) +
                               ",\"certificate_authority_path_count\":" +
                               std::to_string(value.certificate_authority_path_count) +

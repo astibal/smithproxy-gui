@@ -623,8 +623,29 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   }
   let securityAssets: SecurityAssets | null = null;
   if (value.security_assets !== null) {
-    if (!isObject(value.security_assets)) throw new Error('Invalid security asset posture.');
+    if (!isObject(value.security_assets) || !Array.isArray(value.security_assets.certificate_authorities) ||
+        value.security_assets.certificate_authorities.length > MAX_OBJECTS) {
+      throw new Error('Invalid security asset posture.');
+    }
+    const authorityIds = new Set<string>();
+    const authorityNames = new Set<string>();
+    const certificateAuthorities = value.security_assets.certificate_authorities.map(item => {
+      if (!isObject(item)) throw new Error('Invalid certificate authority summary.');
+      const id = safeString(item.id, 'certificate authority ID', 128);
+      const name = safeString(item.name, 'certificate authority name', 128);
+      if (!id || !name || authorityIds.has(id) || authorityNames.has(name)) {
+        throw new Error('Invalid certificate authority identity.');
+      }
+      authorityIds.add(id);
+      authorityNames.add(name);
+      return {
+        id,
+        name,
+        pathConfigured: safeBoolean(item.path_configured, 'certificate authority path state'),
+      };
+    });
     securityAssets = {
+      certificateAuthorities,
       certificateAuthorityCount: safeInteger(
         value.security_assets.certificate_authority_count, 'certificate authority count', MAX_OBJECTS,
       ),
@@ -644,7 +665,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         value.security_assets.detection_flow_step_count, 'detection flow-step count', MAX_OBJECTS * MAX_REFERENCES,
       ),
     };
-    if (securityAssets.certificateAuthorityPathCount > securityAssets.certificateAuthorityCount) {
+    if (securityAssets.certificateAuthorityCount !== securityAssets.certificateAuthorities.length ||
+        securityAssets.certificateAuthorityPathCount !==
+          securityAssets.certificateAuthorities.filter(item => item.pathConfigured).length) {
       throw new Error('Invalid certificate authority posture.');
     }
   }

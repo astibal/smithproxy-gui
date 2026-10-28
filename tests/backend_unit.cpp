@@ -319,6 +319,9 @@ int main() {
         R"({"success":{"detection_signatures":[{"flow":[{}]},{"flow":[{},{}]}]}})");
     assert(security_assets.security_assets);
     assert(security_assets.security_assets->certificate_authority_count == 1U);
+    assert(security_assets.security_assets->certificate_authorities.size() == 1U);
+    assert(security_assets.security_assets->certificate_authorities.front().name == "default");
+    assert(security_assets.security_assets->certificate_authorities.front().path_configured);
     assert(security_assets.security_assets->starttls_flow_step_count == 2U);
     assert(security_assets.security_assets->detection_signature_count == 2U);
     assert(security_assets.security_assets->detection_flow_step_count == 3U);

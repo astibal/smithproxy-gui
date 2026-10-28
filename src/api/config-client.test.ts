@@ -116,6 +116,7 @@ const liveSnapshot = {
     calculate_checksums: true,
   },
   security_assets: {
+    certificate_authorities: [{id: 'certificate-authority-0', name: 'default', path_configured: true}],
     certificate_authority_count: 1, certificate_authority_path_count: 1,
     starttls_signature_count: 6, starttls_flow_step_count: 12,
     detection_signature_count: 24, detection_flow_step_count: 31,
@@ -168,6 +169,7 @@ describe('ApiConfigClient', () => {
     expect(snapshot.captures).toMatchObject({local: {enabled: true, quotaMiB: 512}});
     expect(snapshot.securityAssets).toMatchObject({
       certificateAuthorityCount: 1, starttlsSignatureCount: 6, detectionFlowStepCount: 31,
+      certificateAuthorities: [{id: 'certificate-authority-0', name: 'default', pathConfigured: true}],
     });
     const augmented = parseConfigSnapshot({
       ...liveSnapshot,

@@ -227,6 +227,7 @@ const snapshot: ConfigSnapshot = {
     calculateChecksums: true,
   },
   securityAssets: {
+    certificateAuthorities: [{id: 'certificate-authority-0', name: 'default', pathConfigured: true}],
     certificateAuthorityCount: 1,
     certificateAuthorityPathCount: 1,
     starttlsSignatureCount: 6,

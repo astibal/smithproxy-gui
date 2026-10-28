@@ -255,6 +255,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         calculate_checksums: true,
       },
       security_assets: {
+        certificate_authorities: [{id: 'certificate-authority-0', name: 'default', path_configured: true}],
         certificate_authority_count: 1, certificate_authority_path_count: 1,
         starttls_signature_count: 6, starttls_flow_step_count: 12,
         detection_signature_count: 24, detection_flow_step_count: 31,
@@ -422,7 +423,19 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(addressEditor).not.toBeVisible();
   await editor.getByRole('button', {name: 'Cancel'}).click();
   await expect(editor).not.toBeVisible();
-  await page.getByRole('button', {name: 'Review draft · 84'}).click();
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trustPosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
+  await trustPosture.getByRole('button', {name: /default · path configured/i}).click();
+  const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
+  await authorityEditor.getByLabel('CA path', {exact: true}).selectOption('replace');
+  await authorityEditor.getByLabel('CA path replacement').fill('/etc/smithproxy/private/new-default-ca');
+  await authorityEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(authorityEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(page.getByText('Draft: 86 changes')).toBeVisible();
+  await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
+  await expect(authorityEditor.getByLabel('CA path replacement')).toHaveValue('');
+  await authorityEditor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 86'}).click();
   await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('address_objects.[0].value');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.0/24');
@@ -444,11 +457,13 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/opt/smithproxy/new-audit.py');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('internal.example');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('office-secret');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('tls_ca.[0].path');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/etc/smithproxy/private/new-default-ca');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('auth_profiles.[0].authenticate');
   await page.getByRole('button', {name: 'Discard draft'}).click();
-  await expect(page.getByRole('button', {name: 'Confirm discard 84 changes'})).toBeVisible();
-  await expect(page.getByText('Draft: 84 changes')).toBeVisible();
-  await page.getByRole('button', {name: 'Confirm discard 84 changes'}).click();
+  await expect(page.getByRole('button', {name: 'Confirm discard 86 changes'})).toBeVisible();
+  await expect(page.getByText('Draft: 86 changes')).toBeVisible();
+  await page.getByRole('button', {name: 'Confirm discard 86 changes'}).click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
 });
@@ -632,6 +647,10 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(trustPosture).toBeVisible();
   await expect(trustPosture.getByText('24', {exact: true})).toBeVisible();
   await expect(trustPosture.getByText(/paths and signature expressions are redacted/i)).toBeVisible();
+  await trustPosture.getByRole('button', {name: /default · path configured/i}).click();
+  const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
+  await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
+  await expect(authorityEditor.getByText(/current certificate-authority path stays inside/i)).toBeVisible();
 });
 
 test('saves typed system and capture settings without exposing redacted values', async ({page}) => {
