@@ -35,6 +35,11 @@ documentation:
 
 ## Development
 
+Every push and pull request runs the frontend unit and Chromium end-to-end
+suites, a production TypeScript build, a production dependency audit, and the
+C++ unit/integration suite under AddressSanitizer and UndefinedBehaviorSanitizer.
+Compiler warnings fail the backend quality gate.
+
 Node.js 22.12 or newer and pnpm 11.25 are required.
 
 ```sh
