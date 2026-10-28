@@ -304,6 +304,7 @@ export class SmithproxyApp extends LitElement {
     .drawer-foot .validation { flex: 1; color: var(--app-success); }
     .secondary { padding: 8px 13px; border: 1px solid var(--app-border-strong); border-radius: 3px; background: transparent; cursor: pointer; }
     .form-grid { display: grid; grid-template-columns: minmax(120px, 0.35fr) minmax(240px, 1fr); gap: 18px 24px; max-width: 920px; }
+    .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .3fr) minmax(170px, 1fr) minmax(120px, .3fr) minmax(170px, 1fr); max-width: none; }
     .form-grid label { align-self: center; color: var(--app-muted); }
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
     .form-grid input[readonly], .form-grid select:disabled { border-style: dashed; opacity: .8; }
@@ -345,6 +346,7 @@ export class SmithproxyApp extends LitElement {
       .row > :nth-child(3), .row > :nth-child(5) { display: none; }
       .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
       .system-grid { grid-template-columns: 1fr; }
+      .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .35fr) minmax(220px, 1fr); max-width: 920px; }
     }
 
     @media (max-width: 620px) {
@@ -359,6 +361,7 @@ export class SmithproxyApp extends LitElement {
       .content { padding: 14px; }
       .drawer { inset: 0; }
       .form-grid { grid-template-columns: 1fr; gap: 7px; }
+      .form-grid.wide-form-grid { grid-template-columns: 1fr; }
       .form-grid label:not(:first-child) { margin-top: 10px; }
       .statusbar { grid-row: 3; }
       .statusbar span:nth-of-type(n + 3) { display: none; }
@@ -597,6 +600,11 @@ export class SmithproxyApp extends LitElement {
       const dns = /^alg_dns_profiles\.\[(\d+)\]\./u.exec(change.path);
       if (dns) {
         const item = this.snapshot?.profiles.filter(profile => profile.dns !== null)[Number(dns[1])];
+        if (item) objects.add(`profile:${item.id}`);
+      }
+      const tls = /^tls_profiles\.\[(\d+)\]\./u.exec(change.path);
+      if (tls) {
+        const item = this.snapshot?.profiles.filter(profile => profile.tls !== null)[Number(tls[1])];
         if (item) objects.add(`profile:${item.id}`);
       }
     }
@@ -909,6 +917,51 @@ export class SmithproxyApp extends LitElement {
           {path: `routing.[${index}].dnat_lb_method`, value: loadBalancing.value},
           {path: `routing.[${index}].rewrite_sni`, value: sourceSni},
           {path: `routing.[${index}].rewrite_sni_to`, value: targetSni},
+        ];
+      }
+      if (profile.tls) {
+        const profiles = this.snapshot.profiles.filter(item => item.tls !== null);
+        const index = profiles.findIndex(item => item.id === entry.id);
+        if (index < 0) return undefined;
+        const booleanFields = [
+          ['inspect', 'inspect'],
+          ['allow_untrusted_issuers', 'allow-untrusted'],
+          ['allow_invalid_certs', 'allow-invalid'],
+          ['allow_self_signed', 'allow-self-signed'],
+          ['ct_enable', 'certificate-transparency'],
+          ['ocsp_stapling', 'ocsp-stapling'],
+          ['alpn_block', 'block-alpn'],
+          ['only_custom_certs', 'custom-only'],
+          ['no_fallback_bypass', 'no-fallback'],
+          ['sslkeylog', 'key-log'],
+        ] as const;
+        const booleanChanges: DraftChange[] = [];
+        for (const [path, id] of booleanFields) {
+          const select = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-${id}-${entry.id}`);
+          if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
+          booleanChanges.push({path: `tls_profiles.[${index}].${path}`, value: select.value === 'true'});
+        }
+        const helloTimeout = this.renderRoot.querySelector<HTMLInputElement>(`#tls-hello-timeout-${entry.id}`);
+        const handshakeTimeout = this.renderRoot.querySelector<HTMLInputElement>(`#tls-handshake-timeout-${entry.id}`);
+        const clientAction = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-client-action-${entry.id}`);
+        const alerts = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-alerts-${entry.id}`);
+        const helloValue = helloTimeout?.valueAsNumber ?? Number.NaN;
+        const handshakeValue = handshakeTimeout?.valueAsNumber ?? Number.NaN;
+        if (!helloTimeout || !handshakeTimeout || !clientAction || !alerts ||
+            !Number.isInteger(helloValue) || helloValue < 1 || helloValue > 3600000 ||
+            !Number.isInteger(handshakeValue) || handshakeValue < 1 || handshakeValue > 3600000 ||
+            !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
+            !['all', 'unusual', 'mute'].includes(alerts.value)) {
+          this.draftError = 'TLS timeouts and policy selections are invalid.';
+          return undefined;
+        }
+        return [
+          {path: `tls_profiles.[${index}].name`, value: name.value.trim()},
+          ...booleanChanges,
+          {path: `tls_profiles.[${index}].client_hello_timeout`, value: helloValue},
+          {path: `tls_profiles.[${index}].handshake_timeout`, value: handshakeValue},
+          {path: `tls_profiles.[${index}].client_cert_action`, value: clientAction.value},
+          {path: `tls_profiles.[${index}].alerts`, value: alerts.value},
         ];
       }
       if (profile.detection) {
@@ -1802,6 +1855,15 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderBooleanSelect(
+    id: string, value: boolean, disabled: boolean,
+    trueLabel = 'Enabled', falseLabel = 'Disabled',
+  ) {
+    return html`<select id=${id} .value=${String(value)} ?disabled=${disabled}>
+      <option value="true">${trueLabel}</option><option value="false">${falseLabel}</option>
+    </select>`;
+  }
+
   private renderProfileEditor(entry: DrawerEntry) {
     const profile = this.snapshot?.profiles.find(item => item.id === entry.id);
     if (!profile) return nothing;
@@ -1813,10 +1875,10 @@ export class SmithproxyApp extends LitElement {
     const dns = profile.dns;
     const script = profile.script;
     const authentication = profile.authentication;
-    const mapped = Boolean(routing || detection || dns);
+    const mapped = Boolean(routing || tls || detection || dns);
     const mappedReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
-      <div class="form-grid">
+      <div class=${tls ? 'form-grid wide-form-grid' : 'form-grid'}>
         <label for=${mapped ? `profile-name-${entry.id}` : nothing}>Name</label>
         ${mapped ? html`<input id="profile-name-${entry.id}"
           .value=${profile.name} .readOnly=${mappedReadOnly} />` : html`<span>${profile.name}</span>`}
@@ -1853,21 +1915,44 @@ export class SmithproxyApp extends LitElement {
           <input id="routing-rewrite-sni-to-${entry.id}"
             .value=${routing.rewriteSniTo} .readOnly=${mappedReadOnly} placeholder="Disabled" />
         ` : tls ? html`
-          <label>Inspection</label><span>${tls.inspect ? 'Enabled' : 'Disabled'}</span>
-          <label>Certificate validation</label>
-          <span>${tls.allowInvalidCertificates || tls.allowUntrustedIssuers || tls.allowSelfSigned
-            ? 'Relaxed' : 'Strict'}</span>
-          <label>Certificate transparency</label><span>${tls.certificateTransparency ? 'Enabled' : 'Disabled'}</span>
-          <label>OCSP stapling</label><span>${tls.ocspStapling ? 'Enabled' : 'Disabled'}</span>
-          <label>Fallback bypass</label><span>${tls.noFallbackBypass ? 'Blocked' : 'Allowed'}</span>
-          <label>Custom certificates only</label><span>${tls.onlyCustomCertificates ? 'Yes' : 'No'}</span>
-          <label>ALPN negotiation</label><span>${tls.blockAlpn ? 'Blocked' : 'Allowed'}</span>
-          <label>Client certificate action</label><span>${tls.clientCertificateAction}</span>
-          <label>Client hello timeout</label><span>${tls.clientHelloTimeoutMs} ms</span>
-          <label>Handshake timeout</label><span>${tls.handshakeTimeoutMs} ms</span>
-          <label>SNI bypass list</label><span>${tls.sniBypassEntries} redacted entries</span>
-          <label>SSL key logging</label><span>${tls.sslKeyLog ? 'Enabled' : 'Disabled'}</span>
-          <label>Alerts</label><span>${tls.alerts}</span>
+          <label for="tls-inspect-${entry.id}">Inspection</label>
+          ${this.renderBooleanSelect(`tls-inspect-${entry.id}`, tls.inspect, mappedReadOnly)}
+          <label for="tls-allow-untrusted-${entry.id}">Allow untrusted issuers</label>
+          ${this.renderBooleanSelect(`tls-allow-untrusted-${entry.id}`, tls.allowUntrustedIssuers, mappedReadOnly, 'Allowed', 'Rejected')}
+          <label for="tls-allow-invalid-${entry.id}">Allow invalid certificates</label>
+          ${this.renderBooleanSelect(`tls-allow-invalid-${entry.id}`, tls.allowInvalidCertificates, mappedReadOnly, 'Allowed', 'Rejected')}
+          <label for="tls-allow-self-signed-${entry.id}">Allow self-signed certificates</label>
+          ${this.renderBooleanSelect(`tls-allow-self-signed-${entry.id}`, tls.allowSelfSigned, mappedReadOnly, 'Allowed', 'Rejected')}
+          <label for="tls-certificate-transparency-${entry.id}">Certificate transparency</label>
+          ${this.renderBooleanSelect(`tls-certificate-transparency-${entry.id}`, tls.certificateTransparency, mappedReadOnly)}
+          <label for="tls-ocsp-stapling-${entry.id}">OCSP stapling</label>
+          ${this.renderBooleanSelect(`tls-ocsp-stapling-${entry.id}`, tls.ocspStapling, mappedReadOnly)}
+          <label for="tls-block-alpn-${entry.id}">ALPN negotiation</label>
+          ${this.renderBooleanSelect(`tls-block-alpn-${entry.id}`, tls.blockAlpn, mappedReadOnly, 'Blocked', 'Allowed')}
+          <label for="tls-custom-only-${entry.id}">Custom certificates only</label>
+          ${this.renderBooleanSelect(`tls-custom-only-${entry.id}`, tls.onlyCustomCertificates, mappedReadOnly, 'Required', 'Not required')}
+          <label for="tls-no-fallback-${entry.id}">Fallback bypass</label>
+          ${this.renderBooleanSelect(`tls-no-fallback-${entry.id}`, tls.noFallbackBypass, mappedReadOnly, 'Blocked', 'Allowed')}
+          <label for="tls-key-log-${entry.id}">SSL key logging</label>
+          ${this.renderBooleanSelect(`tls-key-log-${entry.id}`, tls.sslKeyLog, mappedReadOnly)}
+          <label for="tls-hello-timeout-${entry.id}">Client hello timeout</label>
+          <input id="tls-hello-timeout-${entry.id}" type="number" min="1" max="3600000"
+            .value=${String(tls.clientHelloTimeoutMs)} .readOnly=${mappedReadOnly} />
+          <label for="tls-handshake-timeout-${entry.id}">Handshake timeout</label>
+          <input id="tls-handshake-timeout-${entry.id}" type="number" min="1" max="3600000"
+            .value=${String(tls.handshakeTimeoutMs)} .readOnly=${mappedReadOnly} />
+          <label for="tls-client-action-${entry.id}">Client certificate action</label>
+          <select id="tls-client-action-${entry.id}" .value=${tls.clientCertificateAction} ?disabled=${mappedReadOnly}>
+            <option value="block_or_replacement">Block or replacement</option>
+            <option value="empty_client_cert">Empty client certificate</option>
+            <option value="tls_bypass">TLS bypass</option>
+            <option value="use_configured">Use configured certificate</option>
+          </select>
+          <label for="tls-alerts-${entry.id}">Alerts</label>
+          <select id="tls-alerts-${entry.id}" .value=${tls.alerts} ?disabled=${mappedReadOnly}>
+            <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
+          </select>
+          <label>SNI bypass list</label><span>${tls.sniBypassEntries} redacted entries · unchanged</span>
         ` : detection ? html`
           <label for="detection-mode-${entry.id}">Detection phase</label>
           <select id="detection-mode-${entry.id}" .value=${String(detection.mode)} ?disabled=${mappedReadOnly}>
@@ -1981,7 +2066,7 @@ export class SmithproxyApp extends LitElement {
     const profile = entry.kind === 'profile'
       ? this.snapshot?.profiles.find(item => item.id === entry.id)
       : undefined;
-    const mappedProfile = Boolean(profile?.routing || profile?.detection || profile?.dns);
+    const mappedProfile = Boolean(profile?.routing || profile?.tls || profile?.detection || profile?.dns);
     const draftable = this.snapshot?.source !== 'live' ||
       (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
     const readOnly = !draftable;
