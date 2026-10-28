@@ -112,7 +112,9 @@ preserving nested links to the referenced objects. Detection and DNS ALG profile
 batches cover their names and all currently exposed typed mode/boolean fields.
 TLS profile batches cover the exposed validation, negotiation, timeout, client
 certificate, alert, and diagnostic controls. The redacted SNI bypass collection
-is explicitly left unchanged.
+is explicitly left unchanged. Content profile batches cover capture, webhook,
+and JA4 controls while redacted session filters and content rules remain
+unchanged.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.

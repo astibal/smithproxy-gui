@@ -128,7 +128,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
         features: ['sinkhole'],
         action: 'accept', nat: '', routing: 'main', tls_profile: 'inspect',
-        ssh_profile: '', detection_profile: 'detect', content_profile: '', auth_profile: '',
+        ssh_profile: '', detection_profile: 'detect', content_profile: 'capture', auth_profile: '',
         dns_profile: 'resolver', script_profile: '',
       }],
       addresses: [
@@ -178,6 +178,17 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           detection: null, content: null, ssh: null,
           dns: {match_request_id: true, randomize_id: true, cached_responses: false},
           script: null, authentication: null,
+        },
+        {
+          id: 'content-0', name: 'capture', type: 'content', routing: null, tls: null,
+          detection: null,
+          content: {
+            write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
+            webhook_locks_traffic: false, ja4_tls_client_hello: true,
+            ja4_tls_client_hello_ignores_sni: false, ja4_tls_server_hello: true,
+            ja4_http: false, session_filter_configured: true, rule_count: 2,
+          },
+          ssh: null, dns: null, script: null, authentication: null,
         },
       ],
       settings: {
@@ -265,6 +276,18 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(tlsEditor.getByText('2 redacted entries · unchanged')).toBeVisible();
   await expect(tlsEditor.getByText(/SNI bypass values stay inside the GUI core/i)).toBeVisible();
   await tlsEditor.getByRole('button', {name: 'Cancel'}).click();
+  await editor.getByRole('button', {name: 'capture', exact: true}).click();
+  const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  await contentEditor.getByLabel('Payload capture').selectOption('true');
+  await contentEditor.getByLabel('Capture format').selectOption('smcap');
+  await contentEditor.getByLabel('Webhook traffic lock').selectOption('true');
+  await contentEditor.getByLabel('JA4 HTTP').selectOption('true');
+  await contentEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(contentEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(contentEditor.getByText('Configured · redacted · unchanged')).toBeVisible();
+  await expect(contentEditor.getByText('2 redacted rules · unchanged')).toBeVisible();
+  await expect(page.getByText('Draft: 33 changes')).toBeVisible();
+  await contentEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'detect', exact: true}).click();
   const detectionEditor = page.getByRole('dialog', {name: 'Edit detect'});
   await detectionEditor.getByLabel('Detection phase').selectOption('2');
@@ -272,7 +295,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await detectionEditor.getByLabel('Knowledge base').selectOption('true');
   await detectionEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(detectionEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 28 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 37 changes')).toBeVisible();
   await detectionEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'resolver', exact: true}).click();
   const dnsEditor = page.getByRole('dialog', {name: 'Edit resolver'});
@@ -281,7 +304,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await dnsEditor.getByLabel('Cached responses').selectOption('true');
   await dnsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(dnsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 32 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 41 changes')).toBeVisible();
   await dnsEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'main', exact: true}).click();
   const routingEditor = page.getByRole('dialog', {name: 'Edit main'});
@@ -290,11 +313,11 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await routingEditor.getByLabel('Rewrite SNI match').fill('old.example');
   await routingEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(routingEditor.getByText(/SNI rewrite requires both values/i)).toBeVisible();
-  await expect(page.getByText('Draft: 32 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 41 changes')).toBeVisible();
   await routingEditor.getByLabel('Rewrite SNI target').fill('new.example');
   await routingEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(routingEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 38 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 47 changes')).toBeVisible();
   await routingEditor.getByRole('button', {name: 'internet', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
   await page.keyboard.press('Escape');
@@ -305,12 +328,12 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await addressEditor.getByLabel('Address').fill('10.0.1.0/24');
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(addressEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 41 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 50 changes')).toBeVisible();
   await addressEditor.getByRole('button', {name: 'Cancel'}).click();
   await expect(addressEditor).not.toBeVisible();
   await editor.getByRole('button', {name: 'Cancel'}).click();
   await expect(editor).not.toBeVisible();
-  await page.getByRole('button', {name: 'Review draft · 41'}).click();
+  await page.getByRole('button', {name: 'Review draft · 50'}).click();
   await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('address_objects.[0].value');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.0/24');
@@ -319,10 +342,11 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('detection_profiles.[0].mode');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('alg_dns_profiles.[0].cached_responses');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('tls_profiles.[0].allow_invalid_certs');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('content_profiles.[0].write_format');
   await page.getByRole('button', {name: 'Discard draft'}).click();
-  await expect(page.getByRole('button', {name: 'Confirm discard 41 changes'})).toBeVisible();
-  await expect(page.getByText('Draft: 41 changes')).toBeVisible();
-  await page.getByRole('button', {name: 'Confirm discard 41 changes'}).click();
+  await expect(page.getByRole('button', {name: 'Confirm discard 50 changes'})).toBeVisible();
+  await expect(page.getByText('Draft: 50 changes')).toBeVisible();
+  await page.getByRole('button', {name: 'Confirm discard 50 changes'}).click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
 });

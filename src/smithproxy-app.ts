@@ -607,6 +607,11 @@ export class SmithproxyApp extends LitElement {
         const item = this.snapshot?.profiles.filter(profile => profile.tls !== null)[Number(tls[1])];
         if (item) objects.add(`profile:${item.id}`);
       }
+      const content = /^content_profiles\.\[(\d+)\]\./u.exec(change.path);
+      if (content) {
+        const item = this.snapshot?.profiles.filter(profile => profile.content !== null)[Number(content[1])];
+        if (item) objects.add(`profile:${item.id}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -962,6 +967,36 @@ export class SmithproxyApp extends LitElement {
           {path: `tls_profiles.[${index}].handshake_timeout`, value: handshakeValue},
           {path: `tls_profiles.[${index}].client_cert_action`, value: clientAction.value},
           {path: `tls_profiles.[${index}].alerts`, value: alerts.value},
+        ];
+      }
+      if (profile.content) {
+        const profiles = this.snapshot.profiles.filter(item => item.content !== null);
+        const index = profiles.findIndex(item => item.id === entry.id);
+        if (index < 0) return undefined;
+        const booleanFields = [
+          ['write_payload', 'write-payload'],
+          ['webhook_enable', 'webhook'],
+          ['webhook_lock_traffic', 'webhook-lock'],
+          ['ja4_tls_ch', 'ja4-client'],
+          ['ja4_tls_ch_ignore_sni', 'ja4-ignore-sni'],
+          ['ja4_tls_sh', 'ja4-server'],
+          ['ja4_http', 'ja4-http'],
+        ] as const;
+        const changes: DraftChange[] = [];
+        for (const [path, id] of booleanFields) {
+          const select = this.renderRoot.querySelector<HTMLSelectElement>(`#content-${id}-${entry.id}`);
+          if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
+          changes.push({path: `content_profiles.[${index}].${path}`, value: select.value === 'true'});
+        }
+        const format = this.renderRoot.querySelector<HTMLSelectElement>(`#content-format-${entry.id}`);
+        if (!format || !['smcap', 'pcap', 'pcap_single'].includes(format.value)) {
+          this.draftError = 'Content capture format is invalid.';
+          return undefined;
+        }
+        return [
+          {path: `content_profiles.[${index}].name`, value: name.value.trim()},
+          ...changes,
+          {path: `content_profiles.[${index}].write_format`, value: format.value},
         ];
       }
       if (profile.detection) {
@@ -1875,10 +1910,10 @@ export class SmithproxyApp extends LitElement {
     const dns = profile.dns;
     const script = profile.script;
     const authentication = profile.authentication;
-    const mapped = Boolean(routing || tls || detection || dns);
+    const mapped = Boolean(routing || tls || detection || content || dns);
     const mappedReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
-      <div class=${tls ? 'form-grid wide-form-grid' : 'form-grid'}>
+      <div class=${tls || content ? 'form-grid wide-form-grid' : 'form-grid'}>
         <label for=${mapped ? `profile-name-${entry.id}` : nothing}>Name</label>
         ${mapped ? html`<input id="profile-name-${entry.id}"
           .value=${profile.name} .readOnly=${mappedReadOnly} />` : html`<span>${profile.name}</span>`}
@@ -1969,16 +2004,28 @@ export class SmithproxyApp extends LitElement {
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
         ` : content ? html`
-          <label>Payload capture</label><span>${content.writePayload ? 'Enabled' : 'Disabled'}</span>
-          <label>Capture format</label><span>${content.writeFormat}</span>
-          <label>Webhook</label><span>${content.webhookEnabled ? 'Enabled' : 'Disabled'}</span>
-          <label>Webhook traffic lock</label><span>${content.webhookLocksTraffic ? 'Enabled' : 'Disabled'}</span>
-          <label>JA4 TLS ClientHello</label><span>${content.ja4TlsClientHello ? 'Enabled' : 'Disabled'}</span>
-          <label>JA4 ignores SNI</label><span>${content.ja4TlsClientHelloIgnoresSni ? 'Yes' : 'No'}</span>
-          <label>JA4 TLS ServerHello</label><span>${content.ja4TlsServerHello ? 'Enabled' : 'Disabled'}</span>
-          <label>JA4 HTTP</label><span>${content.ja4Http ? 'Enabled' : 'Disabled'}</span>
-          <label>Session filter</label><span>${content.sessionFilterConfigured ? 'Configured · redacted' : 'Not configured'}</span>
-          <label>Content rules</label><span>${content.ruleCount} redacted rules</span>
+          <label for="content-write-payload-${entry.id}">Payload capture</label>
+          ${this.renderBooleanSelect(`content-write-payload-${entry.id}`, content.writePayload, mappedReadOnly)}
+          <label for="content-format-${entry.id}">Capture format</label>
+          <select id="content-format-${entry.id}" .value=${content.writeFormat} ?disabled=${mappedReadOnly}>
+            <option value="smcap">SMCAP</option><option value="pcap">PCAP</option>
+            <option value="pcap_single">Single PCAP</option>
+          </select>
+          <label for="content-webhook-${entry.id}">Webhook</label>
+          ${this.renderBooleanSelect(`content-webhook-${entry.id}`, content.webhookEnabled, mappedReadOnly)}
+          <label for="content-webhook-lock-${entry.id}">Webhook traffic lock</label>
+          ${this.renderBooleanSelect(`content-webhook-lock-${entry.id}`, content.webhookLocksTraffic, mappedReadOnly)}
+          <label for="content-ja4-client-${entry.id}">JA4 TLS ClientHello</label>
+          ${this.renderBooleanSelect(`content-ja4-client-${entry.id}`, content.ja4TlsClientHello, mappedReadOnly)}
+          <label for="content-ja4-ignore-sni-${entry.id}">JA4 ignores SNI</label>
+          ${this.renderBooleanSelect(`content-ja4-ignore-sni-${entry.id}`, content.ja4TlsClientHelloIgnoresSni, mappedReadOnly, 'Yes', 'No')}
+          <label for="content-ja4-server-${entry.id}">JA4 TLS ServerHello</label>
+          ${this.renderBooleanSelect(`content-ja4-server-${entry.id}`, content.ja4TlsServerHello, mappedReadOnly)}
+          <label for="content-ja4-http-${entry.id}">JA4 HTTP</label>
+          ${this.renderBooleanSelect(`content-ja4-http-${entry.id}`, content.ja4Http, mappedReadOnly)}
+          <label>Session filter</label>
+          <span>${content.sessionFilterConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+          <label>Content rules</label><span>${content.ruleCount} redacted rules · unchanged</span>
         ` : ssh ? html`
           <label>Host key</label><span>${ssh.hostKeyConfigured ? 'Configured · path redacted' : 'Missing'}</span>
           <label>Upstream host-key policy</label><span>${ssh.hostKeyPolicy}</span>
@@ -2066,7 +2113,9 @@ export class SmithproxyApp extends LitElement {
     const profile = entry.kind === 'profile'
       ? this.snapshot?.profiles.find(item => item.id === entry.id)
       : undefined;
-    const mappedProfile = Boolean(profile?.routing || profile?.tls || profile?.detection || profile?.dns);
+    const mappedProfile = Boolean(
+      profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.dns,
+    );
     const draftable = this.snapshot?.source !== 'live' ||
       (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
     const readOnly = !draftable;
