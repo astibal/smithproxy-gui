@@ -106,7 +106,9 @@ The first browser integration atomically persists `policy.[n].name`,
 `policy.[n].disabled`, `policy.[n].dst`, and `policy.[n].action` through this
 endpoint. Nested editors use the same draft and version to persist the mapped
 name, type, value, range, and numeric identifier fields of address, port, and
-protocol objects.
+protocol objects. Routing profile batches cover their name, destination address
+and port references, load-balancing method, and paired SNI rewrite values while
+preserving nested links to the referenced objects.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.

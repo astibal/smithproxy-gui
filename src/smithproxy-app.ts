@@ -1,7 +1,7 @@
 import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {ApiConfigClient} from './api/config-client';
-import {DraftClient, type DraftScalar, type DraftSnapshot} from './api/draft-client';
+import {DraftClient, type DraftChange, type DraftScalar, type DraftSnapshot} from './api/draft-client';
 import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
@@ -584,6 +584,11 @@ export class SmithproxyApp extends LitElement {
         const item = this.snapshot?.protocols[Number(protocol[1])];
         if (item) objects.add(`protocol:${item.id}`);
       }
+      const routing = /^routing\.\[(\d+)\]\./u.exec(change.path);
+      if (routing) {
+        const item = this.snapshot?.profiles.filter(profile => profile.routing !== null)[Number(routing[1])];
+        if (item) objects.add(`profile:${item.id}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -783,7 +788,7 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
-  private draftChanges(entry: DrawerEntry) {
+  private draftChanges(entry: DrawerEntry): ReadonlyArray<DraftChange> | undefined {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'policy') {
       const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
@@ -855,6 +860,42 @@ export class SmithproxyApp extends LitElement {
       return [
         {path: `proto_objects.[${index}].name`, value: name.value.trim()},
         {path: `proto_objects.[${index}].id`, value: numberValue},
+      ];
+    }
+    if (entry.kind === 'profile') {
+      const profiles = this.snapshot.profiles.filter(profile => profile.routing !== null);
+      const index = profiles.findIndex(profile => profile.id === entry.id);
+      const profile = profiles[index];
+      const name = this.renderRoot.querySelector<HTMLInputElement>(`#routing-name-${entry.id}`);
+      const addresses = this.renderRoot.querySelector<HTMLInputElement>(`#routing-addresses-${entry.id}`);
+      const ports = this.renderRoot.querySelector<HTMLInputElement>(`#routing-ports-${entry.id}`);
+      const loadBalancing = this.renderRoot.querySelector<HTMLSelectElement>(`#routing-load-balancing-${entry.id}`);
+      const rewriteSni = this.renderRoot.querySelector<HTMLInputElement>(`#routing-rewrite-sni-${entry.id}`);
+      const rewriteSniTo = this.renderRoot.querySelector<HTMLInputElement>(`#routing-rewrite-sni-to-${entry.id}`);
+      if (index < 0 || !profile?.routing || !name || !addresses || !ports ||
+          !loadBalancing || !rewriteSni || !rewriteSniTo) return undefined;
+      const addressValues = addresses.value.split(',').map(value => value.trim()).filter(Boolean);
+      const portValues = ports.value.split(',').map(value => value.trim()).filter(Boolean);
+      const sourceSni = rewriteSni.value.trim();
+      const targetSni = rewriteSniTo.value.trim();
+      const validReferences = (values: ReadonlyArray<string>) =>
+        values.length <= 256 && values.every(value => value.length <= 128) &&
+        new Set(values).size === values.length;
+      if (name.value.trim().length === 0 || name.value.trim().length > 128 ||
+          !validReferences(addressValues) || !validReferences(portValues) ||
+          !['round-robin', 'sticky-l3', 'sticky-l4'].includes(loadBalancing.value) ||
+          sourceSni.length > 1024 || targetSni.length > 1024 ||
+          (sourceSni.length === 0) !== (targetSni.length === 0)) {
+        this.draftError = 'Routing references must be unique and SNI rewrite requires both values.';
+        return undefined;
+      }
+      return [
+        {path: `routing.[${index}].name`, value: name.value.trim()},
+        {path: `routing.[${index}].dnat_address`, value: addressValues},
+        {path: `routing.[${index}].dnat_port`, value: portValues},
+        {path: `routing.[${index}].dnat_lb_method`, value: loadBalancing.value},
+        {path: `routing.[${index}].rewrite_sni`, value: sourceSni},
+        {path: `routing.[${index}].rewrite_sni_to`, value: targetSni},
       ];
     }
     return undefined;
@@ -1722,12 +1763,18 @@ export class SmithproxyApp extends LitElement {
     const dns = profile.dns;
     const script = profile.script;
     const authentication = profile.authentication;
+    const routingReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class="form-grid">
-        <label>Name</label><span>${profile.name}</span>
+        <label for=${routing ? `routing-name-${entry.id}` : nothing}>Name</label>
+        ${routing ? html`<input id="routing-name-${entry.id}"
+          .value=${profile.name} .readOnly=${routingReadOnly} />` : html`<span>${profile.name}</span>`}
         <label>Profile type</label><span class="action">${profile.type}</span>
         ${routing ? html`
-          <label>Destination addresses</label>
+          <label for="routing-addresses-${entry.id}">Destination addresses</label>
+          <input id="routing-addresses-${entry.id}"
+            .value=${routing.destinationAddresses.join(', ')} .readOnly=${routingReadOnly} />
+          <label>Address object links</label>
           <div class="reference-stack">${routing.destinationAddresses.length === 0 ? html`<span>None</span>` :
             routing.destinationAddresses.map(name => {
               const address = this.snapshot?.addresses.find(item => item.name === name);
@@ -1736,11 +1783,24 @@ export class SmithproxyApp extends LitElement {
                 <span>${name}</span><span aria-hidden="true">→</span>
               </button>` : html`<span>${name}</span>`;
             })}</div>
-          <label>Destination ports</label>
+          <label for="routing-ports-${entry.id}">Destination ports</label>
+          <input id="routing-ports-${entry.id}"
+            .value=${routing.destinationPorts.join(', ')} .readOnly=${routingReadOnly} />
+          <label>Port object links</label>
           ${this.renderPortReferences(routing.destinationPorts)}
-          <label>Load balancing</label><span>${routing.loadBalancingMethod}</span>
-          <label>SNI rewrite</label>
-          <span>${routing.rewriteSni.length === 0 ? 'Disabled' : `${routing.rewriteSni} → ${routing.rewriteSniTo}`}</span>
+          <label for="routing-load-balancing-${entry.id}">Load balancing</label>
+          <select id="routing-load-balancing-${entry.id}"
+            .value=${routing.loadBalancingMethod} ?disabled=${routingReadOnly}>
+            <option value="round-robin">Round robin</option>
+            <option value="sticky-l3">Sticky L3</option>
+            <option value="sticky-l4">Sticky L4</option>
+          </select>
+          <label for="routing-rewrite-sni-${entry.id}">Rewrite SNI match</label>
+          <input id="routing-rewrite-sni-${entry.id}"
+            .value=${routing.rewriteSni} .readOnly=${routingReadOnly} placeholder="Disabled" />
+          <label for="routing-rewrite-sni-to-${entry.id}">Rewrite SNI target</label>
+          <input id="routing-rewrite-sni-to-${entry.id}"
+            .value=${routing.rewriteSniTo} .readOnly=${routingReadOnly} placeholder="Disabled" />
         ` : tls ? html`
           <label>Inspection</label><span>${tls.inspect ? 'Enabled' : 'Disabled'}</span>
           <label>Certificate validation</label>
@@ -1848,8 +1908,11 @@ export class SmithproxyApp extends LitElement {
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
     const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = ['policy', 'address', 'port', 'protocol'];
+    const mappedProfile = entry.kind === 'profile' && Boolean(
+      this.snapshot?.profiles.find(profile => profile.id === entry.id)?.routing,
+    );
     const draftable = this.snapshot?.source !== 'live' ||
-      (this.draftAvailable && draftableKinds.includes(entry.kind));
+      (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
     const readOnly = !draftable;
     return html`
       <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''}"
