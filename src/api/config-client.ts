@@ -1,5 +1,6 @@
 import type {
   AddressObject,
+  CaptureSettings,
   ConfigClient,
   ConfigReference,
   ConfigSnapshot,
@@ -458,6 +459,42 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       },
     };
   }
+  let captures: CaptureSettings | null = null;
+  if (value.captures !== null) {
+    if (!isObject(value.captures) || !isObject(value.captures.local) || !isObject(value.captures.remote)) {
+      throw new Error('Invalid capture settings.');
+    }
+    const localFormat = safeString(value.captures.local.format, 'local capture format', 16);
+    const tunnelType = safeString(value.captures.remote.tunnel_type, 'remote capture tunnel', 16);
+    const greFormat = safeString(value.captures.remote.gre_format, 'remote capture format', 16);
+    if (!['pcap_single', 'pcap', 'smcap'].includes(localFormat) || tunnelType !== 'gre' ||
+        !['traffic', 'pcapng'].includes(greFormat)) {
+      throw new Error('Invalid capture format.');
+    }
+    captures = {
+      local: {
+        enabled: safeBoolean(value.captures.local.enabled, 'local capture state'),
+        directoryConfigured: safeBoolean(
+          value.captures.local.directory_configured, 'local capture directory state',
+        ),
+        format: localFormat as 'pcap_single' | 'pcap' | 'smcap',
+        quotaMiB: safeInteger(value.captures.local.quota_mib, 'local capture quota', 1024 * 1024),
+      },
+      remote: {
+        enabled: safeBoolean(value.captures.remote.enabled, 'remote capture state'),
+        tunnelType: 'gre',
+        greFormat: greFormat as 'traffic' | 'pcapng',
+        destinationConfigured: safeBoolean(
+          value.captures.remote.destination_configured, 'remote capture destination state',
+        ),
+        ttl: safeInteger(value.captures.remote.ttl, 'remote capture TTL', 255),
+        bindInterfaceConfigured: safeBoolean(
+          value.captures.remote.bind_interface_configured, 'remote capture interface state',
+        ),
+      },
+      calculateChecksums: safeBoolean(value.captures.calculate_checksums, 'capture checksum state'),
+    };
+  }
 
   return {
     source: 'live',
@@ -472,6 +509,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     protocols,
     profiles,
     settings,
+    captures,
   };
 }
 

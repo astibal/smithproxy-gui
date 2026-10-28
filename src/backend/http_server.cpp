@@ -392,6 +392,24 @@ private:
                        ",\"sift_enabled\":" + (value.webhook_sift_enabled ? "true" : "false") +
                        ",\"api_override\":" + (value.webhook_api_override ? "true" : "false") + "}}";
         }
+        std::string captures{"null"};
+        if (snapshot.captures) {
+            const auto& value = *snapshot.captures;
+            captures = "{\"local\":{\"enabled\":" + std::string(value.local_enabled ? "true" : "false") +
+                       ",\"directory_configured\":" +
+                       (value.local_directory_configured ? "true" : "false") +
+                       ",\"format\":" + json_string(value.local_format) +
+                       ",\"quota_mib\":" + std::to_string(value.local_quota_mib) + "}" +
+                       ",\"remote\":{\"enabled\":" + (value.remote_enabled ? "true" : "false") +
+                       ",\"tunnel_type\":" + json_string(value.remote_tunnel_type) +
+                       ",\"gre_format\":" + json_string(value.remote_gre_format) +
+                       ",\"destination_configured\":" +
+                       (value.remote_destination_configured ? "true" : "false") +
+                       ",\"ttl\":" + std::to_string(value.remote_ttl) +
+                       ",\"bind_interface_configured\":" +
+                       (value.remote_bind_interface_configured ? "true" : "false") + "}" +
+                       ",\"calculate_checksums\":" + (value.calculate_checksums ? "true" : "false") + "}";
+        }
 
         return {200, "application/json; charset=utf-8",
                 "{\"state\":" + json_string(snapshot.state) +
@@ -401,7 +419,7 @@ private:
                     ",\"view\":\"runtime\",\"revision\":null,\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +
-                    ",\"settings\":" + settings + "}"};
+                    ",\"settings\":" + settings + ",\"captures\":" + captures + "}"};
     }
 
     Response status() const {

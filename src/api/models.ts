@@ -175,6 +175,24 @@ export interface SystemSettings {
   };
 }
 
+export interface CaptureSettings {
+  local: {
+    enabled: boolean;
+    directoryConfigured: boolean;
+    format: 'pcap_single' | 'pcap' | 'smcap';
+    quotaMiB: number;
+  };
+  remote: {
+    enabled: boolean;
+    tunnelType: 'gre';
+    greFormat: 'traffic' | 'pcapng';
+    destinationConfigured: boolean;
+    ttl: number;
+    bindInterfaceConfigured: boolean;
+  };
+  calculateChecksums: boolean;
+}
+
 export interface ConfigSnapshot {
   source: 'preview' | 'live';
   state: 'ready' | 'starting' | 'unavailable' | 'unconfigured';
@@ -188,6 +206,7 @@ export interface ConfigSnapshot {
   protocols: ReadonlyArray<ProtocolObject>;
   profiles: ReadonlyArray<ProfileObject>;
   settings: SystemSettings | null;
+  captures: CaptureSettings | null;
 }
 
 export interface ConfigClient {

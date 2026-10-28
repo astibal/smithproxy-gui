@@ -193,6 +193,14 @@ const snapshot: ConfigSnapshot = {
     httpApi: {keyCount: 1, allowedIpCount: 1, loopbackOnly: true, pamLogin: false, allowApiHeader: false},
     webhook: {enabled: false, tlsVerify: true, urlConfigured: false, siftEnabled: false, apiOverride: false},
   },
+  captures: {
+    local: {enabled: false, directoryConfigured: true, format: 'pcap_single', quotaMiB: 1024},
+    remote: {
+      enabled: false, tunnelType: 'gre', greFormat: 'traffic',
+      destinationConfigured: false, ttl: 1, bindInterfaceConfigured: false,
+    },
+    calculateChecksums: true,
+  },
 };
 
 export class FakeConfigClient implements ConfigClient {

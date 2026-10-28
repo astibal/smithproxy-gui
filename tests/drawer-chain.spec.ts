@@ -134,6 +134,14 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
         webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
       },
+      captures: {
+        local: {enabled: false, directory_configured: true, format: 'pcap_single', quota_mib: 1024},
+        remote: {
+          enabled: false, tunnel_type: 'gre', gre_format: 'traffic',
+          destination_configured: false, ttl: 1, bind_interface_configured: false,
+        },
+        calculate_checksums: true,
+      },
     }}));
   }
 }
@@ -323,6 +331,9 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByText('Fail closed')).toHaveCount(2);
   await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
+  const capturePosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Capture posture'})});
+  await expect(capturePosture).toBeVisible();
+  await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
 });
 
 test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {

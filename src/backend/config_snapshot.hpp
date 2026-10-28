@@ -171,6 +171,20 @@ struct ConfigSystemSettings {
     bool webhook_api_override{};
 };
 
+struct ConfigCaptureSettings {
+    bool local_enabled{};
+    bool local_directory_configured{};
+    std::string local_format;
+    std::uint64_t local_quota_mib{};
+    bool remote_enabled{};
+    std::string remote_tunnel_type;
+    std::string remote_gre_format;
+    bool remote_destination_configured{};
+    std::uint64_t remote_ttl{};
+    bool remote_bind_interface_configured{};
+    bool calculate_checksums{};
+};
+
 struct ConfigSnapshot {
     std::string state{"unconfigured"};
     std::string detail{"Smithproxy configuration is not configured"};
@@ -182,6 +196,7 @@ struct ConfigSnapshot {
     std::vector<ConfigProtocolObject> protocols;
     std::vector<ConfigProfile> profiles;
     std::optional<ConfigSystemSettings> settings;
+    std::optional<ConfigCaptureSettings> captures;
 };
 
 struct ConfigSnapshotParseResult {
@@ -211,5 +226,12 @@ struct ConfigSettingsParseResult {
 };
 
 ConfigSettingsParseResult parse_config_settings(std::string_view payload);
+
+struct ConfigCapturesParseResult {
+    std::optional<ConfigCaptureSettings> captures;
+    std::string error;
+};
+
+ConfigCapturesParseResult parse_config_captures(std::string_view payload);
 
 } // namespace smithproxy::gui

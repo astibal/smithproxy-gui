@@ -82,6 +82,14 @@ const liveSnapshot = {
     http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
     webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
   },
+  captures: {
+    local: {enabled: true, directory_configured: true, format: 'pcap_single', quota_mib: 512},
+    remote: {
+      enabled: false, tunnel_type: 'gre', gre_format: 'traffic',
+      destination_configured: false, ttl: 1, bind_interface_configured: false,
+    },
+    calculate_checksums: true,
+  },
 };
 
 function response(value: unknown, status = 200): Response {
@@ -115,6 +123,7 @@ describe('ApiConfigClient', () => {
     expect(snapshot.profiles[2]?.detection).toMatchObject({mode: 2, knowledgeBaseEnabled: false});
     expect(snapshot.profiles[3]?.content).toMatchObject({ruleCount: 2, sessionFilterConfigured: true});
     expect(snapshot.settings).toMatchObject({policyFailOpen: false, workers: {tls: 4}});
+    expect(snapshot.captures).toMatchObject({local: {enabled: true, quotaMiB: 512}});
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/config/snapshot',
       expect.objectContaining({cache: 'no-store', credentials: 'same-origin', redirect: 'error'}),

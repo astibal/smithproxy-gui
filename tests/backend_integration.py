@@ -74,6 +74,17 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                 "url": "https://private-webhook.example/", "sift": "false", "api_override": "false",
             },
         },
+        "captures": {
+            "local": {
+                "enabled": "true", "dir": "/private/captures", "format": "pcap_single",
+                "pcap_quota": "512", "file_prefix": "secret-prefix", "file_suffix": ".pcap",
+            },
+            "remote": {
+                "enabled": "false", "tun_type": "gre", "gre_format": "traffic",
+                "tun_dst": "192.0.2.10", "tun_ttl": "1", "bind_interface": "private0",
+            },
+            "options": {"calculate_checksums": "true"},
+        },
     }
 
     def do_GET(self):
@@ -403,6 +414,9 @@ def main() -> int:
             assert gateway_secret.encode() not in config_body
             assert b"backend-secret-value" not in config_body
             assert b"private-webhook.example" not in config_body
+            assert b"/private/captures" not in config_body
+            assert b"192.0.2.10" not in config_body
+            assert b"private0" not in config_body
 
             status, _, body = request(configured_port, "/api/v1/auth/session")
             assert status == 200

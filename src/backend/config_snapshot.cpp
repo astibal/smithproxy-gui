@@ -519,4 +519,44 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
             }, {}};
 }
 
+ConfigCapturesParseResult parse_config_captures(const std::string_view payload) {
+    const auto value = section_value(payload, "captures");
+    if (!value || !value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid capture settings"};
+    }
+    const auto local_value = value->find("local");
+    const auto remote_value = value->find("remote");
+    const auto options_value = value->find("options");
+    if (local_value == value->end() || !local_value->is_object() ||
+        remote_value == value->end() || !remote_value->is_object() ||
+        (options_value != value->end() && !options_value->is_object())) {
+        return {std::nullopt, "Smithproxy returned invalid capture setting groups"};
+    }
+    Json empty = Json::object();
+    const Json& options = options_value == value->end() ? empty : *options_value;
+    const auto local_enabled = required_boolean_scalar(*local_value, "enabled");
+    const auto local_dir = bounded_string(*local_value, "dir", maximum_value_length);
+    const auto local_format = bounded_string(*local_value, "format", 16U);
+    const auto local_quota = optional_decimal(*local_value, "pcap_quota", 0U, 1024U * 1024U);
+    const auto remote_enabled = required_boolean_scalar(*remote_value, "enabled");
+    const auto tunnel_type = bounded_string(*remote_value, "tun_type", 16U);
+    const auto gre_format = bounded_string(*remote_value, "gre_format", 16U);
+    const auto destination = bounded_string(*remote_value, "tun_dst", maximum_name_length);
+    const auto ttl = optional_decimal(*remote_value, "tun_ttl", 0U, 255U);
+    const auto bind_interface = bounded_string(*remote_value, "bind_interface", maximum_name_length, true);
+    const auto checksums = boolean_scalar(options, "calculate_checksums", false);
+    if (!local_enabled || !local_dir || !local_format ||
+        (*local_format != "pcap_single" && *local_format != "pcap" && *local_format != "smcap") ||
+        !local_quota || !remote_enabled || !tunnel_type || *tunnel_type != "gre" || !gre_format ||
+        (*gre_format != "traffic" && *gre_format != "pcapng") || !destination || !ttl ||
+        !bind_interface || !checksums) {
+        return {std::nullopt, "Smithproxy returned invalid capture setting fields"};
+    }
+    return {ConfigCaptureSettings{
+                *local_enabled, !local_dir->empty(), *local_format, *local_quota,
+                *remote_enabled, *tunnel_type, *gre_format, !destination->empty(), *ttl,
+                !bind_interface->empty(), *checksums,
+            }, {}};
+}
+
 } // namespace smithproxy::gui

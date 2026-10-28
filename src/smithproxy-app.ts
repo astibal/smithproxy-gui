@@ -1106,6 +1106,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderSystem() {
     const settings = this.snapshot?.settings;
+    const captures = this.snapshot?.captures;
     return html`
       <div class="content dashboard">
         <div class="section-head">
@@ -1186,6 +1187,21 @@ export class SmithproxyApp extends LitElement {
                 <dt>Sift</dt><dd>${settings.webhook.siftEnabled ? 'Enabled' : 'Disabled'}</dd>
                 <dt>API override</dt><dd>${settings.webhook.apiOverride ? 'Allowed' : 'Blocked'}</dd>
                 <dt>Nameservers</dt><dd>${settings.nameserverCount} configured</dd>
+              </dl>
+            </article>
+          ` : nothing}
+          ${captures ? html`
+            <article class="domain-card">
+              <header><div><h3>Capture posture</h3><p>Paths and destinations are redacted</p></div></header>
+              <dl>
+                <dt>Local capture</dt><dd>${captures.local.enabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Local target</dt><dd>${captures.local.directoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Format / quota</dt><dd>${captures.local.format} / ${captures.local.quotaMiB} MiB</dd>
+                <dt>Remote capture</dt><dd>${captures.remote.enabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Tunnel format</dt><dd>${captures.remote.tunnelType} / ${captures.remote.greFormat}</dd>
+                <dt>Remote target</dt><dd>${captures.remote.destinationConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>TTL / bound interface</dt><dd>${captures.remote.ttl} / ${captures.remote.bindInterfaceConfigured ? 'Yes' : 'No'}</dd>
+                <dt>Checksums</dt><dd>${captures.calculateChecksums ? 'Calculated' : 'Preserved'}</dd>
               </dl>
             </article>
           ` : nothing}

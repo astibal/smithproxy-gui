@@ -224,6 +224,14 @@ int main() {
     assert(settings.settings->webhook_url_configured);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"http_api":{"keys":"secret"}}}})").settings);
+    const auto captures = parse_config_captures(
+        R"({"success":{"captures":{"local":{"enabled":"true","dir":"/private/captures","format":"pcap_single","pcap_quota":"512"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"192.0.2.10","tun_ttl":"1","bind_interface":"private0"},"options":{"calculate_checksums":"true"}}}})");
+    assert(captures.captures);
+    assert(captures.captures->local_enabled);
+    assert(captures.captures->local_quota_mib == 512U);
+    assert(captures.captures->remote_destination_configured);
+    assert(!parse_config_captures(
+        R"({"success":{"captures":{"local":{"enabled":"true","dir":"/tmp","format":"raw"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"","tun_ttl":"1"}}}})").captures);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;
