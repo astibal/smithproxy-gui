@@ -31,7 +31,7 @@
         "cli", "web_rating", "socks",
         "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "All non-secret scalar fields plus nameserver, API allowlist, and UDP quick-port lists from the reference config are typed and editable. Filesystem paths, credentials, webhook and syslog targets, filename components, and rating keys use write-only replace/clear controls and remain redacted in draft responses. API key rotation is still metadata-only."
+      "notes": "All non-secret scalar and list fields from the reference config are typed and editable. Filesystem paths, credentials, API keys, webhook and syslog targets, filename components, and rating keys use write-only replace/clear controls and remain redacted in draft responses."
     },
     {
       "name": "debug",

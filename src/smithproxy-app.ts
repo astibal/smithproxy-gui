@@ -855,6 +855,14 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
+      if (entry.kind === 'settings') {
+        this.renderRoot.querySelectorAll<HTMLInputElement>(
+          '[id^="settings-write-"][id$="-value"], #settings-api-keys-value',
+        ).forEach(input => { input.value = ''; });
+        this.renderRoot.querySelectorAll<HTMLSelectElement>(
+          '[id^="settings-write-"][id$="-mode"], #settings-api-keys-mode',
+        ).forEach(select => { select.value = 'unchanged'; });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Draft change could not be saved.';
       await this.loadDraft();
@@ -1270,6 +1278,28 @@ export class SmithproxyApp extends LitElement {
     changes.push({path: 'settings.nameservers', value: nameservers});
     changes.push({path: 'settings.udp_quick_ports', value: quickPorts});
     changes.push({path: 'settings.http_api.allowed_ips', value: allowedIps});
+    const apiKeysMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-api-keys-mode');
+    const apiKeysInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-keys-value');
+    if (!apiKeysMode || !apiKeysInput || !['unchanged', 'replace', 'clear'].includes(apiKeysMode.value)) {
+      return undefined;
+    }
+    if (apiKeysMode.value === 'clear') {
+      changes.push({path: 'settings.http_api.keys', value: []});
+    } else if (apiKeysMode.value === 'replace') {
+      let keys: unknown;
+      try {
+        keys = JSON.parse(apiKeysInput.value);
+      } catch {
+        keys = undefined;
+      }
+      if (!Array.isArray(keys) || keys.length === 0 || keys.length > 256 ||
+          !keys.every(key => typeof key === 'string' && key.length > 0 &&
+            key.length <= 65536 && !key.includes('\0'))) {
+        this.draftError = 'API key replacement must be a non-empty JSON string array.';
+        return undefined;
+      }
+      changes.push({path: 'settings.http_api.keys', value: keys as string[]});
+    }
     const writeOnlyFields = [
       ['webhook.url', 'webhook-url', 'url'], ['syslog_server', 'syslog-server', 'host'],
       ['write_payload_dir', 'payload-directory', 'path'], ['log_file', 'log-file', 'path'],
@@ -2708,7 +2738,17 @@ export class SmithproxyApp extends LitElement {
         <label for="settings-nameservers">Nameservers</label>
         <input id="settings-nameservers" .value=${settings.nameservers.join(', ')}
           placeholder="192.0.2.53, resolver.example" .readOnly=${disabled} />
-        <label>HTTP API keys</label><span>${settings.httpApi.keyCount} redacted entries · unchanged</span>
+        <label for="settings-api-keys-mode">HTTP API keys</label>
+        <div class="write-only-control">
+          <select id="settings-api-keys-mode" ?disabled=${disabled}>
+            <option value="unchanged">Keep ${settings.httpApi.keyCount} configured key${settings.httpApi.keyCount === 1 ? '' : 's'}</option>
+            <option value="replace">Replace all</option>
+            <option value="clear">Clear all</option>
+          </select>
+          <input id="settings-api-keys-value" type="password" autocomplete="new-password"
+            aria-label="HTTP API keys replacement" placeholder='["new-key", "overlap-key"]'
+            .readOnly=${disabled} />
+        </div>
         <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
         <input id="settings-api-allowed-ips" .value=${settings.httpApi.allowedIps.join(', ')}
           placeholder="127.0.0.1, 192.0.2.0/24" .readOnly=${disabled} />

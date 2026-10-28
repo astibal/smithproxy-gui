@@ -349,8 +349,11 @@ private:
         for (const auto& change : draft.changes) {
             nlohmann::json value;
             if (sensitive_draft_path(change.path)) {
-                const bool cleared = std::holds_alternative<std::string>(change.value) &&
-                                     std::get<std::string>(change.value).empty();
+                const bool cleared =
+                    (std::holds_alternative<std::string>(change.value) &&
+                     std::get<std::string>(change.value).empty()) ||
+                    (std::holds_alternative<std::vector<std::string>>(change.value) &&
+                     std::get<std::vector<std::string>>(change.value).empty());
                 value = cleared ? nlohmann::json("") : nlohmann::json("[redacted]");
             } else {
                 value = std::visit([](const auto& item) { return nlohmann::json(item); }, change.value);

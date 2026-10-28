@@ -634,11 +634,14 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('Certificate password', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Certificate password replacement').fill('new-private-password');
   await settingsEditor.getByLabel('Syslog server', {exact: true}).selectOption('clear');
-  await expect(settingsEditor.getByText('1 redacted entries · unchanged')).toHaveCount(1);
+  await settingsEditor.getByLabel('HTTP API keys', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('HTTP API keys replacement').fill('["new-api-key", "overlap-api-key"]');
   await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(6);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 52 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 53 changes')).toBeVisible();
+  await expect(settingsEditor.getByLabel('HTTP API keys replacement')).toHaveValue('');
+  await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
 
   const captureCard = page.getByRole('article').filter({
@@ -653,10 +656,10 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(captureEditor.getByText('Not configured')).toHaveCount(2);
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 59 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 60 changes')).toBeVisible();
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 59'}).click();
+  await page.getByRole('button', {name: 'Review draft · 60'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
@@ -667,6 +670,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('settings.http_api.allowed_ips');
   await expect(changes).toContainText('settings.webhook.url');
   await expect(changes).toContainText('settings.certs_ca_key_password');
+  await expect(changes).toContainText('settings.http_api.keys');
   await expect(changes).toContainText('settings.syslog_server');
   await expect(changes).toContainText('Replaced · redacted');
   await expect(changes).toContainText('Cleared · redacted');
@@ -676,6 +680,8 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('captures.remote.tun_ttl');
   await expect(changes).not.toContainText('hooks.example.test');
   await expect(changes).not.toContainText('new-private-password');
+  await expect(changes).not.toContainText('new-api-key');
+  await expect(changes).not.toContainText('overlap-api-key');
   await expect(changes).not.toContainText('captures.local.dir');
   await expect(changes).not.toContainText('captures.remote.tun_dst');
 });

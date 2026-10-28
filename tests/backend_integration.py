@@ -608,6 +608,7 @@ def main() -> int:
                     {"path": "policy.[0].disabled", "value": True},
                     {"path": "policy.[0].dst", "value": ["internet", "backup"]},
                     {"path": "settings.certs_ca_key_password", "value": "new-private-password"},
+                    {"path": "settings.http_api.keys", "value": ["new-api-key", "overlap-api-key"]},
                 ],
             })
             status, _, body = request(
@@ -616,11 +617,15 @@ def main() -> int:
             assert status == 200
             batch_snapshot = json.loads(body)
             assert batch_snapshot["version"] == 2
-            assert batch_snapshot["changes"][-2] == {
+            assert batch_snapshot["changes"][-3] == {
                 "path": "policy.[0].dst", "value": ["internet", "backup"]}
-            assert batch_snapshot["changes"][-1] == {
+            assert batch_snapshot["changes"][-2] == {
                 "path": "settings.certs_ca_key_password", "value": "[redacted]"}
+            assert batch_snapshot["changes"][-1] == {
+                "path": "settings.http_api.keys", "value": "[redacted]"}
             assert b"new-private-password" not in body
+            assert b"new-api-key" not in body
+            assert b"overlap-api-key" not in body
             clear_change = json.dumps({"expected_version": 2})
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",
