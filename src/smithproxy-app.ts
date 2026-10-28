@@ -311,6 +311,8 @@ export class SmithproxyApp extends LitElement {
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
     .form-grid input[readonly], .form-grid select:disabled { border-style: dashed; opacity: .8; }
     .reference-stack { display: grid; gap: 7px; }
+    .reference-edit { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 7px; align-items: center; }
+    .reference-edit .reference { width: auto; }
     .reference { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); cursor: pointer; }
     .section { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--app-border); }
     .section h3 { margin: 0 0 12px; font-size: 15px; }
@@ -853,18 +855,55 @@ export class SmithproxyApp extends LitElement {
       const enabled = this.renderRoot.querySelector<HTMLInputElement>(`#policy-enabled-${entry.id}`);
       const destination = this.renderRoot.querySelector<HTMLInputElement>(`#destination-${entry.id}`);
       const action = this.renderRoot.querySelector<HTMLInputElement>(`#action-${entry.id}`);
-      if (index < 0 || !name || !enabled || !destination || !action) return undefined;
-      const destinations = destination.value.split(',').map(value => value.trim()).filter(Boolean);
-      if (name.value.trim().length === 0 || action.value.trim().length === 0 ||
-          destinations.length === 0 || destinations.length > 256) {
-        this.draftError = 'Name, action, and at least one destination are required.';
+      const field = (id: string) => this.renderRoot.querySelector<HTMLInputElement>(`#policy-${id}-${entry.id}`);
+      const protocol = field('protocol');
+      const sources = field('sources');
+      const sourcePorts = field('source-ports');
+      const destinationPorts = field('destination-ports');
+      const features = field('features');
+      const nat = field('nat');
+      const referenceIds = ['routing', 'tls', 'ssh', 'detection', 'content', 'auth', 'dns', 'script'] as const;
+      const references = new Map(referenceIds.map(id => [id, field(id)]));
+      if (index < 0 || !name || !enabled || !destination || !action || !protocol || !sources ||
+          !sourcePorts || !destinationPorts || !features || !nat ||
+          [...references.values()].some(value => !value)) return undefined;
+      const list = (input: HTMLInputElement) => input.value.split(',').map(value => value.trim()).filter(Boolean);
+      const sourceValues = list(sources);
+      const sourcePortValues = list(sourcePorts);
+      const destinations = list(destination);
+      const destinationPortValues = list(destinationPorts);
+      const featureValues = list(features);
+      const validList = (values: ReadonlyArray<string>) => values.length <= 256 &&
+        values.every(value => value.length <= 128) && new Set(values).size === values.length;
+      if (name.value.trim().length === 0 || name.value.trim().length > 128 ||
+          action.value.trim().length === 0 || action.value.trim().length > 32 ||
+          protocol.value.trim().length === 0 || protocol.value.trim().length > 128 ||
+          sourceValues.length === 0 || destinations.length === 0 ||
+          ![sourceValues, sourcePortValues, destinations, destinationPortValues, featureValues].every(validList) ||
+          [nat, ...references.values()].some(value => value!.value.trim().length > 128)) {
+        this.draftError = 'Policy fields and unique bounded references are required.';
         return undefined;
       }
       return [
         {path: `policy.[${index}].name`, value: name.value.trim()},
         {path: `policy.[${index}].disabled`, value: !enabled.checked},
+        {path: `policy.[${index}].proto`, value: protocol.value.trim()},
+        {path: `policy.[${index}].src`, value: sourceValues},
+        {path: `policy.[${index}].sport`, value: sourcePortValues},
         {path: `policy.[${index}].dst`, value: destinations},
-        {path: `policy.[${index}].action`, value: action.value.trim()},
+        {path: `policy.[${index}].dport`, value: destinationPortValues},
+        {path: `policy.[${index}].features`, value: featureValues},
+        ...(this.snapshot.valueOrigins.find(item => item.path === `policy.[${index}].action`)?.editable === false
+          ? [] : [{path: `policy.[${index}].action`, value: action.value.trim()}]),
+        {path: `policy.[${index}].nat`, value: nat.value.trim()},
+        {path: `policy.[${index}].routing`, value: references.get('routing')!.value.trim()},
+        {path: `policy.[${index}].tls_profile`, value: references.get('tls')!.value.trim()},
+        {path: `policy.[${index}].ssh_profile`, value: references.get('ssh')!.value.trim()},
+        {path: `policy.[${index}].detection_profile`, value: references.get('detection')!.value.trim()},
+        {path: `policy.[${index}].content_profile`, value: references.get('content')!.value.trim()},
+        {path: `policy.[${index}].auth_profile`, value: references.get('auth')!.value.trim()},
+        {path: `policy.[${index}].alg_dns_profile`, value: references.get('dns')!.value.trim()},
+        {path: `policy.[${index}].script_profile`, value: references.get('script')!.value.trim()},
       ];
     }
     if (entry.kind === 'address') {
@@ -2041,50 +2080,46 @@ export class SmithproxyApp extends LitElement {
         <label>Enabled</label>
         <label><input id="policy-enabled-${entry.id}" type="checkbox"
           .checked=${policy.enabled} ?disabled=${liveReadOnly} /> Accept traffic for evaluation</label>
-        <label>Sources</label>
-        <div class="reference-stack">${policy.sources.map(reference => reference.id ? html`
+        <label for="policy-sources-${entry.id}">Sources</label>
+        <div class="reference-stack">
+          <input id="policy-sources-${entry.id}" .value=${policy.sources.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
+          ${policy.sources.map(reference => reference.id ? html`
           <button class="reference" type="button"
             @click=${(event: MouseEvent) => this.openAddress(reference.id!, event.currentTarget as HTMLElement)}>
             <span>${reference.name}</span><span aria-hidden="true">→</span>
           </button>
-        ` : html`<span>${reference.name}</span>`)}</div>
+        ` : nothing)}</div>
         <label for="destination-${entry.id}">Destinations</label>
         <input id="destination-${entry.id}"
           .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
         <label for="action-${entry.id}">Action</label>
-        <input id="action-${entry.id}" .value=${policy.action}
+        <input id="action-${entry.id}" .value=${String(actionOrigin?.persistentValue ?? policy.action)}
           .readOnly=${liveReadOnly || actionOrigin?.editable === false} />
       </div>
       <div class="section">
         <h3>Advanced</h3>
         <div class="form-grid">
-          <label>Protocol</label>
-          ${protocol ? html`<button class="reference" type="button"
-            @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
-            <span>${protocol.name}</span><span aria-hidden="true">→</span>
-          </button>` : html`<span>${policy.protocol}</span>`}
-          <label>Source ports</label>
-          ${this.renderPortReferences(policy.sourcePorts)}
-          <label>Destination ports</label>
-          ${this.renderPortReferences(policy.destinationPorts)}
-          <label>TLS profile</label>
-          ${this.renderProfileReference('tls', policy.tlsProfile)}
-          <label>Routing profile</label>
-          ${this.renderProfileReference('routing', policy.routing)}
-          <label>Detection profile</label>
-          ${this.renderProfileReference('detection', policy.detectionProfile)}
-          <label>Content profile</label>
-          ${this.renderProfileReference('content', policy.contentProfile)}
-          <label>SSH profile</label>
-          ${this.renderProfileReference('ssh', policy.sshProfile)}
-          <label>Authentication profile</label>
-          ${this.renderProfileReference('authentication', policy.authProfile)}
-          <label>DNS ALG profile</label>
-          ${this.renderProfileReference('dns', policy.dnsProfile)}
-          <label>Script profile</label>
-          ${this.renderProfileReference('script', policy.scriptProfile)}
-          <label>Features</label>
-          <span>${policy.features.length > 0 ? policy.features.join(', ') : 'None'}</span>
+          <label for="policy-protocol-${entry.id}">Protocol</label>
+          <div class="reference-edit"><input id="policy-protocol-${entry.id}" .value=${policy.protocol} .readOnly=${liveReadOnly} />
+            ${protocol ? html`<button class="reference" type="button"
+              @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
+              <span>${protocol.name}</span><span aria-hidden="true">→</span></button>` : nothing}</div>
+          <label for="policy-source-ports-${entry.id}">Source ports</label>
+          <div class="reference-stack"><input id="policy-source-ports-${entry.id}" .value=${policy.sourcePorts.join(', ')} .readOnly=${liveReadOnly} />${this.renderPortReferences(policy.sourcePorts)}</div>
+          <label for="policy-destination-ports-${entry.id}">Destination ports</label>
+          <div class="reference-stack"><input id="policy-destination-ports-${entry.id}" .value=${policy.destinationPorts.join(', ')} .readOnly=${liveReadOnly} />${this.renderPortReferences(policy.destinationPorts)}</div>
+          ${this.renderPolicyProfileField(entry, 'tls', 'TLS profile', 'tls', policy.tlsProfile, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'routing', 'Routing profile', 'routing', policy.routing, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'detection', 'Detection profile', 'detection', policy.detectionProfile, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'content', 'Content profile', 'content', policy.contentProfile, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'ssh', 'SSH profile', 'ssh', policy.sshProfile, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'auth', 'Authentication profile', 'authentication', policy.authProfile, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'dns', 'DNS ALG profile', 'dns', policy.dnsProfile, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'script', 'Script profile', 'script', policy.scriptProfile, liveReadOnly)}
+          <label for="policy-features-${entry.id}">Features</label>
+          <input id="policy-features-${entry.id}" .value=${policy.features.join(', ')} .readOnly=${liveReadOnly} />
+          <label for="policy-nat-${entry.id}">NAT</label>
+          <input id="policy-nat-${entry.id}" .value=${policy.nat} .readOnly=${liveReadOnly} />
         </div>
       </div>
     `;
@@ -2107,6 +2142,14 @@ export class SmithproxyApp extends LitElement {
       @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
       <span>${profile.name}</span><span aria-hidden="true">→</span>
     </button>` : html`<span>${name}</span>`;
+  }
+
+  private renderPolicyProfileField(
+    entry: DrawerEntry, id: string, label: string, type: string, value: string, readOnly: boolean,
+  ) {
+    return html`<label for="policy-${id}-${entry.id}">${label}</label>
+      <div class="reference-edit"><input id="policy-${id}-${entry.id}" .value=${value} .readOnly=${readOnly} />
+        ${this.renderProfileReference(type, value)}</div>`;
   }
 
   private renderAddressEditor(entry: DrawerEntry) {

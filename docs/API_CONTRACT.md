@@ -102,9 +102,10 @@ stale writers receive HTTP 409. The browser also rejects draft responses above
 bounded raw draft. This store is not yet a commit path and cannot mutate
 Smithproxy configuration.
 
-The first browser integration atomically persists `policy.[n].name`,
-`policy.[n].disabled`, `policy.[n].dst`, and `policy.[n].action` through this
-endpoint. Nested editors use the same draft and version to persist the mapped
+The policy editor atomically persists the name, enabled state, protocol, source
+and destination address and port collections, features, action, NAT mode, and
+all routing and profile references through this endpoint. Nested editors use the
+same draft and version to persist the mapped
 name, type, value, range, and numeric identifier fields of address, port, and
 protocol objects. Routing profile batches cover their name, destination address
 and port references, load-balancing method, and paired SNI rewrite values while
