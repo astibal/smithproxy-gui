@@ -75,3 +75,22 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
 });
+
+test('derives the system API from a workspace mount', async ({page}) => {
+  const requests: string[] = [];
+  page.on('request', request => {
+    if (request.url().endsWith('/api/v1/status')) requests.push(new URL(request.url()).pathname);
+  });
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  await page.goto('/');
+  await page.locator('smithproxy-gui').evaluate(element => element.remove());
+  await page.evaluate(() => {
+    history.replaceState({}, '', '/ws001/smithproxy-gui/');
+    const application = document.createElement('smithproxy-gui');
+    application.setAttribute('mode', 'standalone');
+    document.body.append(application);
+  });
+
+  await expect(page.getByText('Core: Online')).toBeVisible();
+  await expect.poll(() => requests).toContain('/ws001/smithproxy-gui/api/v1/status');
+});
