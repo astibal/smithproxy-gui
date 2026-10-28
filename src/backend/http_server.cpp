@@ -104,6 +104,7 @@ private:
         if (!relative) return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
         if (*relative == "/healthz") return health();
         if (*relative == "/api/v1/status") return status();
+        if (*relative == "/api/v1/metrics/summary") return metrics_summary();
         if (*relative == "/api/v1/capabilities") return capabilities();
         if (relative->starts_with("/api/")) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};
@@ -125,7 +126,7 @@ private:
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
                     ",\"features\":{\"config_read\":false,\"config_write\":false,"
-                    "\"jobs\":false,\"events\":false}}"};
+                    "\"jobs\":false,\"events\":false,\"metrics\":true}}"};
     }
 
     Response status() const {
@@ -157,6 +158,33 @@ private:
                     ",\"consecutive_failures\":" + std::to_string(status.consecutive_failures) +
                     ",\"availability_window\":{\"samples\":" + std::to_string(status.history.size()) +
                     ",\"successful\":" + std::to_string(successful) + "},\"history\":" + history + "}}"};
+    }
+
+    Response metrics_summary() const {
+        const auto metrics = monitor_.status().runtime_metrics;
+        std::string listeners = "[";
+        for (std::size_t index = 0; index < metrics.listeners.size(); ++index) {
+            if (index != 0U) listeners += ',';
+            const auto& listener = metrics.listeners[index];
+            listeners += "{\"name\":" + json_string(listener.name) +
+                         ",\"workers\":" + std::to_string(listener.workers) +
+                         ",\"sessions_total\":" + std::to_string(listener.sessions_total) +
+                         ",\"sessions_active\":" + std::to_string(listener.sessions_active) +
+                         ",\"bytes_up\":" + std::to_string(listener.bytes_up) +
+                         ",\"bytes_down\":" + std::to_string(listener.bytes_down) + "}";
+        }
+        listeners += ']';
+        return {200, "application/json; charset=utf-8",
+                "{\"state\":" + json_string(metrics.state) +
+                    ",\"detail\":" + json_string(metrics.detail) +
+                    ",\"checked_at_unix_ms\":" + timestamp_json(metrics.checked_at) +
+                    ",\"last_success_at_unix_ms\":" + timestamp_json(metrics.last_success_at) +
+                    ",\"totals\":{\"workers\":" + std::to_string(metrics.workers) +
+                    ",\"sessions_total\":" + std::to_string(metrics.sessions_total) +
+                    ",\"sessions_active\":" + std::to_string(metrics.sessions_active) +
+                    ",\"bytes_up\":" + std::to_string(metrics.bytes_up) +
+                    ",\"bytes_down\":" + std::to_string(metrics.bytes_down) +
+                    "},\"listeners\":" + listeners + "}"};
     }
 
     Response static_asset(const std::string_view relative) const {

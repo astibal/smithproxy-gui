@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "json.hpp"
 #include "path.hpp"
+#include "runtime_metrics.hpp"
 
 #include <cassert>
 #include <cstdlib>
@@ -32,6 +33,27 @@ int main() {
     assert(!safe_asset_path(root, "/assets\\secret"));
 
     assert(json_string("line\n\"quoted\"") == "\"line\\n\\\"quoted\\\"\"");
+
+    const auto metrics = parse_listener_metrics(R"({"listeners":[
+        {"name":"tcp","workers":2,"sessions_total":12,"sessions_active":3,
+         "bytes_up":1024,"bytes_down":2048},
+        {"name":"tls","workers":1,"sessions_total":7,"sessions_active":1,
+         "bytes_up":512,"bytes_down":256}
+    ]})");
+    assert(metrics.metrics);
+    assert(metrics.metrics->listeners.size() == 2U);
+    assert(metrics.metrics->workers == 3U);
+    assert(metrics.metrics->sessions_total == 19U);
+    assert(metrics.metrics->sessions_active == 4U);
+    assert(metrics.metrics->bytes_up == 1536U);
+    assert(metrics.metrics->bytes_down == 2304U);
+    assert(!parse_listener_metrics("not json").metrics);
+    assert(!parse_listener_metrics(R"({"listeners":[{"name":"tcp","workers":1,
+        "sessions_total":1,"sessions_active":2,"bytes_up":0,"bytes_down":0}]})").metrics);
+    assert(!parse_listener_metrics(R"({"listeners":[
+        {"name":"tcp","workers":1,"sessions_total":1,"sessions_active":0,"bytes_up":0,"bytes_down":0},
+        {"name":"tcp","workers":1,"sessions_total":1,"sessions_active":0,"bytes_up":0,"bytes_down":0}
+    ]})").metrics);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

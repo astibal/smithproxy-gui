@@ -8,7 +8,7 @@ async function mockSystemApi(page: Page, state: MockState): Promise<void> {
     api_version: 'v1',
     base_path: '/',
     smithproxy_state: state.smithproxy,
-    features: {config_read: false, config_write: false, jobs: false, events: false},
+    features: {config_read: false, config_write: false, jobs: false, events: false, metrics: true},
   }}));
   await page.route('**/api/v1/status', async route => route.fulfill({json: {
     service: 'smithproxy-gui',
@@ -33,6 +33,17 @@ async function mockSystemApi(page: Page, state: MockState): Promise<void> {
             {state: 'unreachable', checked_at_unix_ms: Date.now(), latency_ms: 2500},
           ],
     },
+  }}));
+  await page.route('**/api/v1/metrics/summary', async route => route.fulfill({json: {
+    state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+    detail: state.smithproxy === 'ready' ? 'Current listener metrics' : 'Metrics are stale',
+    checked_at_unix_ms: Date.now(),
+    last_success_at_unix_ms: Date.now() - 5000,
+    totals: {workers: 3, sessions_total: 19, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
+    listeners: [
+      {name: 'tcp', workers: 2, sessions_total: 12, sessions_active: 3, bytes_up: 1024, bytes_down: 2048},
+      {name: 'tls', workers: 1, sessions_total: 7, sessions_active: 1, bytes_up: 512, bytes_down: 256},
+    ],
   }}));
 }
 
@@ -66,6 +77,12 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByText('12 ms')).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
   await expect(page.getByText(/control-plane API ping only/i)).toBeVisible();
+  await expect(page.getByRole('region', {name: 'Runtime metrics summary'}).getByText('4', {exact: true})).toBeVisible();
+
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Listener monitoring'})).toBeVisible();
+  await expect(page.getByRole('cell', {name: 'tcp'})).toBeVisible();
+  await expect(page.getByRole('cell', {name: 'tls'})).toBeVisible();
 
   state.smithproxy = 'unreachable';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));

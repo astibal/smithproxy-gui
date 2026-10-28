@@ -45,8 +45,9 @@ pnpm test:unit
 pnpm test:e2e
 ```
 
-The backend requires C++23, CMake, and pkg-config. Initialize the repository and
-build the production frontend and backend with:
+The backend requires C++23, CMake, pkg-config, libcurl, libmicrohttpd, and
+nlohmann-json 3.11 or newer. Initialize the repository and build the production
+frontend and backend with:
 
 ```sh
 git submodule update --init
@@ -70,9 +71,10 @@ command-line arguments, exposed to the browser, or written to logs. For a
 deployment behind the Saslik gateway, use a base path such as
 `--base-path /ws001/smithproxy-gui/`.
 
-The first vertical slice uses a fake configuration API and demonstrates both
-standalone and embeddable application shells. The root web component supports
-integration into Saslik Tools:
+The configuration editor currently uses a fake API while the versioned
+Smithproxy configuration contract is being completed. Control-plane health and
+listener monitoring already use the production C++ backend and the authenticated
+Smithproxy API. The root web component supports integration into Saslik Tools:
 
 ```html
 <smithproxy-gui
@@ -82,5 +84,5 @@ integration into Saslik Tools:
 </smithproxy-gui>
 ```
 
-The production API client, authentication adapter, and Saslik theme asset
-distribution will be delivered as separately reviewed slices.
+Configuration drafts, authentication adapters, and the remaining monitoring
+surfaces are delivered as independently tested vertical slices.

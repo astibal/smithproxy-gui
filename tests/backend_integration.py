@@ -41,6 +41,18 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
             return
+        if self.path == "/api/diag/proxy/listener/stats":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"listeners": [
+                {"name": "tcp", "workers": 2, "sessions_total": 12,
+                 "sessions_active": 3, "bytes_up": 1024, "bytes_down": 2048},
+                {"name": "tls", "workers": 1, "sessions_total": 7,
+                 "sessions_active": 1, "bytes_up": 512, "bytes_down": 256},
+            ]}).encode())
+            return
         self.send_error(404)
 
     def log_message(self, *_args):
@@ -109,6 +121,7 @@ def main() -> int:
         assert status == 200
         assert capabilities["base_path"] == "/ws001/smithproxy-gui"
         assert capabilities["features"]["config_write"] is False
+        assert capabilities["features"]["metrics"] is True
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/status")
         snapshot = json.loads(body)
@@ -116,6 +129,11 @@ def main() -> int:
         assert snapshot["smithproxy"]["configured"] is False
         assert snapshot["smithproxy"]["total_probes"] == 0
         assert snapshot["smithproxy"]["history"] == []
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/metrics/summary")
+        metrics = json.loads(body)
+        assert status == 200
+        assert metrics["state"] == "unconfigured"
+        assert metrics["listeners"] == []
 
         status, _, body = request(port, "/ws001/smithproxy-gui/")
         assert status == 200
@@ -168,6 +186,16 @@ def main() -> int:
             assert len(snapshot["smithproxy"]["history"]) >= 1
             assert snapshot["smithproxy"]["availability_window"]["successful"] >= 1
             last_success = snapshot["smithproxy"]["last_success_at_unix_ms"]
+            status, _, body = request(configured_port, "/api/v1/metrics/summary")
+            metrics = json.loads(body)
+            assert status == 200
+            assert metrics["state"] == "ready"
+            assert metrics["totals"] == {
+                "workers": 3, "sessions_total": 19, "sessions_active": 4,
+                "bytes_up": 1536, "bytes_down": 2304,
+            }
+            assert [item["name"] for item in metrics["listeners"]] == ["tcp", "tls"]
+            metrics_last_success = metrics["last_success_at_unix_ms"]
 
             FakeSmithproxy.response_status = 503
             snapshot = wait_for_snapshot_state(configured_port, "error")
@@ -175,6 +203,12 @@ def main() -> int:
             assert snapshot["smithproxy"]["last_success_at_unix_ms"] == last_success
             assert snapshot["smithproxy"]["history"][-1]["state"] == "error"
             assert snapshot["smithproxy"]["availability_window"]["samples"] >= 2
+            status, _, body = request(configured_port, "/api/v1/metrics/summary")
+            stale_metrics = json.loads(body)
+            assert status == 200
+            assert stale_metrics["state"] == "unavailable"
+            assert stale_metrics["last_success_at_unix_ms"] == metrics_last_success
+            assert stale_metrics["totals"]["sessions_active"] == 4
         finally:
             FakeSmithproxy.response_status = 200
             configured.send_signal(signal.SIGTERM)

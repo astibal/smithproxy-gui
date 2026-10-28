@@ -25,6 +25,7 @@ export interface SystemCapabilities {
     configWrite: boolean;
     jobs: boolean;
     events: boolean;
+    metrics: boolean;
   };
 }
 
@@ -51,6 +52,26 @@ export interface SystemSnapshot {
   };
 }
 
+export type RuntimeMetricsState = 'starting' | 'ready' | 'unavailable' | 'unconfigured';
+
+export interface ListenerMetrics {
+  name: string;
+  workers: number;
+  sessionsTotal: number;
+  sessionsActive: number;
+  bytesUp: number;
+  bytesDown: number;
+}
+
+export interface RuntimeMetricsSnapshot {
+  state: RuntimeMetricsState;
+  detail: string;
+  checkedAtUnixMs: number | null;
+  lastSuccessAtUnixMs: number | null;
+  totals: Omit<ListenerMetrics, 'name'>;
+  listeners: ReadonlyArray<ListenerMetrics>;
+}
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -68,6 +89,11 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isNullableNonNegativeInteger(value: unknown): value is number | null {
   return value === null || isNonNegativeInteger(value);
+}
+
+function isRuntimeMetricsState(value: unknown): value is RuntimeMetricsState {
+  return typeof value === 'string' &&
+    ['starting', 'ready', 'unavailable', 'unconfigured'].includes(value);
 }
 
 function normalizedPath(value: string, label: string): string {
@@ -105,7 +131,8 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   }
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
-      typeof features.jobs !== 'boolean' || typeof features.events !== 'boolean') {
+      typeof features.jobs !== 'boolean' || typeof features.events !== 'boolean' ||
+      typeof features.metrics !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
   }
   return {
@@ -118,6 +145,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       configWrite: features.config_write,
       jobs: features.jobs,
       events: features.events,
+      metrics: features.metrics,
     },
   };
 }
@@ -170,6 +198,48 @@ function parseStatus(value: unknown): SystemSnapshot {
   };
 }
 
+function parseMetricsCounters(value: unknown): Omit<ListenerMetrics, 'name'> {
+  if (!isObject(value) || !isNonNegativeInteger(value.workers) ||
+      !isNonNegativeInteger(value.sessions_total) || !isNonNegativeInteger(value.sessions_active) ||
+      !isNonNegativeInteger(value.bytes_up) || !isNonNegativeInteger(value.bytes_down) ||
+      value.sessions_active > value.sessions_total) {
+    throw new Error('Invalid Smithproxy runtime counters.');
+  }
+  return {
+    workers: value.workers,
+    sessionsTotal: value.sessions_total,
+    sessionsActive: value.sessions_active,
+    bytesUp: value.bytes_up,
+    bytesDown: value.bytes_down,
+  };
+}
+
+function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
+      !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
+      !isNullableNonNegativeInteger(value.last_success_at_unix_ms) || !Array.isArray(value.listeners) ||
+      value.listeners.length > 32) {
+    throw new Error('Invalid runtime metrics response.');
+  }
+  const names = new Set<string>();
+  const listeners = value.listeners.map((item): ListenerMetrics => {
+    if (!isObject(item) || typeof item.name !== 'string' || item.name.length === 0 ||
+        item.name.length > 64 || names.has(item.name)) {
+      throw new Error('Invalid Smithproxy listener metrics.');
+    }
+    names.add(item.name);
+    return {name: item.name, ...parseMetricsCounters(item)};
+  });
+  return {
+    state: value.state,
+    detail: value.detail,
+    checkedAtUnixMs: value.checked_at_unix_ms,
+    lastSuccessAtUnixMs: value.last_success_at_unix_ms,
+    totals: parseMetricsCounters(value.totals),
+    listeners,
+  };
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -198,6 +268,10 @@ export class SystemClient {
 
   async status(): Promise<SystemSnapshot> {
     return parseStatus(await this.#request(joinedPath(this.#apiBase, '/status')));
+  }
+
+  async metricsSummary(): Promise<RuntimeMetricsSnapshot> {
+    return parseRuntimeMetrics(await this.#request(joinedPath(this.#apiBase, '/metrics/summary')));
   }
 
   async #request(path: string): Promise<unknown> {

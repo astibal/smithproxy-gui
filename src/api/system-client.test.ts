@@ -25,12 +25,12 @@ describe('SystemClient', () => {
   it('loads and maps capabilities', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
-      features: {config_read: false, config_write: false, jobs: false, events: false},
+      features: {config_read: false, config_write: false, jobs: false, events: false, metrics: true},
     }));
     const client = new SystemClient('/api/v1', '/', fetcher);
 
     await expect(client.capabilities()).resolves.toMatchObject({
-      apiVersion: 'v1', smithproxyState: 'unconfigured', features: {configWrite: false},
+      apiVersion: 'v1', smithproxyState: 'unconfigured', features: {configWrite: false, metrics: true},
     });
   });
 
@@ -66,6 +66,42 @@ describe('SystemClient', () => {
       },
     }));
     await expect(client.status()).rejects.toThrow('Inconsistent Smithproxy status counters');
+  });
+
+  it('loads and validates aggregated runtime metrics', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
+      totals: {workers: 3, sessions_total: 19, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
+      listeners: [
+        {name: 'tcp', workers: 2, sessions_total: 12, sessions_active: 3, bytes_up: 1024, bytes_down: 2048},
+        {name: 'tls', workers: 1, sessions_total: 7, sessions_active: 1, bytes_up: 512, bytes_down: 256},
+      ],
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.metricsSummary()).resolves.toMatchObject({
+      state: 'ready', totals: {sessionsActive: 4, bytesDown: 2304},
+      listeners: [{name: 'tcp', sessionsTotal: 12}, {name: 'tls', sessionsTotal: 7}],
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/metrics/summary', expect.anything(),
+    );
+  });
+
+  it('rejects duplicate listeners and unsafe runtime counters', async () => {
+    const response = {
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
+      totals: {workers: 2, sessions_total: 2, sessions_active: 1, bytes_up: 0, bytes_down: 0},
+      listeners: [
+        {name: 'tcp', workers: 1, sessions_total: 1, sessions_active: 1, bytes_up: 0, bytes_down: 0},
+        {name: 'tcp', workers: 1, sessions_total: 1, sessions_active: 0, bytes_up: 0, bytes_down: 0},
+      ],
+    };
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse(response));
+    await expect(client.metricsSummary()).rejects.toThrow('Invalid Smithproxy listener metrics');
+    response.listeners[1]!.name = 'tls';
+    response.listeners[1]!.bytes_up = Number.MAX_SAFE_INTEGER + 1;
+    await expect(client.metricsSummary()).rejects.toThrow('Invalid Smithproxy runtime counters');
   });
 
   it('rejects malformed responses and unsafe endpoint configuration', async () => {

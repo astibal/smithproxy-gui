@@ -2,7 +2,7 @@ import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {FakeConfigClient} from './api/fake-client';
 import type {AddressObject, ConfigSnapshot, PolicySummary} from './api/models';
-import {SystemClient} from './api/system-client';
+import {SystemClient, type RuntimeMetricsSnapshot} from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {DrawerStore, type DrawerEntry} from './state/drawer-store';
 import {
@@ -16,6 +16,15 @@ import {
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
 
+const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
+  state: 'starting',
+  detail: 'Waiting for the first runtime metrics sample.',
+  checkedAtUnixMs: null,
+  lastSuccessAtUnixMs: null,
+  totals: {workers: 0, sessionsTotal: 0, sessionsActive: 0, bytesUp: 0, bytesDown: 0},
+  listeners: [],
+};
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -26,6 +35,7 @@ export class SmithproxyApp extends LitElement {
   @state() private draftObjects = new Set<string>();
   @state() private systemStatus: SystemStatus = connectingSystemStatus;
   @state() private apiVersion = 'discovering';
+  @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
 
   private readonly client = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
@@ -125,6 +135,21 @@ export class SmithproxyApp extends LitElement {
     .probe.starting, .probe.unreachable, .probe.unconfigured { background: var(--app-warning); }
     .probe.unauthorized, .probe.error { background: var(--app-danger); }
     .scope-note { padding: 12px 14px; border-left: 3px solid var(--app-brand); background: var(--app-raised); color: var(--app-muted); }
+    .runtime-summary { display: grid; gap: 12px; }
+    .runtime-heading { display: flex; gap: 16px; align-items: end; justify-content: space-between; }
+    .runtime-heading h3 { margin: 0; font-size: 16px; }
+    .runtime-heading p { margin: 3px 0 0; color: var(--app-muted); }
+    .runtime-state { color: var(--app-muted); font-size: 12px; }
+    .runtime-state.success { color: var(--app-success); }
+    .runtime-state.warning { color: var(--app-warning); }
+    .runtime-state.danger { color: var(--app-danger); }
+    .listener-table { width: 100%; border-collapse: collapse; }
+    .listener-table th, .listener-table td { padding: 11px 13px; border-bottom: 1px solid var(--app-border); text-align: right; }
+    .listener-table th:first-child, .listener-table td:first-child { text-align: left; }
+    .listener-table th { color: var(--app-muted); font-size: 12px; font-weight: 600; }
+    .listener-table tbody tr:last-child td { border-bottom: 0; }
+    .listener-name { font-weight: 650; }
+    .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 8px; color: var(--app-muted); }
 
     .table { overflow: hidden; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
     .row { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px; gap: 16px; align-items: center; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--app-border); background: transparent; text-align: left; cursor: pointer; }
@@ -280,9 +305,23 @@ export class SmithproxyApp extends LitElement {
     this.systemProbeInFlight = true;
     try {
       this.systemStatus = statusFromSnapshot(await this.systemClient.status());
+      try {
+        this.runtimeMetrics = await this.systemClient.metricsSummary();
+      } catch (error) {
+        this.runtimeMetrics = {
+          ...this.runtimeMetrics,
+          state: 'unavailable',
+          detail: error instanceof Error ? error.message : 'Runtime metrics are unavailable.',
+        };
+      }
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
+      this.runtimeMetrics = {
+        ...this.runtimeMetrics,
+        state: 'unavailable',
+        detail: 'Runtime metrics are unavailable while the GUI core is offline.',
+      };
     } finally {
       this.systemProbeInFlight = false;
       this.scheduleSystemProbe();
@@ -390,6 +429,60 @@ export class SmithproxyApp extends LitElement {
     return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${seconds % 60}s`;
   }
 
+  private formatBytes(value: number): string {
+    if (value < 1000) return `${value} B`;
+    const units = ['kB', 'MB', 'GB', 'TB', 'PB'];
+    let amount = value;
+    let unit = -1;
+    do {
+      amount /= 1000;
+      unit += 1;
+    } while (amount >= 1000 && unit < units.length - 1);
+    return `${amount.toFixed(amount >= 100 ? 0 : amount >= 10 ? 1 : 2)} ${units[unit]}`;
+  }
+
+  private runtimeTone(): 'success' | 'warning' | 'danger' {
+    if (this.runtimeMetrics.state === 'ready') return 'success';
+    if (this.runtimeMetrics.state === 'unavailable') return 'danger';
+    return 'warning';
+  }
+
+  private renderRuntimeSummary() {
+    const metrics = this.runtimeMetrics;
+    return html`
+      <section class="runtime-summary" aria-label="Runtime metrics summary">
+        <div class="runtime-heading">
+          <div><h3>Runtime traffic</h3><p>Aggregated counters reported by Smithproxy listeners</p></div>
+          <span class="runtime-state ${this.runtimeTone()}" title=${metrics.detail}>
+            ● ${displayState(metrics.state)}
+          </span>
+        </div>
+        <div class="metric-grid">
+          <article class="metric">
+            <span class="metric-label">Active sessions</span>
+            <strong class="metric-value">${metrics.totals.sessionsActive.toLocaleString()}</strong>
+            <span class="metric-note">Across ${metrics.listeners.length} listener types</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Total sessions</span>
+            <strong class="metric-value">${metrics.totals.sessionsTotal.toLocaleString()}</strong>
+            <span class="metric-note">Since Smithproxy started</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Traffic processed</span>
+            <strong class="metric-value">${this.formatBytes(metrics.totals.bytesUp + metrics.totals.bytesDown)}</strong>
+            <span class="metric-note">${this.formatBytes(metrics.totals.bytesUp)} up · ${this.formatBytes(metrics.totals.bytesDown)} down</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Listener workers</span>
+            <strong class="metric-value">${metrics.totals.workers.toLocaleString()}</strong>
+            <span class="metric-note">Last success: ${this.timeLabel(metrics.lastSuccessAtUnixMs)}</span>
+          </article>
+        </div>
+      </section>
+    `;
+  }
+
   private renderDashboard() {
     const history = this.systemStatus.history;
     const emptySlots = Math.max(0, 60 - history.length);
@@ -420,6 +513,7 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">${this.systemStatus.totalProbes} probes · ${this.systemStatus.consecutiveFailures} consecutive failures</span>
           </article>
         </div>
+        ${this.renderRuntimeSummary()}
         <section class="monitor-panel" aria-label="Probe history">
           <h3>Recent probe history</h3>
           <p>Up to five minutes at the current five-second sampling interval. Last success: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}.</p>
@@ -437,12 +531,48 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderMonitoring() {
+    const metrics = this.runtimeMetrics;
+    return html`
+      <div class="content dashboard">
+        <div class="section-head">
+          <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
+        </div>
+        ${this.renderRuntimeSummary()}
+        ${metrics.state === 'ready' ? nothing : html`
+          <div class="metrics-message" role="status">${metrics.detail} Last successful sample: ${this.timeLabel(metrics.lastSuccessAtUnixMs)}.</div>
+        `}
+        <div class="table">
+          <table class="listener-table">
+            <thead><tr><th>Listener</th><th>Workers</th><th>Active</th><th>Total</th><th>Up</th><th>Down</th></tr></thead>
+            <tbody>
+              ${metrics.listeners.map(listener => html`
+                <tr>
+                  <td class="listener-name">${listener.name}</td>
+                  <td>${listener.workers.toLocaleString()}</td>
+                  <td>${listener.sessionsActive.toLocaleString()}</td>
+                  <td>${listener.sessionsTotal.toLocaleString()}</td>
+                  <td>${this.formatBytes(listener.bytesUp)}</td>
+                  <td>${this.formatBytes(listener.bytesDown)}</td>
+                </tr>
+              `)}
+              ${metrics.listeners.length === 0 ? html`<tr><td colspan="6">No listener samples are available yet.</td></tr>` : nothing}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   private renderContent() {
     if (this.activeSection === 'Dashboard') {
       return this.renderDashboard();
     }
     if (this.activeSection === 'Policy') {
       return this.renderPolicyList();
+    }
+    if (this.activeSection === 'Monitoring') {
+      return this.renderMonitoring();
     }
     return html`
       <div class="empty-state">
@@ -563,7 +693,7 @@ export class SmithproxyApp extends LitElement {
             ● Smithproxy: ${displayState(this.systemStatus.smithproxy)}
           </span>
           <span class=${this.draftObjects.size ? 'draft' : ''}>Draft: ${this.draftObjects.size} changes</span>
-          <span>Config: demo</span><span>API: ${this.apiVersion}</span><span class="spacer"></span>
+          <span>Config: unavailable</span><span>API: ${this.apiVersion}</span><span class="spacer"></span>
           <span>Revision ${this.snapshot?.revision ?? 'loading'}</span>
         </footer>
       </div>

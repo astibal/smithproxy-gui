@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MICROHTTPD REQUIRED IMPORTED_TARGET libmicrohttpd)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET "libcurl>=7.85")
+find_package(nlohmann_json 3.11 REQUIRED CONFIG)
 
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/lmhpp/include/lmhttpd.hpp")
     message(FATAL_ERROR "lmhpp is missing; run: git submodule update --init")
@@ -59,10 +60,11 @@ add_library(smithproxy_gui_core
     src/backend/config.cpp
     src/backend/json.cpp
     src/backend/path.cpp
+    src/backend/runtime_metrics.cpp
     src/backend/smithproxy_client.cpp
 )
 target_include_directories(smithproxy_gui_core PUBLIC src/backend)
-target_link_libraries(smithproxy_gui_core PUBLIC PkgConfig::CURL)
+target_link_libraries(smithproxy_gui_core PUBLIC PkgConfig::CURL nlohmann_json::nlohmann_json)
 target_compile_options(smithproxy_gui_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
 
 add_executable(smithproxy-gui
