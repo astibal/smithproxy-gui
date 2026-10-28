@@ -43,11 +43,27 @@ int main() {
     assert(draft.upsert(2U, {"../unsafe", true}) == DraftMutationResult::InvalidPath);
     assert(draft.upsert(2U, {"settings.ratio", std::numeric_limits<double>::infinity()}) ==
            DraftMutationResult::InvalidValue);
-    assert(draft.remove(2U, "settings.missing") == DraftMutationResult::Missing);
-    assert(draft.remove(2U, "policy.[0].action") == DraftMutationResult::Applied);
-    assert(draft.snapshot().changes.empty());
-    assert(draft.clear(3U) == DraftMutationResult::Applied);
-    assert(draft.snapshot().version == 4U);
+    assert(draft.upsert_many(2U, {
+        {"policy.[0].name", std::string("office")},
+        {"policy.[0].disabled", false},
+        {"policy.[0].dst", std::vector<std::string>{"internet", "backup"}},
+    }) == DraftMutationResult::Applied);
+    const auto batched = draft.snapshot();
+    assert(batched.version == 3U);
+    assert(batched.changes.size() == 4U);
+    assert(std::get<std::vector<std::string>>(batched.changes.back().value) ==
+           std::vector<std::string>({"internet", "backup"}));
+    assert(draft.upsert_many(3U, {
+        {"policy.[0].name", std::string("changed")},
+        {"policy.[0].name", std::string("duplicate")},
+    }) == DraftMutationResult::InvalidPath);
+    assert(draft.snapshot().version == 3U);
+    assert(std::get<std::string>(draft.snapshot().changes[1].value) == "office");
+    assert(draft.remove(3U, "settings.missing") == DraftMutationResult::Missing);
+    assert(draft.remove(3U, "policy.[0].action") == DraftMutationResult::Applied);
+    assert(draft.snapshot().changes.size() == 3U);
+    assert(draft.clear(4U) == DraftMutationResult::Applied);
+    assert(draft.snapshot().version == 5U);
 
     assert(path_below_base("/ws001/gui", "/ws001/gui") == "/");
     assert(path_below_base("/ws001/gui/assets/a.js", "/ws001/gui") == "/assets/a.js");

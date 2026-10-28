@@ -92,7 +92,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
   await page.route('**/api/v1/config/draft/changes', async route => {
     const request = route.request();
-    const body = request.postDataJSON() as {expected_version: number; path: string; value: unknown};
+    const body = request.postDataJSON() as {
+      expected_version: number;
+      changes: Array<{path: string; value: unknown}>;
+    };
     if (body.expected_version !== draft.version) {
       await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
       return;
@@ -100,7 +103,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     draft = {
       ...draft,
       version: draft.version + 1,
-      changes: [...draft.changes.filter(item => item.path !== body.path), {path: body.path, value: body.value}],
+      changes: [
+        ...draft.changes.filter(item => !body.changes.some(change => change.path === item.path)),
+        ...body.changes,
+      ],
     };
     await route.fulfill({json: draft});
   });
@@ -183,7 +189,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   }
 }
 
-test('loads authenticated runtime configuration as a read-only view', async ({page}) => {
+test('loads authenticated runtime configuration and saves an atomic policy draft', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
@@ -191,6 +197,9 @@ test('loads authenticated runtime configuration as a read-only view', async ({pa
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await expect(editor.getByText('Validation ready')).toBeVisible();
+  await editor.getByLabel('Name').fill('Office outbound');
+  await editor.locator('#policy-enabled-policy-0').uncheck();
+  await editor.getByLabel('Destinations').fill('internet, backup');
   const action = editor.getByLabel('Action');
   await action.fill('reject');
   await editor.getByRole('button', {name: 'Save to draft'}).click();

@@ -26,6 +26,31 @@ describe('DraftClient', () => {
         headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
       }),
     );
+    const request = fetcher.mock.calls.at(-1)?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toEqual({
+      expected_version: 0,
+      changes: [{path: 'policy.[0].action', value: 'accept'}],
+    });
+  });
+
+  it('validates and sends atomic batches including string arrays', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      id: 'workspace-draft', base_revision: null, version: 1,
+      changes: [
+        {path: 'policy.[0].name', value: 'office'},
+        {path: 'policy.[0].dst', value: ['internet', 'backup']},
+      ],
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+    await expect(client.upsertMany(0, [
+      {path: 'policy.[0].name', value: 'office'},
+      {path: 'policy.[0].dst', value: ['internet', 'backup']},
+    ])).resolves.toMatchObject({version: 1});
+    await expect(client.upsertMany(1, [])).rejects.toThrow('Invalid draft changes');
+    await expect(client.upsertMany(1, [
+      {path: 'policy.[0].name', value: 'one'},
+      {path: 'policy.[0].name', value: 'two'},
+    ])).rejects.toThrow('Invalid draft path');
   });
 
   it('rejects malformed drafts and stale server responses', async () => {

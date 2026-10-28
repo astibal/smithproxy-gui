@@ -9,7 +9,7 @@
 
 namespace smithproxy::gui {
 
-using DraftScalar = std::variant<bool, std::int64_t, double, std::string>;
+using DraftScalar = std::variant<bool, std::int64_t, double, std::string, std::vector<std::string>>;
 
 struct DraftChange {
     std::string path;
@@ -38,6 +38,7 @@ public:
 
     [[nodiscard]] DraftSnapshot snapshot() const;
     DraftMutationResult upsert(std::uint64_t expected_version, DraftChange change);
+    DraftMutationResult upsert_many(std::uint64_t expected_version, std::vector<DraftChange> changes);
     DraftMutationResult remove(std::uint64_t expected_version, const std::string& path);
     DraftMutationResult clear(std::uint64_t expected_version);
 

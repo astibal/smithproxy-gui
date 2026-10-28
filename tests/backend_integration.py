@@ -516,6 +516,22 @@ def main() -> int:
                 headers=mutation_headers,
                 body=json.dumps({"expected_version": 1, "path": "../unsafe", "value": True}),
             )[0] == 400
+            batch_change = json.dumps({
+                "expected_version": 1,
+                "changes": [
+                    {"path": "policy.[0].name", "value": "Office outbound"},
+                    {"path": "policy.[0].disabled", "value": True},
+                    {"path": "policy.[0].dst", "value": ["internet", "backup"]},
+                ],
+            })
+            status, _, body = request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers, body=batch_change)
+            assert status == 200
+            batch_snapshot = json.loads(body)
+            assert batch_snapshot["version"] == 2
+            assert batch_snapshot["changes"][-1] == {
+                "path": "policy.[0].dst", "value": ["internet", "backup"]}
 
             FakeSmithproxy.response_status = 503
             snapshot = wait_for_snapshot_state(configured_port, "error")

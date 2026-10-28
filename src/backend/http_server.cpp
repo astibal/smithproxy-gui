@@ -178,30 +178,62 @@ private:
             return {403, "application/json; charset=utf-8", "{\"error\":\"same-origin CSRF check failed\"}"};
         }
         const auto document = nlohmann::json::parse(body, nullptr, false);
-        if (document.is_discarded() || !document.is_object() || document.size() != 3U ||
-            !document.contains("expected_version") || !document["expected_version"].is_number_unsigned() ||
-            !document.contains("path") || !document["path"].is_string() ||
-            !document.contains("value")) {
+        if (document.is_discarded() || !document.is_object() ||
+            !document.contains("expected_version") || !document["expected_version"].is_number_unsigned()) {
             return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};
         }
-        DraftScalar value;
-        const auto& raw = document["value"];
-        if (raw.is_boolean()) value = raw.get<bool>();
-        else if (raw.is_number_unsigned()) {
-            const auto number = raw.get<std::uint64_t>();
-            if (number > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-                return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft value\"}"};
+        const auto parse_value = [](const nlohmann::json& raw) -> std::optional<DraftScalar> {
+            if (raw.is_boolean()) return DraftScalar{raw.get<bool>()};
+            if (raw.is_number_unsigned()) {
+                const auto number = raw.get<std::uint64_t>();
+                if (number > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+                    return std::nullopt;
+                }
+                return DraftScalar{static_cast<std::int64_t>(number)};
             }
-            value = static_cast<std::int64_t>(number);
+            if (raw.is_number_integer()) return DraftScalar{raw.get<std::int64_t>()};
+            if (raw.is_number_float()) return DraftScalar{raw.get<double>()};
+            if (raw.is_string()) return DraftScalar{raw.get<std::string>()};
+            if (raw.is_array()) {
+                std::vector<std::string> values;
+                values.reserve(raw.size());
+                for (const auto& item : raw) {
+                    if (!item.is_string()) return std::nullopt;
+                    values.push_back(item.get<std::string>());
+                }
+                return DraftScalar{std::move(values)};
+            }
+            return std::nullopt;
+        };
+        std::vector<DraftChange> changes;
+        if (document.size() == 3U && document.contains("path") && document["path"].is_string() &&
+            document.contains("value")) {
+            auto value = parse_value(document["value"]);
+            if (!value) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid draft value\"}"};
+            }
+            changes.push_back({document["path"].get<std::string>(), std::move(*value)});
+        } else if (document.size() == 2U && document.contains("changes") &&
+                   document["changes"].is_array() && document["changes"].size() <= 4096U) {
+            for (const auto& item : document["changes"]) {
+                if (!item.is_object() || item.size() != 2U || !item.contains("path") ||
+                    !item["path"].is_string() || !item.contains("value")) {
+                    return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};
+                }
+                auto value = parse_value(item["value"]);
+                if (!value) {
+                    return {400, "application/json; charset=utf-8",
+                            "{\"error\":\"invalid draft value\"}"};
+                }
+                changes.push_back({item["path"].get<std::string>(), std::move(*value)});
+            }
+        } else {
+            return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};
         }
-        else if (raw.is_number_integer()) value = raw.get<std::int64_t>();
-        else if (raw.is_number_float()) value = raw.get<double>();
-        else if (raw.is_string()) value = raw.get<std::string>();
-        else return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft value\"}"};
 
-        const auto result = draft_.upsert(
-            document["expected_version"].get<std::uint64_t>(),
-            {document["path"].get<std::string>(), std::move(value)});
+        const auto result = draft_.upsert_many(
+            document["expected_version"].get<std::uint64_t>(), std::move(changes));
         if (result == DraftMutationResult::VersionConflict) {
             return {409, "application/json; charset=utf-8", "{\"error\":\"draft version conflict\"}"};
         }

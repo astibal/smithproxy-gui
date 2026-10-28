@@ -712,14 +712,26 @@ export class SmithproxyApp extends LitElement {
     }
     if (!this.draftAvailable || !this.draftClient || entry.kind !== 'policy') return;
     const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
-    const input = this.renderRoot.querySelector<HTMLInputElement>(`#action-${entry.id}`);
-    if (index < 0 || !input) return;
+    const name = this.renderRoot.querySelector<HTMLInputElement>(`#policy-name-${entry.id}`);
+    const enabled = this.renderRoot.querySelector<HTMLInputElement>(`#policy-enabled-${entry.id}`);
+    const destination = this.renderRoot.querySelector<HTMLInputElement>(`#destination-${entry.id}`);
+    const action = this.renderRoot.querySelector<HTMLInputElement>(`#action-${entry.id}`);
+    if (index < 0 || !name || !enabled || !destination || !action) return;
+    const destinations = destination.value.split(',').map(value => value.trim()).filter(Boolean);
+    if (name.value.trim().length === 0 || action.value.trim().length === 0 ||
+        destinations.length === 0 || destinations.length > 256) {
+      this.draftError = 'Name, action, and at least one destination are required.';
+      return;
+    }
     this.draftSaving = true;
     this.draftError = undefined;
     try {
-      this.applyDraft(await this.draftClient.upsert(
-        this.draftVersion, `policy.[${index}].action`, input.value,
-      ));
+      this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, [
+        {path: `policy.[${index}].name`, value: name.value.trim()},
+        {path: `policy.[${index}].disabled`, value: !enabled.checked},
+        {path: `policy.[${index}].dst`, value: destinations},
+        {path: `policy.[${index}].action`, value: action.value.trim()},
+      ]));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Draft change could not be saved.';
       await this.loadDraft();
@@ -1378,15 +1390,15 @@ export class SmithproxyApp extends LitElement {
     const actionOrigin = this.snapshot?.valueOrigins.find(
       item => item.path === `policy.[${policyIndex}].action`,
     );
-    const readOnly = this.snapshot?.source === 'live';
-    const actionReadOnly = readOnly && !this.draftAvailable;
+    const liveReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     const protocol = this.snapshot?.protocols.find(item => item.name === policy.protocol);
     return html`
       <div class="form-grid">
         <label for="policy-name-${entry.id}">Name</label>
-        <input id="policy-name-${entry.id}" .value=${policy.name} .readOnly=${readOnly} />
+        <input id="policy-name-${entry.id}" .value=${policy.name} .readOnly=${liveReadOnly} />
         <label>Enabled</label>
-        <label><input type="checkbox" .checked=${policy.enabled} ?disabled=${readOnly} /> Accept traffic for evaluation</label>
+        <label><input id="policy-enabled-${entry.id}" type="checkbox"
+          .checked=${policy.enabled} ?disabled=${liveReadOnly} /> Accept traffic for evaluation</label>
         <label>Sources</label>
         <div class="reference-stack">${policy.sources.map(reference => reference.id ? html`
           <button class="reference" type="button"
@@ -1396,9 +1408,9 @@ export class SmithproxyApp extends LitElement {
         ` : html`<span>${reference.name}</span>`)}</div>
         <label for="destination-${entry.id}">Destinations</label>
         <input id="destination-${entry.id}"
-          .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${readOnly} />
+          .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
         <label for="action-${entry.id}">Action</label>
-        <input id="action-${entry.id}" .value=${policy.action} .readOnly=${actionReadOnly} />
+        <input id="action-${entry.id}" .value=${policy.action} .readOnly=${liveReadOnly} />
         ${actionOrigin ? html`
           <span></span>
           <div class="origin-note">

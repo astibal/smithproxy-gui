@@ -86,16 +86,21 @@ nebude uzavřen před prověřením JSON Patch, Merge Patch a doménových opera
 pojmenované objekty a seřazené kolekce.
 
 The GUI core currently exposes one workspace-scoped foundation draft at
-`GET /api/v1/config/draft` and accepts typed scalar upserts at
-`POST /api/v1/config/draft/changes`. Every mutation requires the trusted gateway
-handoff, an exact same-origin `Origin`, `Sec-Fetch-Site: same-origin` when the
+`GET /api/v1/config/draft` and accepts typed atomic batches at
+`POST /api/v1/config/draft/changes`. A batch carries one expected version and a
+bounded `changes` array; it is rejected without partial application when any
+path or value is invalid. Supported foundation values are booleans, finite
+numbers, strings, and bounded string arrays. Every mutation requires the trusted
+gateway handoff, an exact same-origin `Origin`, `Sec-Fetch-Site: same-origin` when the
 browser supplies it, JSON content type, and `X-Smithproxy-GUI-CSRF: 1`. The
 custom header and absent CORS support prevent cross-origin form submission.
 Requests are limited to 64 KiB, paths and values are bounded, and an expected
 draft version is mandatory; stale writers receive HTTP 409. This store is not
 yet a commit path and cannot mutate Smithproxy configuration.
 
-The first browser integration persists `policy.[n].action` through this endpoint.
+The first browser integration atomically persists `policy.[n].name`,
+`policy.[n].disabled`, `policy.[n].dst`, and `policy.[n].action` through this
+endpoint.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.
