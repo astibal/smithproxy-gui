@@ -666,11 +666,20 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
 
   await expect(page.locator('link[data-saslik-theme]')).toHaveAttribute('href', '/saslik-theme.css');
   await expect(page.locator('script[data-app="smithproxy-gui"]')).toHaveAttribute('src', '/saslik-theme.js');
-  await page.getByRole('button', {name: 'Objects', exact: true}).click();
-  await page.getByRole('button', {name: /office-net subnet/i}).click();
-  const editor = page.getByRole('dialog', {name: 'Edit office-net'});
+  const search = page.getByRole('searchbox', {name: 'Search'});
+  await expect(search).toBeVisible();
+  await search.fill('office-net');
+  await expect(page.getByRole('heading', {name: 'Search results'})).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /office office-net/i}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit office'});
   await expect(editor).toBeVisible();
   await expect(editor).toHaveCSS('left', '0px');
+  await expect.poll(() => editor.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await editor.getByRole('button', {name: 'office-net', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toHaveCSS('left', '0px');
 });
 
 test('derives the system API from a workspace mount', async ({page}) => {

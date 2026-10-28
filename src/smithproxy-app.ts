@@ -359,13 +359,17 @@ export class SmithproxyApp extends LitElement {
       .brand { margin: 0 10px 0 0; }
       nav { display: flex; }
       nav button { width: 42px; padding: 8px; }
-      .main { grid-row: 2; }
-      .topbar { padding: 0 12px; }
-      .topbar p, .search { display: none; }
+      .main { grid-row: 2; grid-template-rows: 94px minmax(0, 1fr); }
+      .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto; gap: 5px 8px; padding: 8px 12px; }
+      .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .topbar p { display: none; }
+      .topbar .search { display: block; grid-column: 1 / -1; width: 100%; max-width: none; }
       .content { padding: 14px; }
       .drawer { inset: 0; }
+      .workspace .drawer[data-depth] { inset: 0; left: 0; }
       .form-grid { grid-template-columns: 1fr; gap: 7px; }
       .form-grid.wide-form-grid { grid-template-columns: 1fr; }
+      .form-grid > *, .reference-edit { min-width: 0; }
       .form-grid label:not(:first-child) { margin-top: 10px; }
       .statusbar { grid-row: 3; }
       .statusbar span:nth-of-type(n + 3) { display: none; }
