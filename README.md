@@ -112,6 +112,11 @@ integration into Saslik Tools:
 Configuration drafts, authentication adapters, and the remaining monitoring
 surfaces are delivered as independently tested vertical slices.
 
+The proposed atomic Smithproxy write contract is documented in
+[`docs/SMITHPROXY_WRITE_API_PROPOSAL.md`](docs/SMITHPROXY_WRITE_API_PROPOSAL.md).
+The GUI intentionally does not emulate a transaction by issuing multiple legacy
+configuration writes.
+
 When served behind Saslik, the page loads the canonical `/saslik-theme.css` and
 `/saslik-theme.js` assets with the `smithproxy-gui` application scope. Standalone
 deployments retain the built-in Petroleum fallback when those shared assets are
