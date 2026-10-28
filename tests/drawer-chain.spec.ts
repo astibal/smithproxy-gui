@@ -76,7 +76,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
   await expect(page.getByText('12 ms')).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
-  await expect(page.getByText(/control-plane API ping only/i)).toBeVisible();
+  await expect(page.getByText(/control-plane health and listener counters are live/i)).toBeVisible();
   await expect(page.getByRole('region', {name: 'Runtime metrics summary'}).getByText('4', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
@@ -91,6 +91,41 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   state.smithproxy = 'ready';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
+});
+
+test('exposes network, object, and system vertical slices', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  await page.goto('/');
+
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Listener workload'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'tcp'})).toBeVisible();
+  await expect(page.getByText('3', {exact: true})).toBeVisible();
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
+  await page.getByRole('button', {name: /office-net subnet/i}).click();
+  await expect(page.getByRole('region', {name: 'Edit office-net'})).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();
+  await expect(page.getByText('Smithproxy key')).toBeVisible();
+  await expect(page.getByText('Never exposed')).toBeVisible();
+});
+
+test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  await page.setViewportSize({width: 390, height: 844});
+  await page.goto('/');
+
+  await expect(page.locator('link[data-saslik-theme]')).toHaveAttribute('href', '/saslik-theme.css');
+  await expect(page.locator('script[data-app="smithproxy-gui"]')).toHaveAttribute('src', '/saslik-theme.js');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('button', {name: /office-net subnet/i}).click();
+  const editor = page.getByRole('region', {name: 'Edit office-net'});
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveCSS('left', '0px');
 });
 
 test('derives the system API from a workspace mount', async ({page}) => {

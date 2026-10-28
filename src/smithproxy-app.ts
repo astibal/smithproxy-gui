@@ -151,6 +151,20 @@ export class SmithproxyApp extends LitElement {
     .listener-name { font-weight: 650; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 8px; color: var(--app-muted); }
 
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+    .domain-card { padding: 16px; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
+    .domain-card header { display: flex; gap: 12px; align-items: start; justify-content: space-between; }
+    .domain-card h3 { margin: 0; font-size: 16px; }
+    .domain-card p { margin: 5px 0 0; color: var(--app-muted); }
+    .domain-card dl { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; margin: 18px 0 0; }
+    .domain-card dt { color: var(--app-muted); }
+    .domain-card dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+    .object-row { grid-template-columns: minmax(150px, 1.2fr) 110px minmax(180px, 1fr) 90px; }
+    .object-value { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .system-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; }
+    .system-grid .domain-card dl { grid-template-columns: minmax(110px, .6fr) minmax(150px, 1fr); }
+    .system-grid .domain-card dd { overflow-wrap: anywhere; }
+
     .table { overflow: hidden; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
     .row { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px; gap: 16px; align-items: center; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--app-border); background: transparent; text-align: left; cursor: pointer; }
     .row:last-child { border-bottom: 0; }
@@ -227,6 +241,7 @@ export class SmithproxyApp extends LitElement {
       .row { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
       .row > :nth-child(3), .row > :nth-child(5) { display: none; }
       .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+      .system-grid { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 620px) {
@@ -245,6 +260,8 @@ export class SmithproxyApp extends LitElement {
       .statusbar { grid-row: 3; }
       .statusbar span:nth-of-type(n + 3) { display: none; }
       .metric-grid { grid-template-columns: 1fr; }
+      .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
+      .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
       .probe-history { gap: 2px; }
     }
 
@@ -410,6 +427,61 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderObjects() {
+    return html`
+      <div class="content">
+        <div class="section-head">
+          <div><h2>Address objects</h2><p>Reusable sources and destinations referenced by policy</p></div>
+          <button class="primary" type="button">New address object</button>
+        </div>
+        <div class="table" role="group" aria-label="Address objects">
+          <div class="row object-row heading" aria-hidden="true">
+            <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
+          </div>
+          ${this.snapshot?.addresses.map(address => html`
+            <button class="row object-row" type="button" @click=${() => this.openAddress(address.id)}>
+              <strong>${address.name}</strong>
+              <span class="action">${address.type}</span>
+              <span class="object-value">${address.value}</span>
+              <span>${address.usedBy.length}</span>
+            </button>
+          `)}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderNetwork() {
+    const metrics = this.runtimeMetrics;
+    return html`
+      <div class="content dashboard">
+        <div class="section-head">
+          <div><h2>Listener workload</h2><p>Runtime view of Smithproxy network entry points</p></div>
+        </div>
+        ${metrics.state === 'ready' ? nothing : html`
+          <div class="metrics-message" role="status">${metrics.detail}</div>
+        `}
+        <div class="card-grid" aria-label="Network listeners">
+          ${metrics.listeners.map(listener => html`
+            <article class="domain-card">
+              <header>
+                <div><h3>${listener.name}</h3><p>${listener.workers} worker${listener.workers === 1 ? '' : 's'}</p></div>
+                <span class="status ${listener.workers > 0 ? '' : 'disabled'}">${listener.workers > 0 ? 'Running' : 'Idle'}</span>
+              </header>
+              <dl>
+                <dt>Active sessions</dt><dd>${listener.sessionsActive.toLocaleString()}</dd>
+                <dt>Total sessions</dt><dd>${listener.sessionsTotal.toLocaleString()}</dd>
+                <dt>Traffic up</dt><dd>${this.formatBytes(listener.bytesUp)}</dd>
+                <dt>Traffic down</dt><dd>${this.formatBytes(listener.bytesDown)}</dd>
+              </dl>
+            </article>
+          `)}
+          ${metrics.listeners.length === 0 ? html`<div class="metrics-message">No listener samples are available yet.</div>` : nothing}
+        </div>
+      </div>
+    `;
+  }
+
   private availabilityLabel(): string {
     if (this.systemStatus.availabilitySamples === 0) return 'No samples';
     const ratio = this.systemStatus.availabilitySuccessful / this.systemStatus.availabilitySamples;
@@ -525,7 +597,7 @@ export class SmithproxyApp extends LitElement {
           </div>
         </section>
         <div class="scope-note">
-          This view measures the authenticated control-plane API ping only. It does not yet represent listener, traffic, TLS inspection, or dataplane health.
+          Control-plane health and listener counters are live. TLS inspection outcomes and deeper dataplane health will be added as dedicated monitoring surfaces.
         </div>
       </div>
     `;
@@ -564,6 +636,52 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderSystem() {
+    return html`
+      <div class="content dashboard">
+        <div class="section-head">
+          <div><h2>System integration</h2><p>Non-sensitive diagnostics for this GUI instance</p></div>
+        </div>
+        <div class="system-grid">
+          <article class="domain-card">
+            <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
+            <dl>
+              <dt>Status</dt><dd>${displayState(this.systemStatus.core)}</dd>
+              <dt>Uptime</dt><dd>${this.uptimeLabel()}</dd>
+              <dt>API version</dt><dd>${this.apiVersion}</dd>
+              <dt>Base path</dt><dd>${this.runtime?.basePath ?? 'discovering'}</dd>
+            </dl>
+          </article>
+          <article class="domain-card">
+            <header><div><h3>Smithproxy API</h3><p>Server-side authenticated connection</p></div></header>
+            <dl>
+              <dt>Status</dt><dd>${displayState(this.systemStatus.smithproxy)}</dd>
+              <dt>Last check</dt><dd>${this.timeLabel(this.systemStatus.checkedAtUnixMs)}</dd>
+              <dt>Last success</dt><dd>${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}</dd>
+              <dt>Credential handling</dt><dd>GUI core only</dd>
+            </dl>
+          </article>
+          <article class="domain-card">
+            <header><div><h3>Appearance</h3><p>Saslik appearance contract v1</p></div></header>
+            <dl>
+              <dt>Application scope</dt><dd>smithproxy-gui</dd>
+              <dt>Palette source</dt><dd>Saslik shared assets</dd>
+              <dt>Fallback</dt><dd>Petroleum dark</dd>
+            </dl>
+          </article>
+          <article class="domain-card">
+            <header><div><h3>Security boundary</h3><p>Browser requests stay on the current origin</p></div></header>
+            <dl>
+              <dt>Browser credentials</dt><dd>Same origin</dd>
+              <dt>Smithproxy key</dt><dd>Never exposed</dd>
+              <dt>External redirects</dt><dd>Rejected</dd>
+            </dl>
+          </article>
+        </div>
+      </div>
+    `;
+  }
+
   private renderContent() {
     if (this.activeSection === 'Dashboard') {
       return this.renderDashboard();
@@ -571,8 +689,17 @@ export class SmithproxyApp extends LitElement {
     if (this.activeSection === 'Policy') {
       return this.renderPolicyList();
     }
+    if (this.activeSection === 'Network') {
+      return this.renderNetwork();
+    }
+    if (this.activeSection === 'Objects') {
+      return this.renderObjects();
+    }
     if (this.activeSection === 'Monitoring') {
       return this.renderMonitoring();
+    }
+    if (this.activeSection === 'System') {
+      return this.renderSystem();
     }
     return html`
       <div class="empty-state">

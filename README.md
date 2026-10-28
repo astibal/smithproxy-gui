@@ -86,3 +86,8 @@ Smithproxy API. The root web component supports integration into Saslik Tools:
 
 Configuration drafts, authentication adapters, and the remaining monitoring
 surfaces are delivered as independently tested vertical slices.
+
+When served behind Saslik, the page loads the canonical `/saslik-theme.css` and
+`/saslik-theme.js` assets with the `smithproxy-gui` application scope. Standalone
+deployments retain the built-in Petroleum fallback when those shared assets are
+not available.
