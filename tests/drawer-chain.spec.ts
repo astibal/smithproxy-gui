@@ -68,10 +68,10 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /office office-net/i}).click();
-  await expect(page.getByRole('region', {name: 'Edit office'})).toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
 
   await page.getByRole('button', {name: 'office-net', exact: true}).click();
-  const addressEditor = page.getByRole('region', {name: 'Edit office-net'});
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});
   await expect(addressEditor).toBeVisible();
   await expect(page.getByText('This shared object is used by 4 configuration entries.')).toBeVisible();
 
@@ -80,7 +80,40 @@ test('opens a policy and its referenced address object', async ({page}) => {
 
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toBeVisible();
-  await expect(page.getByRole('region', {name: 'Edit office'})).toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+});
+
+test('restores drawer routes and manages focus across the chain', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /office office-net/i}).click();
+  await expect(page.locator('#policy-name-policy-office')).toBeFocused();
+  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-office');
+
+  const reference = page.getByRole('button', {name: 'office-net', exact: true});
+  await reference.click();
+  await expect(page.locator('#address-name-address-office-net')).toBeFocused();
+  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe(
+    'policy:policy-office,address:address-office-net',
+  );
+
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});
+  await addressEditor.getByRole('button', {name: 'Enter focus mode'}).click();
+  await expect(addressEditor).toHaveCSS('left', '0px');
+  await page.keyboard.press('Escape');
+  await expect(addressEditor).not.toBeVisible();
+  await expect(reference).toBeFocused();
+  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-office');
+
+  await reference.click();
+  await page.reload();
+  await expect(page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true})).toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toBeVisible();
+  await expect(page.locator('#address-name-address-office-net')).toBeFocused();
+  await page.goBack();
+  await expect(page.getByRole('dialog', {name: 'Edit office-net'})).not.toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
 });
 
 test('shows live Smithproxy status transitions', async ({page}) => {
@@ -125,7 +158,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
   await page.getByRole('button', {name: /office-net subnet/i}).click();
-  await expect(page.getByRole('region', {name: 'Edit office-net'})).toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
@@ -143,7 +176,7 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
   await expect(page.locator('script[data-app="smithproxy-gui"]')).toHaveAttribute('src', '/saslik-theme.js');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('button', {name: /office-net subnet/i}).click();
-  const editor = page.getByRole('region', {name: 'Edit office-net'});
+  const editor = page.getByRole('dialog', {name: 'Edit office-net'});
   await expect(editor).toBeVisible();
   await expect(editor).toHaveCSS('left', '0px');
 });

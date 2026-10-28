@@ -8,6 +8,7 @@ import {
   type SessionActivitySnapshot,
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
+import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
 import {DrawerStore, type DrawerEntry} from './state/drawer-store';
 import {
   connectingSystemStatus,
@@ -52,6 +53,7 @@ export class SmithproxyApp extends LitElement {
   @state() private apiVersion = 'discovering';
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
+  @state() private focusMode = false;
 
   private readonly client = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
@@ -59,6 +61,9 @@ export class SmithproxyApp extends LitElement {
   private systemClient?: SystemClient;
   private systemProbeTimer: number | undefined;
   private systemProbeInFlight = false;
+  private drawerHistoryDepth = 0;
+  private drawerOrigins: HTMLElement[] = [];
+  private pendingReturnFocus: HTMLElement | undefined;
 
   static styles = css`
     :host {
@@ -126,6 +131,7 @@ export class SmithproxyApp extends LitElement {
     .search { width: min(300px, 32vw); padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 7px; background: var(--app-input); color: var(--app-text); }
 
     .workspace { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+    .content-layer { height: 100%; }
     .content { height: 100%; overflow: auto; padding: 22px; }
     .section-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 16px; }
     .section-head h2 { margin: 0 0 3px; font-size: 20px; }
@@ -210,6 +216,7 @@ export class SmithproxyApp extends LitElement {
     .drawer[data-depth='3'] { z-index: 13; left: calc(20% + 156px); }
     .drawer[data-depth='4'] { z-index: 14; left: calc(20% + 208px); }
     .drawer[data-depth='5'] { z-index: 15; left: calc(20% + 260px); }
+    .drawer.drawer.focus-mode { left: 0; min-width: 0; }
     .drawer-head { display: flex; gap: 12px; align-items: center; padding: 15px 18px; border-bottom: 1px solid var(--app-border); background: var(--app-raised); }
     .drawer-title { flex: 1; min-width: 0; }
     .drawer-title small { display: block; color: var(--app-muted); }
@@ -300,6 +307,7 @@ export class SmithproxyApp extends LitElement {
     }
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     window.addEventListener('online', this.handleOnline);
+    window.addEventListener('popstate', this.handlePopState);
     void this.load();
   }
 
@@ -307,6 +315,7 @@ export class SmithproxyApp extends LitElement {
     this.clearSystemProbe();
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('online', this.handleOnline);
+    window.removeEventListener('popstate', this.handlePopState);
     super.disconnectedCallback();
   }
 
@@ -320,6 +329,14 @@ export class SmithproxyApp extends LitElement {
 
   private readonly handleOnline = (): void => {
     void this.probeSystem();
+  };
+
+  private readonly handlePopState = (): void => {
+    this.drawerHistoryDepth = 0;
+    this.restoreDrawerRoute();
+    const target = this.pendingReturnFocus;
+    this.pendingReturnFocus = undefined;
+    if (target?.isConnected) void this.updateComplete.then(() => target.focus());
   };
 
   private clearSystemProbe(): void {
@@ -395,30 +412,114 @@ export class SmithproxyApp extends LitElement {
   private async load(): Promise<void> {
     try {
       this.snapshot = await this.client.loadSnapshot();
+      this.restoreDrawerRoute();
     } catch (error) {
       this.loadingError = error instanceof Error ? error.message : 'Unable to load configuration.';
     }
   }
 
-  private openPolicy(policy: PolicySummary): void {
+  private openPolicy(policy: PolicySummary, origin?: HTMLElement): void {
     this.drawerStore.open({kind: 'policy', id: policy.id, title: policy.name});
-    this.syncDrawers();
+    this.drawerOrigins = [
+      ...this.drawerOrigins.slice(0, this.drawerStore.entries.length - 1),
+      ...(origin ? [origin] : []),
+    ];
+    this.focusMode = false;
+    this.syncDrawers(true);
   }
 
-  private openAddress(id: string): void {
+  private openAddress(id: string, origin?: HTMLElement): void {
     const address = this.snapshot?.addresses.find(item => item.id === id);
     if (!address) return;
     this.drawerStore.open({kind: 'address', id: address.id, title: address.name});
-    this.syncDrawers();
+    this.drawerOrigins = [
+      ...this.drawerOrigins.slice(0, this.drawerStore.entries.length - 1),
+      ...(origin ? [origin] : []),
+    ];
+    this.focusMode = false;
+    this.syncDrawers(true);
   }
 
   private closeDrawer(index: number): void {
+    const levels = this.drawerStore.entries.length - index;
+    const returnFocus = this.drawerOrigins[index];
     this.drawerStore.closeFrom(index);
-    this.syncDrawers();
+    this.drawerOrigins = this.drawerOrigins.slice(0, index);
+    this.focusMode = false;
+    this.syncDrawers(false);
+    if (levels > 0 && this.drawerHistoryDepth >= levels) {
+      this.drawerHistoryDepth -= levels;
+      this.pendingReturnFocus = returnFocus;
+      history.go(-levels);
+    } else {
+      this.replaceDrawerRoute();
+      if (returnFocus?.isConnected) void this.updateComplete.then(() => returnFocus.focus());
+    }
   }
 
-  private syncDrawers(): void {
+  private syncDrawers(pushRoute: boolean): void {
     this.drawers = [...this.drawerStore.entries];
+    if (pushRoute) {
+      const hostState = typeof history.state === 'object' && history.state !== null ? history.state : {};
+      history.pushState({...hostState, smithproxyGuiDrawer: true}, '', this.drawerUrl());
+      this.drawerHistoryDepth += 1;
+    }
+    void this.updateComplete.then(() => this.focusActiveDrawer());
+  }
+
+  private drawerUrl(): string {
+    return `${location.pathname}${drawerRouteSearch(location.search, this.drawerStore.entries)}${location.hash}`;
+  }
+
+  private replaceDrawerRoute(): void {
+    history.replaceState(history.state, '', this.drawerUrl());
+  }
+
+  private restoreDrawerRoute(): void {
+    if (!this.snapshot) return;
+    const route = parseDrawerRoute(location.search);
+    const hasRouteParameter = new URLSearchParams(location.search).has('edit');
+    this.drawerStore.clear();
+    this.drawerOrigins = [];
+    let valid = true;
+    for (const entry of route) {
+      if (entry.kind === 'policy') {
+        const policy = this.snapshot.policies.find(item => item.id === entry.id);
+        if (!policy) { valid = false; break; }
+        this.drawerStore.open({kind: 'policy', id: policy.id, title: policy.name});
+      } else {
+        const address = this.snapshot.addresses.find(item => item.id === entry.id);
+        if (!address) { valid = false; break; }
+        this.drawerStore.open({kind: 'address', id: address.id, title: address.name});
+      }
+    }
+    if (!valid || (hasRouteParameter && route.length === 0)) {
+      this.drawerStore.clear();
+      const parameters = new URLSearchParams(location.search);
+      parameters.delete('edit');
+      const search = parameters.toString();
+      history.replaceState(
+        history.state,
+        '',
+        `${location.pathname}${search ? `?${search}` : ''}${location.hash}`,
+      );
+    }
+    this.drawers = [...this.drawerStore.entries];
+    if (this.drawers[0]?.kind === 'policy') this.activeSection = 'Policy';
+    if (this.drawers[0]?.kind === 'address') this.activeSection = 'Objects';
+    this.focusMode = false;
+    void this.updateComplete.then(() => this.focusActiveDrawer());
+  }
+
+  private focusActiveDrawer(): void {
+    if (this.drawers.length === 0) return;
+    const drawers = this.renderRoot.querySelectorAll<HTMLElement>('.drawer');
+    const active = drawers.item(drawers.length - 1);
+    const target = active?.querySelector<HTMLElement>(
+      '.drawer-body input:not([disabled]), .drawer-body select:not([disabled]), ' +
+      '.drawer-body textarea:not([disabled]), .drawer-body button:not([disabled])',
+    );
+    (target ?? active)?.focus();
   }
 
   private saveToDraft(entry: DrawerEntry): void {
@@ -428,8 +529,25 @@ export class SmithproxyApp extends LitElement {
   private handleKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape' && this.drawers.length > 0) {
       event.preventDefault();
-      this.drawerStore.closeTop();
-      this.syncDrawers();
+      this.closeDrawer(this.drawers.length - 1);
+      return;
+    }
+    if (event.key !== 'Tab' || this.drawers.length === 0) return;
+    const active = this.renderRoot.querySelectorAll<HTMLElement>('.drawer').item(this.drawers.length - 1);
+    if (!active) return;
+    const focusable = [...active.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+      'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )];
+    if (focusable.length === 0) { event.preventDefault(); active.focus(); return; }
+    const current = this.shadowRoot?.activeElement;
+    const index = focusable.indexOf(current as HTMLElement);
+    if (event.shiftKey && index <= 0) {
+      event.preventDefault();
+      focusable.at(-1)?.focus();
+    } else if (!event.shiftKey && (index < 0 || index === focusable.length - 1)) {
+      event.preventDefault();
+      focusable[0]?.focus();
     }
   }
 
@@ -445,7 +563,8 @@ export class SmithproxyApp extends LitElement {
             <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
           </div>
           ${this.snapshot?.policies.map(policy => html`
-            <button class="row" type="button" @click=${() => this.openPolicy(policy)}>
+            <button class="row" type="button"
+              @click=${(event: MouseEvent) => this.openPolicy(policy, event.currentTarget as HTMLElement)}>
               <strong>${policy.name}</strong>
               <span>${policy.sourceName}</span>
               <span>${policy.destinationName}</span>
@@ -470,7 +589,8 @@ export class SmithproxyApp extends LitElement {
             <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
           </div>
           ${this.snapshot?.addresses.map(address => html`
-            <button class="row object-row" type="button" @click=${() => this.openAddress(address.id)}>
+            <button class="row object-row" type="button"
+              @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
               <strong>${address.name}</strong>
               <span class="action">${address.type}</span>
               <span class="object-value">${address.value}</span>
@@ -806,7 +926,8 @@ export class SmithproxyApp extends LitElement {
         <label>Enabled</label>
         <label><input type="checkbox" .checked=${policy.enabled} /> Accept traffic for evaluation</label>
         <label>Source</label>
-        <button class="reference" type="button" @click=${() => this.openAddress(policy.sourceId)}>
+        <button class="reference" type="button"
+          @click=${(event: MouseEvent) => this.openAddress(policy.sourceId, event.currentTarget as HTMLElement)}>
           <span>${policy.sourceName}</span><span aria-hidden="true">→</span>
         </button>
         <label for="destination-${entry.id}">Destination</label>
@@ -855,10 +976,19 @@ export class SmithproxyApp extends LitElement {
     const editLabel = `Edit ${entry.title}`;
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
+    const active = index === this.drawers.length - 1;
     return html`
-      <section class="drawer" data-depth=${visibleDepth} aria-label=${editLabel}>
+      <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''}"
+        data-depth=${visibleDepth} role="dialog" aria-modal=${active ? 'true' : 'false'}
+        aria-hidden=${active ? nothing : 'true'} aria-label=${editLabel} tabindex="-1" ?inert=${!active}>
         <header class="drawer-head">
           <div class="drawer-title"><small>Edit ${entry.kind}</small><h2>${entry.title}</h2></div>
+          ${active ? html`
+            <button class="icon-button" type="button"
+              aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}
+              title=${this.focusMode ? 'Exit focus mode' : 'Focus mode'}
+              @click=${() => { this.focusMode = !this.focusMode; }}>⛶</button>
+          ` : nothing}
           <button class="icon-button" type="button" aria-label=${closeLabel} @click=${() => this.closeDrawer(index)}>×</button>
         </header>
         <div class="drawer-body">
@@ -895,7 +1025,7 @@ export class SmithproxyApp extends LitElement {
             <input class="search" type="search" aria-label="Search" placeholder="Search policies and objects" />
           </header>
           <div class="workspace">
-            ${this.renderContent()}
+            <div class="content-layer" ?inert=${this.drawers.length > 0}>${this.renderContent()}</div>
             ${this.drawers.map((entry, index) => this.renderDrawer(entry, index))}
           </div>
         </main>
