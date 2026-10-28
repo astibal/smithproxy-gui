@@ -158,6 +158,20 @@ export interface SystemSettings {
   ports: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'quic' | 'httpConnect', number>>;
   ocspStatusTtl: number;
   crlStatusTtl: number;
+  logging: {
+    defaultWritePayload: boolean;
+    payloadDirectoryConfigured: boolean;
+    pcapSingleQuota: number;
+    level: number;
+    fileConfigured: boolean;
+    console: boolean;
+    sslKeyFileConfigured: boolean;
+    syslogServerConfigured: boolean;
+    syslogPort: number;
+    syslogFacility: number;
+    syslogLevel: number;
+    syslogFamily: 4 | 6;
+  };
   tlsAutodetect: boolean;
   tlsAutodetectHarder: boolean;
   kernelTls: boolean;

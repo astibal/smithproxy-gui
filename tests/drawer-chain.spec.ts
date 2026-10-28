@@ -218,6 +218,12 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 0, http_connect: 1},
         ports: {plaintext: 50080, tls: 50443, udp: 50080, quic: 443, http_connect: 3128},
         ocsp_status_ttl: 1800, crl_status_ttl: 86400,
+        logging: {
+          default_write_payload: false, payload_directory_configured: true, pcap_single_quota: 100,
+          level: 6, file_configured: true, console: true, ssl_key_file_configured: true,
+          syslog_server_configured: false, syslog_port: 514, syslog_facility: 23,
+          syslog_level: 6, syslog_family: 4,
+        },
         tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
         nameserver_count: 2,
         http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
@@ -608,11 +614,12 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('5443');
   await settingsEditor.getByLabel('API header access').selectOption('true');
   await settingsEditor.getByLabel('Socket event logging').selectOption('true');
+  await settingsEditor.getByLabel('Log level', {exact: true}).fill('7');
   await expect(settingsEditor.getByText('1 redacted entries · unchanged')).toHaveCount(2);
-  await expect(settingsEditor.getByText('Not configured')).toBeVisible();
+  await expect(settingsEditor.getByText('Not configured')).toHaveCount(2);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 36 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 44 changes')).toBeVisible();
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
 
   const captureCard = page.getByRole('article').filter({
@@ -627,13 +634,14 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(captureEditor.getByText('Not configured')).toHaveCount(2);
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 43 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 51 changes')).toBeVisible();
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 43'}).click();
+  await page.getByRole('button', {name: 'Review draft · 51'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
+  await expect(changes).toContainText('settings.log_level');
   await expect(changes).toContainText('settings.http_api.allow_api_header');
   await expect(changes).toContainText('debug.log_sockets');
   await expect(changes).toContainText('captures.local.format');

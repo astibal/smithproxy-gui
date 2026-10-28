@@ -190,6 +190,12 @@ const snapshot: ConfigSnapshot = {
     workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, httpConnect: 1},
     ports: {plaintext: 50080, tls: 50443, udp: 50080, quic: 443, httpConnect: 3128},
     ocspStatusTtl: 1800, crlStatusTtl: 86400,
+    logging: {
+      defaultWritePayload: false, payloadDirectoryConfigured: true, pcapSingleQuota: 100,
+      level: 6, fileConfigured: true, console: true, sslKeyFileConfigured: true,
+      syslogServerConfigured: false, syslogPort: 514, syslogFacility: 23,
+      syslogLevel: 6, syslogFamily: 4,
+    },
     tlsAutodetect: true, tlsAutodetectHarder: false, kernelTls: false,
     nameserverCount: 2,
     httpApi: {keyCount: 1, allowedIpCount: 1, loopbackOnly: true, pamLogin: false, allowApiHeader: false},

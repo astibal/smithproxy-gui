@@ -41,9 +41,10 @@ boundary. Stable IDs and derived reverse references support nested drawers.
 
 The system-settings posture covers listener admission and ports, fail-open
 behavior, worker pools, certificate-status cache TTLs, TLS autodetection, kernel
-TLS, HTTP API access, and webhooks. API keys, addresses, nameservers, webhook
-URLs, and identity values are never serialized; only bounded counts and
-configured flags are exposed.
+TLS, payload retention, logging, syslog posture, HTTP API access, and webhooks.
+API keys, addresses, nameservers, webhook URLs, filesystem paths, syslog targets,
+and identity values are never serialized; only bounded counts and configured
+flags are exposed.
 
 Debug posture includes the five global diagnostic logging flags and only the
 bounded count of per-module overrides. Module names and override values remain

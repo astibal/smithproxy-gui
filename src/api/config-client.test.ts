@@ -79,6 +79,12 @@ const liveSnapshot = {
     workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, http_connect: 1},
     ports: {plaintext: 50080, tls: 50443, udp: 50080, quic: 443, http_connect: 3128},
     ocsp_status_ttl: 1800, crl_status_ttl: 86400,
+    logging: {
+      default_write_payload: false, payload_directory_configured: true, pcap_single_quota: 100,
+      level: 6, file_configured: true, console: true, ssl_key_file_configured: true,
+      syslog_server_configured: false, syslog_port: 514, syslog_facility: 23,
+      syslog_level: 6, syslog_family: 4,
+    },
     tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
     nameserver_count: 2,
     http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
@@ -141,6 +147,7 @@ describe('ApiConfigClient', () => {
       ports: {tls: 50443, quic: 443},
       ocspStatusTtl: 1800,
       crlStatusTtl: 86400,
+      logging: {level: 6, pcapSingleQuota: 100, syslogFamily: 4},
     });
     expect(snapshot.captures).toMatchObject({local: {enabled: true, quotaMiB: 512}});
     expect(snapshot.securityAssets).toMatchObject({

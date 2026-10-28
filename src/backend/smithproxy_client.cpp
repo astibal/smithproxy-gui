@@ -560,23 +560,6 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         return {std::move(response.body), {}};
     };
 
-    // Keep the existing Smithproxy request fan-out bounded as coverage grows.
-    // Debug settings are small and fetched before the parallel snapshot batch.
-    auto debug = fetch_section("debug");
-    if (!debug.body) {
-        snapshot.detail = debug.error;
-        return snapshot;
-    }
-    auto policies_future = std::async(std::launch::async, fetch_section, "policy");
-    auto addresses_future = std::async(std::launch::async, fetch_section, "address_objects");
-    auto ports_future = std::async(std::launch::async, fetch_section, "port_objects");
-    auto protocols_future = std::async(std::launch::async, fetch_section, "proto_objects");
-    auto settings_future = std::async(std::launch::async, fetch_section, "settings");
-    auto captures_future = std::async(std::launch::async, fetch_section, "captures");
-    auto authorities_future = std::async(std::launch::async, fetch_section, "tls_ca");
-    auto starttls_future = std::async(std::launch::async, fetch_section, "starttls_signatures");
-    auto detection_signatures_future = std::async(
-        std::launch::async, fetch_section, "detection_signatures");
     const std::array profile_categories{
         std::pair{"detection_profiles", "detection"},
         std::pair{"content_profiles", "content"},
@@ -587,30 +570,41 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         std::pair{"auth_profiles", "authentication"},
         std::pair{"routing", "routing"},
     };
-    std::vector<std::future<SectionResponse>> profile_futures;
-    profile_futures.reserve(profile_categories.size());
-    for (const auto& [section, type] : profile_categories) {
-        (void)type;
-        profile_futures.emplace_back(std::async(std::launch::async, fetch_section, section));
+    constexpr std::array section_names{
+        "policy", "address_objects", "port_objects", "proto_objects", "settings", "debug",
+        "captures", "tls_ca", "starttls_signatures", "detection_signatures",
+        "detection_profiles", "content_profiles", "tls_profiles", "ssh_profiles",
+        "alg_dns_profiles", "script_profiles", "auth_profiles", "routing",
+    };
+    constexpr std::size_t maximum_parallel_requests = 4U;
+    std::array<SectionResponse, section_names.size()> responses;
+    std::array<std::future<void>, maximum_parallel_requests> workers;
+    for (std::size_t worker = 0; worker < workers.size(); ++worker) {
+        workers[worker] = std::async(std::launch::async, [&, worker] {
+            for (std::size_t index = worker; index < section_names.size(); index += workers.size()) {
+                responses[index] = fetch_section(section_names[index]);
+            }
+        });
     }
-    auto policies = policies_future.get();
-    auto addresses = addresses_future.get();
-    auto ports = ports_future.get();
-    auto protocols = protocols_future.get();
-    auto settings = settings_future.get();
-    auto captures = captures_future.get();
-    auto authorities = authorities_future.get();
-    auto starttls = starttls_future.get();
-    auto detection_signatures = detection_signatures_future.get();
+    for (auto& worker : workers) worker.get();
     snapshot.checked_at = std::chrono::system_clock::now();
 
-    for (const auto* response : {&policies, &addresses, &ports, &protocols, &settings, &debug, &captures,
-                                 &authorities, &starttls, &detection_signatures}) {
-        if (!response->body) {
-            snapshot.detail = response->error;
+    for (const auto& response : responses) {
+        if (!response.body) {
+            snapshot.detail = response.error;
             return snapshot;
         }
     }
+    const auto& policies = responses[0];
+    const auto& addresses = responses[1];
+    const auto& ports = responses[2];
+    const auto& protocols = responses[3];
+    const auto& settings = responses[4];
+    const auto& debug = responses[5];
+    const auto& captures = responses[6];
+    const auto& authorities = responses[7];
+    const auto& starttls = responses[8];
+    const auto& detection_signatures = responses[9];
     auto parsed = parse_config_snapshot(
         *policies.body, *addresses.body, *ports.body, *protocols.body);
     if (!parsed.snapshot) {
@@ -643,11 +637,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     }
     parsed.snapshot->security_assets = std::move(parsed_security_assets.security_assets);
     for (std::size_t index = 0; index < profile_categories.size(); ++index) {
-        auto response = profile_futures[index].get();
-        if (!response.body) {
-            snapshot.detail = response.error;
-            return snapshot;
-        }
+        const auto& response = responses[index + 10U];
         const auto& [section, type] = profile_categories[index];
         auto profiles = parse_config_profiles(*response.body, section, type);
         if (!profiles.profiles) {

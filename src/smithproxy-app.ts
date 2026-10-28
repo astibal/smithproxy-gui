@@ -1189,6 +1189,7 @@ export class SmithproxyApp extends LitElement {
       ['http_api.pam_login', 'api-pam'], ['http_api.allow_api_header', 'api-header'],
       ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
       ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
+      ['default_write_payload', 'logging-default-payload'], ['log_console', 'logging-console'],
     ] as const;
     const changes: DraftChange[] = [];
     for (const [path, id] of booleanFields) {
@@ -1216,6 +1217,10 @@ export class SmithproxyApp extends LitElement {
       ['http_connect_port', 'port-http-connect', 65535],
       ['ssl_ocsp_status_ttl', 'ocsp-status-ttl', 31536000],
       ['ssl_crl_status_ttl', 'crl-status-ttl', 31536000],
+      ['write_pcap_single_quota', 'logging-pcap-quota', 1048576],
+      ['log_level', 'logging-level', 10], ['syslog_port', 'logging-syslog-port', 65535],
+      ['syslog_facility', 'logging-syslog-facility', 23],
+      ['syslog_level', 'logging-syslog-level', 10],
     ] as const;
     for (const [path, id, maximum] of numericFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-${id}`);
@@ -1226,6 +1231,9 @@ export class SmithproxyApp extends LitElement {
       }
       changes.push({path: `settings.${path}`, value});
     }
+    const syslogFamily = this.renderRoot.querySelector<HTMLSelectElement>('#settings-logging-syslog-family');
+    if (!syslogFamily || (syslogFamily.value !== '4' && syslogFamily.value !== '6')) return undefined;
+    changes.push({path: 'settings.syslog_family', value: Number(syslogFamily.value)});
     if (this.snapshot?.debug) {
       const debugFields = [
         ['log_data_crc', 'data-crc'], ['log_sockets', 'sockets'],
@@ -1980,6 +1988,19 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card">
+              <header><div><h3>Logging and payloads</h3><p>Destinations stay redacted</p></div></header>
+              <dl>
+                <dt>Log level / console</dt><dd>${settings.logging.level} / ${settings.logging.console ? 'On' : 'Off'}</dd>
+                <dt>Log file</dt><dd>${settings.logging.fileConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>TLS key log</dt><dd>${settings.logging.sslKeyFileConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Default payload capture</dt><dd>${settings.logging.defaultWritePayload ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Payload directory</dt><dd>${settings.logging.payloadDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Single PCAP quota</dt><dd>${settings.logging.pcapSingleQuota.toLocaleString()}</dd>
+                <dt>Syslog</dt><dd>${settings.logging.syslogServerConfigured ? `Configured · IPv${settings.logging.syslogFamily}` : 'Not configured'}</dd>
+                <dt>Syslog port / facility / level</dt><dd>${settings.logging.syslogPort} / ${settings.logging.syslogFacility} / ${settings.logging.syslogLevel}</dd>
+              </dl>
+            </article>
+            <article class="domain-card">
               <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div></header>
               <dl>
                 <dt>Listener</dt><dd>${settings.acceptApi ? 'Enabled' : 'Disabled'}</dd>
@@ -2540,6 +2561,22 @@ export class SmithproxyApp extends LitElement {
         ${numericField('port-http-connect', 'HTTP CONNECT port', settings.ports.httpConnect, 65535)}
         ${numericField('ocsp-status-ttl', 'OCSP status TTL (seconds)', settings.ocspStatusTtl, 31536000)}
         ${numericField('crl-status-ttl', 'CRL status TTL (seconds)', settings.crlStatusTtl, 31536000)}
+        <h3 class="form-span">Logging and payloads</h3>
+        ${booleanField('logging-default-payload', 'Default payload capture', settings.logging.defaultWritePayload)}
+        ${numericField('logging-pcap-quota', 'Single PCAP quota', settings.logging.pcapSingleQuota, 1048576)}
+        ${numericField('logging-level', 'Log level', settings.logging.level, 10)}
+        ${booleanField('logging-console', 'Console logging', settings.logging.console)}
+        ${numericField('logging-syslog-port', 'Syslog port', settings.logging.syslogPort, 65535)}
+        ${numericField('logging-syslog-facility', 'Syslog facility', settings.logging.syslogFacility, 23)}
+        ${numericField('logging-syslog-level', 'Syslog level', settings.logging.syslogLevel, 10)}
+        <label for="settings-logging-syslog-family">Syslog address family</label>
+        <select id="settings-logging-syslog-family" .value=${String(settings.logging.syslogFamily)} ?disabled=${disabled}>
+          <option value="4">IPv4</option><option value="6">IPv6</option>
+        </select>
+        <label>Payload directory</label><span>${settings.logging.payloadDirectoryConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>Log file</label><span>${settings.logging.fileConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>TLS key log file</label><span>${settings.logging.sslKeyFileConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>Syslog server</label><span>${settings.logging.syslogServerConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
         ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}

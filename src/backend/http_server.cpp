@@ -545,6 +545,22 @@ private:
                        ",\"http_connect\":" + std::to_string(value.http_connect_port) + "}" +
                        ",\"ocsp_status_ttl\":" + std::to_string(value.ocsp_status_ttl) +
                        ",\"crl_status_ttl\":" + std::to_string(value.crl_status_ttl) +
+                       ",\"logging\":{\"default_write_payload\":" +
+                       (value.default_write_payload ? "true" : "false") +
+                       ",\"payload_directory_configured\":" +
+                       (value.payload_directory_configured ? "true" : "false") +
+                       ",\"pcap_single_quota\":" + std::to_string(value.write_pcap_single_quota) +
+                       ",\"level\":" + std::to_string(value.log_level) +
+                       ",\"file_configured\":" + (value.log_file_configured ? "true" : "false") +
+                       ",\"console\":" + (value.log_console ? "true" : "false") +
+                       ",\"ssl_key_file_configured\":" +
+                       (value.ssl_key_log_file_configured ? "true" : "false") +
+                       ",\"syslog_server_configured\":" +
+                       (value.syslog_server_configured ? "true" : "false") +
+                       ",\"syslog_port\":" + std::to_string(value.syslog_port) +
+                       ",\"syslog_facility\":" + std::to_string(value.syslog_facility) +
+                       ",\"syslog_level\":" + std::to_string(value.syslog_level) +
+                       ",\"syslog_family\":" + std::to_string(value.syslog_family) + "}" +
                        ",\"tls_autodetect\":" + (value.tls_autodetect ? "true" : "false") +
                        ",\"tls_autodetect_harder\":" + (value.tls_autodetect_harder ? "true" : "false") +
                        ",\"kernel_tls\":" + (value.kernel_tls ? "true" : "false") +

@@ -66,6 +66,12 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "plaintext_port": "50080", "ssl_port": "50443", "udp_port": "50080",
             "quic_port": "443", "http_connect_port": "3128",
             "ssl_ocsp_status_ttl": "1800", "ssl_crl_status_ttl": "86400",
+            "default_write_payload": "false", "write_payload_dir": "/private/payloads",
+            "write_pcap_single_quota": "100", "log_level": "6",
+            "log_file": "/private/log/messages.log", "log_console": "true",
+            "sslkeylog_file": "/private/log/tls.keys", "syslog_server": "192.0.2.60",
+            "syslog_port": "514", "syslog_facility": "23", "syslog_level": "6",
+            "syslog_family": "4",
             "ssl_autodetect_harder": "false", "ssl_use_ktls": "false",
             "nameservers": ["192.0.2.53"],
             "http_api": {
@@ -458,6 +464,20 @@ def main() -> int:
             }
             assert config_snapshot["settings"]["ocsp_status_ttl"] == 1800
             assert config_snapshot["settings"]["crl_status_ttl"] == 86400
+            assert config_snapshot["settings"]["logging"] == {
+                "default_write_payload": False,
+                "payload_directory_configured": True,
+                "pcap_single_quota": 100,
+                "level": 6,
+                "file_configured": True,
+                "console": True,
+                "ssl_key_file_configured": True,
+                "syslog_server_configured": True,
+                "syslog_port": 514,
+                "syslog_facility": 23,
+                "syslog_level": 6,
+                "syslog_family": 4,
+            }
             assert config_snapshot["debug"] == {
                 "log_data_crc": False,
                 "log_sockets": True,
@@ -476,6 +496,9 @@ def main() -> int:
             assert b"/private/captures" not in config_body
             assert b"192.0.2.10" not in config_body
             assert b"private0" not in config_body
+            assert b"/private/payloads" not in config_body
+            assert b"/private/log" not in config_body
+            assert b"192.0.2.60" not in config_body
             assert config_snapshot["security_assets"] == {
                 "certificate_authority_count": 1,
                 "certificate_authority_path_count": 1,

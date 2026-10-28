@@ -162,6 +162,18 @@ struct ConfigSystemSettings {
     std::uint64_t http_connect_port{};
     std::uint64_t ocsp_status_ttl{};
     std::uint64_t crl_status_ttl{};
+    bool default_write_payload{};
+    bool payload_directory_configured{};
+    std::uint64_t write_pcap_single_quota{};
+    std::uint64_t log_level{};
+    bool log_file_configured{};
+    bool log_console{};
+    bool ssl_key_log_file_configured{};
+    bool syslog_server_configured{};
+    std::uint64_t syslog_port{};
+    std::uint64_t syslog_facility{};
+    std::uint64_t syslog_level{};
+    std::uint64_t syslog_family{};
     bool tls_autodetect{};
     bool tls_autodetect_harder{};
     bool kernel_tls{};

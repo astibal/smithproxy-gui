@@ -510,6 +510,19 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     constexpr std::uint64_t maximum_status_ttl = 31536000U;
     const auto ocsp_status_ttl = optional_decimal(*value, "ssl_ocsp_status_ttl", 1800U, maximum_status_ttl);
     const auto crl_status_ttl = optional_decimal(*value, "ssl_crl_status_ttl", 86400U, maximum_status_ttl);
+    const auto default_write_payload = boolean_scalar(*value, "default_write_payload", false);
+    const auto payload_directory = bounded_string(*value, "write_payload_dir", maximum_value_length, true);
+    const auto write_pcap_single_quota = optional_decimal(
+        *value, "write_pcap_single_quota", 100U, 1024U * 1024U);
+    const auto log_level = optional_decimal(*value, "log_level", 6U, 10U);
+    const auto log_file = bounded_string(*value, "log_file", maximum_value_length, true);
+    const auto log_console = boolean_scalar(*value, "log_console", true);
+    const auto ssl_key_log_file = bounded_string(*value, "sslkeylog_file", maximum_value_length, true);
+    const auto syslog_server = bounded_string(*value, "syslog_server", maximum_name_length, true);
+    const auto syslog_port = optional_decimal(*value, "syslog_port", 514U, 65535U);
+    const auto syslog_facility = optional_decimal(*value, "syslog_facility", 23U, 23U);
+    const auto syslog_level = optional_decimal(*value, "syslog_level", 6U, 10U);
+    const auto syslog_family = optional_decimal(*value, "syslog_family", 4U, 6U);
     const auto tls_autodetect = boolean_scalar(*value, "ssl_autodetect", false);
     const auto tls_autodetect_harder = boolean_scalar(*value, "ssl_autodetect_harder", false);
     const auto kernel_tls = boolean_scalar(*value, "ssl_use_ktls", false);
@@ -542,7 +555,11 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !policy_fail_open || !access_fail_open || !plaintext_workers || !tls_workers || !udp_workers ||
         !dtls_workers || !quic_workers || !socks_workers || !http_connect_workers || !plaintext_port ||
         !tls_port || !udp_port || !quic_port || !http_connect_port || !ocsp_status_ttl ||
-        !crl_status_ttl || !tls_autodetect ||
+        !crl_status_ttl || !default_write_payload || !payload_directory ||
+        !write_pcap_single_quota || !log_level || !log_file || !log_console ||
+        !ssl_key_log_file || !syslog_server || !syslog_port || !syslog_facility ||
+        !syslog_level || !syslog_family || (*syslog_family != 4U && *syslog_family != 6U) ||
+        !tls_autodetect ||
         !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips || !loopback_only ||
         !pam_login || !api_header || !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
         !webhook_api_override) {
@@ -553,7 +570,11 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *policy_fail_open, *access_fail_open, *plaintext_workers, *tls_workers, *udp_workers,
                 *dtls_workers, *quic_workers, *socks_workers, *http_connect_workers,
                 *plaintext_port, *tls_port, *udp_port, *quic_port, *http_connect_port,
-                *ocsp_status_ttl, *crl_status_ttl, *tls_autodetect,
+                *ocsp_status_ttl, *crl_status_ttl, *default_write_payload,
+                !payload_directory->empty(), *write_pcap_single_quota, *log_level,
+                !log_file->empty(), *log_console, !ssl_key_log_file->empty(),
+                !syslog_server->empty(), *syslog_port, *syslog_facility, *syslog_level,
+                *syslog_family, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, *nameservers, *api_keys, *allowed_ips,
                 *loopback_only, *pam_login, *api_header, *webhook_enabled, *webhook_tls_verify,
                 !webhook_url->empty(), *webhook_sift, *webhook_api_override,

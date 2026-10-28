@@ -66,6 +66,13 @@ function rangedInteger(value: unknown, label: string, minimum: number, maximum: 
   return value;
 }
 
+function allowedInteger(value: unknown, label: string, allowed: ReadonlyArray<number>): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || !allowed.includes(value)) {
+    throw new Error(`Invalid ${label}.`);
+  }
+  return value;
+}
+
 function safeBoolean(value: unknown, label: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`Invalid ${label}.`);
   return value;
@@ -434,7 +441,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   let settings: SystemSettings | null = null;
   if (value.settings !== null) {
     if (!isObject(value.settings) || !isObject(value.settings.workers) || !isObject(value.settings.ports) ||
-        !isObject(value.settings.http_api) || !isObject(value.settings.webhook)) {
+        !isObject(value.settings.logging) || !isObject(value.settings.http_api) ||
+        !isObject(value.settings.webhook)) {
       throw new Error('Invalid system settings.');
     }
     settings = {
@@ -465,6 +473,30 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       },
       ocspStatusTtl: safeInteger(value.settings.ocsp_status_ttl, 'OCSP status TTL', 31536000),
       crlStatusTtl: safeInteger(value.settings.crl_status_ttl, 'CRL status TTL', 31536000),
+      logging: {
+        defaultWritePayload: safeBoolean(
+          value.settings.logging.default_write_payload, 'default payload capture state',
+        ),
+        payloadDirectoryConfigured: safeBoolean(
+          value.settings.logging.payload_directory_configured, 'payload directory state',
+        ),
+        pcapSingleQuota: safeInteger(
+          value.settings.logging.pcap_single_quota, 'single PCAP quota', 1024 * 1024,
+        ),
+        level: safeInteger(value.settings.logging.level, 'log level', 10),
+        fileConfigured: safeBoolean(value.settings.logging.file_configured, 'log file state'),
+        console: safeBoolean(value.settings.logging.console, 'console logging state'),
+        sslKeyFileConfigured: safeBoolean(
+          value.settings.logging.ssl_key_file_configured, 'TLS key log file state',
+        ),
+        syslogServerConfigured: safeBoolean(
+          value.settings.logging.syslog_server_configured, 'syslog server state',
+        ),
+        syslogPort: safeInteger(value.settings.logging.syslog_port, 'syslog port', 65535),
+        syslogFacility: safeInteger(value.settings.logging.syslog_facility, 'syslog facility', 23),
+        syslogLevel: safeInteger(value.settings.logging.syslog_level, 'syslog level', 10),
+        syslogFamily: allowedInteger(value.settings.logging.syslog_family, 'syslog family', [4, 6]) as 4 | 6,
+      },
       tlsAutodetect: safeBoolean(value.settings.tls_autodetect, 'TLS autodetection state'),
       tlsAutodetectHarder: safeBoolean(value.settings.tls_autodetect_harder, 'hard TLS autodetection state'),
       kernelTls: safeBoolean(value.settings.kernel_tls, 'kernel TLS state'),
