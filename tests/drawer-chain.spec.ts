@@ -616,6 +616,32 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).not.toContainText('captures.remote.tun_dst');
 });
 
+test('searches policies and configuration objects without unsafe markup', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  const search = page.getByRole('searchbox', {name: 'Search'});
+
+  await search.fill('10.0.0.0/24');
+  await expect(page.getByRole('heading', {name: 'Search results'})).toBeVisible();
+  const results = page.getByRole('group', {name: 'Search results'});
+  await expect(results.getByRole('button')).toHaveCount(1);
+  await expect(results.getByText('office', {exact: true})).toBeVisible();
+  await results.getByRole('button').click();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await search.fill('default-ssh');
+  await expect(page.getByText('2 matches for “default-ssh”')).toBeVisible();
+  await expect(results.getByText('Policy', {exact: true})).toBeVisible();
+  await expect(results.getByText('Profile', {exact: true})).toBeVisible();
+
+  await search.fill('<script>');
+  await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
+  await expect(page.locator('smithproxy-gui script')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', {name: 'Control plane'})).toBeVisible();
+});
+
 test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'});
   await page.setViewportSize({width: 390, height: 844});

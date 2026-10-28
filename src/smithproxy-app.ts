@@ -108,6 +108,7 @@ export class SmithproxyApp extends LitElement {
   @state() private draftSaving = false;
   @state() private draftError: string | undefined;
   @state() private configError: string | undefined;
+  @state() private searchQuery = '';
 
   private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
@@ -120,6 +121,7 @@ export class SmithproxyApp extends LitElement {
   private drawerHistoryDepth = 0;
   private drawerOrigins: HTMLElement[] = [];
   private pendingReturnFocus: HTMLElement | undefined;
+  private searchReturnSection = 'Dashboard';
 
   static styles = css`
     :host {
@@ -1207,6 +1209,12 @@ export class SmithproxyApp extends LitElement {
       this.closeDrawer(this.drawers.length - 1);
       return;
     }
+    if (event.key === 'Escape' && this.searchQuery) {
+      event.preventDefault();
+      this.searchQuery = '';
+      this.activeSection = this.searchReturnSection;
+      return;
+    }
     if (event.key !== 'Tab' || this.drawers.length === 0) return;
     const active = this.renderRoot.querySelectorAll<HTMLElement>('.drawer').item(this.drawers.length - 1);
     if (!active) return;
@@ -1297,6 +1305,52 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private updateSearch(value: string): void {
+    const query = value.slice(0, 128);
+    if (!this.searchQuery && query) this.searchReturnSection = this.activeSection;
+    this.searchQuery = query;
+    this.activeSection = query ? 'Search' : this.searchReturnSection;
+  }
+
+  private searchMatches(values: ReadonlyArray<string | number>, query: string): boolean {
+    return values.some(value => String(value).toLocaleLowerCase().includes(query));
+  }
+
+  private renderSearchResults() {
+    const query = this.searchQuery.trim().toLocaleLowerCase();
+    if (!query || !this.snapshot) return html`<div class="empty-state"><h2>Search</h2><p>Enter a policy or object name.</p></div>`;
+    const policies = this.snapshot.policies.filter(policy => this.searchMatches([
+      policy.name, policy.action, policy.protocol, ...policy.sources.map(item => item.name),
+      ...policy.sourcePorts, ...policy.destinations.map(item => item.name), ...policy.destinationPorts,
+      ...policy.features, policy.nat, policy.routing, policy.tlsProfile, policy.sshProfile,
+      policy.detectionProfile, policy.contentProfile, policy.authProfile, policy.dnsProfile,
+      policy.scriptProfile,
+    ], query));
+    const addresses = this.snapshot.addresses.filter(item => this.searchMatches([item.name, item.type, item.value], query));
+    const ports = this.snapshot.ports.filter(item => this.searchMatches([item.name, item.start, item.end], query));
+    const protocols = this.snapshot.protocols.filter(item => this.searchMatches([item.name, item.number], query));
+    const profiles = this.snapshot.profiles.filter(item => this.searchMatches([item.name, item.type], query));
+    const count = policies.length + addresses.length + ports.length + protocols.length + profiles.length;
+    const row = (kind: string, name: string, detail: string, open: (origin: HTMLElement) => void) => html`
+      <button class="row object-row" type="button"
+        @click=${(event: MouseEvent) => open(event.currentTarget as HTMLElement)}>
+        <strong>${name}</strong><span class="action">${kind}</span><span class="object-value">${detail}</span><span>Open</span>
+      </button>`;
+    return html`
+      <div class="content">
+        <div class="section-head"><div><h2>Search results</h2><p>${count} matches for “${this.searchQuery.trim()}”</p></div></div>
+        ${count === 0 ? html`<div class="empty-state"><h2>No matches</h2><p>Try a name, type, value, action, or reference.</p></div>` : html`
+          <div class="table" role="group" aria-label="Search results">
+            <div class="row object-row heading" aria-hidden="true"><span>Name</span><span>Kind</span><span>Match context</span><span></span></div>
+            ${policies.map(item => row('Policy', item.name, item.action, origin => this.openPolicy(item, origin)))}
+            ${addresses.map(item => row('Address', item.name, `${item.type} · ${item.value}`, origin => this.openAddress(item.id, origin)))}
+            ${ports.map(item => row('Port', item.name, item.start === item.end ? String(item.start) : `${item.start}–${item.end}`, origin => this.openPort(item.id, origin)))}
+            ${protocols.map(item => row('Protocol', item.name, String(item.number), origin => this.openProtocol(item.id, origin)))}
+            ${profiles.map(item => row('Profile', item.name, item.type, origin => this.openProfile(item.id, origin)))}
+          </div>`}
+      </div>`;
   }
 
   private referenceSummary(references: PolicySummary['sources']): string {
@@ -1864,6 +1918,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderContent() {
+    if (this.activeSection === 'Search') return this.renderSearchResults();
     if (this.activeSection === 'Draft') {
       return this.renderDraftReview();
     }
@@ -2455,7 +2510,9 @@ export class SmithproxyApp extends LitElement {
                   this.activeSection = 'Draft';
                 }}>Review draft · ${this.draftChangeCount}</button>
             ` : nothing}
-            <input class="search" type="search" aria-label="Search" placeholder="Search policies and objects" />
+            <input class="search" type="search" aria-label="Search" maxlength="128"
+              placeholder="Search policies and objects" .value=${this.searchQuery}
+              @input=${(event: InputEvent) => this.updateSearch((event.currentTarget as HTMLInputElement).value)} />
           </header>
           <div class="workspace">
             <div class="content-layer" ?inert=${this.drawers.length > 0}>${this.renderContent()}</div>
