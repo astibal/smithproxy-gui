@@ -9,7 +9,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     base_path: '/',
     smithproxy_state: state.smithproxy,
     features: {
-      config_read: configRead, config_write: false, jobs: false, events: true,
+      config_read: configRead, config_write: false, drafts: configRead, jobs: false, events: true,
       smithproxy_events: false,
       metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
     },

@@ -272,6 +272,7 @@ def main() -> int:
         assert capabilities["base_path"] == "/ws001/smithproxy-gui"
         assert capabilities["features"]["config_read"] is False
         assert capabilities["features"]["config_write"] is False
+        assert capabilities["features"]["drafts"] is False
         assert capabilities["features"]["events"] is True
         assert capabilities["features"]["smithproxy_events"] is False
         assert capabilities["features"]["metrics"] is True
@@ -470,6 +471,51 @@ def main() -> int:
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["config_read"] is True
+            assert json.loads(request(
+                configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
+                "features"]["drafts"] is True
+
+            assert request(configured_port, "/api/v1/config/draft")[0] == 401
+            status, _, body = request(
+                configured_port, "/api/v1/config/draft", headers=gateway_headers)
+            assert status == 200
+            assert json.loads(body) == {
+                "id": "workspace-draft", "base_revision": None, "version": 0, "changes": []}
+            draft_change = json.dumps({
+                "expected_version": 0, "path": "policy.[0].action", "value": "accept"})
+            status, _, _ = request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers={**gateway_headers, "Content-Type": "application/json"}, body=draft_change)
+            assert status == 403
+            mutation_headers = {
+                **gateway_headers,
+                "Host": f"127.0.0.1:{configured_port}",
+                "Origin": f"http://127.0.0.1:{configured_port}",
+                "Sec-Fetch-Site": "same-origin",
+                "X-Smithproxy-GUI-CSRF": "1",
+                "Content-Type": "application/json",
+            }
+            status, _, body = request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers, body=draft_change)
+            assert status == 200
+            assert json.loads(body)["changes"] == [
+                {"path": "policy.[0].action", "value": "accept"}]
+            assert json.loads(body)["version"] == 1
+            assert request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers, body=draft_change)[0] == 409
+            cross_origin_headers = {**mutation_headers, "Origin": "https://attacker.invalid"}
+            assert request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=cross_origin_headers,
+                body=json.dumps({"expected_version": 1, "path": "settings.enabled", "value": True}),
+            )[0] == 403
+            assert request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers,
+                body=json.dumps({"expected_version": 1, "path": "../unsafe", "value": True}),
+            )[0] == 400
 
             FakeSmithproxy.response_status = 503
             snapshot = wait_for_snapshot_state(configured_port, "error")

@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "config_snapshot.hpp"
+#include "draft_store.hpp"
 #include "json.hpp"
 #include "live_sessions.hpp"
 #include "neighbor_metrics.hpp"
@@ -10,6 +11,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -25,6 +27,27 @@ int main() {
     assert(!normalize_base_path("ws001"));
     assert(!normalize_base_path("/ws001/../gui"));
     assert(!normalize_base_path("/ws001//gui"));
+
+    DraftStore draft{"draft-test", "revision-7"};
+    assert(draft.snapshot().version == 0U);
+    assert(draft.snapshot().base_revision == "revision-7");
+    assert(draft.upsert(0U, {"policy.[0].action", std::string("accept")}) ==
+           DraftMutationResult::Applied);
+    assert(draft.snapshot().changes.size() == 1U);
+    assert(draft.upsert(0U, {"policy.[0].action", std::string("reject")}) ==
+           DraftMutationResult::VersionConflict);
+    assert(draft.upsert(1U, {"policy.[0].action", std::string("reject")}) ==
+           DraftMutationResult::Applied);
+    assert(draft.snapshot().changes.size() == 1U);
+    assert(std::get<std::string>(draft.snapshot().changes.front().value) == "reject");
+    assert(draft.upsert(2U, {"../unsafe", true}) == DraftMutationResult::InvalidPath);
+    assert(draft.upsert(2U, {"settings.ratio", std::numeric_limits<double>::infinity()}) ==
+           DraftMutationResult::InvalidValue);
+    assert(draft.remove(2U, "settings.missing") == DraftMutationResult::Missing);
+    assert(draft.remove(2U, "policy.[0].action") == DraftMutationResult::Applied);
+    assert(draft.snapshot().changes.empty());
+    assert(draft.clear(3U) == DraftMutationResult::Applied);
+    assert(draft.snapshot().version == 4U);
 
     assert(path_below_base("/ws001/gui", "/ws001/gui") == "/");
     assert(path_below_base("/ws001/gui/assets/a.js", "/ws001/gui") == "/assets/a.js");

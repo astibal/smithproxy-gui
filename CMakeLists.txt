@@ -59,6 +59,7 @@ endif()
 add_library(smithproxy_gui_core
     src/backend/config.cpp
     src/backend/config_snapshot.cpp
+    src/backend/draft_store.cpp
     src/backend/json.cpp
     src/backend/live_sessions.cpp
     src/backend/neighbor_metrics.cpp

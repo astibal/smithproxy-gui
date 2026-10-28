@@ -40,6 +40,12 @@ the current request passed the same boundary. This contract deliberately fails
 closed; configuring the GUI process without the matching proxy injection does
 not expose configuration data.
 
+Draft mutations additionally fail closed unless `Origin` exactly matches the
+request host and the request carries JSON content type plus the custom
+`X-Smithproxy-GUI-CSRF: 1` header. Optional Fetch Metadata must report
+`same-origin`. The GUI core does not emit permissive CORS headers. These checks
+are enforced independently of trusted-gateway authentication.
+
 ## Oprávnění
 
 Minimální role:

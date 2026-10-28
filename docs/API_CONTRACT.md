@@ -85,6 +85,16 @@ Mutace draftu používá stabilní schema identifikátory a typované operace. F
 nebude uzavřen před prověřením JSON Patch, Merge Patch a doménových operací pro
 pojmenované objekty a seřazené kolekce.
 
+The GUI core currently exposes one workspace-scoped foundation draft at
+`GET /api/v1/config/draft` and accepts typed scalar upserts at
+`POST /api/v1/config/draft/changes`. Every mutation requires the trusted gateway
+handoff, an exact same-origin `Origin`, `Sec-Fetch-Site: same-origin` when the
+browser supplies it, JSON content type, and `X-Smithproxy-GUI-CSRF: 1`. The
+custom header and absent CORS support prevent cross-origin form submission.
+Requests are limited to 64 KiB, paths and values are bounded, and an expected
+draft version is mandatory; stale writers receive HTTP 409. This store is not
+yet a commit path and cannot mutate Smithproxy configuration.
+
 ## Runtime a monitoring
 
 ```http

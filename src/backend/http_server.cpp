@@ -1,16 +1,19 @@
 #include "http_server.hpp"
 
+#include "draft_store.hpp"
 #include "json.hpp"
 #include "path.hpp"
 
 #include <lmhttpd.hpp>
 #include <microhttpd.h>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string_view>
@@ -21,6 +24,7 @@ namespace {
 
 struct RequestState final : lmh::ConnectionState {
     explicit RequestState(lmh::Controller& controller) : ConnectionState(controller) {}
+    bool body_too_large{};
 };
 
 struct Response {
@@ -29,6 +33,8 @@ struct Response {
     std::string body;
     std::string cache_control{"no-store"};
 };
+
+constexpr std::size_t maximum_request_body = 64U * 1024U;
 
 std::string mime_type(const std::filesystem::path& path) {
     const auto extension = path.extension().string();
@@ -91,19 +97,26 @@ bool confined_to_root(const std::filesystem::path& root, const std::filesystem::
 class GuiController final : public lmh::Controller {
 public:
     GuiController(const AppConfig& config, SmithproxyMonitor& monitor)
-        : config_(config), monitor_(monitor), started_at_(std::chrono::steady_clock::now()) {}
+        : config_(config), monitor_(monitor), started_at_(std::chrono::steady_clock::now()),
+          draft_("workspace-draft") {}
 
     bool validPath(const char*, const char*) override { return true; }
     lmh::ConnectionState* create_state() override { return new RequestState(*this); }
 
     int handleRequest(MHD_Connection* connection, const char* url, const char* method,
-                      const char*, std::size_t* upload_data_size, void** ptr) override {
+                      const char* upload_data, std::size_t* upload_data_size, void** ptr) override {
         if (*ptr == nullptr) {
             *ptr = create_state();
             return MHD_YES;
         }
         auto& state = *static_cast<RequestState*>(*ptr);
         if (*upload_data_size > 0U) {
+            if (state.request_data.size() > maximum_request_body ||
+                *upload_data_size > maximum_request_body - state.request_data.size()) {
+                state.body_too_large = true;
+            } else if (!state.body_too_large) {
+                state.request_data.append(upload_data, *upload_data_size);
+            }
             *upload_data_size = 0U;
             return MHD_YES;
         }
@@ -111,7 +124,11 @@ public:
 
         const bool head = std::string_view(method) == "HEAD";
         Response response;
-        if (std::string_view(method) != "GET" && !head) {
+        if (state.body_too_large) {
+            response = {413, "application/json; charset=utf-8", "{\"error\":\"request body too large\"}"};
+        } else if (std::string_view(method) == "POST") {
+            response = route_mutation(connection, url, state.request_data);
+        } else if (std::string_view(method) != "GET" && !head) {
             response = {405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
         } else {
             response = route(connection, url);
@@ -120,6 +137,80 @@ public:
     }
 
 private:
+    bool same_origin_mutation(MHD_Connection* connection) const {
+        const auto* origin = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, "Origin");
+        const auto* host = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, "Host");
+        const auto* csrf = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "X-Smithproxy-GUI-CSRF");
+        const auto* fetch_site = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "Sec-Fetch-Site");
+        const auto* content_type = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE);
+        if (origin == nullptr || host == nullptr || csrf == nullptr || content_type == nullptr) return false;
+        const std::string_view type{content_type};
+        if (!type.starts_with("application/json") ||
+            (type.size() > 16U && type[16U] != ';')) return false;
+        if (!constant_time_equal(csrf, "1")) return false;
+        if (fetch_site != nullptr && std::string_view(fetch_site) != "same-origin") return false;
+        const std::string expected_http = "http://" + std::string(host);
+        const std::string expected_https = "https://" + std::string(host);
+        return constant_time_equal(origin, expected_http) || constant_time_equal(origin, expected_https);
+    }
+
+    Response route_mutation(MHD_Connection* connection, const std::string_view url,
+                            const std::string_view body) {
+        if (url == "/healthz") {
+            return {405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
+        }
+        const auto relative = path_below_base(url, config_.base_path);
+        if (!relative) {
+            return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};
+        }
+        if (*relative != "/api/v1/config/draft/changes") {
+            return relative->starts_with("/api/")
+                ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
+                : Response{405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
+        }
+        if (!gateway_authenticated(connection)) {
+            return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+        }
+        if (!same_origin_mutation(connection)) {
+            return {403, "application/json; charset=utf-8", "{\"error\":\"same-origin CSRF check failed\"}"};
+        }
+        const auto document = nlohmann::json::parse(body, nullptr, false);
+        if (document.is_discarded() || !document.is_object() || document.size() != 3U ||
+            !document.contains("expected_version") || !document["expected_version"].is_number_unsigned() ||
+            !document.contains("path") || !document["path"].is_string() ||
+            !document.contains("value")) {
+            return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};
+        }
+        DraftScalar value;
+        const auto& raw = document["value"];
+        if (raw.is_boolean()) value = raw.get<bool>();
+        else if (raw.is_number_unsigned()) {
+            const auto number = raw.get<std::uint64_t>();
+            if (number > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+                return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft value\"}"};
+            }
+            value = static_cast<std::int64_t>(number);
+        }
+        else if (raw.is_number_integer()) value = raw.get<std::int64_t>();
+        else if (raw.is_number_float()) value = raw.get<double>();
+        else if (raw.is_string()) value = raw.get<std::string>();
+        else return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft value\"}"};
+
+        const auto result = draft_.upsert(
+            document["expected_version"].get<std::uint64_t>(),
+            {document["path"].get<std::string>(), std::move(value)});
+        if (result == DraftMutationResult::VersionConflict) {
+            return {409, "application/json; charset=utf-8", "{\"error\":\"draft version conflict\"}"};
+        }
+        if (result != DraftMutationResult::Applied) {
+            return {400, "application/json; charset=utf-8", "{\"error\":\"draft change rejected\"}"};
+        }
+        return draft_snapshot();
+    }
+
     Response route(MHD_Connection* connection, const std::string_view url) const {
         if (url == "/healthz") return health();
         const auto relative = path_below_base(url, config_.base_path);
@@ -133,6 +224,12 @@ private:
         if (*relative == "/api/v1/events/recent") return recent_events();
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
+        if (*relative == "/api/v1/config/draft") {
+            if (!gateway_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+            }
+            return draft_snapshot();
+        }
         if (*relative == "/api/v1/config/snapshot") {
             if (!gateway_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
@@ -161,7 +258,8 @@ private:
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":false,"
-                    "\"jobs\":false,\"events\":true,\"smithproxy_events\":false,\"metrics\":true,"
+                    "\"drafts\":" + (config_read ? "true" : "false") +
+                    ",\"jobs\":false,\"events\":true,\"smithproxy_events\":false,\"metrics\":true,"
                     "\"session_activity\":true,\"tls_monitoring\":true,"
                     "\"neighbor_monitoring\":true}}"};
     }
@@ -179,6 +277,21 @@ private:
         return {200, "application/json; charset=utf-8",
                 "{\"mode\":" + json_string(enabled ? "gateway" : "disabled") +
                     ",\"authenticated\":" + (authenticated ? "true" : "false") + "}"};
+    }
+
+    Response draft_snapshot() const {
+        const auto draft = draft_.snapshot();
+        nlohmann::json document{
+            {"id", draft.id},
+            {"base_revision", draft.base_revision ? nlohmann::json(*draft.base_revision) : nlohmann::json(nullptr)},
+            {"version", draft.version},
+            {"changes", nlohmann::json::array()},
+        };
+        for (const auto& change : draft.changes) {
+            auto value = std::visit([](const auto& item) { return nlohmann::json(item); }, change.value);
+            document["changes"].push_back({{"path", change.path}, {"value", std::move(value)}});
+        }
+        return {200, "application/json; charset=utf-8", document.dump()};
     }
 
     Response config_snapshot() const {
@@ -626,6 +739,7 @@ private:
     const AppConfig& config_;
     SmithproxyMonitor& monitor_;
     const std::chrono::steady_clock::time_point started_at_;
+    DraftStore draft_;
 };
 
 } // namespace

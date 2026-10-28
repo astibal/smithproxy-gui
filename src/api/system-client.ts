@@ -23,6 +23,7 @@ export interface SystemCapabilities {
   features: {
     configRead: boolean;
     configWrite: boolean;
+    drafts: boolean;
     jobs: boolean;
     events: boolean;
     smithproxyEvents: boolean;
@@ -194,7 +195,8 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   }
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
-      typeof features.jobs !== 'boolean' || typeof features.events !== 'boolean' ||
+      typeof features.drafts !== 'boolean' || typeof features.jobs !== 'boolean' ||
+      typeof features.events !== 'boolean' ||
       typeof features.smithproxy_events !== 'boolean' ||
       typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean' ||
       typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean') {
@@ -208,6 +210,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
     features: {
       configRead: features.config_read,
       configWrite: features.config_write,
+      drafts: features.drafts,
       jobs: features.jobs,
       events: features.events,
       smithproxyEvents: features.smithproxy_events,
