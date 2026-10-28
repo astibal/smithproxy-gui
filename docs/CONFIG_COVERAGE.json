@@ -124,7 +124,7 @@
       "edit": "partial",
       "sensitivity": "secret-bearing",
       "tracked_fields": ["name", "inspect", "allow_password_auth", "allow_public_key_auth"],
-      "notes": "Authentication posture is typed; host-key paths and future channel policy fields remain redacted."
+      "notes": "Authentication posture is typed; host-key paths support write-only replace or clear while future channel policy fields remain redacted."
     },
     {
       "name": "alg_dns_profiles",
@@ -182,7 +182,7 @@
       "edit": "partial",
       "sensitivity": "code-bearing",
       "tracked_fields": ["name", "runtime", "module_path_configured"],
-      "notes": "Runtime selection is typed; executable paths and script contents remain redacted."
+      "notes": "Runtime selection is typed; executable paths support write-only replace or clear while script contents remain redacted."
     },
     {
       "name": "auth_profiles",

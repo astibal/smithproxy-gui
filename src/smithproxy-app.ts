@@ -684,7 +684,10 @@ export class SmithproxyApp extends LitElement {
       'captures.local.dir', 'captures.local.file_prefix', 'captures.local.file_suffix',
       'captures.remote.tun_dst', 'captures.remote.bind_interface',
     ]);
-    if (sensitivePaths.has(path)) {
+    const indexedSensitivePath =
+      (path.startsWith('ssh_profiles.[') && path.endsWith('].host_key')) ||
+      (path.startsWith('script_profiles.[') && path.endsWith('].script-file'));
+    if (sensitivePaths.has(path) || indexedSensitivePath) {
       if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared · redacted';
       const count = Array.isArray(value) ? ` · ${value.length} item${value.length === 1 ? '' : 's'}` : '';
       return `Replaced · redacted${count}`;
@@ -857,12 +860,12 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
-      if (entry.kind === 'settings' || entry.kind === 'captures') {
+      if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile') {
         this.renderRoot.querySelectorAll<HTMLInputElement>(
-          '[id^="settings-write-"][id$="-value"], [id^="captures-write-"][id$="-value"], #settings-api-keys-value',
+          '[id*="-write-"][id$="-value"], #settings-api-keys-value',
         ).forEach(input => { input.value = ''; });
         this.renderRoot.querySelectorAll<HTMLSelectElement>(
-          '[id^="settings-write-"][id$="-mode"], [id^="captures-write-"][id$="-mode"], #settings-api-keys-mode',
+          '[id*="-write-"][id$="-mode"], #settings-api-keys-mode',
         ).forEach(select => { select.value = 'unchanged'; });
       }
     } catch (error) {
@@ -1106,8 +1109,18 @@ export class SmithproxyApp extends LitElement {
         const index = profiles.findIndex(item => item.id === entry.id);
         if (index < 0) return undefined;
         const policy = this.renderRoot.querySelector<HTMLSelectElement>(`#ssh-host-key-policy-${entry.id}`);
-        if (!policy || !['insecure', 'accept-new', 'strict'].includes(policy.value)) {
+        const hostKeyMode = this.renderRoot.querySelector<HTMLSelectElement>(`#ssh-write-host-key-${entry.id}-mode`);
+        const hostKeyValue = this.renderRoot.querySelector<HTMLInputElement>(`#ssh-write-host-key-${entry.id}-value`);
+        if (!policy || !hostKeyMode || !hostKeyValue ||
+            !['insecure', 'accept-new', 'strict'].includes(policy.value) ||
+            !['unchanged', 'replace', 'clear'].includes(hostKeyMode.value)) {
           this.draftError = 'SSH host-key policy is invalid.';
+          return undefined;
+        }
+        const replacement = hostKeyValue.value.trim();
+        if (hostKeyMode.value === 'replace' &&
+            (replacement.length === 0 || replacement.length > 1024 || /[\u0000-\u001f\u007f]/u.test(replacement))) {
+          this.draftError = 'A replacement host-key path up to 1024 characters is required.';
           return undefined;
         }
         const actions = [
@@ -1131,20 +1144,40 @@ export class SmithproxyApp extends LitElement {
           {path: `ssh_profiles.[${index}].name`, value: name.value.trim()},
           {path: `ssh_profiles.[${index}].hostkey_policy`, value: policy.value},
           ...changes,
+          ...(hostKeyMode.value === 'replace'
+            ? [{path: `ssh_profiles.[${index}].host_key`, value: replacement}]
+            : hostKeyMode.value === 'clear'
+              ? [{path: `ssh_profiles.[${index}].host_key`, value: ''}]
+              : []),
         ];
       }
       if (profile.script) {
         const profiles = this.snapshot.profiles.filter(item => item.script !== null);
         const index = profiles.findIndex(item => item.id === entry.id);
         const runtime = this.renderRoot.querySelector<HTMLSelectElement>(`#script-runtime-${entry.id}`);
-        if (index < 0 || !runtime || !['python', 'go', 'unknown'].includes(runtime.value)) {
+        const moduleMode = this.renderRoot.querySelector<HTMLSelectElement>(`#script-write-module-${entry.id}-mode`);
+        const moduleValue = this.renderRoot.querySelector<HTMLInputElement>(`#script-write-module-${entry.id}-value`);
+        if (index < 0 || !runtime || !moduleMode || !moduleValue ||
+            !['python', 'go', 'unknown'].includes(runtime.value) ||
+            !['unchanged', 'replace', 'clear'].includes(moduleMode.value)) {
           this.draftError = 'Script runtime is invalid.';
+          return undefined;
+        }
+        const replacement = moduleValue.value.trim();
+        if (moduleMode.value === 'replace' &&
+            (replacement.length === 0 || replacement.length > 1024 || /[\u0000-\u001f\u007f]/u.test(replacement))) {
+          this.draftError = 'A replacement script module path up to 1024 characters is required.';
           return undefined;
         }
         const configuredType = runtime.value === 'python' ? '0' : runtime.value === 'go' ? '1' : '-1';
         return [
           {path: `script_profiles.[${index}].name`, value: name.value.trim()},
           {path: `script_profiles.[${index}].type`, value: configuredType},
+          ...(moduleMode.value === 'replace'
+            ? [{path: `script_profiles.[${index}].script-file`, value: replacement}]
+            : moduleMode.value === 'clear'
+              ? [{path: `script_profiles.[${index}].script-file`, value: ''}]
+              : []),
         ];
       }
       if (profile.authentication) {
@@ -2592,8 +2625,15 @@ export class SmithproxyApp extends LitElement {
           <span>${content.sessionFilterConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
           <label>Content rules</label><span>${content.ruleCount} redacted rules · unchanged</span>
         ` : ssh ? html`
-          <label>Host key</label>
-          <span>${ssh.hostKeyConfigured ? 'Configured · path redacted · unchanged' : 'Missing'}</span>
+          <label for="ssh-write-host-key-${entry.id}-mode">Host key</label>
+          <div class="write-only-control">
+            <select id="ssh-write-host-key-${entry.id}-mode" ?disabled=${mappedReadOnly}>
+              <option value="unchanged">${ssh.hostKeyConfigured ? 'Keep configured path' : 'Keep empty'}</option>
+              <option value="replace">Replace</option><option value="clear">Clear</option>
+            </select>
+            <input id="ssh-write-host-key-${entry.id}-value" aria-label="Host key replacement"
+              placeholder="New path (write-only)" autocomplete="off" .readOnly=${mappedReadOnly} />
+          </div>
           <label for="ssh-host-key-policy-${entry.id}">Upstream host-key policy</label>
           <select id="ssh-host-key-policy-${entry.id}" .value=${ssh.hostKeyPolicy} ?disabled=${mappedReadOnly}>
             <option value="insecure">Insecure</option><option value="accept-new">Accept new</option>
@@ -2636,8 +2676,15 @@ export class SmithproxyApp extends LitElement {
             <option value="python">Python</option><option value="go">Go</option>
             <option value="unknown">Unspecified</option>
           </select>
-          <label>Module path</label>
-          <span>${script.modulePathConfigured ? 'Configured · path redacted · unchanged' : 'Not configured'}</span>
+          <label for="script-write-module-${entry.id}-mode">Module path</label>
+          <div class="write-only-control">
+            <select id="script-write-module-${entry.id}-mode" ?disabled=${mappedReadOnly}>
+              <option value="unchanged">${script.modulePathConfigured ? 'Keep configured path' : 'Keep empty'}</option>
+              <option value="replace">Replace</option><option value="clear">Clear</option>
+            </select>
+            <input id="script-write-module-${entry.id}-value" aria-label="Module path replacement"
+              placeholder="New path (write-only)" autocomplete="off" .readOnly=${mappedReadOnly} />
+          </div>
         ` : authentication ? html`
           <label>Lifecycle</label><span>Deprecated compatibility profile</span>
           <label for="auth-authenticate-${entry.id}">Authenticate</label>
@@ -2657,10 +2704,10 @@ export class SmithproxyApp extends LitElement {
         Content rule patterns, replacements, and session filters stay inside the GUI core.
       </div>` : nothing}
       ${ssh ? html`<div class="privacy-note section">
-        The private host-key path stays inside the GUI core.
+        The current private host-key path stays inside the GUI core. Replacements are write-only.
       </div>` : nothing}
       ${script ? html`<div class="privacy-note section">
-        The script module path stays inside the GUI core.
+        The current script module path stays inside the GUI core. Replacements are write-only.
       </div>` : nothing}
       ${authentication ? html`<div class="privacy-note section">
         Authentication profiles are obsolete in Smithproxy; identity names and profile bindings stay inside the GUI core.

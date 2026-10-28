@@ -91,7 +91,11 @@ bool sensitive_draft_path(const std::string_view path) {
         "captures.local.dir", "captures.local.file_prefix", "captures.local.file_suffix",
         "captures.remote.tun_dst", "captures.remote.bind_interface",
     };
-    return std::find(sensitive_paths.begin(), sensitive_paths.end(), path) != sensitive_paths.end();
+    if (std::find(sensitive_paths.begin(), sensitive_paths.end(), path) != sensitive_paths.end()) {
+        return true;
+    }
+    return (path.starts_with("ssh_profiles.[") && path.ends_with("].host_key")) ||
+           (path.starts_with("script_profiles.[") && path.ends_with("].script-file"));
 }
 
 bool confined_to_root(const std::filesystem::path& root, const std::filesystem::path& candidate) {
