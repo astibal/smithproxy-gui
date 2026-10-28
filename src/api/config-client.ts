@@ -11,6 +11,7 @@ import type {
   ProfileObject,
   ProtocolObject,
   SystemSettings,
+  ValueOrigin,
 } from './models';
 
 type JsonObject = Record<string, unknown>;
@@ -27,6 +28,13 @@ const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function configScalar(value: unknown, label: string): boolean | number | string {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
+  if (typeof value === 'string' && value.length <= 1024 && !/[\u0000-\u001f\u007f]/u.test(value)) return value;
+  throw new Error(`Invalid ${label}.`);
 }
 
 function safeString(value: unknown, label: string, maximum = 1024): string {
@@ -523,6 +531,38 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       throw new Error('Invalid certificate authority posture.');
     }
   }
+  if (typeof value.augment_support !== 'boolean' || !Array.isArray(value.value_origins) ||
+      value.value_origins.length > MAX_OBJECTS * 16) {
+    throw new Error('Invalid augment provenance envelope.');
+  }
+  const originPaths = new Set<string>();
+  const valueOrigins = value.value_origins.map((item): ValueOrigin => {
+    if (!isObject(item) || typeof item.path !== 'string' || item.path.length === 0 ||
+        item.path.length > 512 || originPaths.has(item.path) ||
+        !/^[A-Za-z0-9_.\[\]-]+$/u.test(item.path) || typeof item.editable !== 'boolean' ||
+        !Array.isArray(item.layers) || item.layers.length === 0 || item.layers.length > 64) {
+      throw new Error('Invalid value provenance entry.');
+    }
+    originPaths.add(item.path);
+    const layerIds = new Set<string>();
+    const layers = item.layers.map(layer => {
+      if (!isObject(layer) || typeof layer.id !== 'string' || layer.id.length === 0 ||
+          layer.id.length > 128 || layerIds.has(layer.id) ||
+          !(layer.priority === null || (typeof layer.priority === 'number' &&
+            Number.isSafeInteger(layer.priority) && layer.priority >= 0))) {
+        throw new Error('Invalid augment layer.');
+      }
+      layerIds.add(layer.id);
+      return {id: layer.id, priority: layer.priority};
+    });
+    const persistentValue = configScalar(item.persistent_value, 'persistent value');
+    const effectiveValue = configScalar(item.effective_value, 'effective value');
+    if (typeof persistentValue !== typeof effectiveValue) throw new Error('Inconsistent value provenance types.');
+    return {path: item.path, persistentValue, effectiveValue, layers, editable: item.editable};
+  });
+  if (!value.augment_support && valueOrigins.length !== 0) {
+    throw new Error('Unexpected provenance without augment support.');
+  }
 
   return {
     source: 'live',
@@ -539,6 +579,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     settings,
     captures,
     securityAssets,
+    augmentSupport: value.augment_support,
+    valueOrigins,
   };
 }
 

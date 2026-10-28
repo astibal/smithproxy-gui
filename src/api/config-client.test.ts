@@ -95,6 +95,8 @@ const liveSnapshot = {
     starttls_signature_count: 6, starttls_flow_step_count: 12,
     detection_signature_count: 24, detection_flow_step_count: 31,
   },
+  augment_support: false,
+  value_origins: [],
 };
 
 function response(value: unknown, status = 200): Response {
@@ -132,6 +134,18 @@ describe('ApiConfigClient', () => {
     expect(snapshot.securityAssets).toMatchObject({
       certificateAuthorityCount: 1, starttlsSignatureCount: 6, detectionFlowStepCount: 31,
     });
+    const augmented = parseConfigSnapshot({
+      ...liveSnapshot,
+      augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+        layers: [{id: 'temporary-office-access', priority: 100}], editable: false,
+      }],
+    });
+    expect(augmented.valueOrigins[0]).toMatchObject({
+      path: 'policy.[0].action', persistentValue: 'reject', effectiveValue: 'accept',
+      layers: [{id: 'temporary-office-access', priority: 100}],
+    });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/config/snapshot',
       expect.objectContaining({cache: 'no-store', credentials: 'same-origin', redirect: 'error'}),
@@ -157,6 +171,13 @@ describe('ApiConfigClient', () => {
         certificate_authority_path_count: 1,
       },
     })).toThrow('Invalid certificate authority posture');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: false,
+      value_origins: [{
+        path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+        layers: [{id: 'unexpected', priority: null}], editable: false,
+      }],
+    })).toThrow('Unexpected provenance without augment support');
 
     const client = new ApiConfigClient('/api/v1', async () => response({}, 401));
     await expect(client.loadSnapshot()).rejects.toThrow('HTTP 401');

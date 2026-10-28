@@ -451,6 +451,8 @@ def main() -> int:
                 "detection_signature_count": 1,
                 "detection_flow_step_count": 2,
             }
+            assert config_snapshot["augment_support"] is False
+            assert config_snapshot["value_origins"] == []
             assert b"/private/ca/default" not in config_body
             assert b"secret-starttls-regex" not in config_body
             assert b"secret-detection-regex" not in config_body

@@ -202,6 +202,21 @@ export interface SecurityAssets {
   detectionFlowStepCount: number;
 }
 
+export type ConfigScalar = boolean | number | string;
+
+export interface AugmentLayer {
+  id: string;
+  priority: number | null;
+}
+
+export interface ValueOrigin {
+  path: string;
+  persistentValue: ConfigScalar;
+  effectiveValue: ConfigScalar;
+  layers: ReadonlyArray<AugmentLayer>;
+  editable: boolean;
+}
+
 export interface ConfigSnapshot {
   source: 'preview' | 'live';
   state: 'ready' | 'starting' | 'unavailable' | 'unconfigured';
@@ -217,6 +232,8 @@ export interface ConfigSnapshot {
   settings: SystemSettings | null;
   captures: CaptureSettings | null;
   securityAssets: SecurityAssets | null;
+  augmentSupport: boolean;
+  valueOrigins: ReadonlyArray<ValueOrigin>;
 }
 
 export interface ConfigClient {

@@ -209,6 +209,14 @@ const snapshot: ConfigSnapshot = {
     detectionSignatureCount: 24,
     detectionFlowStepCount: 31,
   },
+  augmentSupport: true,
+  valueOrigins: [{
+    path: 'policy.[0].action',
+    persistentValue: 'reject',
+    effectiveValue: 'accept',
+    layers: [{id: 'temporary-office-access', priority: 100}],
+    editable: false,
+  }],
 };
 
 export class FakeConfigClient implements ConfigClient {

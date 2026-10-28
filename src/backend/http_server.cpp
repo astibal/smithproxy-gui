@@ -437,7 +437,8 @@ private:
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +
                     ",\"settings\":" + settings + ",\"captures\":" + captures +
-                    ",\"security_assets\":" + security_assets + "}"};
+                    ",\"security_assets\":" + security_assets +
+                    ",\"augment_support\":false,\"value_origins\":[]}"};
     }
 
     Response status() const {

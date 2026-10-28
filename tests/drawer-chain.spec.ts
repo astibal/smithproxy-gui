@@ -161,6 +161,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         starttls_signature_count: 6, starttls_flow_step_count: 12,
         detection_signature_count: 24, detection_flow_step_count: 31,
       },
+      augment_support: false,
+      value_origins: [],
     }}));
   }
 }
@@ -206,6 +208,8 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /office office-net/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+  await expect(page.getByText(/temporary-office-access \(priority 100\)/i)).toBeVisible();
+  await expect(page.locator('.origin-note')).toContainText('Effective accept overrides persistent reject');
 
   await page.getByRole('button', {name: 'office-net', exact: true}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});

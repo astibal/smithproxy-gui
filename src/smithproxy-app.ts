@@ -221,6 +221,8 @@ export class SmithproxyApp extends LitElement {
     .listener-name { font-weight: 650; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 3px; color: var(--app-muted); }
     .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
+    .origin-note { padding: 9px 11px; border-left: 3px solid var(--app-warning); background: var(--app-warning-bg); color: var(--app-muted); font-size: 12px; }
+    .origin-note strong { color: var(--app-text); }
     .event-list { display: grid; overflow: hidden; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .event-row { display: grid; grid-template-columns: 150px 78px minmax(180px, 1fr) 100px; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .event-row:last-child { border-bottom: 0; }
@@ -1320,6 +1322,10 @@ export class SmithproxyApp extends LitElement {
   private renderPolicyEditor(entry: DrawerEntry) {
     const policy = this.snapshot?.policies.find(item => item.id === entry.id);
     if (!policy) return nothing;
+    const policyIndex = this.snapshot?.policies.findIndex(item => item.id === entry.id) ?? -1;
+    const actionOrigin = this.snapshot?.valueOrigins.find(
+      item => item.path === `policy.[${policyIndex}].action`,
+    );
     const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
     const protocol = this.snapshot?.protocols.find(item => item.name === policy.protocol);
     return html`
@@ -1340,6 +1346,17 @@ export class SmithproxyApp extends LitElement {
           .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${readOnly} />
         <label for="action-${entry.id}">Action</label>
         <input id="action-${entry.id}" .value=${policy.action} .readOnly=${readOnly} />
+        ${actionOrigin ? html`
+          <span></span>
+          <div class="origin-note">
+            Effective <strong>${String(actionOrigin.effectiveValue)}</strong> overrides persistent
+            <strong>${String(actionOrigin.persistentValue)}</strong> via
+            ${actionOrigin.layers.map(layer => layer.priority === null
+              ? layer.id
+              : `${layer.id} (priority ${layer.priority})`).join(' → ')}.
+            ${actionOrigin.editable ? 'This value can be edited.' : 'The active layer owns this value.'}
+          </div>
+        ` : nothing}
       </div>
       <div class="section">
         <h3>Advanced</h3>

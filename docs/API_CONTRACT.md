@@ -53,6 +53,13 @@ STARTTLS signatures, detection signatures, and their aggregate flow-step counts.
 Certificate paths, signature names, categories, groups, engines, expressions,
 and match windows remain inside the GUI core and are never serialized.
 
+The snapshot carries `augment_support` and a bounded `value_origins` collection.
+Each origin identifies a stable schema path, persistent and effective scalar
+values, editability, and an ordered augment layer chain with optional priorities.
+The GUI renders effective values but preserves the persistent value and layer
+ownership in the editor. Until Smithproxy exposes this data through its HTTP API,
+the live GUI core returns `augment_support: false` with an empty origin collection.
+
 GUI nesmí odhadovat podporu funkce pouze z čísla verze. Capability odpověď určuje
 dostupné endpointy, limity a feature flags.
 
