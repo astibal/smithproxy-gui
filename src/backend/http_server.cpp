@@ -538,6 +538,13 @@ private:
                        ",\"quic\":" + std::to_string(value.quic_workers) +
                        ",\"socks\":" + std::to_string(value.socks_workers) +
                        ",\"http_connect\":" + std::to_string(value.http_connect_workers) + "}" +
+                       ",\"ports\":{\"plaintext\":" + std::to_string(value.plaintext_port) +
+                       ",\"tls\":" + std::to_string(value.tls_port) +
+                       ",\"udp\":" + std::to_string(value.udp_port) +
+                       ",\"quic\":" + std::to_string(value.quic_port) +
+                       ",\"http_connect\":" + std::to_string(value.http_connect_port) + "}" +
+                       ",\"ocsp_status_ttl\":" + std::to_string(value.ocsp_status_ttl) +
+                       ",\"crl_status_ttl\":" + std::to_string(value.crl_status_ttl) +
                        ",\"tls_autodetect\":" + (value.tls_autodetect ? "true" : "false") +
                        ",\"tls_autodetect_harder\":" + (value.tls_autodetect_harder ? "true" : "false") +
                        ",\"kernel_tls\":" + (value.kernel_tls ? "true" : "false") +

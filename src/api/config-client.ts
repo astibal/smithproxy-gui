@@ -433,7 +433,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
 
   let settings: SystemSettings | null = null;
   if (value.settings !== null) {
-    if (!isObject(value.settings) || !isObject(value.settings.workers) ||
+    if (!isObject(value.settings) || !isObject(value.settings.workers) || !isObject(value.settings.ports) ||
         !isObject(value.settings.http_api) || !isObject(value.settings.webhook)) {
       throw new Error('Invalid system settings.');
     }
@@ -456,6 +456,15 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         socks: rangedInteger(value.settings.workers.socks, 'SOCKS workers', -1, 4096),
         httpConnect: rangedInteger(value.settings.workers.http_connect, 'HTTP CONNECT workers', -1, 4096),
       },
+      ports: {
+        plaintext: safeInteger(value.settings.ports.plaintext, 'plaintext port', 65535),
+        tls: safeInteger(value.settings.ports.tls, 'TLS port', 65535),
+        udp: safeInteger(value.settings.ports.udp, 'UDP port', 65535),
+        quic: safeInteger(value.settings.ports.quic, 'QUIC port', 65535),
+        httpConnect: safeInteger(value.settings.ports.http_connect, 'HTTP CONNECT port', 65535),
+      },
+      ocspStatusTtl: safeInteger(value.settings.ocsp_status_ttl, 'OCSP status TTL', 31536000),
+      crlStatusTtl: safeInteger(value.settings.crl_status_ttl, 'CRL status TTL', 31536000),
       tlsAutodetect: safeBoolean(value.settings.tls_autodetect, 'TLS autodetection state'),
       tlsAutodetectHarder: safeBoolean(value.settings.tls_autodetect_harder, 'hard TLS autodetection state'),
       kernelTls: safeBoolean(value.settings.kernel_tls, 'kernel TLS state'),

@@ -155,6 +155,13 @@ struct ConfigSystemSettings {
     std::int64_t quic_workers{};
     std::int64_t socks_workers{};
     std::int64_t http_connect_workers{};
+    std::uint64_t plaintext_port{};
+    std::uint64_t tls_port{};
+    std::uint64_t udp_port{};
+    std::uint64_t quic_port{};
+    std::uint64_t http_connect_port{};
+    std::uint64_t ocsp_status_ttl{};
+    std::uint64_t crl_status_ttl{};
     bool tls_autodetect{};
     bool tls_autodetect_harder{};
     bool kernel_tls{};

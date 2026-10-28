@@ -20,7 +20,9 @@
         "accept_tproxy", "accept_redirect", "accept_socks", "accept_http_connect",
         "accept_api", "policy_fail_open", "policy_access_request_fail_open",
         "plaintext_workers", "ssl_workers", "udp_workers", "dtls_workers",
-        "quic_workers", "socks_workers", "http_connect_workers", "ssl_autodetect",
+        "quic_workers", "socks_workers", "http_connect_workers", "plaintext_port",
+        "ssl_port", "udp_port", "quic_port", "http_connect_port",
+        "ssl_ocsp_status_ttl", "ssl_crl_status_ttl", "ssl_autodetect",
         "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
       ],
       "notes": "Listener, worker, API, webhook, and fail-open posture is typed. Paths, credentials, logging, ports, quotas, and nested CLI/rating settings are not yet editable; secret values stay redacted."

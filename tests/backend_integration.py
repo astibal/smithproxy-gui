@@ -63,6 +63,9 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "plaintext_workers": "2", "ssl_workers": "4", "udp_workers": "1",
             "dtls_workers": "1", "quic_workers": "-1", "socks_workers": "-1",
             "http_connect_workers": "1", "ssl_autodetect": "true",
+            "plaintext_port": "50080", "ssl_port": "50443", "udp_port": "50080",
+            "quic_port": "443", "http_connect_port": "3128",
+            "ssl_ocsp_status_ttl": "1800", "ssl_crl_status_ttl": "86400",
             "ssl_autodetect_harder": "false", "ssl_use_ktls": "false",
             "nameservers": ["192.0.2.53"],
             "http_api": {
@@ -446,6 +449,15 @@ def main() -> int:
             assert len(config_snapshot["addresses"]) == 2
             assert config_snapshot["ports"][0]["start"] == 443
             assert config_snapshot["protocols"][0]["number"] == 6
+            assert config_snapshot["settings"]["ports"] == {
+                "plaintext": 50080,
+                "tls": 50443,
+                "udp": 50080,
+                "quic": 443,
+                "http_connect": 3128,
+            }
+            assert config_snapshot["settings"]["ocsp_status_ttl"] == 1800
+            assert config_snapshot["settings"]["crl_status_ttl"] == 86400
             assert config_snapshot["debug"] == {
                 "log_data_crc": False,
                 "log_sockets": True,

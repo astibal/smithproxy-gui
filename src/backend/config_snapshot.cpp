@@ -502,6 +502,14 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto quic_workers = optional_signed_decimal(*value, "quic_workers", 0, -1, 4096);
     const auto socks_workers = optional_signed_decimal(*value, "socks_workers", 0, -1, 4096);
     const auto http_connect_workers = optional_signed_decimal(*value, "http_connect_workers", 0, -1, 4096);
+    const auto plaintext_port = optional_decimal(*value, "plaintext_port", 50080U, 65535U);
+    const auto tls_port = optional_decimal(*value, "ssl_port", 50443U, 65535U);
+    const auto udp_port = optional_decimal(*value, "udp_port", 50080U, 65535U);
+    const auto quic_port = optional_decimal(*value, "quic_port", 443U, 65535U);
+    const auto http_connect_port = optional_decimal(*value, "http_connect_port", 3128U, 65535U);
+    constexpr std::uint64_t maximum_status_ttl = 31536000U;
+    const auto ocsp_status_ttl = optional_decimal(*value, "ssl_ocsp_status_ttl", 1800U, maximum_status_ttl);
+    const auto crl_status_ttl = optional_decimal(*value, "ssl_crl_status_ttl", 86400U, maximum_status_ttl);
     const auto tls_autodetect = boolean_scalar(*value, "ssl_autodetect", false);
     const auto tls_autodetect_harder = boolean_scalar(*value, "ssl_autodetect_harder", false);
     const auto kernel_tls = boolean_scalar(*value, "ssl_use_ktls", false);
@@ -532,7 +540,9 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
 
     if (!accept_tproxy || !accept_redirect || !accept_socks || !accept_http_connect || !accept_api ||
         !policy_fail_open || !access_fail_open || !plaintext_workers || !tls_workers || !udp_workers ||
-        !dtls_workers || !quic_workers || !socks_workers || !http_connect_workers || !tls_autodetect ||
+        !dtls_workers || !quic_workers || !socks_workers || !http_connect_workers || !plaintext_port ||
+        !tls_port || !udp_port || !quic_port || !http_connect_port || !ocsp_status_ttl ||
+        !crl_status_ttl || !tls_autodetect ||
         !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips || !loopback_only ||
         !pam_login || !api_header || !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
         !webhook_api_override) {
@@ -541,7 +551,9 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     return {ConfigSystemSettings{
                 *accept_tproxy, *accept_redirect, *accept_socks, *accept_http_connect, *accept_api,
                 *policy_fail_open, *access_fail_open, *plaintext_workers, *tls_workers, *udp_workers,
-                *dtls_workers, *quic_workers, *socks_workers, *http_connect_workers, *tls_autodetect,
+                *dtls_workers, *quic_workers, *socks_workers, *http_connect_workers,
+                *plaintext_port, *tls_port, *udp_port, *quic_port, *http_connect_port,
+                *ocsp_status_ttl, *crl_status_ttl, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, *nameservers, *api_keys, *allowed_ips,
                 *loopback_only, *pam_login, *api_header, *webhook_enabled, *webhook_tls_verify,
                 !webhook_url->empty(), *webhook_sift, *webhook_api_override,

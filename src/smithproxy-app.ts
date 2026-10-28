@@ -1210,6 +1210,22 @@ export class SmithproxyApp extends LitElement {
       }
       changes.push({path: `settings.${path}`, value});
     }
+    const numericFields = [
+      ['plaintext_port', 'port-plaintext', 65535], ['ssl_port', 'port-tls', 65535],
+      ['udp_port', 'port-udp', 65535], ['quic_port', 'port-quic', 65535],
+      ['http_connect_port', 'port-http-connect', 65535],
+      ['ssl_ocsp_status_ttl', 'ocsp-status-ttl', 31536000],
+      ['ssl_crl_status_ttl', 'crl-status-ttl', 31536000],
+    ] as const;
+    for (const [path, id, maximum] of numericFields) {
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-${id}`);
+      const value = input?.valueAsNumber ?? Number.NaN;
+      if (!input || !Number.isInteger(value) || value < 0 || value > maximum) {
+        this.draftError = 'Ports and status TTLs must be integers within their documented ranges.';
+        return undefined;
+      }
+      changes.push({path: `settings.${path}`, value});
+    }
     if (this.snapshot?.debug) {
       const debugFields = [
         ['log_data_crc', 'data-crc'], ['log_sockets', 'sockets'],
@@ -1954,6 +1970,16 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card">
+              <header><div><h3>Listener endpoints</h3><p>Configured local ports and certificate status caches</p></div></header>
+              <dl>
+                <dt>Plaintext / TLS</dt><dd>${settings.ports.plaintext} / ${settings.ports.tls}</dd>
+                <dt>UDP / QUIC</dt><dd>${settings.ports.udp} / ${settings.ports.quic}</dd>
+                <dt>HTTP CONNECT</dt><dd>${settings.ports.httpConnect}</dd>
+                <dt>OCSP status TTL</dt><dd>${settings.ocspStatusTtl.toLocaleString()} s</dd>
+                <dt>CRL status TTL</dt><dd>${settings.crlStatusTtl.toLocaleString()} s</dd>
+              </dl>
+            </article>
+            <article class="domain-card">
               <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div></header>
               <dl>
                 <dt>Listener</dt><dd>${settings.acceptApi ? 'Enabled' : 'Disabled'}</dd>
@@ -2484,6 +2510,11 @@ export class SmithproxyApp extends LitElement {
       <input id="settings-worker-${id}" type="number" min="-1" max="4096"
         .value=${String(value)} .readOnly=${disabled} />
     `;
+    const numericField = (id: string, label: string, value: number, maximum: number) => html`
+      <label for="settings-${id}">${label}</label>
+      <input id="settings-${id}" type="number" min="0" max=${String(maximum)}
+        .value=${String(value)} .readOnly=${disabled} />
+    `;
     return html`
       <div class="form-grid wide-form-grid">
         ${booleanField('accept-tproxy', 'TPROXY listener', settings.acceptTproxy)}
@@ -2501,6 +2532,14 @@ export class SmithproxyApp extends LitElement {
         ${workerField('socks', 'SOCKS workers', settings.workers.socks)}
         ${workerField('http-connect', 'HTTP CONNECT workers', settings.workers.httpConnect)}
         <span class="form-span privacy-note">Use -1 to disable a listener; 0 lets Smithproxy choose its default worker count.</span>
+        <h3 class="form-span">Listener endpoints</h3>
+        ${numericField('port-plaintext', 'Plaintext port', settings.ports.plaintext, 65535)}
+        ${numericField('port-tls', 'TLS port', settings.ports.tls, 65535)}
+        ${numericField('port-udp', 'UDP port', settings.ports.udp, 65535)}
+        ${numericField('port-quic', 'QUIC port', settings.ports.quic, 65535)}
+        ${numericField('port-http-connect', 'HTTP CONNECT port', settings.ports.httpConnect, 65535)}
+        ${numericField('ocsp-status-ttl', 'OCSP status TTL (seconds)', settings.ocspStatusTtl, 31536000)}
+        ${numericField('crl-status-ttl', 'CRL status TTL (seconds)', settings.crlStatusTtl, 31536000)}
         ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}

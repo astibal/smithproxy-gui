@@ -188,6 +188,8 @@ const snapshot: ConfigSnapshot = {
     acceptHttpConnect: true, acceptApi: true,
     policyFailOpen: false, accessRequestFailOpen: false,
     workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, httpConnect: 1},
+    ports: {plaintext: 50080, tls: 50443, udp: 50080, quic: 443, httpConnect: 3128},
+    ocspStatusTtl: 1800, crlStatusTtl: 86400,
     tlsAutodetect: true, tlsAutodetectHarder: false, kernelTls: false,
     nameserverCount: 2,
     httpApi: {keyCount: 1, allowedIpCount: 1, loopbackOnly: true, pamLogin: false, allowApiHeader: false},

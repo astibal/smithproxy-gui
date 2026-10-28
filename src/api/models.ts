@@ -155,6 +155,9 @@ export interface SystemSettings {
   policyFailOpen: boolean;
   accessRequestFailOpen: boolean;
   workers: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'dtls' | 'quic' | 'socks' | 'httpConnect', number>>;
+  ports: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'quic' | 'httpConnect', number>>;
+  ocspStatusTtl: number;
+  crlStatusTtl: number;
   tlsAutodetect: boolean;
   tlsAutodetectHarder: boolean;
   kernelTls: boolean;

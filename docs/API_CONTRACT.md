@@ -39,10 +39,11 @@ SNI bypass entries, content rules, session filters, and identity mappings are
 reduced to explicit configured flags or counts before crossing the browser
 boundary. Stable IDs and derived reverse references support nested drawers.
 
-The system-settings posture covers listener admission, fail-open behavior,
-worker pools, TLS autodetection, kernel TLS, HTTP API access, and webhooks. API
-keys, addresses, nameservers, webhook URLs, and identity values are never
-serialized; only bounded counts and configured flags are exposed.
+The system-settings posture covers listener admission and ports, fail-open
+behavior, worker pools, certificate-status cache TTLs, TLS autodetection, kernel
+TLS, HTTP API access, and webhooks. API keys, addresses, nameservers, webhook
+URLs, and identity values are never serialized; only bounded counts and
+configured flags are exposed.
 
 Debug posture includes the five global diagnostic logging flags and only the
 bounded count of per-module overrides. Module names and override values remain
