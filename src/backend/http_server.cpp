@@ -278,6 +278,37 @@ private:
                             ",\"client_certificate_action\":" + json_string(tls.client_certificate_action) +
                             ",\"alerts\":" + json_string(tls.alerts) + "}";
             }
+            profiles += ",\"detection\":";
+            if (!profile.detection) {
+                profiles += "null";
+            } else {
+                const auto& detection = *profile.detection;
+                profiles += "{\"mode\":" + std::to_string(detection.mode) +
+                            ",\"engines_enabled\":" + (detection.engines_enabled ? "true" : "false") +
+                            ",\"knowledge_base_enabled\":" +
+                            (detection.knowledge_base_enabled ? "true" : "false") + "}";
+            }
+            profiles += ",\"content\":";
+            if (!profile.content) {
+                profiles += "null";
+            } else {
+                const auto& content = *profile.content;
+                profiles += "{\"write_payload\":" + std::string(content.write_payload ? "true" : "false") +
+                            ",\"write_format\":" + json_string(content.write_format) +
+                            ",\"webhook_enabled\":" + (content.webhook_enabled ? "true" : "false") +
+                            ",\"webhook_locks_traffic\":" +
+                            (content.webhook_locks_traffic ? "true" : "false") +
+                            ",\"ja4_tls_client_hello\":" +
+                            (content.ja4_tls_client_hello ? "true" : "false") +
+                            ",\"ja4_tls_client_hello_ignores_sni\":" +
+                            (content.ja4_tls_client_hello_ignores_sni ? "true" : "false") +
+                            ",\"ja4_tls_server_hello\":" +
+                            (content.ja4_tls_server_hello ? "true" : "false") +
+                            ",\"ja4_http\":" + (content.ja4_http ? "true" : "false") +
+                            ",\"session_filter_configured\":" +
+                            (content.session_filter_configured ? "true" : "false") +
+                            ",\"rule_count\":" + std::to_string(content.rule_count) + "}";
+            }
             profiles += '}';
         }
         profiles += ']';

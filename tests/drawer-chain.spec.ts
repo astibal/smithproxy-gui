@@ -102,6 +102,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
             ssl_key_log: false, client_hello_timeout_ms: 3000, handshake_timeout_ms: 10000,
             sni_bypass_entries: 2, client_certificate_action: 'use_configured', alerts: 'unusual',
           },
+          detection: null,
+          content: null,
         },
         {
           id: 'routing-0', name: 'main', type: 'routing',
@@ -110,6 +112,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
             load_balancing_method: 'round-robin', rewrite_sni: '', rewrite_sni_to: '',
           },
           tls: null,
+          detection: null,
+          content: null,
         },
       ],
     }}));
@@ -263,6 +267,15 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
   await page.getByRole('group', {name: 'Protocol objects'}).getByRole('button', {name: /tcp IP protocol 6/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit tcp'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await profiles.getByRole('button', {name: /default detection Typed details/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit default'}).getByText('Pre-read')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await profiles.getByRole('button', {name: /capture content Typed details/i}).click();
+  const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  await expect(contentEditor.getByText('2 redacted rules')).toBeVisible();
+  await expect(contentEditor.getByText(/patterns, replacements, and session filters stay inside/i)).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.getByRole('button', {name: 'System', exact: true}).click();

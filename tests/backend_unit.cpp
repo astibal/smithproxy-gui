@@ -165,6 +165,23 @@ int main() {
     assert(!parse_config_profiles(
         R"({"success":{"tls_profiles":{"bad":{"alerts":"verbose"}}}})",
         "tls_profiles", "tls").profiles);
+    const auto detection_profiles = parse_config_profiles(
+        R"({"success":{"detection_profiles":{"default":{"mode":"2","engines_enabled":"true","kb_enabled":"false"}}}})",
+        "detection_profiles", "detection");
+    assert(detection_profiles.profiles);
+    assert(detection_profiles.profiles->front().detection);
+    assert(detection_profiles.profiles->front().detection->mode == 2U);
+    assert(!detection_profiles.profiles->front().detection->knowledge_base_enabled);
+    const auto content_profiles = parse_config_profiles(
+        R"({"success":{"content_profiles":{"capture":{"write_payload":"false","write_format":"pcap_single","webhook_enable":"true","rules_session_filter":"sensitive regex","content_rules":[{"match":"secret","replace":"redacted"}]}}}})",
+        "content_profiles", "content");
+    assert(content_profiles.profiles);
+    assert(content_profiles.profiles->front().content);
+    assert(content_profiles.profiles->front().content->session_filter_configured);
+    assert(content_profiles.profiles->front().content->rule_count == 1U);
+    assert(!parse_config_profiles(
+        R"({"success":{"content_profiles":{"bad":{"write_payload":"false","write_format":"raw"}}}})",
+        "content_profiles", "content").profiles);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

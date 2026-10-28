@@ -211,6 +211,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     const type = safeString(item.type, 'profile type', 32);
     let routing: ProfileObject['routing'] = null;
     let tls: ProfileObject['tls'] = null;
+    let detection: ProfileObject['detection'] = null;
+    let content: ProfileObject['content'] = null;
     if (type === 'routing') {
       if (!isObject(item.routing)) throw new Error('Invalid routing profile.');
       const loadBalancingMethod = safeString(item.routing.load_balancing_method, 'routing load-balancing method', 32);
@@ -261,12 +263,50 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     } else if (item.tls !== null) {
       throw new Error('Invalid non-TLS profile details.');
     }
+    if (type === 'detection') {
+      if (!isObject(item.detection)) throw new Error('Invalid detection profile.');
+      const mode = safeInteger(item.detection.mode, 'detection mode', 2) as 0 | 1 | 2;
+      detection = {
+        mode,
+        enginesEnabled: safeBoolean(item.detection.engines_enabled, 'detection engine state'),
+        knowledgeBaseEnabled: safeBoolean(
+          item.detection.knowledge_base_enabled, 'detection knowledge-base state',
+        ),
+      };
+    } else if (item.detection !== null) {
+      throw new Error('Invalid non-detection profile details.');
+    }
+    if (type === 'content') {
+      if (!isObject(item.content)) throw new Error('Invalid content profile.');
+      const writeFormat = safeString(item.content.write_format, 'content capture format', 16);
+      if (!['smcap', 'pcap', 'pcap_single'].includes(writeFormat)) throw new Error('Invalid content capture format.');
+      content = {
+        writePayload: safeBoolean(item.content.write_payload, 'content payload state'),
+        writeFormat: writeFormat as 'smcap' | 'pcap' | 'pcap_single',
+        webhookEnabled: safeBoolean(item.content.webhook_enabled, 'content webhook state'),
+        webhookLocksTraffic: safeBoolean(item.content.webhook_locks_traffic, 'content webhook lock state'),
+        ja4TlsClientHello: safeBoolean(item.content.ja4_tls_client_hello, 'content JA4 client state'),
+        ja4TlsClientHelloIgnoresSni: safeBoolean(
+          item.content.ja4_tls_client_hello_ignores_sni, 'content JA4 SNI state',
+        ),
+        ja4TlsServerHello: safeBoolean(item.content.ja4_tls_server_hello, 'content JA4 server state'),
+        ja4Http: safeBoolean(item.content.ja4_http, 'content JA4 HTTP state'),
+        sessionFilterConfigured: safeBoolean(
+          item.content.session_filter_configured, 'content session-filter state',
+        ),
+        ruleCount: safeInteger(item.content.rule_count, 'content rule count', MAX_REFERENCES),
+      };
+    } else if (item.content !== null) {
+      throw new Error('Invalid non-content profile details.');
+    }
     return {
       id: safeString(item.id, 'profile ID', 128),
       name: safeString(item.name, 'profile name', 128),
       type,
       routing,
       tls,
+      detection,
+      content,
       usedBy: [],
     };
   });

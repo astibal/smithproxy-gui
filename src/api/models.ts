@@ -80,12 +80,33 @@ export interface TlsProfileDetails {
   alerts: 'all' | 'unusual' | 'mute';
 }
 
+export interface DetectionProfileDetails {
+  mode: 0 | 1 | 2;
+  enginesEnabled: boolean;
+  knowledgeBaseEnabled: boolean;
+}
+
+export interface ContentProfileDetails {
+  writePayload: boolean;
+  writeFormat: 'smcap' | 'pcap' | 'pcap_single';
+  webhookEnabled: boolean;
+  webhookLocksTraffic: boolean;
+  ja4TlsClientHello: boolean;
+  ja4TlsClientHelloIgnoresSni: boolean;
+  ja4TlsServerHello: boolean;
+  ja4Http: boolean;
+  sessionFilterConfigured: boolean;
+  ruleCount: number;
+}
+
 export interface ProfileObject {
   id: string;
   name: string;
   type: string;
   routing: RoutingProfileDetails | null;
   tls: TlsProfileDetails | null;
+  detection: DetectionProfileDetails | null;
+  content: ContentProfileDetails | null;
   usedBy: ReadonlyArray<ConfigUsage>;
 }
 

@@ -14,6 +14,7 @@ constexpr std::size_t maximum_policies = 4096U;
 constexpr std::size_t maximum_references = 256U;
 constexpr std::size_t maximum_name_length = 128U;
 constexpr std::size_t maximum_value_length = 1024U;
+constexpr std::size_t maximum_rule_length = 65536U;
 
 std::optional<Json> section_value(const std::string_view payload, const char* section) {
     const auto document = Json::parse(payload, nullptr, false);
@@ -72,6 +73,16 @@ std::optional<std::uint64_t> optional_decimal(
     return result;
 }
 
+std::optional<std::size_t> optional_object_array_size(const Json& object, const char* key) {
+    const auto value = object.find(key);
+    if (value == object.end()) return 0U;
+    if (!value->is_array() || value->size() > maximum_references) return std::nullopt;
+    for (const auto& item : *value) {
+        if (!item.is_object()) return std::nullopt;
+    }
+    return value->size();
+}
+
 std::optional<bool> boolean_scalar(const Json& object, const char* key, const bool fallback) {
     const auto value = object.find(key);
     if (value == object.end()) return fallback;
@@ -80,6 +91,11 @@ std::optional<bool> boolean_scalar(const Json& object, const char* key, const bo
     if (text == "0" || text == "false") return false;
     if (text == "1" || text == "true") return true;
     return std::nullopt;
+}
+
+std::optional<bool> required_boolean_scalar(const Json& object, const char* key) {
+    if (object.find(key) == object.end()) return std::nullopt;
+    return boolean_scalar(object, key, false);
 }
 
 bool valid_name(const std::string& value) {
@@ -265,6 +281,8 @@ ConfigProfileParseResult parse_config_profiles(
         }
         std::optional<ConfigRoutingProfile> routing;
         std::optional<ConfigTlsProfile> tls;
+        std::optional<ConfigDetectionProfile> detection;
+        std::optional<ConfigContentProfile> content;
         if (type == "routing") {
             const auto addresses = string_array(profile, "dnat_address", true);
             const auto ports = string_array(profile, "dnat_port", true);
@@ -314,9 +332,39 @@ ConfigProfileParseResult parse_config_profiles(
                 client_action->empty() ? "use_configured" : *client_action,
                 alerts->empty() ? "all" : *alerts,
             };
+        } else if (type == "detection") {
+            const auto mode = decimal(profile, "mode");
+            const auto engines = boolean_scalar(profile, "engines_enabled", true);
+            const auto knowledge_base = boolean_scalar(profile, "kb_enabled", true);
+            if (!mode || *mode > 2U || !engines || !knowledge_base) {
+                return {std::nullopt, "Smithproxy returned an invalid detection profile"};
+            }
+            detection = ConfigDetectionProfile{*mode, *engines, *knowledge_base};
+        } else if (type == "content") {
+            const auto write_payload = required_boolean_scalar(profile, "write_payload");
+            const auto write_format = bounded_string(profile, "write_format", 16U, true);
+            const auto webhook = boolean_scalar(profile, "webhook_enable", false);
+            const auto webhook_lock = boolean_scalar(profile, "webhook_lock_traffic", false);
+            const auto ja4_client = boolean_scalar(profile, "ja4_tls_ch", false);
+            const auto ja4_ignore_sni = boolean_scalar(profile, "ja4_tls_ch_ignore_sni", false);
+            const auto ja4_server = boolean_scalar(profile, "ja4_tls_sh", false);
+            const auto ja4_http = boolean_scalar(profile, "ja4_http", false);
+            const auto session_filter = bounded_string(profile, "rules_session_filter", maximum_rule_length, true);
+            const auto rule_count = optional_object_array_size(profile, "content_rules");
+            if (!write_payload || !write_format ||
+                (*write_format != "" && *write_format != "smcap" && *write_format != "pcap" &&
+                 *write_format != "pcap_single") || !webhook || !webhook_lock || !ja4_client ||
+                !ja4_ignore_sni || !ja4_server || !ja4_http || !session_filter || !rule_count) {
+                return {std::nullopt, "Smithproxy returned an invalid content profile"};
+            }
+            content = ConfigContentProfile{
+                *write_payload, write_format->empty() ? "pcap_single" : *write_format,
+                *webhook, *webhook_lock, *ja4_client, *ja4_ignore_sni, *ja4_server, *ja4_http,
+                !session_filter->empty(), *rule_count,
+            };
         }
         result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type),
-                          std::move(routing), std::move(tls)});
+                          std::move(routing), std::move(tls), std::move(detection), std::move(content)});
     }
     return {std::move(result), {}};
 }

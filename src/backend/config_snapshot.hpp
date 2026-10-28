@@ -55,12 +55,33 @@ struct ConfigTlsProfile {
     std::string alerts;
 };
 
+struct ConfigDetectionProfile {
+    std::uint64_t mode{};
+    bool engines_enabled{};
+    bool knowledge_base_enabled{};
+};
+
+struct ConfigContentProfile {
+    bool write_payload{};
+    std::string write_format;
+    bool webhook_enabled{};
+    bool webhook_locks_traffic{};
+    bool ja4_tls_client_hello{};
+    bool ja4_tls_client_hello_ignores_sni{};
+    bool ja4_tls_server_hello{};
+    bool ja4_http{};
+    bool session_filter_configured{};
+    std::uint64_t rule_count{};
+};
+
 struct ConfigProfile {
     std::string id;
     std::string name;
     std::string type;
     std::optional<ConfigRoutingProfile> routing;
     std::optional<ConfigTlsProfile> tls;
+    std::optional<ConfigDetectionProfile> detection;
+    std::optional<ConfigContentProfile> content;
 };
 
 struct ConfigPolicy {

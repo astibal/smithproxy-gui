@@ -774,7 +774,8 @@ export class SmithproxyApp extends LitElement {
               <button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
                 <strong>${profile.name}</strong><span class="action">${profile.type}</span>
-                <span>Metadata only</span><span>${profile.usedBy.length}</span>
+                <span>${profile.routing || profile.tls || profile.detection || profile.content
+                  ? 'Typed details' : 'Metadata only'}</span><span>${profile.usedBy.length}</span>
               </button>
             `)}
           </div>
@@ -1324,6 +1325,8 @@ export class SmithproxyApp extends LitElement {
     if (!profile) return nothing;
     const routing = profile.routing;
     const tls = profile.tls;
+    const detection = profile.detection;
+    const content = profile.content;
     return html`
       <div class="form-grid">
         <label>Name</label><span>${profile.name}</span>
@@ -1359,13 +1362,32 @@ export class SmithproxyApp extends LitElement {
           <label>SNI bypass list</label><span>${tls.sniBypassEntries} redacted entries</span>
           <label>SSL key logging</label><span>${tls.sslKeyLog ? 'Enabled' : 'Disabled'}</span>
           <label>Alerts</label><span>${tls.alerts}</span>
+        ` : detection ? html`
+          <label>Detection phase</label>
+          <span>${['Disabled', 'Pre-read', 'Post-read'][detection.mode]}</span>
+          <label>L7 engines</label><span>${detection.enginesEnabled ? 'Enabled' : 'Disabled'}</span>
+          <label>Knowledge base</label><span>${detection.knowledgeBaseEnabled ? 'Enabled' : 'Disabled'}</span>
+        ` : content ? html`
+          <label>Payload capture</label><span>${content.writePayload ? 'Enabled' : 'Disabled'}</span>
+          <label>Capture format</label><span>${content.writeFormat}</span>
+          <label>Webhook</label><span>${content.webhookEnabled ? 'Enabled' : 'Disabled'}</span>
+          <label>Webhook traffic lock</label><span>${content.webhookLocksTraffic ? 'Enabled' : 'Disabled'}</span>
+          <label>JA4 TLS ClientHello</label><span>${content.ja4TlsClientHello ? 'Enabled' : 'Disabled'}</span>
+          <label>JA4 ignores SNI</label><span>${content.ja4TlsClientHelloIgnoresSni ? 'Yes' : 'No'}</span>
+          <label>JA4 TLS ServerHello</label><span>${content.ja4TlsServerHello ? 'Enabled' : 'Disabled'}</span>
+          <label>JA4 HTTP</label><span>${content.ja4Http ? 'Enabled' : 'Disabled'}</span>
+          <label>Session filter</label><span>${content.sessionFilterConfigured ? 'Configured · redacted' : 'Not configured'}</span>
+          <label>Content rules</label><span>${content.ruleCount} redacted rules</span>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
-      ${routing || tls ? nothing : html`<div class="privacy-note section">
+      ${routing || tls || detection || content ? nothing : html`<div class="privacy-note section">
         Profile values remain inside the GUI core until a typed, redacted editor is available.
       </div>`}
       ${tls ? html`<div class="privacy-note section">
         SNI bypass values stay inside the GUI core; only their bounded count is exposed.
+      </div>` : nothing}
+      ${content ? html`<div class="privacy-note section">
+        Content rule patterns, replacements, and session filters stay inside the GUI core.
       </div>` : nothing}
       ${this.renderObjectUsage(profile)}
     `;

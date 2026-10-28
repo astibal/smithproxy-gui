@@ -13,7 +13,7 @@ const liveSnapshot = {
     source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
     features: ['sinkhole'],
     action: 'accept', nat: '', routing: 'main', tls_profile: 'inspect',
-    ssh_profile: '', detection_profile: '', content_profile: '', auth_profile: '',
+    ssh_profile: '', detection_profile: 'default', content_profile: 'capture', auth_profile: '',
     dns_profile: '', script_profile: '',
   }],
   addresses: [
@@ -32,6 +32,8 @@ const liveSnapshot = {
         ssl_key_log: false, client_hello_timeout_ms: 3000, handshake_timeout_ms: 10000,
         sni_bypass_entries: 2, client_certificate_action: 'use_configured', alerts: 'unusual',
       },
+      detection: null,
+      content: null,
     },
     {
       id: 'routing-0', name: 'main', type: 'routing',
@@ -40,6 +42,21 @@ const liveSnapshot = {
         load_balancing_method: 'sticky-l3', rewrite_sni: 'old.example', rewrite_sni_to: 'new.example',
       },
       tls: null,
+      detection: null,
+      content: null,
+    },
+    {
+      id: 'detection-0', name: 'default', type: 'detection', routing: null, tls: null,
+      detection: {mode: 2, engines_enabled: true, knowledge_base_enabled: false}, content: null,
+    },
+    {
+      id: 'content-0', name: 'capture', type: 'content', routing: null, tls: null, detection: null,
+      content: {
+        write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
+        webhook_locks_traffic: true, ja4_tls_client_hello: true,
+        ja4_tls_client_hello_ignores_sni: true, ja4_tls_server_hello: false,
+        ja4_http: true, session_filter_configured: true, rule_count: 2,
+      },
     },
   ],
 };
@@ -68,10 +85,12 @@ describe('ApiConfigClient', () => {
       {id: 'routing-0', kind: 'routing-profile', name: 'main'},
     ]);
     expect(snapshot.protocols[0]?.usedBy).toEqual([{id: 'policy-0', kind: 'policy', name: 'Policy 1'}]);
-    expect(snapshot.profiles.map(item => item.usedBy.length)).toEqual([1, 1]);
+    expect(snapshot.profiles.map(item => item.usedBy.length)).toEqual([1, 1, 1, 1]);
     expect(snapshot.profiles[1]?.routing).toMatchObject({loadBalancingMethod: 'sticky-l3'});
     expect(snapshot.addresses[1]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
     expect(snapshot.ports[0]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
+    expect(snapshot.profiles[2]?.detection).toMatchObject({mode: 2, knowledgeBaseEnabled: false});
+    expect(snapshot.profiles[3]?.content).toMatchObject({ruleCount: 2, sessionFilterConfigured: true});
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/config/snapshot',
       expect.objectContaining({cache: 'no-store', credentials: 'same-origin', redirect: 'error'}),

@@ -18,8 +18,8 @@ const snapshot: ConfigSnapshot = {
       destinationPorts: ['https'],
       features: ['sinkhole'],
       action: 'inspect',
-      nat: '', routing: '', tlsProfile: 'inspect', sshProfile: '', detectionProfile: '',
-      contentProfile: '', authProfile: '', dnsProfile: '', scriptProfile: '',
+      nat: '', routing: '', tlsProfile: 'inspect', sshProfile: '', detectionProfile: 'default',
+      contentProfile: 'capture', authProfile: '', dnsProfile: '', scriptProfile: '',
       enabled: true,
     },
     {
@@ -102,6 +102,8 @@ const snapshot: ConfigSnapshot = {
         sslKeyLog: false, clientHelloTimeoutMs: 3000, handshakeTimeoutMs: 10000,
         sniBypassEntries: 0, clientCertificateAction: 'use_configured', alerts: 'all',
       },
+      detection: null,
+      content: null,
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
@@ -111,7 +113,25 @@ const snapshot: ConfigSnapshot = {
         loadBalancingMethod: 'round-robin', rewriteSni: '', rewriteSniTo: '',
       },
       tls: null,
+      detection: null,
+      content: null,
       usedBy: [],
+    },
+    {
+      id: 'detection-0', name: 'default', type: 'detection', routing: null, tls: null,
+      detection: {mode: 1, enginesEnabled: true, knowledgeBaseEnabled: true},
+      content: null,
+      usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
+    },
+    {
+      id: 'content-0', name: 'capture', type: 'content', routing: null, tls: null,
+      detection: null,
+      content: {
+        writePayload: false, writeFormat: 'pcap_single', webhookEnabled: false,
+        webhookLocksTraffic: false, ja4TlsClientHello: true, ja4TlsClientHelloIgnoresSni: true,
+        ja4TlsServerHello: false, ja4Http: true, sessionFilterConfigured: true, ruleCount: 2,
+      },
+      usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
   ],
 };
