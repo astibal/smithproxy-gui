@@ -75,6 +75,21 @@ std::optional<std::uint64_t> optional_decimal(
     return result;
 }
 
+std::optional<std::int64_t> optional_signed_decimal(
+    const Json& object, const char* key, const std::int64_t fallback,
+    const std::int64_t minimum, const std::int64_t maximum) {
+    if (object.find(key) == object.end()) return fallback;
+    const auto text = bounded_string(object, key, 20U);
+    if (!text || text->empty()) return std::nullopt;
+    std::int64_t result{};
+    const auto [end, error] = std::from_chars(text->data(), text->data() + text->size(), result);
+    if (error != std::errc{} || end != text->data() + text->size() ||
+        result < minimum || result > maximum) {
+        return std::nullopt;
+    }
+    return result;
+}
+
 std::optional<std::size_t> optional_object_array_size(const Json& object, const char* key) {
     const auto value = object.find(key);
     if (value == object.end()) return 0U;
@@ -480,13 +495,13 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto accept_api = boolean_scalar(*value, "accept_api", false);
     const auto policy_fail_open = boolean_scalar(*value, "policy_fail_open", false);
     const auto access_fail_open = boolean_scalar(*value, "policy_access_request_fail_open", false);
-    const auto plaintext_workers = optional_decimal(*value, "plaintext_workers", 0U, 4096U);
-    const auto tls_workers = optional_decimal(*value, "ssl_workers", 0U, 4096U);
-    const auto udp_workers = optional_decimal(*value, "udp_workers", 0U, 4096U);
-    const auto dtls_workers = optional_decimal(*value, "dtls_workers", 0U, 4096U);
-    const auto quic_workers = optional_decimal(*value, "quic_workers", 0U, 4096U);
-    const auto socks_workers = optional_decimal(*value, "socks_workers", 0U, 4096U);
-    const auto http_connect_workers = optional_decimal(*value, "http_connect_workers", 0U, 4096U);
+    const auto plaintext_workers = optional_signed_decimal(*value, "plaintext_workers", 0, -1, 4096);
+    const auto tls_workers = optional_signed_decimal(*value, "ssl_workers", 0, -1, 4096);
+    const auto udp_workers = optional_signed_decimal(*value, "udp_workers", 0, -1, 4096);
+    const auto dtls_workers = optional_signed_decimal(*value, "dtls_workers", 0, -1, 4096);
+    const auto quic_workers = optional_signed_decimal(*value, "quic_workers", 0, -1, 4096);
+    const auto socks_workers = optional_signed_decimal(*value, "socks_workers", 0, -1, 4096);
+    const auto http_connect_workers = optional_signed_decimal(*value, "http_connect_workers", 0, -1, 4096);
     const auto tls_autodetect = boolean_scalar(*value, "ssl_autodetect", false);
     const auto tls_autodetect_harder = boolean_scalar(*value, "ssl_autodetect_harder", false);
     const auto kernel_tls = boolean_scalar(*value, "ssl_use_ktls", false);

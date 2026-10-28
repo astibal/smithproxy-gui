@@ -61,7 +61,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "accept_socks": "false", "accept_http_connect": "true", "accept_api": "true",
             "policy_fail_open": "false", "policy_access_request_fail_open": "false",
             "plaintext_workers": "2", "ssl_workers": "4", "udp_workers": "1",
-            "dtls_workers": "1", "quic_workers": "0", "socks_workers": "0",
+            "dtls_workers": "1", "quic_workers": "-1", "socks_workers": "-1",
             "http_connect_workers": "1", "ssl_autodetect": "true",
             "ssl_autodetect_harder": "false", "ssl_use_ktls": "false",
             "nameservers": ["192.0.2.53"],

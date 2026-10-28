@@ -1204,8 +1204,8 @@ export class SmithproxyApp extends LitElement {
     for (const [path, id] of workerFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-worker-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
-      if (!input || !Number.isInteger(value) || value < 0 || value > 4096) {
-        this.draftError = 'Worker counts must be integers from 0 to 4096.';
+      if (!input || !Number.isInteger(value) || value < -1 || value > 4096) {
+        this.draftError = 'Worker counts must be integers from -1 to 4096.';
         return undefined;
       }
       changes.push({path: `settings.${path}`, value});
@@ -1882,6 +1882,7 @@ export class SmithproxyApp extends LitElement {
     const debug = this.snapshot?.debug;
     const captures = this.snapshot?.captures;
     const securityAssets = this.snapshot?.securityAssets;
+    const workers = (value: number) => value === -1 ? 'Disabled' : String(value);
     return html`
       <div class="content dashboard">
         <div class="section-head">
@@ -1945,9 +1946,9 @@ export class SmithproxyApp extends LitElement {
             <article class="domain-card">
               <header><div><h3>Worker pools</h3><p>Configured runtime concurrency</p></div></header>
               <dl>
-                <dt>Plaintext / TLS</dt><dd>${settings.workers.plaintext} / ${settings.workers.tls}</dd>
-                <dt>UDP / DTLS / QUIC</dt><dd>${settings.workers.udp} / ${settings.workers.dtls} / ${settings.workers.quic}</dd>
-                <dt>SOCKS / CONNECT</dt><dd>${settings.workers.socks} / ${settings.workers.httpConnect}</dd>
+                <dt>Plaintext / TLS</dt><dd>${workers(settings.workers.plaintext)} / ${workers(settings.workers.tls)}</dd>
+                <dt>UDP / DTLS / QUIC</dt><dd>${workers(settings.workers.udp)} / ${workers(settings.workers.dtls)} / ${workers(settings.workers.quic)}</dd>
+                <dt>SOCKS / CONNECT</dt><dd>${workers(settings.workers.socks)} / ${workers(settings.workers.httpConnect)}</dd>
                 <dt>TLS autodetect</dt><dd>${settings.tlsAutodetect ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Kernel TLS</dt><dd>${settings.kernelTls ? 'Requested' : 'Disabled'}</dd>
               </dl>
@@ -2480,7 +2481,7 @@ export class SmithproxyApp extends LitElement {
     `;
     const workerField = (id: string, label: string, value: number) => html`
       <label for="settings-worker-${id}">${label}</label>
-      <input id="settings-worker-${id}" type="number" min="0" max="4096"
+      <input id="settings-worker-${id}" type="number" min="-1" max="4096"
         .value=${String(value)} .readOnly=${disabled} />
     `;
     return html`
@@ -2499,6 +2500,7 @@ export class SmithproxyApp extends LitElement {
         ${workerField('quic', 'QUIC workers', settings.workers.quic)}
         ${workerField('socks', 'SOCKS workers', settings.workers.socks)}
         ${workerField('http-connect', 'HTTP CONNECT workers', settings.workers.httpConnect)}
+        <span class="form-span privacy-note">Use -1 to disable a listener; 0 lets Smithproxy choose its default worker count.</span>
         ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}

@@ -268,14 +268,18 @@ int main() {
         R"({"success":{"script_profiles":{"bad":{"type":"7"}}}})",
         "script_profiles", "script").profiles);
     const auto settings = parse_config_settings(
-        R"({"success":{"settings":{"accept_tproxy":"true","policy_fail_open":"false","plaintext_workers":"2","ssl_workers":"4","nameservers":["192.0.2.53"],"http_api":{"keys":["secret"],"allowed_ips":["127.0.0.1"],"loopback_only":"true"},"webhook":{"enabled":"true","tls_verify":"true","url":"https://private.example/"}}}})");
+        R"({"success":{"settings":{"accept_tproxy":"true","policy_fail_open":"false","plaintext_workers":"2","ssl_workers":"4","quic_workers":"-1","socks_workers":"-1","nameservers":["192.0.2.53"],"http_api":{"keys":["secret"],"allowed_ips":["127.0.0.1"],"loopback_only":"true"},"webhook":{"enabled":"true","tls_verify":"true","url":"https://private.example/"}}}})");
     assert(settings.settings);
     assert(settings.settings->accept_tproxy);
-    assert(settings.settings->tls_workers == 4U);
+    assert(settings.settings->tls_workers == 4);
+    assert(settings.settings->quic_workers == -1);
+    assert(settings.settings->socks_workers == -1);
     assert(settings.settings->api_key_count == 1U);
     assert(settings.settings->webhook_url_configured);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"http_api":{"keys":"secret"}}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"quic_workers":"-2"}}})").settings);
     const auto debug = parse_config_debug(
         R"({"success":{"debug":{"log_data_crc":"true","log_sockets":"false","log_online_cx_name":"true","log_srclines":"false","log_srclines_always":"true","log":{"proxy":"7","tls":"8"}}}})");
     assert(debug.debug);

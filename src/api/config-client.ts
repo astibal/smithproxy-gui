@@ -59,6 +59,13 @@ function safeInteger(value: unknown, label: string, maximum: number): number {
   return value;
 }
 
+function rangedInteger(value: unknown, label: string, minimum: number, maximum: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`Invalid ${label}.`);
+  }
+  return value;
+}
+
 function safeBoolean(value: unknown, label: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`Invalid ${label}.`);
   return value;
@@ -441,13 +448,13 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         value.settings.access_request_fail_open, 'access-request fail-open state',
       ),
       workers: {
-        plaintext: safeInteger(value.settings.workers.plaintext, 'plaintext workers', 4096),
-        tls: safeInteger(value.settings.workers.tls, 'TLS workers', 4096),
-        udp: safeInteger(value.settings.workers.udp, 'UDP workers', 4096),
-        dtls: safeInteger(value.settings.workers.dtls, 'DTLS workers', 4096),
-        quic: safeInteger(value.settings.workers.quic, 'QUIC workers', 4096),
-        socks: safeInteger(value.settings.workers.socks, 'SOCKS workers', 4096),
-        httpConnect: safeInteger(value.settings.workers.http_connect, 'HTTP CONNECT workers', 4096),
+        plaintext: rangedInteger(value.settings.workers.plaintext, 'plaintext workers', -1, 4096),
+        tls: rangedInteger(value.settings.workers.tls, 'TLS workers', -1, 4096),
+        udp: rangedInteger(value.settings.workers.udp, 'UDP workers', -1, 4096),
+        dtls: rangedInteger(value.settings.workers.dtls, 'DTLS workers', -1, 4096),
+        quic: rangedInteger(value.settings.workers.quic, 'QUIC workers', -1, 4096),
+        socks: rangedInteger(value.settings.workers.socks, 'SOCKS workers', -1, 4096),
+        httpConnect: rangedInteger(value.settings.workers.http_connect, 'HTTP CONNECT workers', -1, 4096),
       },
       tlsAutodetect: safeBoolean(value.settings.tls_autodetect, 'TLS autodetection state'),
       tlsAutodetectHarder: safeBoolean(value.settings.tls_autodetect_harder, 'hard TLS autodetection state'),

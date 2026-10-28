@@ -76,7 +76,7 @@ const liveSnapshot = {
     accept_tproxy: true, accept_redirect: true, accept_socks: false,
     accept_http_connect: true, accept_api: true, policy_fail_open: false,
     access_request_fail_open: false,
-    workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 0, http_connect: 1},
+    workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, http_connect: 1},
     tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
     nameserver_count: 2,
     http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
@@ -133,7 +133,7 @@ describe('ApiConfigClient', () => {
     expect(snapshot.ports[0]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
     expect(snapshot.profiles[2]?.detection).toMatchObject({mode: 2, knowledgeBaseEnabled: false});
     expect(snapshot.profiles[3]?.content).toMatchObject({ruleCount: 2, sessionFilterConfigured: true});
-    expect(snapshot.settings).toMatchObject({policyFailOpen: false, workers: {tls: 4}});
+    expect(snapshot.settings).toMatchObject({policyFailOpen: false, workers: {tls: 4, quic: -1, socks: -1}});
     expect(snapshot.captures).toMatchObject({local: {enabled: true, quotaMiB: 512}});
     expect(snapshot.securityAssets).toMatchObject({
       certificateAuthorityCount: 1, starttlsSignatureCount: 6, detectionFlowStepCount: 31,
