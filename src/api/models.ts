@@ -212,6 +212,8 @@ export interface CaptureSettings {
   local: {
     enabled: boolean;
     directoryConfigured: boolean;
+    filePrefixConfigured: boolean;
+    fileSuffixConfigured: boolean;
     format: 'pcap_single' | 'pcap' | 'smcap';
     quotaMiB: number;
   };

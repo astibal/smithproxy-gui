@@ -105,7 +105,10 @@ const liveSnapshot = {
     log_srclines: true, log_srclines_always: false, module_override_count: 1,
   },
   captures: {
-    local: {enabled: true, directory_configured: true, format: 'pcap_single', quota_mib: 512},
+    local: {
+      enabled: true, directory_configured: true, file_prefix_configured: true,
+      file_suffix_configured: true, format: 'pcap_single', quota_mib: 512,
+    },
     remote: {
       enabled: false, tunnel_type: 'gre', gre_format: 'traffic',
       destination_configured: false, ttl: 1, bind_interface_configured: false,

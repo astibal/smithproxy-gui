@@ -307,6 +307,8 @@ int main() {
         R"({"success":{"captures":{"local":{"enabled":"true","dir":"/private/captures","format":"pcap_single","pcap_quota":"512"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"192.0.2.10","tun_ttl":"1","bind_interface":"private0"},"options":{"calculate_checksums":"true"}}}})");
     assert(captures.captures);
     assert(captures.captures->local_enabled);
+    assert(!captures.captures->local_file_prefix_configured);
+    assert(!captures.captures->local_file_suffix_configured);
     assert(captures.captures->local_quota_mib == 512U);
     assert(captures.captures->remote_destination_configured);
     assert(!parse_config_captures(

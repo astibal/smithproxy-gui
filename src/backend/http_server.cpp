@@ -88,6 +88,8 @@ bool sensitive_draft_path(const std::string_view path) {
         "settings.certs_ca_key_password", "settings.ca_bundle_path", "settings.messages_dir",
         "settings.write_payload_file_prefix", "settings.write_payload_file_suffix",
         "settings.cli.enable_password", "settings.web_rating.wot_key", "settings.http_api.keys",
+        "captures.local.dir", "captures.local.file_prefix", "captures.local.file_suffix",
+        "captures.remote.tun_dst", "captures.remote.bind_interface",
     };
     return std::find(sensitive_paths.begin(), sensitive_paths.end(), path) != sensitive_paths.end();
 }
@@ -640,6 +642,10 @@ private:
             captures = "{\"local\":{\"enabled\":" + std::string(value.local_enabled ? "true" : "false") +
                        ",\"directory_configured\":" +
                        (value.local_directory_configured ? "true" : "false") +
+                       ",\"file_prefix_configured\":" +
+                       (value.local_file_prefix_configured ? "true" : "false") +
+                       ",\"file_suffix_configured\":" +
+                       (value.local_file_suffix_configured ? "true" : "false") +
                        ",\"format\":" + json_string(value.local_format) +
                        ",\"quota_mib\":" + std::to_string(value.local_quota_mib) + "}" +
                        ",\"remote\":{\"enabled\":" + (value.remote_enabled ? "true" : "false") +

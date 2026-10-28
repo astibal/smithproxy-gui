@@ -52,7 +52,8 @@ inside the GUI core until Smithproxy publishes a stable module schema.
 
 Capture posture includes local format and quota, remote tunnel mode and TTL,
 and checksum behavior. Capture directories, filename components, tunnel
-destinations, and bind interfaces are reduced to configured flags.
+destinations, and bind interfaces are exposed as configured flags and edited
+through write-only replace/clear controls.
 
 Trust and signature posture covers configured TLS certificate-authority entries,
 STARTTLS signatures, detection signatures, and their aggregate flow-step counts.

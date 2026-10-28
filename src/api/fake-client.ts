@@ -216,7 +216,10 @@ const snapshot: ConfigSnapshot = {
     logSourceLines: false, logSourceLinesAlways: false, moduleOverrideCount: 0,
   },
   captures: {
-    local: {enabled: false, directoryConfigured: true, format: 'pcap_single', quotaMiB: 1024},
+    local: {
+      enabled: false, directoryConfigured: true, filePrefixConfigured: false,
+      fileSuffixConfigured: true, format: 'pcap_single', quotaMiB: 1024,
+    },
     remote: {
       enabled: false, tunnelType: 'gre', greFormat: 'traffic',
       destinationConfigured: false, ttl: 1, bindInterfaceConfigured: false,

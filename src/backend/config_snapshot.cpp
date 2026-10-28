@@ -672,6 +672,8 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
     const Json& options = options_value == value->end() ? empty : *options_value;
     const auto local_enabled = required_boolean_scalar(*local_value, "enabled");
     const auto local_dir = bounded_string(*local_value, "dir", maximum_value_length);
+    const auto local_prefix = bounded_string(*local_value, "file_prefix", maximum_name_length, true);
+    const auto local_suffix = bounded_string(*local_value, "file_suffix", maximum_name_length, true);
     const auto local_format = bounded_string(*local_value, "format", 16U);
     const auto local_quota = optional_decimal(*local_value, "pcap_quota", 0U, 1024U * 1024U);
     const auto remote_enabled = required_boolean_scalar(*remote_value, "enabled");
@@ -681,7 +683,7 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
     const auto ttl = optional_decimal(*remote_value, "tun_ttl", 0U, 255U);
     const auto bind_interface = bounded_string(*remote_value, "bind_interface", maximum_name_length, true);
     const auto checksums = boolean_scalar(options, "calculate_checksums", false);
-    if (!local_enabled || !local_dir || !local_format ||
+    if (!local_enabled || !local_dir || !local_prefix || !local_suffix || !local_format ||
         (*local_format != "pcap_single" && *local_format != "pcap" && *local_format != "smcap") ||
         !local_quota || !remote_enabled || !tunnel_type || *tunnel_type != "gre" || !gre_format ||
         (*gre_format != "traffic" && *gre_format != "pcapng") || !destination || !ttl ||
@@ -689,7 +691,8 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
         return {std::nullopt, "Smithproxy returned invalid capture setting fields"};
     }
     return {ConfigCaptureSettings{
-                *local_enabled, !local_dir->empty(), *local_format, *local_quota,
+                *local_enabled, !local_dir->empty(), !local_prefix->empty(),
+                !local_suffix->empty(), *local_format, *local_quota,
                 *remote_enabled, *tunnel_type, *gre_format, !destination->empty(), *ttl,
                 !bind_interface->empty(), *checksums,
             }, {}};

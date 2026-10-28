@@ -244,7 +244,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         log_srclines: false, log_srclines_always: false, module_override_count: 1,
       },
       captures: {
-        local: {enabled: false, directory_configured: true, format: 'pcap_single', quota_mib: 1024},
+        local: {
+          enabled: false, directory_configured: true, file_prefix_configured: true,
+          file_suffix_configured: true, format: 'pcap_single', quota_mib: 1024,
+        },
         remote: {
           enabled: false, tunnel_type: 'gre', gre_format: 'traffic',
           destination_configured: false, ttl: 1, bind_interface_configured: false,
@@ -652,14 +655,16 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureEditor.getByLabel('Local capture').selectOption('true');
   await captureEditor.getByLabel('Local format').selectOption('smcap');
   await captureEditor.getByLabel('Tunnel TTL').fill('32');
-  await expect(captureEditor.getByText('Configured · path redacted · unchanged')).toBeVisible();
-  await expect(captureEditor.getByText('Not configured')).toHaveCount(2);
+  await captureEditor.getByLabel('Local directory', {exact: true}).selectOption('replace');
+  await captureEditor.getByLabel('Local directory replacement').fill('/new/private/captures');
+  await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 60 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 62 changes')).toBeVisible();
+  await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 60'}).click();
+  await page.getByRole('button', {name: 'Review draft · 62'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
@@ -678,12 +683,13 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('debug.log_sockets');
   await expect(changes).toContainText('captures.local.format');
   await expect(changes).toContainText('captures.remote.tun_ttl');
+  await expect(changes).toContainText('captures.local.dir');
+  await expect(changes).toContainText('captures.remote.tun_dst');
   await expect(changes).not.toContainText('hooks.example.test');
   await expect(changes).not.toContainText('new-private-password');
   await expect(changes).not.toContainText('new-api-key');
   await expect(changes).not.toContainText('overlap-api-key');
-  await expect(changes).not.toContainText('captures.local.dir');
-  await expect(changes).not.toContainText('captures.remote.tun_dst');
+  await expect(changes).not.toContainText('/new/private/captures');
 });
 
 test('searches policies and configuration objects without unsafe markup', async ({page}) => {

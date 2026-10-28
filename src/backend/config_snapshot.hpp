@@ -216,6 +216,8 @@ struct ConfigDebugSettings {
 struct ConfigCaptureSettings {
     bool local_enabled{};
     bool local_directory_configured{};
+    bool local_file_prefix_configured{};
+    bool local_file_suffix_configured{};
     std::string local_format;
     std::uint64_t local_quota_mib{};
     bool remote_enabled{};

@@ -681,6 +681,8 @@ export class SmithproxyApp extends LitElement {
       'settings.certs_ca_key_password', 'settings.ca_bundle_path', 'settings.messages_dir',
       'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
       'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
+      'captures.local.dir', 'captures.local.file_prefix', 'captures.local.file_suffix',
+      'captures.remote.tun_dst', 'captures.remote.bind_interface',
     ]);
     if (sensitivePaths.has(path)) {
       if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared · redacted';
@@ -855,12 +857,12 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
-      if (entry.kind === 'settings') {
+      if (entry.kind === 'settings' || entry.kind === 'captures') {
         this.renderRoot.querySelectorAll<HTMLInputElement>(
-          '[id^="settings-write-"][id$="-value"], #settings-api-keys-value',
+          '[id^="settings-write-"][id$="-value"], [id^="captures-write-"][id$="-value"], #settings-api-keys-value',
         ).forEach(input => { input.value = ''; });
         this.renderRoot.querySelectorAll<HTMLSelectElement>(
-          '[id^="settings-write-"][id$="-mode"], #settings-api-keys-mode',
+          '[id^="settings-write-"][id$="-mode"], [id^="captures-write-"][id$="-mode"], #settings-api-keys-mode',
         ).forEach(select => { select.value = 'unchanged'; });
       }
     } catch (error) {
@@ -1380,13 +1382,42 @@ export class SmithproxyApp extends LitElement {
       this.draftError = 'Capture format, quota, or tunnel TTL is invalid.';
       return undefined;
     }
-    return [
-      ...changes,
+    changes.push(
       {path: 'captures.local.format', value: format.value},
       {path: 'captures.local.pcap_quota', value: quotaValue},
       {path: 'captures.remote.gre_format', value: greFormat.value},
       {path: 'captures.remote.tun_ttl', value: ttlValue},
-    ];
+    );
+    const writeOnlyFields = [
+      ['local.dir', 'local-directory', 'path'],
+      ['local.file_prefix', 'local-prefix', 'filename'],
+      ['local.file_suffix', 'local-suffix', 'filename'],
+      ['remote.tun_dst', 'remote-destination', 'host'],
+      ['remote.bind_interface', 'bind-interface', 'interface'],
+    ] as const;
+    for (const [path, id, kind] of writeOnlyFields) {
+      const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-write-${id}-mode`);
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#captures-write-${id}-value`);
+      if (!mode || !input || !['unchanged', 'replace', 'clear'].includes(mode.value)) return undefined;
+      if (mode.value === 'unchanged') continue;
+      if (mode.value === 'clear') {
+        changes.push({path: `captures.${path}`, value: ''});
+        continue;
+      }
+      const replacement = input.value;
+      let valid = replacement.length > 0 && replacement.length <= 1024 &&
+        !/[\u0000-\u001f\u007f]/u.test(replacement);
+      if (kind === 'path') valid = valid && replacement.startsWith('/');
+      if (kind === 'filename') valid = valid && replacement.length <= 128 && !/[\\/]/u.test(replacement);
+      if (kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
+      if (kind === 'interface') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
+      if (!valid) {
+        this.draftError = 'A write-only capture replacement is invalid for its field.';
+        return undefined;
+      }
+      changes.push({path: `captures.${path}`, value: replacement});
+    }
+    return changes;
   }
 
   private handleKeydown(event: KeyboardEvent): void {
@@ -2164,6 +2195,7 @@ export class SmithproxyApp extends LitElement {
               <dl>
                 <dt>Local capture</dt><dd>${captures.local.enabled ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Local target</dt><dd>${captures.local.directoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Filename prefix / suffix</dt><dd>${captures.local.filePrefixConfigured ? 'Configured' : 'Empty'} / ${captures.local.fileSuffixConfigured ? 'Configured' : 'Empty'}</dd>
                 <dt>Format / quota</dt><dd>${captures.local.format} / ${captures.local.quotaMiB} MiB</dd>
                 <dt>Remote capture</dt><dd>${captures.remote.enabled ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Tunnel format</dt><dd>${captures.remote.tunnelType} / ${captures.remote.greFormat}</dd>
@@ -2776,6 +2808,18 @@ export class SmithproxyApp extends LitElement {
     const captures = this.snapshot?.captures;
     if (!captures) return nothing;
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const writeOnlyField = (id: string, label: string, configured: boolean) => html`
+      <label for="captures-write-${id}-mode">${label}</label>
+      <div class="write-only-control">
+        <select id="captures-write-${id}-mode" ?disabled=${disabled}>
+          <option value="unchanged">${configured ? 'Keep configured value' : 'Keep empty'}</option>
+          <option value="replace">Replace</option>
+          <option value="clear">Clear</option>
+        </select>
+        <input id="captures-write-${id}-value" aria-label="${label} replacement"
+          placeholder="New value (write-only)" autocomplete="off" .readOnly=${disabled} />
+      </div>
+    `;
     return html`
       <div class="form-grid wide-form-grid">
         <label for="captures-local-enabled">Local capture</label>
@@ -2787,8 +2831,9 @@ export class SmithproxyApp extends LitElement {
         <label for="captures-local-quota">Local quota (MiB)</label>
         <input id="captures-local-quota" type="number" min="0" max="1048576"
           .value=${String(captures.local.quotaMiB)} .readOnly=${disabled} />
-        <label>Local directory</label>
-        <span>${captures.local.directoryConfigured ? 'Configured · path redacted · unchanged' : 'Not configured'}</span>
+        ${writeOnlyField('local-directory', 'Local directory', captures.local.directoryConfigured)}
+        ${writeOnlyField('local-prefix', 'Local filename prefix', captures.local.filePrefixConfigured)}
+        ${writeOnlyField('local-suffix', 'Local filename suffix', captures.local.fileSuffixConfigured)}
         <label for="captures-remote-enabled">Remote capture</label>
         ${this.renderBooleanSelect('captures-remote-enabled', captures.remote.enabled, disabled)}
         <label>Tunnel type</label><span>${captures.remote.tunnelType.toUpperCase()} · unchanged</span>
@@ -2799,10 +2844,8 @@ export class SmithproxyApp extends LitElement {
         <label for="captures-remote-ttl">Tunnel TTL</label>
         <input id="captures-remote-ttl" type="number" min="0" max="255"
           .value=${String(captures.remote.ttl)} .readOnly=${disabled} />
-        <label>Remote destination</label>
-        <span>${captures.remote.destinationConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>Bound interface</label>
-        <span>${captures.remote.bindInterfaceConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        ${writeOnlyField('remote-destination', 'Remote destination', captures.remote.destinationConfigured)}
+        ${writeOnlyField('bind-interface', 'Bound interface', captures.remote.bindInterfaceConfigured)}
         <label for="captures-checksums">Calculate checksums</label>
         ${this.renderBooleanSelect('captures-checksums', captures.calculateChecksums, disabled)}
       </div>

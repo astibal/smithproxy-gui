@@ -88,7 +88,7 @@
       "edit": "partial",
       "sensitivity": "path-bearing",
       "tracked_fields": ["local_enabled", "remote_enabled", "remote_port", "remote_ttl", "calculate_checksums"],
-      "notes": "Capture posture is typed. Local paths, destination addresses, and interface names stay redacted and unchanged."
+      "notes": "Capture posture is typed. Local paths, filename components, destination addresses, and interface names use write-only replace/clear controls and remain redacted in draft responses."
     },
     {
       "name": "content_profiles",

@@ -597,6 +597,12 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         directoryConfigured: safeBoolean(
           value.captures.local.directory_configured, 'local capture directory state',
         ),
+        filePrefixConfigured: safeBoolean(
+          value.captures.local.file_prefix_configured, 'local capture filename prefix state',
+        ),
+        fileSuffixConfigured: safeBoolean(
+          value.captures.local.file_suffix_configured, 'local capture filename suffix state',
+        ),
         format: localFormat as 'pcap_single' | 'pcap' | 'smcap',
         quotaMiB: safeInteger(value.captures.local.quota_mib, 'local capture quota', 1024 * 1024),
       },
