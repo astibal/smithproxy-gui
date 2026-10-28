@@ -773,10 +773,15 @@ private:
         MHD_add_response_header(output, "X-Content-Type-Options", "nosniff");
         MHD_add_response_header(output, "Referrer-Policy", "no-referrer");
         MHD_add_response_header(output, "X-Frame-Options", "SAMEORIGIN");
+        MHD_add_response_header(output, "Cross-Origin-Resource-Policy", "same-origin");
+        MHD_add_response_header(output, "X-Permitted-Cross-Domain-Policies", "none");
+        MHD_add_response_header(output, "Permissions-Policy",
+                                "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()");
         MHD_add_response_header(output, "Content-Security-Policy",
                                 "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
                                 "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
-                                "object-src 'none'; base-uri 'none'; frame-ancestors 'self'");
+                                "worker-src 'self'; manifest-src 'self'; object-src 'none'; "
+                                "base-uri 'none'; form-action 'self'; frame-ancestors 'self'");
         const auto queued = MHD_queue_response(connection, response.status, output);
         MHD_destroy_response(output);
         if (queued == MHD_YES) state.response_sent = true;

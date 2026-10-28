@@ -65,7 +65,8 @@ ve frontendu není bezpečnostní kontrola.
 
 ## Frontend
 
-- striktní CSP bez `unsafe-inline` a `unsafe-eval`;
+- scripts are restricted to same-origin resources without `unsafe-inline` or
+  `unsafe-eval`; component styles currently require `style-src 'unsafe-inline'`;
 - žádné vykreslování neověřeného HTML;
 - bezpečné odkazy a downloady;
 - ochrana proti clickjackingu;
@@ -74,6 +75,11 @@ ve frontendu není bezpečnostní kontrola.
 
 Saslik theme runtime musí zůstat kompatibilní se striktní CSP. Import palet je
 omezen velikostí, schema validací a pouze hex barevnými hodnotami.
+
+Every response carries `nosniff`, `no-referrer`, same-origin framing and resource
+policy, a deny-by-default browser Permissions Policy, and a CSP that blocks
+objects, foreign connections, foreign frames, and base-URL rewriting. API
+responses use `no-store`; fingerprinted static assets are immutable.
 
 ## Config a secrets
 

@@ -265,6 +265,13 @@ def main() -> int:
         assert health["smithproxy"]["checked_at_unix_ms"] is None
         assert headers["X-Content-Type-Options"] == "nosniff"
         assert "default-src 'self'" in headers["Content-Security-Policy"]
+        assert "frame-ancestors 'self'" in headers["Content-Security-Policy"]
+        assert "form-action 'self'" in headers["Content-Security-Policy"]
+        assert headers["X-Frame-Options"] == "SAMEORIGIN"
+        assert headers["Cross-Origin-Resource-Policy"] == "same-origin"
+        assert headers["X-Permitted-Cross-Domain-Policies"] == "none"
+        assert "camera=()" in headers["Permissions-Policy"]
+        assert headers["Cache-Control"] == "no-store"
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/capabilities")
         capabilities = json.loads(body)
