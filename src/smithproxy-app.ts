@@ -102,6 +102,7 @@ export class SmithproxyApp extends LitElement {
   @state() private configWriteAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftVersion = 0;
+  @state() private draftChangeCount = 0;
   @state() private draftSaving = false;
   @state() private draftError: string | undefined;
   @state() private configError: string | undefined;
@@ -549,12 +550,28 @@ export class SmithproxyApp extends LitElement {
 
   private applyDraft(snapshot: DraftSnapshot): void {
     this.draftVersion = snapshot.version;
+    this.draftChangeCount = snapshot.changes.length;
     const objects = new Set<string>();
     for (const change of snapshot.changes) {
       const policy = /^policy\.\[(\d+)\]\./u.exec(change.path);
       if (policy) {
         const item = this.snapshot?.policies[Number(policy[1])];
         if (item) objects.add(`policy:${item.id}`);
+      }
+      const address = /^address_objects\.\[(\d+)\]\./u.exec(change.path);
+      if (address) {
+        const item = this.snapshot?.addresses[Number(address[1])];
+        if (item) objects.add(`address:${item.id}`);
+      }
+      const port = /^port_objects\.\[(\d+)\]\./u.exec(change.path);
+      if (port) {
+        const item = this.snapshot?.ports[Number(port[1])];
+        if (item) objects.add(`port:${item.id}`);
+      }
+      const protocol = /^proto_objects\.\[(\d+)\]\./u.exec(change.path);
+      if (protocol) {
+        const item = this.snapshot?.protocols[Number(protocol[1])];
+        if (item) objects.add(`protocol:${item.id}`);
       }
     }
     this.draftObjects = objects;
@@ -696,8 +713,7 @@ export class SmithproxyApp extends LitElement {
 
   private focusActiveDrawer(): void {
     if (this.drawers.length === 0) return;
-    const drawers = this.renderRoot.querySelectorAll<HTMLElement>('.drawer');
-    const active = drawers.item(drawers.length - 1);
+    const active = this.renderRoot.querySelector<HTMLElement>('.drawer[aria-modal="true"]');
     const target = active?.querySelector<HTMLElement>(
       '.drawer-body input:not([disabled]), .drawer-body select:not([disabled]), ' +
       '.drawer-body textarea:not([disabled]), .drawer-body button:not([disabled])',
@@ -708,30 +724,16 @@ export class SmithproxyApp extends LitElement {
   private async saveToDraft(entry: DrawerEntry): Promise<void> {
     if (this.snapshot?.source !== 'live') {
       this.draftObjects = new Set(this.draftObjects).add(`${entry.kind}:${entry.id}`);
+      this.draftChangeCount = this.draftObjects.size;
       return;
     }
-    if (!this.draftAvailable || !this.draftClient || entry.kind !== 'policy') return;
-    const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
-    const name = this.renderRoot.querySelector<HTMLInputElement>(`#policy-name-${entry.id}`);
-    const enabled = this.renderRoot.querySelector<HTMLInputElement>(`#policy-enabled-${entry.id}`);
-    const destination = this.renderRoot.querySelector<HTMLInputElement>(`#destination-${entry.id}`);
-    const action = this.renderRoot.querySelector<HTMLInputElement>(`#action-${entry.id}`);
-    if (index < 0 || !name || !enabled || !destination || !action) return;
-    const destinations = destination.value.split(',').map(value => value.trim()).filter(Boolean);
-    if (name.value.trim().length === 0 || action.value.trim().length === 0 ||
-        destinations.length === 0 || destinations.length > 256) {
-      this.draftError = 'Name, action, and at least one destination are required.';
-      return;
-    }
+    if (!this.draftAvailable || !this.draftClient) return;
+    const changes = this.draftChanges(entry);
+    if (!changes) return;
     this.draftSaving = true;
     this.draftError = undefined;
     try {
-      this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, [
-        {path: `policy.[${index}].name`, value: name.value.trim()},
-        {path: `policy.[${index}].disabled`, value: !enabled.checked},
-        {path: `policy.[${index}].dst`, value: destinations},
-        {path: `policy.[${index}].action`, value: action.value.trim()},
-      ]));
+      this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Draft change could not be saved.';
       await this.loadDraft();
@@ -739,6 +741,83 @@ export class SmithproxyApp extends LitElement {
     } finally {
       this.draftSaving = false;
     }
+  }
+
+  private draftChanges(entry: DrawerEntry) {
+    if (!this.snapshot) return undefined;
+    if (entry.kind === 'policy') {
+      const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
+      const name = this.renderRoot.querySelector<HTMLInputElement>(`#policy-name-${entry.id}`);
+      const enabled = this.renderRoot.querySelector<HTMLInputElement>(`#policy-enabled-${entry.id}`);
+      const destination = this.renderRoot.querySelector<HTMLInputElement>(`#destination-${entry.id}`);
+      const action = this.renderRoot.querySelector<HTMLInputElement>(`#action-${entry.id}`);
+      if (index < 0 || !name || !enabled || !destination || !action) return undefined;
+      const destinations = destination.value.split(',').map(value => value.trim()).filter(Boolean);
+      if (name.value.trim().length === 0 || action.value.trim().length === 0 ||
+          destinations.length === 0 || destinations.length > 256) {
+        this.draftError = 'Name, action, and at least one destination are required.';
+        return undefined;
+      }
+      return [
+        {path: `policy.[${index}].name`, value: name.value.trim()},
+        {path: `policy.[${index}].disabled`, value: !enabled.checked},
+        {path: `policy.[${index}].dst`, value: destinations},
+        {path: `policy.[${index}].action`, value: action.value.trim()},
+      ];
+    }
+    if (entry.kind === 'address') {
+      const index = this.snapshot.addresses.findIndex(item => item.id === entry.id);
+      const name = this.renderRoot.querySelector<HTMLInputElement>(`#address-name-${entry.id}`);
+      const type = this.renderRoot.querySelector<HTMLSelectElement>(`#address-type-${entry.id}`);
+      const value = this.renderRoot.querySelector<HTMLInputElement>(`#address-value-${entry.id}`);
+      if (index < 0 || !name || !type || !value) return undefined;
+      if (name.value.trim().length === 0 || value.value.trim().length === 0 ||
+          !['cidr', 'fqdn', 'host', 'subnet', 'range'].includes(type.value)) {
+        this.draftError = 'Name and address value are required.';
+        return undefined;
+      }
+      return [
+        {path: `address_objects.[${index}].name`, value: name.value.trim()},
+        {path: `address_objects.[${index}].type`, value: type.value},
+        {path: `address_objects.[${index}].value`, value: value.value.trim()},
+      ];
+    }
+    if (entry.kind === 'port') {
+      const index = this.snapshot.ports.findIndex(item => item.id === entry.id);
+      const name = this.renderRoot.querySelector<HTMLInputElement>(`#port-name-${entry.id}`);
+      const start = this.renderRoot.querySelector<HTMLInputElement>(`#port-start-${entry.id}`);
+      const end = this.renderRoot.querySelector<HTMLInputElement>(`#port-end-${entry.id}`);
+      const startValue = start?.valueAsNumber ?? Number.NaN;
+      const endValue = end?.valueAsNumber ?? Number.NaN;
+      if (index < 0 || !name || !start || !end) return undefined;
+      if (name.value.trim().length === 0 || !Number.isInteger(startValue) || !Number.isInteger(endValue) ||
+          startValue < 0 || endValue > 65535 || startValue > endValue) {
+        this.draftError = 'Name and a valid port range from 0 to 65535 are required.';
+        return undefined;
+      }
+      return [
+        {path: `port_objects.[${index}].name`, value: name.value.trim()},
+        {path: `port_objects.[${index}].start`, value: startValue},
+        {path: `port_objects.[${index}].end`, value: endValue},
+      ];
+    }
+    if (entry.kind === 'protocol') {
+      const index = this.snapshot.protocols.findIndex(item => item.id === entry.id);
+      const name = this.renderRoot.querySelector<HTMLInputElement>(`#protocol-name-${entry.id}`);
+      const number = this.renderRoot.querySelector<HTMLInputElement>(`#protocol-number-${entry.id}`);
+      const numberValue = number?.valueAsNumber ?? Number.NaN;
+      if (index < 0 || !name || !number) return undefined;
+      if (name.value.trim().length === 0 || !Number.isInteger(numberValue) ||
+          numberValue < 0 || numberValue > 255) {
+        this.draftError = 'Name and a valid IP protocol number from 0 to 255 are required.';
+        return undefined;
+      }
+      return [
+        {path: `proto_objects.[${index}].name`, value: name.value.trim()},
+        {path: `proto_objects.[${index}].id`, value: numberValue},
+      ];
+    }
+    return undefined;
   }
 
   private handleKeydown(event: KeyboardEvent): void {
@@ -1480,7 +1559,7 @@ export class SmithproxyApp extends LitElement {
   private renderAddressEditor(entry: DrawerEntry) {
     const address = this.snapshot?.addresses.find(item => item.id === entry.id);
     if (!address) return nothing;
-    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
+    const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="address-name-${entry.id}">Name</label>
@@ -1511,7 +1590,7 @@ export class SmithproxyApp extends LitElement {
   private renderPortEditor(entry: DrawerEntry) {
     const port = this.snapshot?.ports.find(item => item.id === entry.id);
     if (!port) return nothing;
-    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
+    const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="port-name-${entry.id}">Name</label>
@@ -1530,7 +1609,7 @@ export class SmithproxyApp extends LitElement {
   private renderProtocolEditor(entry: DrawerEntry) {
     const protocol = this.snapshot?.protocols.find(item => item.id === entry.id);
     if (!protocol) return nothing;
-    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
+    const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="protocol-name-${entry.id}">Name</label>
@@ -1679,7 +1758,9 @@ export class SmithproxyApp extends LitElement {
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
-    const draftable = this.snapshot?.source !== 'live' || (this.draftAvailable && entry.kind === 'policy');
+    const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = ['policy', 'address', 'port', 'protocol'];
+    const draftable = this.snapshot?.source !== 'live' ||
+      (this.draftAvailable && draftableKinds.includes(entry.kind));
     const readOnly = !draftable;
     return html`
       <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''}"
@@ -1741,7 +1822,7 @@ export class SmithproxyApp extends LitElement {
           <span class="system-state ${statusTone(this.systemStatus)}" title=${this.systemStatusTitle()} aria-live="polite">
             ● Smithproxy: ${displayState(this.systemStatus.smithproxy)}
           </span>
-          <span class=${this.draftObjects.size ? 'draft' : ''}>Draft: ${this.draftObjects.size} changes</span>
+          <span class=${this.draftChangeCount ? 'draft' : ''}>Draft: ${this.draftChangeCount} changes</span>
           <span title=${this.configError ?? this.snapshot?.detail ?? ''}>
             Config: ${this.snapshot?.source === 'live'
               ? displayState(this.snapshot.state)

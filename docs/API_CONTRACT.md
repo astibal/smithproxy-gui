@@ -100,7 +100,9 @@ yet a commit path and cannot mutate Smithproxy configuration.
 
 The first browser integration atomically persists `policy.[n].name`,
 `policy.[n].disabled`, `policy.[n].dst`, and `policy.[n].action` through this
-endpoint.
+endpoint. Nested editors use the same draft and version to persist the mapped
+name, type, value, range, and numeric identifier fields of address, port, and
+protocol objects.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.
