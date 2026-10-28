@@ -554,6 +554,19 @@ private:
                        ",\"api_override\":" + (value.webhook_api_override ? "true" : "false") + "}}";
         }
         std::string captures{"null"};
+        std::string debug{"null"};
+        if (snapshot.debug) {
+            const auto& value = *snapshot.debug;
+            debug = "{\"log_data_crc\":" + std::string(value.log_data_crc ? "true" : "false") +
+                    ",\"log_sockets\":" + (value.log_sockets ? "true" : "false") +
+                    ",\"log_online_cx_name\":" +
+                    (value.log_online_connection_name ? "true" : "false") +
+                    ",\"log_srclines\":" + (value.log_source_lines ? "true" : "false") +
+                    ",\"log_srclines_always\":" +
+                    (value.log_source_lines_always ? "true" : "false") +
+                    ",\"module_override_count\":" +
+                    std::to_string(value.module_override_count) + "}";
+        }
         if (snapshot.captures) {
             const auto& value = *snapshot.captures;
             captures = "{\"local\":{\"enabled\":" + std::string(value.local_enabled ? "true" : "false") +
@@ -596,7 +609,8 @@ private:
                     ",\"view\":\"runtime\",\"revision\":null,\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +
-                    ",\"settings\":" + settings + ",\"captures\":" + captures +
+                    ",\"settings\":" + settings + ",\"debug\":" + debug +
+                    ",\"captures\":" + captures +
                     ",\"security_assets\":" + security_assets +
                     ",\"augment_support\":false,\"value_origins\":[]}"};
     }

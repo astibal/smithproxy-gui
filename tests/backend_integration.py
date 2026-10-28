@@ -74,6 +74,11 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                 "url": "https://private-webhook.example/", "sift": "false", "api_override": "false",
             },
         },
+        "debug": {
+            "log_data_crc": "false", "log_sockets": "true",
+            "log_online_cx_name": "false", "log_srclines": "true",
+            "log_srclines_always": "false", "log": {"proxy": "7"},
+        },
         "captures": {
             "local": {
                 "enabled": "true", "dir": "/private/captures", "format": "pcap_single",
@@ -441,6 +446,14 @@ def main() -> int:
             assert len(config_snapshot["addresses"]) == 2
             assert config_snapshot["ports"][0]["start"] == 443
             assert config_snapshot["protocols"][0]["number"] == 6
+            assert config_snapshot["debug"] == {
+                "log_data_crc": False,
+                "log_sockets": True,
+                "log_online_cx_name": False,
+                "log_srclines": True,
+                "log_srclines_always": False,
+                "module_override_count": 1,
+            }
             assert {item["type"] for item in config_snapshot["profiles"]} == {
                 "detection", "content", "tls", "ssh", "script", "routing",
             }

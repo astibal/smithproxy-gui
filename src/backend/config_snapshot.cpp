@@ -95,6 +95,20 @@ std::optional<std::size_t> optional_named_object_size(const Json& object, const 
     return value->size();
 }
 
+std::optional<std::size_t> optional_named_scalar_size(const Json& object, const char* key) {
+    const auto value = object.find(key);
+    if (value == object.end()) return 0U;
+    if (!value->is_object() || value->size() > maximum_references) return std::nullopt;
+    for (const auto& [name, item] : value->items()) {
+        if (!valid_name(name) ||
+            (!item.is_boolean() && !item.is_number_integer() &&
+             (!item.is_string() || item.get_ref<const std::string&>().size() > 32U))) {
+            return std::nullopt;
+        }
+    }
+    return value->size();
+}
+
 std::optional<std::size_t> optional_string_array_size(
     const Json& object, const char* key, const std::size_t maximum_item_length = maximum_value_length) {
     const auto value = object.find(key);
@@ -516,6 +530,27 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *tls_autodetect_harder, *kernel_tls, *nameservers, *api_keys, *allowed_ips,
                 *loopback_only, *pam_login, *api_header, *webhook_enabled, *webhook_tls_verify,
                 !webhook_url->empty(), *webhook_sift, *webhook_api_override,
+            }, {}};
+}
+
+ConfigDebugParseResult parse_config_debug(const std::string_view payload) {
+    const auto value = section_value(payload, "debug");
+    if (!value || !value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid debug settings"};
+    }
+    const auto log_data_crc = boolean_scalar(*value, "log_data_crc", false);
+    const auto log_sockets = boolean_scalar(*value, "log_sockets", false);
+    const auto log_online_connection_name = boolean_scalar(*value, "log_online_cx_name", false);
+    const auto log_source_lines = boolean_scalar(*value, "log_srclines", false);
+    const auto log_source_lines_always = boolean_scalar(*value, "log_srclines_always", false);
+    const auto module_overrides = optional_named_scalar_size(*value, "log");
+    if (!log_data_crc || !log_sockets || !log_online_connection_name || !log_source_lines ||
+        !log_source_lines_always || !module_overrides) {
+        return {std::nullopt, "Smithproxy returned invalid debug setting fields"};
+    }
+    return {ConfigDebugSettings{
+                *log_data_crc, *log_sockets, *log_online_connection_name, *log_source_lines,
+                *log_source_lines_always, *module_overrides,
             }, {}};
 }
 

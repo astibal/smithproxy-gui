@@ -44,6 +44,10 @@ worker pools, TLS autodetection, kernel TLS, HTTP API access, and webhooks. API
 keys, addresses, nameservers, webhook URLs, and identity values are never
 serialized; only bounded counts and configured flags are exposed.
 
+Debug posture includes the five global diagnostic logging flags and only the
+bounded count of per-module overrides. Module names and override values remain
+inside the GUI core until Smithproxy publishes a stable module schema.
+
 Capture posture includes local format and quota, remote tunnel mode and TTL,
 and checksum behavior. Capture directories, filename components, tunnel
 destinations, and bind interfaces are reduced to configured flags.

@@ -560,6 +560,13 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         return {std::move(response.body), {}};
     };
 
+    // Keep the existing Smithproxy request fan-out bounded as coverage grows.
+    // Debug settings are small and fetched before the parallel snapshot batch.
+    auto debug = fetch_section("debug");
+    if (!debug.body) {
+        snapshot.detail = debug.error;
+        return snapshot;
+    }
     auto policies_future = std::async(std::launch::async, fetch_section, "policy");
     auto addresses_future = std::async(std::launch::async, fetch_section, "address_objects");
     auto ports_future = std::async(std::launch::async, fetch_section, "port_objects");
@@ -597,7 +604,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     auto detection_signatures = detection_signatures_future.get();
     snapshot.checked_at = std::chrono::system_clock::now();
 
-    for (const auto* response : {&policies, &addresses, &ports, &protocols, &settings, &captures,
+    for (const auto* response : {&policies, &addresses, &ports, &protocols, &settings, &debug, &captures,
                                  &authorities, &starttls, &detection_signatures}) {
         if (!response->body) {
             snapshot.detail = response->error;
@@ -616,6 +623,12 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         return snapshot;
     }
     parsed.snapshot->settings = std::move(parsed_settings.settings);
+    auto parsed_debug = parse_config_debug(*debug.body);
+    if (!parsed_debug.debug) {
+        snapshot.detail = std::move(parsed_debug.error);
+        return snapshot;
+    }
+    parsed.snapshot->debug = std::move(parsed_debug.debug);
     auto parsed_captures = parse_config_captures(*captures.body);
     if (!parsed_captures.captures) {
         snapshot.detail = std::move(parsed_captures.error);

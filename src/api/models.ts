@@ -193,6 +193,15 @@ export interface CaptureSettings {
   calculateChecksums: boolean;
 }
 
+export interface DebugSettings {
+  logDataCrc: boolean;
+  logSockets: boolean;
+  logOnlineConnectionName: boolean;
+  logSourceLines: boolean;
+  logSourceLinesAlways: boolean;
+  moduleOverrideCount: number;
+}
+
 export interface SecurityAssets {
   certificateAuthorityCount: number;
   certificateAuthorityPathCount: number;
@@ -230,6 +239,7 @@ export interface ConfigSnapshot {
   protocols: ReadonlyArray<ProtocolObject>;
   profiles: ReadonlyArray<ProfileObject>;
   settings: SystemSettings | null;
+  debug: DebugSettings | null;
   captures: CaptureSettings | null;
   securityAssets: SecurityAssets | null;
   augmentSupport: boolean;

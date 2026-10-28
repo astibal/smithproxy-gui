@@ -276,6 +276,15 @@ int main() {
     assert(settings.settings->webhook_url_configured);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"http_api":{"keys":"secret"}}}})").settings);
+    const auto debug = parse_config_debug(
+        R"({"success":{"debug":{"log_data_crc":"true","log_sockets":"false","log_online_cx_name":"true","log_srclines":"false","log_srclines_always":"true","log":{"proxy":"7","tls":"8"}}}})");
+    assert(debug.debug);
+    assert(debug.debug->log_data_crc);
+    assert(debug.debug->log_online_connection_name);
+    assert(debug.debug->log_source_lines_always);
+    assert(debug.debug->module_override_count == 2U);
+    assert(!parse_config_debug(
+        R"({"success":{"debug":{"log":{"proxy":{}}}}})").debug);
     const auto captures = parse_config_captures(
         R"({"success":{"captures":{"local":{"enabled":"true","dir":"/private/captures","format":"pcap_single","pcap_quota":"512"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"192.0.2.10","tun_ttl":"1","bind_interface":"private0"},"options":{"calculate_checksums":"true"}}}})");
     assert(captures.captures);

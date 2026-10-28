@@ -307,6 +307,7 @@ export class SmithproxyApp extends LitElement {
     .secondary { padding: 8px 13px; border: 1px solid var(--app-border-strong); border-radius: 3px; background: transparent; cursor: pointer; }
     .form-grid { display: grid; grid-template-columns: minmax(120px, 0.35fr) minmax(240px, 1fr); gap: 18px 24px; max-width: 920px; }
     .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .3fr) minmax(170px, 1fr) minmax(120px, .3fr) minmax(170px, 1fr); max-width: none; }
+    .form-span { grid-column: 1 / -1; margin: var(--sp-space-3, 1rem) 0 0; }
     .form-grid label { align-self: center; color: var(--app-muted); }
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
     .form-grid input[readonly], .form-grid select:disabled { border-style: dashed; opacity: .8; }
@@ -1209,6 +1210,18 @@ export class SmithproxyApp extends LitElement {
       }
       changes.push({path: `settings.${path}`, value});
     }
+    if (this.snapshot?.debug) {
+      const debugFields = [
+        ['log_data_crc', 'data-crc'], ['log_sockets', 'sockets'],
+        ['log_online_cx_name', 'online-name'], ['log_srclines', 'source-lines'],
+        ['log_srclines_always', 'source-lines-always'],
+      ] as const;
+      for (const [path, id] of debugFields) {
+        const select = this.renderRoot.querySelector<HTMLSelectElement>(`#debug-${id}`);
+        if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
+        changes.push({path: `debug.${path}`, value: select.value === 'true'});
+      }
+    }
     return changes;
   }
 
@@ -1866,6 +1879,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderSystem() {
     const settings = this.snapshot?.settings;
+    const debug = this.snapshot?.debug;
     const captures = this.snapshot?.captures;
     const securityAssets = this.snapshot?.securityAssets;
     return html`
@@ -1958,6 +1972,20 @@ export class SmithproxyApp extends LitElement {
                 <dt>Sift</dt><dd>${settings.webhook.siftEnabled ? 'Enabled' : 'Disabled'}</dd>
                 <dt>API override</dt><dd>${settings.webhook.apiOverride ? 'Allowed' : 'Blocked'}</dd>
                 <dt>Nameservers</dt><dd>${settings.nameserverCount} configured</dd>
+              </dl>
+            </article>
+          ` : nothing}
+          ${debug ? html`
+            <article class="domain-card">
+              <header><div><h3>Debug logging</h3><p>Potentially expensive diagnostic controls</p></div>
+                <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
+              </header>
+              <dl>
+                <dt>Payload CRC</dt><dd>${debug.logDataCrc ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Socket events</dt><dd>${debug.logSockets ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Resolve online names</dt><dd>${debug.logOnlineConnectionName ? 'Enabled · expensive' : 'Disabled'}</dd>
+                <dt>Source lines</dt><dd>${debug.logSourceLinesAlways ? 'Always' : debug.logSourceLines ? 'Diagnostic levels' : 'Disabled'}</dd>
+                <dt>Module overrides</dt><dd>${debug.moduleOverrideCount} configured · unchanged</dd>
               </dl>
             </article>
           ` : nothing}
@@ -2485,6 +2513,21 @@ export class SmithproxyApp extends LitElement {
         <label>HTTP API keys</label><span>${settings.httpApi.keyCount} redacted entries · unchanged</span>
         <label>HTTP API allowed IPs</label><span>${settings.httpApi.allowedIpCount} redacted entries · unchanged</span>
         <label>Webhook URL</label><span>${settings.webhook.urlConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        ${this.snapshot?.debug ? html`
+          <h3 class="form-span">Debug logging</h3>
+          <label for="debug-data-crc">Payload CRC logging</label>
+          ${this.renderBooleanSelect('debug-data-crc', this.snapshot.debug.logDataCrc, disabled)}
+          <label for="debug-sockets">Socket event logging</label>
+          ${this.renderBooleanSelect('debug-sockets', this.snapshot.debug.logSockets, disabled)}
+          <label for="debug-online-name">Resolve online connection names</label>
+          ${this.renderBooleanSelect('debug-online-name', this.snapshot.debug.logOnlineConnectionName, disabled)}
+          <label for="debug-source-lines">Source lines at diagnostic levels</label>
+          ${this.renderBooleanSelect('debug-source-lines', this.snapshot.debug.logSourceLines, disabled)}
+          <label for="debug-source-lines-always">Source lines at every level</label>
+          ${this.renderBooleanSelect('debug-source-lines-always', this.snapshot.debug.logSourceLinesAlways, disabled)}
+          <label>Per-module overrides</label>
+          <span>${this.snapshot.debug.moduleOverrideCount} configured · unchanged</span>
+        ` : nothing}
       </div>
     `;
   }

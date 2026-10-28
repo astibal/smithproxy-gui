@@ -221,6 +221,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
         webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
       },
+      debug: {
+        log_data_crc: false, log_sockets: false, log_online_cx_name: false,
+        log_srclines: false, log_srclines_always: false, module_override_count: 1,
+      },
       captures: {
         local: {enabled: false, directory_configured: true, format: 'pcap_single', quota_mib: 1024},
         remote: {
@@ -600,11 +604,12 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('Policy failure').selectOption('true');
   await settingsEditor.getByLabel('TLS workers', {exact: true}).fill('8');
   await settingsEditor.getByLabel('API header access').selectOption('true');
+  await settingsEditor.getByLabel('Socket event logging').selectOption('true');
   await expect(settingsEditor.getByText('1 redacted entries · unchanged')).toHaveCount(2);
   await expect(settingsEditor.getByText('Not configured')).toBeVisible();
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 24 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 29 changes')).toBeVisible();
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
 
   const captureCard = page.getByRole('article').filter({
@@ -619,13 +624,14 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(captureEditor.getByText('Not configured')).toHaveCount(2);
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 31 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 36 changes')).toBeVisible();
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 31'}).click();
+  await page.getByRole('button', {name: 'Review draft · 36'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.http_api.allow_api_header');
+  await expect(changes).toContainText('debug.log_sockets');
   await expect(changes).toContainText('captures.local.format');
   await expect(changes).toContainText('captures.remote.tun_ttl');
   await expect(changes).not.toContainText('webhook.url');

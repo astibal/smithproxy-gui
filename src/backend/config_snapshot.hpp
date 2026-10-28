@@ -171,6 +171,15 @@ struct ConfigSystemSettings {
     bool webhook_api_override{};
 };
 
+struct ConfigDebugSettings {
+    bool log_data_crc{};
+    bool log_sockets{};
+    bool log_online_connection_name{};
+    bool log_source_lines{};
+    bool log_source_lines_always{};
+    std::uint64_t module_override_count{};
+};
+
 struct ConfigCaptureSettings {
     bool local_enabled{};
     bool local_directory_configured{};
@@ -205,6 +214,7 @@ struct ConfigSnapshot {
     std::vector<ConfigProtocolObject> protocols;
     std::vector<ConfigProfile> profiles;
     std::optional<ConfigSystemSettings> settings;
+    std::optional<ConfigDebugSettings> debug;
     std::optional<ConfigCaptureSettings> captures;
     std::optional<ConfigSecurityAssets> security_assets;
 };
@@ -236,6 +246,13 @@ struct ConfigSettingsParseResult {
 };
 
 ConfigSettingsParseResult parse_config_settings(std::string_view payload);
+
+struct ConfigDebugParseResult {
+    std::optional<ConfigDebugSettings> debug;
+    std::string error;
+};
+
+ConfigDebugParseResult parse_config_debug(std::string_view payload);
 
 struct ConfigCapturesParseResult {
     std::optional<ConfigCaptureSettings> captures;

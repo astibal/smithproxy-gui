@@ -193,6 +193,10 @@ const snapshot: ConfigSnapshot = {
     httpApi: {keyCount: 1, allowedIpCount: 1, loopbackOnly: true, pamLogin: false, allowApiHeader: false},
     webhook: {enabled: false, tlsVerify: true, urlConfigured: false, siftEnabled: false, apiOverride: false},
   },
+  debug: {
+    logDataCrc: false, logSockets: false, logOnlineConnectionName: false,
+    logSourceLines: false, logSourceLinesAlways: false, moduleOverrideCount: 0,
+  },
   captures: {
     local: {enabled: false, directoryConfigured: true, format: 'pcap_single', quotaMiB: 1024},
     remote: {

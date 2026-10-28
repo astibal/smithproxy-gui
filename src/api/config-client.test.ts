@@ -82,6 +82,10 @@ const liveSnapshot = {
     http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
     webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
   },
+  debug: {
+    log_data_crc: false, log_sockets: true, log_online_cx_name: false,
+    log_srclines: true, log_srclines_always: false, module_override_count: 1,
+  },
   captures: {
     local: {enabled: true, directory_configured: true, format: 'pcap_single', quota_mib: 512},
     remote: {

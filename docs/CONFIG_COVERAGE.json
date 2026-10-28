@@ -28,11 +28,14 @@
     {
       "name": "debug",
       "origin": "reference_config",
-      "read": "unsupported",
-      "edit": "none",
+      "read": "partial",
+      "edit": "partial",
       "sensitivity": "operational",
-      "tracked_fields": [],
-      "notes": "Debug flags and per-module logging overrides are not fetched by the GUI."
+      "tracked_fields": [
+        "log_data_crc", "log_sockets", "log_online_cx_name", "log_srclines",
+        "log_srclines_always", "log"
+      ],
+      "notes": "Global debug flags are typed. Per-module logging overrides are counted but remain unchanged until their module schema is available."
     },
     {
       "name": "address_objects",

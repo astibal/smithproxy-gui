@@ -1,6 +1,7 @@
 import type {
   AddressObject,
   CaptureSettings,
+  DebugSettings,
   SecurityAssets,
   ConfigClient,
   ConfigReference,
@@ -469,6 +470,24 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     };
   }
   let captures: CaptureSettings | null = null;
+  let debug: DebugSettings | null = null;
+  if (value.debug !== null) {
+    if (!isObject(value.debug)) throw new Error('Invalid debug settings.');
+    debug = {
+      logDataCrc: safeBoolean(value.debug.log_data_crc, 'payload CRC logging state'),
+      logSockets: safeBoolean(value.debug.log_sockets, 'socket logging state'),
+      logOnlineConnectionName: safeBoolean(
+        value.debug.log_online_cx_name, 'online connection-name logging state',
+      ),
+      logSourceLines: safeBoolean(value.debug.log_srclines, 'source-line logging state'),
+      logSourceLinesAlways: safeBoolean(
+        value.debug.log_srclines_always, 'unconditional source-line logging state',
+      ),
+      moduleOverrideCount: safeInteger(
+        value.debug.module_override_count, 'debug module override count', MAX_OBJECTS,
+      ),
+    };
+  }
   if (value.captures !== null) {
     if (!isObject(value.captures) || !isObject(value.captures.local) || !isObject(value.captures.remote)) {
       throw new Error('Invalid capture settings.');
@@ -577,6 +596,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     protocols,
     profiles,
     settings,
+    debug,
     captures,
     securityAssets,
     augmentSupport: value.augment_support,
