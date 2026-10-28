@@ -25,7 +25,10 @@ describe('SystemClient', () => {
   it('loads and maps capabilities', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
-      features: {config_read: false, config_write: false, jobs: false, events: false, metrics: true},
+      features: {
+        config_read: false, config_write: false, jobs: false, events: false,
+        metrics: true, session_activity: true,
+      },
     }));
     const client = new SystemClient('/api/v1', '/', fetcher);
 
@@ -102,6 +105,41 @@ describe('SystemClient', () => {
     response.listeners[1]!.name = 'tls';
     response.listeners[1]!.bytes_up = Number.MAX_SAFE_INTEGER + 1;
     await expect(client.metricsSummary()).rejects.toThrow('Invalid Smithproxy runtime counters');
+  });
+
+  it('loads and validates privacy-preserving session activity', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
+      total: 3, speed_up: 12, speed_down: 34,
+      protocols: [
+        {protocol: 'tcp', sessions: 2, speed_up: 10, speed_down: 30, bytes_up: 100, bytes_down: 300},
+        {protocol: 'tls', sessions: 1, speed_up: 2, speed_down: 4, bytes_up: 20, bytes_down: 40},
+      ],
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.sessionActivity()).resolves.toMatchObject({
+      total: 3,
+      speedDown: 34,
+      protocols: [
+        {protocol: 'tcp', sessions: 2, speedUp: 10, speedDown: 30, bytesUp: 100, bytesDown: 300},
+        {protocol: 'tls', sessions: 1, speedUp: 2, speedDown: 4, bytesUp: 20, bytesDown: 40},
+      ],
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/sessions/activity', expect.anything(),
+    );
+  });
+
+  it('rejects inconsistent session activity totals', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 1, last_success_at_unix_ms: 1,
+      total: 2, speed_up: 1, speed_down: 1,
+      protocols: [
+        {protocol: 'tcp', sessions: 1, speed_up: 1, speed_down: 1, bytes_up: 0, bytes_down: 0},
+      ],
+    }));
+    await expect(client.sessionActivity()).rejects.toThrow('Inconsistent session activity totals');
   });
 
   it('rejects malformed responses and unsafe endpoint configuration', async () => {

@@ -53,6 +53,36 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                  "sessions_active": 1, "bytes_up": 512, "bytes_down": 256},
             ]}).encode())
             return
+        if self.path == "/api/diag/proxy/session/list":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps([
+                {
+                    "oid": "secret-session-id",
+                    "origin": "tls acceptor",
+                    "policy": "confidential-policy",
+                    "left": [{"host": "10.20.30.40", "port": "43100", "com": "tls"}],
+                    "right": [{"host": "private.example", "port": "443", "com": "tls"}],
+                    "stats": {
+                        "speed": {"up": 100, "down": 200},
+                        "counters": {"bytes_up": 1000, "bytes_down": 2000},
+                    },
+                },
+                {
+                    "oid": "another-secret-session-id",
+                    "origin": "plain acceptor",
+                    "policy": "another-confidential-policy",
+                    "left": [{"host": "10.20.30.41", "port": "43101", "com": "tcp"}],
+                    "right": [{"host": "other.private", "port": "80", "com": "tcp"}],
+                    "stats": {
+                        "speed": {"up": 25, "down": 50},
+                        "counters": {"bytes_up": 250, "bytes_down": 500},
+                    },
+                },
+            ]).encode())
+            return
         self.send_error(404)
 
     def log_message(self, *_args):
@@ -122,6 +152,7 @@ def main() -> int:
         assert capabilities["base_path"] == "/ws001/smithproxy-gui"
         assert capabilities["features"]["config_write"] is False
         assert capabilities["features"]["metrics"] is True
+        assert capabilities["features"]["session_activity"] is True
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/status")
         snapshot = json.loads(body)
@@ -134,6 +165,11 @@ def main() -> int:
         assert status == 200
         assert metrics["state"] == "unconfigured"
         assert metrics["listeners"] == []
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/sessions/activity")
+        activity = json.loads(body)
+        assert status == 200
+        assert activity["state"] == "unconfigured"
+        assert activity["protocols"] == []
 
         status, _, body = request(port, "/ws001/smithproxy-gui/")
         assert status == 200
@@ -196,6 +232,19 @@ def main() -> int:
             }
             assert [item["name"] for item in metrics["listeners"]] == ["tcp", "tls"]
             metrics_last_success = metrics["last_success_at_unix_ms"]
+            status, _, body = request(configured_port, "/api/v1/sessions/activity")
+            activity = json.loads(body)
+            assert status == 200
+            assert activity["state"] == "ready"
+            assert activity["total"] == 2
+            assert activity["speed_up"] == 125
+            assert activity["speed_down"] == 250
+            assert [item["protocol"] for item in activity["protocols"]] == ["tcp", "tls"]
+            assert b"10.20.30.40" not in body
+            assert b"private.example" not in body
+            assert b"secret-session-id" not in body
+            assert b"confidential-policy" not in body
+            activity_last_success = activity["last_success_at_unix_ms"]
 
             FakeSmithproxy.response_status = 503
             snapshot = wait_for_snapshot_state(configured_port, "error")
@@ -209,6 +258,12 @@ def main() -> int:
             assert stale_metrics["state"] == "unavailable"
             assert stale_metrics["last_success_at_unix_ms"] == metrics_last_success
             assert stale_metrics["totals"]["sessions_active"] == 4
+            status, _, body = request(configured_port, "/api/v1/sessions/activity")
+            stale_activity = json.loads(body)
+            assert status == 200
+            assert stale_activity["state"] == "unavailable"
+            assert stale_activity["last_success_at_unix_ms"] == activity_last_success
+            assert stale_activity["total"] == 2
         finally:
             FakeSmithproxy.response_status = 200
             configured.send_signal(signal.SIGTERM)

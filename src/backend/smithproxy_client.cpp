@@ -3,6 +3,7 @@
 #include <curl/curl.h>
 
 #include <condition_variable>
+#include <future>
 #include <limits>
 #include <memory>
 #include <string_view>
@@ -80,6 +81,8 @@ SmithproxyMonitor::SmithproxyMonitor(std::optional<SmithproxyConfig> config)
         status_.detail = "Waiting for the first Smithproxy probe";
         status_.runtime_metrics.state = "starting";
         status_.runtime_metrics.detail = "Waiting for the first Smithproxy metrics sample";
+        status_.live_sessions.state = "starting";
+        status_.live_sessions.detail = "Waiting for the first Smithproxy session activity sample";
     }
 }
 
@@ -104,10 +107,22 @@ SmithproxyStatus SmithproxyMonitor::status() const {
 void SmithproxyMonitor::run(const std::stop_token stop_token) {
     std::mutex wait_mutex;
     std::condition_variable_any wakeup;
+    auto next_session_sample = std::chrono::steady_clock::time_point{};
     while (!stop_token.stop_requested()) {
         auto latest = ping();
         std::optional<RuntimeMetrics> sampled_metrics;
-        if (latest.state == "ready") sampled_metrics = fetch_runtime_metrics();
+        std::optional<LiveSessions> sampled_sessions;
+        if (latest.state == "ready") {
+            if (std::chrono::steady_clock::now() >= next_session_sample) {
+                auto metrics_future = std::async(
+                    std::launch::async, [this] { return fetch_runtime_metrics(); });
+                sampled_sessions = fetch_live_sessions();
+                sampled_metrics = metrics_future.get();
+                next_session_sample = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            } else {
+                sampled_metrics = fetch_runtime_metrics();
+            }
+        }
         {
             std::scoped_lock lock(mutex_);
             latest.total_probes = status_.total_probes + 1U;
@@ -115,6 +130,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             latest.consecutive_failures = status_.consecutive_failures + 1U;
             latest.history = std::move(status_.history);
             auto previous_metrics = std::move(status_.runtime_metrics);
+            auto previous_sessions = std::move(status_.live_sessions);
             if (latest.state == "ready") {
                 latest.last_success_at = latest.checked_at;
                 latest.consecutive_failures = 0U;
@@ -131,11 +147,31 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                     metrics.listeners = std::move(previous_metrics.listeners);
                 }
                 latest.runtime_metrics = std::move(metrics);
+
+                if (sampled_sessions) {
+                    auto sessions = std::move(*sampled_sessions);
+                    sessions.last_success_at = previous_sessions.last_success_at;
+                    if (sessions.state == "ready") {
+                        sessions.last_success_at = sessions.checked_at;
+                    } else {
+                        sessions.total = previous_sessions.total;
+                        sessions.speed_up = previous_sessions.speed_up;
+                        sessions.speed_down = previous_sessions.speed_down;
+                        sessions.protocols = std::move(previous_sessions.protocols);
+                    }
+                    latest.live_sessions = std::move(sessions);
+                } else {
+                    latest.live_sessions = std::move(previous_sessions);
+                }
             } else {
                 previous_metrics.state = "unavailable";
                 previous_metrics.detail = "Smithproxy runtime metrics are unavailable while the API probe is not ready";
                 previous_metrics.checked_at = latest.checked_at;
                 latest.runtime_metrics = std::move(previous_metrics);
+                previous_sessions.state = "unavailable";
+                previous_sessions.detail = "Smithproxy session activity is unavailable while the API probe is not ready";
+                previous_sessions.checked_at = latest.checked_at;
+                latest.live_sessions = std::move(previous_sessions);
             }
             latest.history.push_back({latest.state, latest.checked_at, latest.latency_ms});
             if (latest.history.size() > 60U) latest.history.erase(latest.history.begin());
@@ -219,6 +255,54 @@ RuntimeMetrics SmithproxyMonitor::fetch_runtime_metrics() const {
     }
     parsed.metrics->checked_at = metrics.checked_at;
     return std::move(*parsed.metrics);
+}
+
+LiveSessions SmithproxyMonitor::fetch_live_sessions() const {
+    LiveSessions sessions;
+    sessions.state = "unavailable";
+    sessions.checked_at = std::chrono::system_clock::now();
+
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if (!curl) {
+        sessions.detail = "Cannot initialize the Smithproxy session activity client";
+        return sessions;
+    }
+    std::unique_ptr<curl_slist, HeaderCleanup> headers;
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    if (!headers) {
+        sessions.detail = "Cannot prepare Smithproxy session activity authentication";
+        return sessions;
+    }
+
+    const std::string endpoint = config_->api_url + "/api/diag/proxy/session/list";
+    ResponseBuffer response;
+    configure_request(curl.get(), *config_, endpoint, headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto result = curl_easy_perform(curl.get());
+    sessions.checked_at = std::chrono::system_clock::now();
+    if (response.exceeded) {
+        sessions.detail = "Smithproxy session activity exceeded the response limit";
+        return sessions;
+    }
+    if (result != CURLE_OK) {
+        sessions.detail = std::string("Cannot retrieve Smithproxy session activity: ") +
+                          curl_easy_strerror(result);
+        return sessions;
+    }
+    long status_code{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    if (status_code != 200L) {
+        sessions.detail = "Smithproxy session activity returned HTTP " + std::to_string(status_code);
+        return sessions;
+    }
+    auto parsed = parse_live_sessions(response.body);
+    if (!parsed.snapshot) {
+        sessions.detail = std::move(parsed.error);
+        return sessions;
+    }
+    parsed.snapshot->checked_at = sessions.checked_at;
+    return std::move(*parsed.snapshot);
 }
 
 } // namespace smithproxy::gui

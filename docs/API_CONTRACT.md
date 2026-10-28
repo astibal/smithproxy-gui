@@ -51,11 +51,17 @@ GET /api/v1/status
 GET /api/v1/health
 GET /api/v1/metrics/summary
 GET /api/v1/listeners
-GET /api/v1/sessions
+GET /api/v1/sessions/activity
 GET /api/v1/alerts
 GET /api/v1/logs
 GET /api/v1/events
 ```
+
+`/sessions/activity` is intentionally aggregate-only. The GUI core groups live
+sessions by transport and exposes counts, throughput, and byte counters. Endpoint
+addresses, ports, session identifiers, and matched policy names do not cross the
+browser boundary. A future detailed session surface requires an explicit privacy
+and authorization design.
 
 `/events` používá SSE. Každá událost obsahuje typ, čas serveru, monotónní event ID,
 source revision a minimální payload. Po ztrátě kontinuity si klient vyžádá nový

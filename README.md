@@ -74,7 +74,9 @@ deployment behind the Saslik gateway, use a base path such as
 The configuration editor currently uses a fake API while the versioned
 Smithproxy configuration contract is being completed. Control-plane health and
 listener monitoring already use the production C++ backend and the authenticated
-Smithproxy API. The root web component supports integration into Saslik Tools:
+Smithproxy API. Live session monitoring is aggregated by transport inside the GUI
+core; endpoint addresses, ports, session identifiers, and policy names are never
+sent to the browser. The root web component supports integration into Saslik Tools:
 
 ```html
 <smithproxy-gui

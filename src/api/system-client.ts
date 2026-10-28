@@ -26,6 +26,7 @@ export interface SystemCapabilities {
     jobs: boolean;
     events: boolean;
     metrics: boolean;
+    sessionActivity: boolean;
   };
 }
 
@@ -70,6 +71,26 @@ export interface RuntimeMetricsSnapshot {
   lastSuccessAtUnixMs: number | null;
   totals: Omit<ListenerMetrics, 'name'>;
   listeners: ReadonlyArray<ListenerMetrics>;
+}
+
+export interface SessionActivityBucket {
+  protocol: string;
+  sessions: number;
+  speedUp: number;
+  speedDown: number;
+  bytesUp: number;
+  bytesDown: number;
+}
+
+export interface SessionActivitySnapshot {
+  state: RuntimeMetricsState;
+  detail: string;
+  checkedAtUnixMs: number | null;
+  lastSuccessAtUnixMs: number | null;
+  total: number;
+  speedUp: number;
+  speedDown: number;
+  protocols: ReadonlyArray<SessionActivityBucket>;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -132,7 +153,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof features.jobs !== 'boolean' || typeof features.events !== 'boolean' ||
-      typeof features.metrics !== 'boolean') {
+      typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
   }
   return {
@@ -146,6 +167,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       jobs: features.jobs,
       events: features.events,
       metrics: features.metrics,
+      sessionActivity: features.session_activity,
     },
   };
 }
@@ -240,6 +262,53 @@ function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
   };
 }
 
+function parseSessionActivity(value: unknown): SessionActivitySnapshot {
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
+      !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
+      !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !isNonNegativeInteger(value.total) || !isNonNegativeInteger(value.speed_up) ||
+      !isNonNegativeInteger(value.speed_down) || !Array.isArray(value.protocols) ||
+      value.protocols.length > 32) {
+    throw new Error('Invalid session activity response.');
+  }
+  const names = new Set<string>();
+  const protocols = value.protocols.map((item): SessionActivityBucket => {
+    if (!isObject(item) || typeof item.protocol !== 'string' || item.protocol.length === 0 ||
+        item.protocol.length > 32 || names.has(item.protocol) || !isNonNegativeInteger(item.sessions) ||
+        !isNonNegativeInteger(item.speed_up) || !isNonNegativeInteger(item.speed_down) ||
+        !isNonNegativeInteger(item.bytes_up) || !isNonNegativeInteger(item.bytes_down)) {
+      throw new Error('Invalid session activity bucket.');
+    }
+    names.add(item.protocol);
+    return {
+      protocol: item.protocol,
+      sessions: item.sessions,
+      speedUp: item.speed_up,
+      speedDown: item.speed_down,
+      bytesUp: item.bytes_up,
+      bytesDown: item.bytes_down,
+    };
+  });
+  const total = protocols.reduce((sum, item) => sum + item.sessions, 0);
+  const speedUp = protocols.reduce((sum, item) => sum + item.speedUp, 0);
+  const speedDown = protocols.reduce((sum, item) => sum + item.speedDown, 0);
+  if (!Number.isSafeInteger(total) || !Number.isSafeInteger(speedUp) ||
+      !Number.isSafeInteger(speedDown) || total !== value.total || speedUp !== value.speed_up ||
+      speedDown !== value.speed_down) {
+    throw new Error('Inconsistent session activity totals.');
+  }
+  return {
+    state: value.state,
+    detail: value.detail,
+    checkedAtUnixMs: value.checked_at_unix_ms,
+    lastSuccessAtUnixMs: value.last_success_at_unix_ms,
+    total: value.total,
+    speedUp: value.speed_up,
+    speedDown: value.speed_down,
+    protocols,
+  };
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -272,6 +341,10 @@ export class SystemClient {
 
   async metricsSummary(): Promise<RuntimeMetricsSnapshot> {
     return parseRuntimeMetrics(await this.#request(joinedPath(this.#apiBase, '/metrics/summary')));
+  }
+
+  async sessionActivity(): Promise<SessionActivitySnapshot> {
+    return parseSessionActivity(await this.#request(joinedPath(this.#apiBase, '/sessions/activity')));
   }
 
   async #request(path: string): Promise<unknown> {

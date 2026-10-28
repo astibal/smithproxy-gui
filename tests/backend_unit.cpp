@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "json.hpp"
+#include "live_sessions.hpp"
 #include "path.hpp"
 #include "runtime_metrics.hpp"
 
@@ -54,6 +55,29 @@ int main() {
         {"name":"tcp","workers":1,"sessions_total":1,"sessions_active":0,"bytes_up":0,"bytes_down":0},
         {"name":"tcp","workers":1,"sessions_total":1,"sessions_active":0,"bytes_up":0,"bytes_down":0}
     ]})").metrics);
+
+    const auto activity = parse_live_sessions(R"([
+        {"oid":"private-session","origin":"tls acceptor","policy":"internal-policy",
+         "left":[{"host":"10.0.0.10","port":"43100","com":"tls"}],
+         "right":[{"host":"private.example","port":"443","com":"tls"}],
+         "stats":{"speed":{"up":100,"down":200},
+                  "counters":{"bytes_up":1000,"bytes_down":2000}}},
+        {"oid":"another-session","origin":"tls acceptor","policy":"other-policy",
+         "left":[{"host":"10.0.0.11","port":"43101","com":"tls"}],
+         "right":[{"host":"secret.example","port":"443","com":"tls"}],
+         "stats":{"speed":{"up":50,"down":75},
+                  "counters":{"bytes_up":500,"bytes_down":750}}}
+    ])");
+    assert(activity.snapshot);
+    assert(activity.snapshot->total == 2U);
+    assert(activity.snapshot->speed_up == 150U);
+    assert(activity.snapshot->speed_down == 275U);
+    assert(activity.snapshot->protocols.size() == 1U);
+    assert(activity.snapshot->protocols.front().protocol == "tls");
+    assert(activity.snapshot->protocols.front().sessions == 2U);
+    assert(!parse_live_sessions("not json").snapshot);
+    assert(!parse_live_sessions(R"([{"left":[{"com":"tls"}],"right":[{"com":"tls"}],
+        "stats":{"speed":{"up":-1,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}])").snapshot);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

@@ -2,7 +2,11 @@ import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {FakeConfigClient} from './api/fake-client';
 import type {AddressObject, ConfigSnapshot, PolicySummary} from './api/models';
-import {SystemClient, type RuntimeMetricsSnapshot} from './api/system-client';
+import {
+  SystemClient,
+  type RuntimeMetricsSnapshot,
+  type SessionActivitySnapshot,
+} from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {DrawerStore, type DrawerEntry} from './state/drawer-store';
 import {
@@ -25,6 +29,17 @@ const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
   listeners: [],
 };
 
+const initialSessionActivity: SessionActivitySnapshot = {
+  state: 'starting',
+  detail: 'Waiting for the first session activity sample.',
+  checkedAtUnixMs: null,
+  lastSuccessAtUnixMs: null,
+  total: 0,
+  speedUp: 0,
+  speedDown: 0,
+  protocols: [],
+};
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -36,6 +51,7 @@ export class SmithproxyApp extends LitElement {
   @state() private systemStatus: SystemStatus = connectingSystemStatus;
   @state() private apiVersion = 'discovering';
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
+  @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
 
   private readonly client = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
@@ -150,6 +166,7 @@ export class SmithproxyApp extends LitElement {
     .listener-table tbody tr:last-child td { border-bottom: 0; }
     .listener-name { font-weight: 650; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 8px; color: var(--app-muted); }
+    .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
 
     .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
     .domain-card { padding: 16px; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
@@ -331,6 +348,15 @@ export class SmithproxyApp extends LitElement {
           detail: error instanceof Error ? error.message : 'Runtime metrics are unavailable.',
         };
       }
+      try {
+        this.sessionActivity = await this.systemClient.sessionActivity();
+      } catch (error) {
+        this.sessionActivity = {
+          ...this.sessionActivity,
+          state: 'unavailable',
+          detail: error instanceof Error ? error.message : 'Session activity is unavailable.',
+        };
+      }
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -338,6 +364,11 @@ export class SmithproxyApp extends LitElement {
         ...this.runtimeMetrics,
         state: 'unavailable',
         detail: 'Runtime metrics are unavailable while the GUI core is offline.',
+      };
+      this.sessionActivity = {
+        ...this.sessionActivity,
+        state: 'unavailable',
+        detail: 'Session activity is unavailable while the GUI core is offline.',
       };
     } finally {
       this.systemProbeInFlight = false;
@@ -611,6 +642,7 @@ export class SmithproxyApp extends LitElement {
           <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
         </div>
         ${this.renderRuntimeSummary()}
+        ${this.renderSessionActivity()}
         ${metrics.state === 'ready' ? nothing : html`
           <div class="metrics-message" role="status">${metrics.detail} Last successful sample: ${this.timeLabel(metrics.lastSuccessAtUnixMs)}.</div>
         `}
@@ -633,6 +665,61 @@ export class SmithproxyApp extends LitElement {
           </table>
         </div>
       </div>
+    `;
+  }
+
+  private renderSessionActivity() {
+    const activity = this.sessionActivity;
+    return html`
+      <section class="runtime-summary" aria-label="Session activity">
+        <div class="runtime-heading">
+          <div><h3>Live session activity</h3><p>Privacy-preserving transport aggregates</p></div>
+          <span class="runtime-state ${activity.state === 'ready' ? 'success' : activity.state === 'unavailable' ? 'danger' : 'warning'}" title=${activity.detail}>
+            ● ${displayState(activity.state)}
+          </span>
+        </div>
+        <div class="metric-grid">
+          <article class="metric">
+            <span class="metric-label">Observed sessions</span>
+            <strong class="metric-value">${activity.total.toLocaleString()}</strong>
+            <span class="metric-note">Across ${activity.protocols.length} transports</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Current throughput</span>
+            <strong class="metric-value">${this.formatBytes(activity.speedUp + activity.speedDown)}/s</strong>
+            <span class="metric-note">${this.formatBytes(activity.speedUp)}/s up · ${this.formatBytes(activity.speedDown)}/s down</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Last activity sample</span>
+            <strong class="metric-value">${activity.checkedAtUnixMs === null ? '—' : new Date(activity.checkedAtUnixMs).toLocaleTimeString()}</strong>
+            <span class="metric-note">Last success: ${this.timeLabel(activity.lastSuccessAtUnixMs)}</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Privacy boundary</span>
+            <strong class="metric-value">Aggregated</strong>
+            <span class="metric-note">No endpoints, session IDs, or policy names</span>
+          </article>
+        </div>
+        ${activity.state === 'ready' ? nothing : html`<div class="metrics-message" role="status">${activity.detail}</div>`}
+        <div class="table">
+          <table class="listener-table">
+            <thead><tr><th>Transport</th><th>Sessions</th><th>Current up</th><th>Current down</th><th>Transferred</th></tr></thead>
+            <tbody>
+              ${activity.protocols.map(protocol => html`
+                <tr>
+                  <td class="listener-name">${protocol.protocol}</td>
+                  <td>${protocol.sessions.toLocaleString()}</td>
+                  <td>${this.formatBytes(protocol.speedUp)}/s</td>
+                  <td>${this.formatBytes(protocol.speedDown)}/s</td>
+                  <td>${this.formatBytes(protocol.bytesUp + protocol.bytesDown)}</td>
+                </tr>
+              `)}
+              ${activity.protocols.length === 0 ? html`<tr><td colspan="5">No active session sample is available.</td></tr>` : nothing}
+            </tbody>
+          </table>
+        </div>
+        <div class="privacy-note">Source and destination addresses, ports, session identifiers, and policy names remain inside the GUI core.</div>
+      </section>
     `;
   }
 

@@ -105,6 +105,7 @@ private:
         if (*relative == "/healthz") return health();
         if (*relative == "/api/v1/status") return status();
         if (*relative == "/api/v1/metrics/summary") return metrics_summary();
+        if (*relative == "/api/v1/sessions/activity") return session_activity();
         if (*relative == "/api/v1/capabilities") return capabilities();
         if (relative->starts_with("/api/")) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};
@@ -126,7 +127,8 @@ private:
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
                     ",\"features\":{\"config_read\":false,\"config_write\":false,"
-                    "\"jobs\":false,\"events\":false,\"metrics\":true}}"};
+                    "\"jobs\":false,\"events\":false,\"metrics\":true,"
+                    "\"session_activity\":true}}"};
     }
 
     Response status() const {
@@ -185,6 +187,31 @@ private:
                     ",\"bytes_up\":" + std::to_string(metrics.bytes_up) +
                     ",\"bytes_down\":" + std::to_string(metrics.bytes_down) +
                     "},\"listeners\":" + listeners + "}"};
+    }
+
+    Response session_activity() const {
+        const auto snapshot = monitor_.status().live_sessions;
+        std::string protocols = "[";
+        for (std::size_t index = 0; index < snapshot.protocols.size(); ++index) {
+            if (index != 0U) protocols += ',';
+            const auto& protocol = snapshot.protocols[index];
+            protocols += "{\"protocol\":" + json_string(protocol.protocol) +
+                         ",\"sessions\":" + std::to_string(protocol.sessions) +
+                         ",\"speed_up\":" + std::to_string(protocol.speed_up) +
+                         ",\"speed_down\":" + std::to_string(protocol.speed_down) +
+                         ",\"bytes_up\":" + std::to_string(protocol.bytes_up) +
+                         ",\"bytes_down\":" + std::to_string(protocol.bytes_down) + "}";
+        }
+        protocols += ']';
+        return {200, "application/json; charset=utf-8",
+                "{\"state\":" + json_string(snapshot.state) +
+                    ",\"detail\":" + json_string(snapshot.detail) +
+                    ",\"checked_at_unix_ms\":" + timestamp_json(snapshot.checked_at) +
+                    ",\"last_success_at_unix_ms\":" + timestamp_json(snapshot.last_success_at) +
+                    ",\"total\":" + std::to_string(snapshot.total) +
+                    ",\"speed_up\":" + std::to_string(snapshot.speed_up) +
+                    ",\"speed_down\":" + std::to_string(snapshot.speed_down) +
+                    ",\"protocols\":" + protocols + "}"};
     }
 
     Response static_asset(const std::string_view relative) const {

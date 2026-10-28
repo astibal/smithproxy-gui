@@ -8,7 +8,10 @@ async function mockSystemApi(page: Page, state: MockState): Promise<void> {
     api_version: 'v1',
     base_path: '/',
     smithproxy_state: state.smithproxy,
-    features: {config_read: false, config_write: false, jobs: false, events: false, metrics: true},
+    features: {
+      config_read: false, config_write: false, jobs: false, events: false,
+      metrics: true, session_activity: true,
+    },
   }}));
   await page.route('**/api/v1/status', async route => route.fulfill({json: {
     service: 'smithproxy-gui',
@@ -43,6 +46,19 @@ async function mockSystemApi(page: Page, state: MockState): Promise<void> {
     listeners: [
       {name: 'tcp', workers: 2, sessions_total: 12, sessions_active: 3, bytes_up: 1024, bytes_down: 2048},
       {name: 'tls', workers: 1, sessions_total: 7, sessions_active: 1, bytes_up: 512, bytes_down: 256},
+    ],
+  }}));
+  await page.route('**/api/v1/sessions/activity', async route => route.fulfill({json: {
+    state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+    detail: state.smithproxy === 'ready' ? 'Current session activity' : 'Session activity is stale',
+    checked_at_unix_ms: Date.now(),
+    last_success_at_unix_ms: Date.now() - 5000,
+    total: 4,
+    speed_up: 1536,
+    speed_down: 2304,
+    protocols: [
+      {protocol: 'tcp', sessions: 3, speed_up: 1024, speed_down: 2048, bytes_up: 4096, bytes_down: 8192},
+      {protocol: 'tls', sessions: 1, speed_up: 512, speed_down: 256, bytes_up: 2048, bytes_down: 1024},
     ],
   }}));
 }
@@ -81,8 +97,12 @@ test('shows live Smithproxy status transitions', async ({page}) => {
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Listener monitoring'})).toBeVisible();
-  await expect(page.getByRole('cell', {name: 'tcp'})).toBeVisible();
-  await expect(page.getByRole('cell', {name: 'tls'})).toBeVisible();
+  await expect(page.getByRole('cell', {name: 'tcp'}).first()).toBeVisible();
+  await expect(page.getByRole('cell', {name: 'tls'}).first()).toBeVisible();
+  const activity = page.getByRole('region', {name: 'Session activity'});
+  await expect(activity.getByRole('heading', {name: 'Live session activity'})).toBeVisible();
+  await expect(activity.getByText(/no endpoints, session ids, or policy names/i)).toBeVisible();
+  await expect(activity.getByText('3.84 kB/s')).toBeVisible();
 
   state.smithproxy = 'unreachable';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));

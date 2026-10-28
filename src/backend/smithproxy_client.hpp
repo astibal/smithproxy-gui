@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.hpp"
+#include "live_sessions.hpp"
 #include "runtime_metrics.hpp"
 
 #include <atomic>
@@ -29,6 +30,7 @@ struct SmithproxyStatus {
     std::uint64_t consecutive_failures{};
     std::vector<ProbeSample> history;
     RuntimeMetrics runtime_metrics;
+    LiveSessions live_sessions;
 };
 
 class SmithproxyMonitor {
@@ -48,6 +50,7 @@ private:
     void run(std::stop_token stop_token);
     SmithproxyStatus ping() const;
     RuntimeMetrics fetch_runtime_metrics() const;
+    LiveSessions fetch_live_sessions() const;
 
     std::optional<SmithproxyConfig> config_;
     mutable std::mutex mutex_;
