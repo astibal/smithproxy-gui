@@ -478,6 +478,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         std::pair{"tls_profiles", "tls"},
         std::pair{"ssh_profiles", "ssh"},
         std::pair{"alg_dns_profiles", "dns"},
+        std::pair{"script_profiles", "script"},
         std::pair{"auth_profiles", "authentication"},
         std::pair{"routing", "routing"},
     };

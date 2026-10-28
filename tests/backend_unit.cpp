@@ -90,7 +90,7 @@ int main() {
         "stats":{"speed":{"up":-1,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}])").snapshot);
 
     const auto configuration = parse_config_snapshot(
-        R"({"success":{"policy":[{"name":"office policy","disabled":"0","proto":"tcp","src":["office"],"sport":["any"],"dst":["internet"],"dport":["https"],"action":"accept","nat":"masquerade","routing":"main","tls_profile":"inspect"}]}})",
+        R"({"success":{"policy":[{"name":"office policy","disabled":"0","proto":"tcp","src":["office"],"sport":["any"],"dst":["internet"],"dport":["https"],"features":["sinkhole"],"action":"accept","nat":"masquerade","routing":"main","tls_profile":"inspect"}]}})",
         R"({"success":{"address_objects":{"office":{"type":"cidr","value":"10.0.0.0/24"},"internet":{"type":"fqdn","value":"example.test"}}}})",
         R"({"success":{"port_objects":{"https":{"start":"443","end":"443"}}}})",
         R"({"success":{"proto_objects":{"tcp":{"id":"6"}}}})");
@@ -98,6 +98,7 @@ int main() {
     assert(configuration.snapshot->policies.size() == 1U);
     assert(configuration.snapshot->policies.front().name == "office policy");
     assert(configuration.snapshot->policies.front().enabled);
+    assert(configuration.snapshot->policies.front().features == std::vector<std::string>{"sinkhole"});
     assert(configuration.snapshot->policies.front().sources == std::vector<std::string>{"office"});
     assert(configuration.snapshot->addresses.size() == 2U);
     assert(configuration.snapshot->ports.front().start == 443U);

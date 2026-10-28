@@ -11,7 +11,10 @@ const liveSnapshot = {
   policies: [{
     id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
     source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
+    features: ['sinkhole'],
     action: 'accept', nat: '', routing: 'main', tls_profile: 'inspect',
+    ssh_profile: '', detection_profile: '', content_profile: '', auth_profile: '',
+    dns_profile: '', script_profile: '',
   }],
   addresses: [
     {id: 'address-0', name: 'office', type: 'cidr', value: '10.0.0.0/24'},

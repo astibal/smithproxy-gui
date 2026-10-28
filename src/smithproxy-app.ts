@@ -1148,6 +1148,20 @@ export class SmithproxyApp extends LitElement {
           ${this.renderProfileReference('tls', policy.tlsProfile)}
           <label>Routing profile</label>
           ${this.renderProfileReference('routing', policy.routing)}
+          <label>Detection profile</label>
+          ${this.renderProfileReference('detection', policy.detectionProfile)}
+          <label>Content profile</label>
+          ${this.renderProfileReference('content', policy.contentProfile)}
+          <label>SSH profile</label>
+          ${this.renderProfileReference('ssh', policy.sshProfile)}
+          <label>Authentication profile</label>
+          ${this.renderProfileReference('authentication', policy.authProfile)}
+          <label>DNS ALG profile</label>
+          ${this.renderProfileReference('dns', policy.dnsProfile)}
+          <label>Script profile</label>
+          ${this.renderProfileReference('script', policy.scriptProfile)}
+          <label>Features</label>
+          <span>${policy.features.length > 0 ? policy.features.join(', ') : 'None'}</span>
         </div>
       </div>
     `;

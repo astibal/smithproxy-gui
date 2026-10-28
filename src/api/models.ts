@@ -6,10 +6,17 @@ export interface PolicySummary {
   sourcePorts: ReadonlyArray<string>;
   destinations: ReadonlyArray<ConfigReference>;
   destinationPorts: ReadonlyArray<string>;
+  features: ReadonlyArray<string>;
   action: string;
   nat: string;
   routing: string;
   tlsProfile: string;
+  sshProfile: string;
+  detectionProfile: string;
+  contentProfile: string;
+  authProfile: string;
+  dnsProfile: string;
+  scriptProfile: string;
   enabled: boolean;
 }
 

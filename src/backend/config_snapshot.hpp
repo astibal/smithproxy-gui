@@ -44,10 +44,17 @@ struct ConfigPolicy {
     std::vector<std::string> source_ports;
     std::vector<std::string> destinations;
     std::vector<std::string> destination_ports;
+    std::vector<std::string> features;
     std::string action;
     std::string nat;
     std::string routing;
     std::string tls_profile;
+    std::string ssh_profile;
+    std::string detection_profile;
+    std::string content_profile;
+    std::string auth_profile;
+    std::string dns_profile;
+    std::string script_profile;
 };
 
 struct ConfigSnapshot {

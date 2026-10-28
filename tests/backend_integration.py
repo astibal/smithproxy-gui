@@ -38,6 +38,9 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "proto": "tcp", "src": ["office"], "sport": ["any"],
             "dst": ["internet"], "dport": ["https"], "action": "accept",
             "nat": "masquerade", "routing": "main", "tls_profile": "inspect",
+            "features": ["sinkhole"], "ssh_profile": "", "detection_profile": "default-detection",
+            "content_profile": "safe-content", "auth_profile": "", "alg_dns_profile": "",
+            "script_profile": "audit-script",
         }],
         "address_objects": {
             "office": {"type": "cidr", "value": "10.0.0.0/24"},
@@ -50,6 +53,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         "tls_profiles": {"inspect": {}},
         "ssh_profiles": {},
         "alg_dns_profiles": {},
+        "script_profiles": {"audit-script": {}},
         "auth_profiles": {},
         "routing": {"main": {}},
     }
@@ -339,11 +343,14 @@ def main() -> int:
             assert config_snapshot["policies"][0]["name"] == "office policy"
             assert config_snapshot["policies"][0]["enabled"] is True
             assert config_snapshot["policies"][0]["sources"] == ["office"]
+            assert config_snapshot["policies"][0]["features"] == ["sinkhole"]
+            assert config_snapshot["policies"][0]["detection_profile"] == "default-detection"
+            assert config_snapshot["policies"][0]["script_profile"] == "audit-script"
             assert len(config_snapshot["addresses"]) == 2
             assert config_snapshot["ports"][0]["start"] == 443
             assert config_snapshot["protocols"][0]["number"] == 6
             assert {item["type"] for item in config_snapshot["profiles"]} == {
-                "detection", "content", "tls", "routing",
+                "detection", "content", "tls", "script", "routing",
             }
             assert secret.encode() not in config_body
             assert gateway_secret.encode() not in config_body

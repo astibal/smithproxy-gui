@@ -193,10 +193,17 @@ private:
                         ",\"source_ports\":" + string_array_json(policy.source_ports) +
                         ",\"destinations\":" + string_array_json(policy.destinations) +
                         ",\"destination_ports\":" + string_array_json(policy.destination_ports) +
+                        ",\"features\":" + string_array_json(policy.features) +
                         ",\"action\":" + json_string(policy.action) +
                         ",\"nat\":" + json_string(policy.nat) +
                         ",\"routing\":" + json_string(policy.routing) +
-                        ",\"tls_profile\":" + json_string(policy.tls_profile) + "}";
+                        ",\"tls_profile\":" + json_string(policy.tls_profile) +
+                        ",\"ssh_profile\":" + json_string(policy.ssh_profile) +
+                        ",\"detection_profile\":" + json_string(policy.detection_profile) +
+                        ",\"content_profile\":" + json_string(policy.content_profile) +
+                        ",\"auth_profile\":" + json_string(policy.auth_profile) +
+                        ",\"dns_profile\":" + json_string(policy.dns_profile) +
+                        ",\"script_profile\":" + json_string(policy.script_profile) + "}";
         }
         policies += ']';
 

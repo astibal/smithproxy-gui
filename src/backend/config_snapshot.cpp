@@ -35,9 +35,13 @@ std::optional<std::string> bounded_string(const Json& object, const char* key,
     return result;
 }
 
-std::optional<std::vector<std::string>> string_array(const Json& object, const char* key) {
+std::optional<std::vector<std::string>> string_array(
+    const Json& object, const char* key, const bool optional = false) {
     const auto value = object.find(key);
-    if (value == object.end() || !value->is_array() || value->size() > maximum_references) {
+    if (value == object.end()) {
+        return optional ? std::optional<std::vector<std::string>>{std::vector<std::string>{}} : std::nullopt;
+    }
+    if (!value->is_array() || value->size() > maximum_references) {
         return std::nullopt;
     }
     std::vector<std::string> result;
@@ -176,12 +180,20 @@ bool parse_policies(const Json& section, ConfigSnapshot& snapshot, std::string& 
         const auto source_ports = string_array(value, "sport");
         const auto destinations = string_array(value, "dst");
         const auto destination_ports = string_array(value, "dport");
+        const auto features = string_array(value, "features", true);
         const auto action = bounded_string(value, "action", 32U);
         const auto nat = bounded_string(value, "nat", maximum_name_length, true);
         const auto routing = bounded_string(value, "routing", maximum_name_length, true);
         const auto tls_profile = bounded_string(value, "tls_profile", maximum_name_length, true);
+        const auto ssh_profile = bounded_string(value, "ssh_profile", maximum_name_length, true);
+        const auto detection_profile = bounded_string(value, "detection_profile", maximum_name_length, true);
+        const auto content_profile = bounded_string(value, "content_profile", maximum_name_length, true);
+        const auto auth_profile = bounded_string(value, "auth_profile", maximum_name_length, true);
+        const auto dns_profile = bounded_string(value, "alg_dns_profile", maximum_name_length, true);
+        const auto script_profile = bounded_string(value, "script_profile", maximum_name_length, true);
         if (!configured_name || !disabled || !protocol || protocol->empty() || !sources || !source_ports || !destinations ||
-            !destination_ports || !action || action->empty() || !nat || !routing || !tls_profile) {
+            !destination_ports || !features || !action || action->empty() || !nat || !routing || !tls_profile ||
+            !ssh_profile || !detection_profile || !content_profile || !auth_profile || !dns_profile || !script_profile) {
             error = "Smithproxy policy fields are invalid";
             return false;
         }
@@ -190,7 +202,8 @@ bool parse_policies(const Json& section, ConfigSnapshot& snapshot, std::string& 
             configured_name->empty() ? "Policy " + std::to_string(index + 1U) : *configured_name,
             !*disabled, *protocol,
             *sources, *source_ports, *destinations, *destination_ports,
-            *action, *nat, *routing, *tls_profile,
+            *features, *action, *nat, *routing, *tls_profile, *ssh_profile,
+            *detection_profile, *content_profile, *auth_profile, *dns_profile, *script_profile,
         });
     }
     return true;

@@ -155,10 +155,17 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       sourcePorts: stringArray(item.source_ports, 'policy source ports'),
       destinations: references(stringArray(item.destinations, 'policy destinations'), addressNames),
       destinationPorts: stringArray(item.destination_ports, 'policy destination ports'),
+      features: stringArray(item.features, 'policy features'),
       action: safeString(item.action, 'policy action', 32),
       nat: optionalString(item.nat, 'policy NAT'),
       routing: optionalString(item.routing, 'policy routing'),
       tlsProfile: optionalString(item.tls_profile, 'policy TLS profile'),
+      sshProfile: optionalString(item.ssh_profile, 'policy SSH profile'),
+      detectionProfile: optionalString(item.detection_profile, 'policy detection profile'),
+      contentProfile: optionalString(item.content_profile, 'policy content profile'),
+      authProfile: optionalString(item.auth_profile, 'policy authentication profile'),
+      dnsProfile: optionalString(item.dns_profile, 'policy DNS profile'),
+      scriptProfile: optionalString(item.script_profile, 'policy script profile'),
       enabled: safeBoolean(item.enabled, 'policy enabled state'),
     };
   });
@@ -224,6 +231,12 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     protocolsByName.get(policy.protocol)?.usedBy.push(usage);
     profilesByIdentity.get(`tls:${policy.tlsProfile}`)?.usedBy.push(usage);
     profilesByIdentity.get(`routing:${policy.routing}`)?.usedBy.push(usage);
+    profilesByIdentity.get(`ssh:${policy.sshProfile}`)?.usedBy.push(usage);
+    profilesByIdentity.get(`detection:${policy.detectionProfile}`)?.usedBy.push(usage);
+    profilesByIdentity.get(`content:${policy.contentProfile}`)?.usedBy.push(usage);
+    profilesByIdentity.get(`authentication:${policy.authProfile}`)?.usedBy.push(usage);
+    profilesByIdentity.get(`dns:${policy.dnsProfile}`)?.usedBy.push(usage);
+    profilesByIdentity.get(`script:${policy.scriptProfile}`)?.usedBy.push(usage);
     for (const name of new Set([...policy.sourcePorts, ...policy.destinationPorts])) {
       portsByName.get(name)?.usedBy.push(usage);
     }
