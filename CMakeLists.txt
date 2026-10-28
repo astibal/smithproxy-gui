@@ -64,6 +64,7 @@ add_library(smithproxy_gui_core
     src/backend/path.cpp
     src/backend/runtime_metrics.cpp
     src/backend/smithproxy_client.cpp
+    src/backend/tls_metrics.cpp
 )
 target_include_directories(smithproxy_gui_core PUBLIC src/backend)
 target_link_libraries(smithproxy_gui_core PUBLIC PkgConfig::CURL nlohmann_json::nlohmann_json)
@@ -93,8 +94,13 @@ if(BUILD_TESTING)
     target_link_libraries(backend_unit_tests PRIVATE smithproxy_gui_core)
     target_compile_options(backend_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
     add_test(NAME backend_unit_tests COMMAND backend_unit_tests)
+    if(SMITHPROXY_GUI_BUILD_FRONTEND)
+        set(SMITHPROXY_GUI_TEST_ASSET_DIR "${SMITHPROXY_GUI_FRONTEND_DIR}")
+    else()
+        set(SMITHPROXY_GUI_TEST_ASSET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/frontend")
+    endif()
     add_test(NAME backend_integration_tests
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/backend_integration.py"
-                "$<TARGET_FILE:smithproxy-gui>" "${SMITHPROXY_GUI_FRONTEND_DIR}")
+                "$<TARGET_FILE:smithproxy-gui>" "${SMITHPROXY_GUI_TEST_ASSET_DIR}")
     set_tests_properties(backend_integration_tests PROPERTIES TIMEOUT 20)
 endif()

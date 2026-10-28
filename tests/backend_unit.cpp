@@ -4,6 +4,7 @@
 #include "live_sessions.hpp"
 #include "path.hpp"
 #include "runtime_metrics.hpp"
+#include "tls_metrics.hpp"
 
 #include <cassert>
 #include <cstdlib>
@@ -57,6 +58,13 @@ int main() {
         {"name":"tcp","workers":1,"sessions_total":1,"sessions_active":0,"bytes_up":0,"bytes_down":0},
         {"name":"tcp","workers":1,"sessions_total":1,"sessions_active":0,"bytes_up":0,"bytes_down":0}
     ]})").metrics);
+
+    const auto tls_cache = parse_tls_cache_metrics(R"({"cache_size":42,"max_size":1000})");
+    assert(tls_cache.metrics);
+    assert(tls_cache.metrics->size == 42U);
+    assert(tls_cache.metrics->capacity == 1000U);
+    assert(!parse_tls_cache_metrics(R"({"cache_size":1001,"max_size":1000})").metrics);
+    assert(!parse_tls_cache_metrics(R"({"cache_size":-1,"max_size":1000})").metrics);
 
     const auto activity = parse_live_sessions(R"([
         {"oid":"private-session","origin":"tls acceptor","policy":"internal-policy",

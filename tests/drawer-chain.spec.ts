@@ -10,7 +10,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     smithproxy_state: state.smithproxy,
     features: {
       config_read: configRead, config_write: false, jobs: false, events: false,
-      metrics: true, session_activity: true,
+      metrics: true, session_activity: true, tls_monitoring: true,
     },
   }}));
   await page.route('**/api/v1/status', async route => route.fulfill({json: {
@@ -60,6 +60,12 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       {protocol: 'tcp', sessions: 3, speed_up: 1024, speed_down: 2048, bytes_up: 4096, bytes_down: 8192},
       {protocol: 'tls', sessions: 1, speed_up: 512, speed_down: 256, bytes_up: 2048, bytes_down: 1024},
     ],
+  }}));
+  await page.route('**/api/v1/tls/cache/summary', async route => route.fulfill({json: {
+    state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+    detail: state.smithproxy === 'ready' ? 'Current TLS cache metrics' : 'TLS cache metrics are stale',
+    checked_at_unix_ms: Date.now(), last_success_at_unix_ms: Date.now() - 5000,
+    size: 42, capacity: 1000,
   }}));
   if (configRead) {
     await page.route('**/api/v1/config/snapshot', async route => route.fulfill({json: {
@@ -164,6 +170,10 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
   await expect(page.getByText(/control-plane health and listener counters are live/i)).toBeVisible();
   await expect(page.getByRole('region', {name: 'Runtime metrics summary'}).getByText('4', {exact: true})).toBeVisible();
+  const tlsCache = page.getByRole('region', {name: 'TLS interception cache'});
+  await expect(tlsCache.getByText('42', {exact: true})).toBeVisible();
+  await expect(tlsCache.getByRole('progressbar', {name: 'TLS cache utilization'}))
+    .toHaveAttribute('aria-valuenow', '4.2');
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Listener monitoring'})).toBeVisible();

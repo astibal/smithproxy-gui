@@ -27,7 +27,7 @@ describe('SystemClient', () => {
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
       features: {
         config_read: false, config_write: false, jobs: false, events: false,
-        metrics: true, session_activity: true,
+        metrics: true, session_activity: true, tls_monitoring: true,
       },
     }));
     const client = new SystemClient('/api/v1', '/', fetcher);
@@ -129,6 +129,27 @@ describe('SystemClient', () => {
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/sessions/activity', expect.anything(),
     );
+  });
+
+  it('loads and validates aggregate TLS cache metrics', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 100,
+      last_success_at_unix_ms: 100, size: 42, capacity: 1000,
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.tlsCacheSummary()).resolves.toMatchObject({size: 42, capacity: 1000});
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/tls/cache/summary', expect.anything(),
+    );
+  });
+
+  it('rejects inconsistent TLS cache counters', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', detail: 'Invalid', checked_at_unix_ms: 1,
+      last_success_at_unix_ms: 1, size: 2, capacity: 1,
+    }));
+    await expect(client.tlsCacheSummary()).rejects.toThrow('Invalid TLS cache response');
   });
 
   it('rejects inconsistent session activity totals', async () => {

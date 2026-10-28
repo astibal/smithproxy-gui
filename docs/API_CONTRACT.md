@@ -66,6 +66,7 @@ GET /api/v1/health
 GET /api/v1/metrics/summary
 GET /api/v1/listeners
 GET /api/v1/sessions/activity
+GET /api/v1/tls/cache/summary
 GET /api/v1/alerts
 GET /api/v1/logs
 GET /api/v1/events
@@ -76,6 +77,9 @@ sessions by transport and exposes counts, throughput, and byte counters. Endpoin
 addresses, ports, session identifiers, and matched policy names do not cross the
 browser boundary. A future detailed session surface requires an explicit privacy
 and authorization design.
+
+`/tls/cache/summary` exposes cache occupancy, capacity, and sample freshness. It
+must not expose certificate subjects, SAN values, domain names, or cache keys.
 
 `/events` používá SSE. Každá událost obsahuje typ, čas serveru, monotónní event ID,
 source revision a minimální payload. Po ztrátě kontinuity si klient vyžádá nový

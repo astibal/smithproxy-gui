@@ -81,6 +81,8 @@ SmithproxyMonitor::SmithproxyMonitor(std::optional<SmithproxyConfig> config, con
         status_.detail = "Waiting for the first Smithproxy probe";
         status_.runtime_metrics.state = "starting";
         status_.runtime_metrics.detail = "Waiting for the first Smithproxy metrics sample";
+        status_.tls_cache_metrics.state = "starting";
+        status_.tls_cache_metrics.detail = "Waiting for the first Smithproxy TLS cache sample";
         status_.live_sessions.state = "starting";
         status_.live_sessions.detail = "Waiting for the first Smithproxy session activity sample";
         if (config_enabled_) {
@@ -116,31 +118,31 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
     while (!stop_token.stop_requested()) {
         auto latest = ping();
         std::optional<RuntimeMetrics> sampled_metrics;
+        std::optional<TlsCacheMetrics> sampled_tls_cache;
         std::optional<LiveSessions> sampled_sessions;
         std::optional<ConfigSnapshot> sampled_config;
         if (latest.state == "ready") {
             const auto now = std::chrono::steady_clock::now();
             const bool sample_sessions = now >= next_session_sample;
             const bool sample_config = config_enabled_ && now >= next_config_sample;
-            if (sample_sessions || sample_config) {
-                auto metrics_future = std::async(
-                    std::launch::async, [this] { return fetch_runtime_metrics(); });
-                std::optional<std::future<ConfigSnapshot>> config_future;
-                if (sample_config) {
-                    config_future.emplace(std::async(
-                        std::launch::async, [this] { return fetch_config_snapshot(); }));
-                }
-                if (sample_sessions) sampled_sessions = fetch_live_sessions();
-                sampled_metrics = metrics_future.get();
-                if (config_future) sampled_config = config_future->get();
-                if (sample_sessions) {
-                    next_session_sample = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-                }
-                if (sample_config) {
-                    next_config_sample = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                }
-            } else {
-                sampled_metrics = fetch_runtime_metrics();
+            auto metrics_future = std::async(
+                std::launch::async, [this] { return fetch_runtime_metrics(); });
+            auto tls_cache_future = std::async(
+                std::launch::async, [this] { return fetch_tls_cache_metrics(); });
+            std::optional<std::future<ConfigSnapshot>> config_future;
+            if (sample_config) {
+                config_future.emplace(std::async(
+                    std::launch::async, [this] { return fetch_config_snapshot(); }));
+            }
+            if (sample_sessions) sampled_sessions = fetch_live_sessions();
+            sampled_metrics = metrics_future.get();
+            sampled_tls_cache = tls_cache_future.get();
+            if (config_future) sampled_config = config_future->get();
+            if (sample_sessions) {
+                next_session_sample = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            }
+            if (sample_config) {
+                next_config_sample = std::chrono::steady_clock::now() + std::chrono::seconds(30);
             }
         }
         {
@@ -150,6 +152,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             latest.consecutive_failures = status_.consecutive_failures + 1U;
             latest.history = std::move(status_.history);
             auto previous_metrics = std::move(status_.runtime_metrics);
+            auto previous_tls_cache = std::move(status_.tls_cache_metrics);
             auto previous_sessions = std::move(status_.live_sessions);
             auto previous_config = std::move(status_.config_snapshot);
             if (latest.state == "ready") {
@@ -168,6 +171,16 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                     metrics.listeners = std::move(previous_metrics.listeners);
                 }
                 latest.runtime_metrics = std::move(metrics);
+
+                auto tls_cache = std::move(*sampled_tls_cache);
+                tls_cache.last_success_at = previous_tls_cache.last_success_at;
+                if (tls_cache.state == "ready") {
+                    tls_cache.last_success_at = tls_cache.checked_at;
+                } else {
+                    tls_cache.size = previous_tls_cache.size;
+                    tls_cache.capacity = previous_tls_cache.capacity;
+                }
+                latest.tls_cache_metrics = std::move(tls_cache);
 
                 if (sampled_sessions) {
                     auto sessions = std::move(*sampled_sessions);
@@ -204,6 +217,10 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 previous_metrics.detail = "Smithproxy runtime metrics are unavailable while the API probe is not ready";
                 previous_metrics.checked_at = latest.checked_at;
                 latest.runtime_metrics = std::move(previous_metrics);
+                previous_tls_cache.state = "unavailable";
+                previous_tls_cache.detail = "Smithproxy TLS cache is unavailable while the API probe is not ready";
+                previous_tls_cache.checked_at = latest.checked_at;
+                latest.tls_cache_metrics = std::move(previous_tls_cache);
                 previous_sessions.state = "unavailable";
                 previous_sessions.detail = "Smithproxy session activity is unavailable while the API probe is not ready";
                 previous_sessions.checked_at = latest.checked_at;
@@ -291,6 +308,54 @@ RuntimeMetrics SmithproxyMonitor::fetch_runtime_metrics() const {
         return metrics;
     }
     auto parsed = parse_listener_metrics(response.body);
+    if (!parsed.metrics) {
+        metrics.detail = std::move(parsed.error);
+        return metrics;
+    }
+    parsed.metrics->checked_at = metrics.checked_at;
+    return std::move(*parsed.metrics);
+}
+
+TlsCacheMetrics SmithproxyMonitor::fetch_tls_cache_metrics() const {
+    TlsCacheMetrics metrics;
+    metrics.state = "unavailable";
+    metrics.checked_at = std::chrono::system_clock::now();
+
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if (!curl) {
+        metrics.detail = "Cannot initialize the Smithproxy TLS cache client";
+        return metrics;
+    }
+    std::unique_ptr<curl_slist, HeaderCleanup> headers;
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    if (!headers) {
+        metrics.detail = "Cannot prepare Smithproxy TLS cache authentication";
+        return metrics;
+    }
+
+    const std::string endpoint = config_->api_url + "/api/diag/ssl/cache/stats";
+    ResponseBuffer response;
+    configure_request(curl.get(), *config_, endpoint, headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto result = curl_easy_perform(curl.get());
+    metrics.checked_at = std::chrono::system_clock::now();
+    if (response.exceeded) {
+        metrics.detail = "Smithproxy TLS cache metrics exceeded the response limit";
+        return metrics;
+    }
+    if (result != CURLE_OK) {
+        metrics.detail = std::string("Cannot retrieve Smithproxy TLS cache metrics: ") +
+                         curl_easy_strerror(result);
+        return metrics;
+    }
+    long status_code{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    if (status_code != 200L) {
+        metrics.detail = "Smithproxy TLS cache metrics returned HTTP " + std::to_string(status_code);
+        return metrics;
+    }
+    auto parsed = parse_tls_cache_metrics(response.body);
     if (!parsed.metrics) {
         metrics.detail = std::move(parsed.error);
         return metrics;

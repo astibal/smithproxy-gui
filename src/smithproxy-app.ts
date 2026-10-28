@@ -13,6 +13,7 @@ import {
   SystemClient,
   type RuntimeMetricsSnapshot,
   type SessionActivitySnapshot,
+  type TlsCacheSnapshot,
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
@@ -48,6 +49,15 @@ const initialSessionActivity: SessionActivitySnapshot = {
   protocols: [],
 };
 
+const initialTlsCache: TlsCacheSnapshot = {
+  state: 'starting',
+  detail: 'Waiting for the first TLS cache sample.',
+  checkedAtUnixMs: null,
+  lastSuccessAtUnixMs: null,
+  size: 0,
+  capacity: 0,
+};
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -60,6 +70,7 @@ export class SmithproxyApp extends LitElement {
   @state() private apiVersion = 'discovering';
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
+  @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
   @state() private focusMode = false;
   @state() private configWriteAvailable = false;
   @state() private configError: string | undefined;
@@ -184,6 +195,8 @@ export class SmithproxyApp extends LitElement {
     .listener-name { font-weight: 650; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 8px; color: var(--app-muted); }
     .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
+    .capacity-track { height: 8px; overflow: hidden; border-radius: 999px; background: var(--app-border); }
+    .capacity-fill { height: 100%; border-radius: inherit; background: var(--app-brand); }
 
     .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
     .domain-card { padding: 16px; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
@@ -392,6 +405,15 @@ export class SmithproxyApp extends LitElement {
           detail: error instanceof Error ? error.message : 'Session activity is unavailable.',
         };
       }
+      try {
+        this.tlsCache = await this.systemClient.tlsCacheSummary();
+      } catch (error) {
+        this.tlsCache = {
+          ...this.tlsCache,
+          state: 'unavailable',
+          detail: error instanceof Error ? error.message : 'TLS cache metrics are unavailable.',
+        };
+      }
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -404,6 +426,11 @@ export class SmithproxyApp extends LitElement {
         ...this.sessionActivity,
         state: 'unavailable',
         detail: 'Session activity is unavailable while the GUI core is offline.',
+      };
+      this.tlsCache = {
+        ...this.tlsCache,
+        state: 'unavailable',
+        detail: 'TLS cache metrics are unavailable while the GUI core is offline.',
       };
     } finally {
       this.systemProbeInFlight = false;
@@ -805,6 +832,45 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderTlsCache() {
+    const cache = this.tlsCache;
+    const utilization = cache.capacity === 0 ? 0 : Math.min(100, cache.size / cache.capacity * 100);
+    return html`
+      <section class="runtime-summary" aria-label="TLS interception cache">
+        <div class="runtime-heading">
+          <div><h3>TLS interception cache</h3><p>Aggregate certificate cache health without domain disclosure</p></div>
+          <span class="runtime-state ${cache.state === 'ready' ? 'success' : cache.state === 'unavailable' ? 'danger' : 'warning'}"
+            title=${cache.detail}>● ${displayState(cache.state)}</span>
+        </div>
+        <div class="metric-grid">
+          <article class="metric">
+            <span class="metric-label">Cached certificates</span>
+            <strong class="metric-value">${cache.size.toLocaleString()}</strong>
+            <span class="metric-note">Generated interception certificate entries</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Cache capacity</span>
+            <strong class="metric-value">${cache.capacity.toLocaleString()}</strong>
+            <span class="metric-note">Configured maximum entries</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Utilization</span>
+            <strong class="metric-value">${utilization.toFixed(utilization === 0 ? 0 : 1)}%</strong>
+            <div class="capacity-track" role="progressbar" aria-label="TLS cache utilization"
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow=${utilization.toFixed(1)}>
+              <div class="capacity-fill" style=${`width: ${utilization}%`}></div>
+            </div>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Last successful sample</span>
+            <strong class="metric-value">${this.timeLabel(cache.lastSuccessAtUnixMs)}</strong>
+            <span class="metric-note">${cache.detail}</span>
+          </article>
+        </div>
+      </section>
+    `;
+  }
+
   private renderDashboard() {
     const history = this.systemStatus.history;
     const emptySlots = Math.max(0, 60 - history.length);
@@ -836,6 +902,7 @@ export class SmithproxyApp extends LitElement {
           </article>
         </div>
         ${this.renderRuntimeSummary()}
+        ${this.renderTlsCache()}
         <section class="monitor-panel" aria-label="Probe history">
           <h3>Recent probe history</h3>
           <p>Up to five minutes at the current five-second sampling interval. Last success: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}.</p>
@@ -861,6 +928,7 @@ export class SmithproxyApp extends LitElement {
           <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
         </div>
         ${this.renderRuntimeSummary()}
+        ${this.renderTlsCache()}
         ${this.renderSessionActivity()}
         ${metrics.state === 'ready' ? nothing : html`
           <div class="metrics-message" role="status">${metrics.detail} Last successful sample: ${this.timeLabel(metrics.lastSuccessAtUnixMs)}.</div>

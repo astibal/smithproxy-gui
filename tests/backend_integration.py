@@ -67,6 +67,13 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                  "sessions_active": 1, "bytes_up": 512, "bytes_down": 256},
             ]}).encode())
             return
+        if self.path == "/api/diag/ssl/cache/stats":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"cache_size":42,"max_size":1000}')
+            return
         if self.path == "/api/diag/proxy/session/list":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
             self.send_response(200)
@@ -201,6 +208,7 @@ def main() -> int:
         assert capabilities["features"]["config_write"] is False
         assert capabilities["features"]["metrics"] is True
         assert capabilities["features"]["session_activity"] is True
+        assert capabilities["features"]["tls_monitoring"] is True
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/status")
         snapshot = json.loads(body)
@@ -218,6 +226,10 @@ def main() -> int:
         assert status == 200
         assert activity["state"] == "unconfigured"
         assert activity["protocols"] == []
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/tls/cache/summary")
+        tls_cache = json.loads(body)
+        assert status == 200
+        assert tls_cache["state"] == "unconfigured"
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/auth/session")
         assert status == 200
@@ -287,6 +299,13 @@ def main() -> int:
             }
             assert [item["name"] for item in metrics["listeners"]] == ["tcp", "tls"]
             metrics_last_success = metrics["last_success_at_unix_ms"]
+            status, _, body = request(configured_port, "/api/v1/tls/cache/summary")
+            tls_cache = json.loads(body)
+            assert status == 200
+            assert tls_cache["state"] == "ready"
+            assert tls_cache["size"] == 42
+            assert tls_cache["capacity"] == 1000
+            tls_cache_last_success = tls_cache["last_success_at_unix_ms"]
             status, _, body = request(configured_port, "/api/v1/sessions/activity")
             activity = json.loads(body)
             assert status == 200
@@ -345,6 +364,12 @@ def main() -> int:
             assert stale_metrics["state"] == "unavailable"
             assert stale_metrics["last_success_at_unix_ms"] == metrics_last_success
             assert stale_metrics["totals"]["sessions_active"] == 4
+            status, _, body = request(configured_port, "/api/v1/tls/cache/summary")
+            stale_tls_cache = json.loads(body)
+            assert status == 200
+            assert stale_tls_cache["state"] == "unavailable"
+            assert stale_tls_cache["last_success_at_unix_ms"] == tls_cache_last_success
+            assert stale_tls_cache["size"] == 42
             status, _, body = request(configured_port, "/api/v1/sessions/activity")
             stale_activity = json.loads(body)
             assert status == 200

@@ -4,6 +4,7 @@
 #include "config_snapshot.hpp"
 #include "live_sessions.hpp"
 #include "runtime_metrics.hpp"
+#include "tls_metrics.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -31,6 +32,7 @@ struct SmithproxyStatus {
     std::uint64_t consecutive_failures{};
     std::vector<ProbeSample> history;
     RuntimeMetrics runtime_metrics;
+    TlsCacheMetrics tls_cache_metrics;
     LiveSessions live_sessions;
     ConfigSnapshot config_snapshot;
 };
@@ -53,6 +55,7 @@ private:
     void run(std::stop_token stop_token);
     SmithproxyStatus ping() const;
     RuntimeMetrics fetch_runtime_metrics() const;
+    TlsCacheMetrics fetch_tls_cache_metrics() const;
     LiveSessions fetch_live_sessions() const;
     ConfigSnapshot fetch_config_snapshot() const;
 

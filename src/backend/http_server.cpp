@@ -127,6 +127,7 @@ private:
         if (*relative == "/healthz") return health();
         if (*relative == "/api/v1/status") return status();
         if (*relative == "/api/v1/metrics/summary") return metrics_summary();
+        if (*relative == "/api/v1/tls/cache/summary") return tls_cache_summary();
         if (*relative == "/api/v1/sessions/activity") return session_activity();
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
@@ -159,7 +160,7 @@ private:
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":false,"
                     "\"jobs\":false,\"events\":false,\"metrics\":true,"
-                    "\"session_activity\":true}}"};
+                    "\"session_activity\":true,\"tls_monitoring\":true}}"};
     }
 
     bool gateway_authenticated(MHD_Connection* connection) const {
@@ -297,6 +298,17 @@ private:
                     ",\"bytes_up\":" + std::to_string(metrics.bytes_up) +
                     ",\"bytes_down\":" + std::to_string(metrics.bytes_down) +
                     "},\"listeners\":" + listeners + "}"};
+    }
+
+    Response tls_cache_summary() const {
+        const auto metrics = monitor_.status().tls_cache_metrics;
+        return {200, "application/json; charset=utf-8",
+                "{\"state\":" + json_string(metrics.state) +
+                    ",\"detail\":" + json_string(metrics.detail) +
+                    ",\"checked_at_unix_ms\":" + timestamp_json(metrics.checked_at) +
+                    ",\"last_success_at_unix_ms\":" + timestamp_json(metrics.last_success_at) +
+                    ",\"size\":" + std::to_string(metrics.size) +
+                    ",\"capacity\":" + std::to_string(metrics.capacity) + "}"};
     }
 
     Response session_activity() const {

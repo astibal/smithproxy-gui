@@ -86,7 +86,9 @@ writes remain disabled while the versioned draft and commit contract is being
 completed. Control-plane health and listener monitoring use the production C++
 backend. Live session monitoring is aggregated by transport inside the GUI core;
 endpoint addresses, ports, session identifiers, and policy names are never sent
-to the browser. The root web component supports integration into Saslik Tools:
+to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
+certificate subjects and domain names remain behind the GUI core boundary. The
+root web component supports integration into Saslik Tools:
 
 ```html
 <smithproxy-gui

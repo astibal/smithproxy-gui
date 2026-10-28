@@ -27,6 +27,7 @@ export interface SystemCapabilities {
     events: boolean;
     metrics: boolean;
     sessionActivity: boolean;
+    tlsMonitoring: boolean;
   };
 }
 
@@ -93,6 +94,15 @@ export interface SessionActivitySnapshot {
   protocols: ReadonlyArray<SessionActivityBucket>;
 }
 
+export interface TlsCacheSnapshot {
+  state: RuntimeMetricsState;
+  detail: string;
+  checkedAtUnixMs: number | null;
+  lastSuccessAtUnixMs: number | null;
+  size: number;
+  capacity: number;
+}
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -153,7 +163,8 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof features.jobs !== 'boolean' || typeof features.events !== 'boolean' ||
-      typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean') {
+      typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean' ||
+      typeof features.tls_monitoring !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
   }
   return {
@@ -168,6 +179,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       events: features.events,
       metrics: features.metrics,
       sessionActivity: features.session_activity,
+      tlsMonitoring: features.tls_monitoring,
     },
   };
 }
@@ -309,6 +321,24 @@ function parseSessionActivity(value: unknown): SessionActivitySnapshot {
   };
 }
 
+function parseTlsCache(value: unknown): TlsCacheSnapshot {
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
+      !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
+      !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !isNonNegativeInteger(value.size) || !isNonNegativeInteger(value.capacity) ||
+      value.size > value.capacity) {
+    throw new Error('Invalid TLS cache response.');
+  }
+  return {
+    state: value.state,
+    detail: value.detail,
+    checkedAtUnixMs: value.checked_at_unix_ms,
+    lastSuccessAtUnixMs: value.last_success_at_unix_ms,
+    size: value.size,
+    capacity: value.capacity,
+  };
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -345,6 +375,10 @@ export class SystemClient {
 
   async sessionActivity(): Promise<SessionActivitySnapshot> {
     return parseSessionActivity(await this.#request(joinedPath(this.#apiBase, '/sessions/activity')));
+  }
+
+  async tlsCacheSummary(): Promise<TlsCacheSnapshot> {
+    return parseTlsCache(await this.#request(joinedPath(this.#apiBase, '/tls/cache/summary')));
   }
 
   async #request(path: string): Promise<unknown> {
