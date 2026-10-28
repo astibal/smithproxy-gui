@@ -95,6 +95,11 @@ Requests are limited to 64 KiB, paths and values are bounded, and an expected
 draft version is mandatory; stale writers receive HTTP 409. This store is not
 yet a commit path and cannot mutate Smithproxy configuration.
 
+The first browser integration persists `policy.[n].action` through this endpoint.
+The frontend keeps the server draft version, reports conflicts instead of
+silently overwriting, and refreshes the shared draft after a failed write.
+Other live fields remain read-only until they have an explicit typed path mapping.
+
 ## Runtime a monitoring
 
 ```http

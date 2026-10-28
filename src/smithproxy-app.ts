@@ -1,6 +1,7 @@
 import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {ApiConfigClient} from './api/config-client';
+import {DraftClient, type DraftSnapshot} from './api/draft-client';
 import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
@@ -99,12 +100,17 @@ export class SmithproxyApp extends LitElement {
   @state() private eventsError: string | undefined;
   @state() private focusMode = false;
   @state() private configWriteAvailable = false;
+  @state() private draftAvailable = false;
+  @state() private draftVersion = 0;
+  @state() private draftSaving = false;
+  @state() private draftError: string | undefined;
   @state() private configError: string | undefined;
 
   private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
   private runtime?: RuntimeConfig;
   private systemClient?: SystemClient;
+  private draftClient?: DraftClient;
   private systemProbeTimer: number | undefined;
   private systemProbeInFlight = false;
   private systemProbePending = false;
@@ -366,6 +372,7 @@ export class SmithproxyApp extends LitElement {
     this.mode = this.runtime.mode;
     try {
       this.systemClient = new SystemClient(this.runtime.apiBase, this.runtime.basePath);
+      this.draftClient = new DraftClient(this.runtime.apiBase);
       void this.probeSystem();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -507,6 +514,7 @@ export class SmithproxyApp extends LitElement {
       const capabilities = await this.systemClient.capabilities();
       this.apiVersion = capabilities.apiVersion;
       this.configWriteAvailable = capabilities.features.configWrite;
+      this.draftAvailable = capabilities.features.drafts;
       if (capabilities.features.configRead && this.runtime && this.snapshot?.source !== 'live') {
         try {
           this.snapshot = await new ApiConfigClient(this.runtime.apiBase).loadSnapshot();
@@ -516,6 +524,7 @@ export class SmithproxyApp extends LitElement {
           this.configError = error instanceof Error ? error.message : 'Live configuration is unavailable.';
         }
       }
+      if (this.draftAvailable) await this.loadDraft();
     } catch {
       this.apiVersion = 'unavailable';
     }
@@ -535,6 +544,29 @@ export class SmithproxyApp extends LitElement {
       await this.loadCapabilities();
     } catch (error) {
       this.loadingError = error instanceof Error ? error.message : 'Unable to load configuration.';
+    }
+  }
+
+  private applyDraft(snapshot: DraftSnapshot): void {
+    this.draftVersion = snapshot.version;
+    const objects = new Set<string>();
+    for (const change of snapshot.changes) {
+      const policy = /^policy\.\[(\d+)\]\./u.exec(change.path);
+      if (policy) {
+        const item = this.snapshot?.policies[Number(policy[1])];
+        if (item) objects.add(`policy:${item.id}`);
+      }
+    }
+    this.draftObjects = objects;
+  }
+
+  private async loadDraft(): Promise<void> {
+    if (!this.draftClient) return;
+    try {
+      this.applyDraft(await this.draftClient.load());
+      this.draftError = undefined;
+    } catch (error) {
+      this.draftError = error instanceof Error ? error.message : 'Workspace draft is unavailable.';
     }
   }
 
@@ -673,8 +705,28 @@ export class SmithproxyApp extends LitElement {
     (target ?? active)?.focus();
   }
 
-  private saveToDraft(entry: DrawerEntry): void {
-    this.draftObjects = new Set(this.draftObjects).add(`${entry.kind}:${entry.id}`);
+  private async saveToDraft(entry: DrawerEntry): Promise<void> {
+    if (this.snapshot?.source !== 'live') {
+      this.draftObjects = new Set(this.draftObjects).add(`${entry.kind}:${entry.id}`);
+      return;
+    }
+    if (!this.draftAvailable || !this.draftClient || entry.kind !== 'policy') return;
+    const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
+    const input = this.renderRoot.querySelector<HTMLInputElement>(`#action-${entry.id}`);
+    if (index < 0 || !input) return;
+    this.draftSaving = true;
+    this.draftError = undefined;
+    try {
+      this.applyDraft(await this.draftClient.upsert(
+        this.draftVersion, `policy.[${index}].action`, input.value,
+      ));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Draft change could not be saved.';
+      await this.loadDraft();
+      this.draftError = message;
+    } finally {
+      this.draftSaving = false;
+    }
   }
 
   private handleKeydown(event: KeyboardEvent): void {
@@ -1326,7 +1378,8 @@ export class SmithproxyApp extends LitElement {
     const actionOrigin = this.snapshot?.valueOrigins.find(
       item => item.path === `policy.[${policyIndex}].action`,
     );
-    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
+    const readOnly = this.snapshot?.source === 'live';
+    const actionReadOnly = readOnly && !this.draftAvailable;
     const protocol = this.snapshot?.protocols.find(item => item.name === policy.protocol);
     return html`
       <div class="form-grid">
@@ -1345,7 +1398,7 @@ export class SmithproxyApp extends LitElement {
         <input id="destination-${entry.id}"
           .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${readOnly} />
         <label for="action-${entry.id}">Action</label>
-        <input id="action-${entry.id}" .value=${policy.action} .readOnly=${readOnly} />
+        <input id="action-${entry.id}" .value=${policy.action} .readOnly=${actionReadOnly} />
         ${actionOrigin ? html`
           <span></span>
           <div class="origin-note">
@@ -1614,7 +1667,8 @@ export class SmithproxyApp extends LitElement {
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
-    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
+    const draftable = this.snapshot?.source !== 'live' || (this.draftAvailable && entry.kind === 'policy');
+    const readOnly = !draftable;
     return html`
       <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''}"
         data-depth=${visibleDepth} role="dialog" aria-modal=${active ? 'true' : 'false'}
@@ -1633,9 +1687,10 @@ export class SmithproxyApp extends LitElement {
           ${this.renderDrawerBody(entry)}
         </div>
         <footer class="drawer-foot">
-          <span class="validation">${readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready'}</span>
+          <span class="validation">${this.draftError ?? (readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}</span>
           <button class="secondary" type="button" @click=${() => this.closeDrawer(index)}>Cancel</button>
-          <button class="primary" type="button" ?disabled=${readOnly} @click=${() => this.saveToDraft(entry)}>Save to draft</button>
+          <button class="primary" type="button" ?disabled=${readOnly || this.draftSaving}
+            @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
         </footer>
       </section>
     `;

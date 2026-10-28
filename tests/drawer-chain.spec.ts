@@ -3,6 +3,7 @@ import {expect, test, type Page} from '@playwright/test';
 type MockState = {smithproxy: 'ready' | 'unreachable'};
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
+  let draft = {id: 'workspace-draft', base_revision: null, version: 0, changes: [] as Array<{path: string; value: unknown}>};
   await page.route('**/api/v1/capabilities', async route => route.fulfill({json: {
     service: 'smithproxy-gui',
     api_version: 'v1',
@@ -88,6 +89,21 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       }]),
     ],
   }}));
+  await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
+  await page.route('**/api/v1/config/draft/changes', async route => {
+    const request = route.request();
+    const body = request.postDataJSON() as {expected_version: number; path: string; value: unknown};
+    if (body.expected_version !== draft.version) {
+      await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
+      return;
+    }
+    draft = {
+      ...draft,
+      version: draft.version + 1,
+      changes: [...draft.changes.filter(item => item.path !== body.path), {path: body.path, value: body.value}],
+    };
+    await route.fulfill({json: draft});
+  });
   if (configRead) {
     await page.route('**/api/v1/config/snapshot', async route => route.fulfill({json: {
       state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: Date.now(),
@@ -174,8 +190,12 @@ test('loads authenticated runtime configuration as a read-only view', async ({pa
   await expect(page.getByRole('button', {name: /Policy 1 office internet accept/i})).toBeVisible();
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
-  await expect(editor.getByText('Read-only runtime view')).toBeVisible();
-  await expect(editor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
+  await expect(editor.getByText('Validation ready')).toBeVisible();
+  const action = editor.getByLabel('Action');
+  await action.fill('reject');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(page.getByText('Draft: 1 changes')).toBeVisible();
   await expect(page.getByText('Config: Ready')).toBeVisible();
   await editor.getByRole('button', {name: 'tcp', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit tcp'})).toBeVisible();
