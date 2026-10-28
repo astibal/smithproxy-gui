@@ -283,6 +283,8 @@ ConfigProfileParseResult parse_config_profiles(
         std::optional<ConfigTlsProfile> tls;
         std::optional<ConfigDetectionProfile> detection;
         std::optional<ConfigContentProfile> content;
+        std::optional<ConfigSshProfile> ssh;
+        std::optional<ConfigDnsProfile> dns;
         if (type == "routing") {
             const auto addresses = string_array(profile, "dnat_address", true);
             const auto ports = string_array(profile, "dnat_port", true);
@@ -362,9 +364,48 @@ ConfigProfileParseResult parse_config_profiles(
                 *webhook, *webhook_lock, *ja4_client, *ja4_ignore_sni, *ja4_server, *ja4_http,
                 !session_filter->empty(), *rule_count,
             };
+        } else if (type == "ssh") {
+            const auto host_key = bounded_string(profile, "host_key", maximum_value_length);
+            const auto host_key_policy = bounded_string(profile, "hostkey_policy", 16U, true);
+            const auto action = [&](const char* key) -> std::optional<bool> {
+                const auto configured = bounded_string(profile, key, 16U, true);
+                if (!configured || (*configured != "" && *configured != "pass" && *configured != "reject")) {
+                    return std::nullopt;
+                }
+                return configured->empty() || *configured == "pass";
+            };
+            const auto shell = action("shell");
+            const auto exec = action("exec");
+            const auto subsystem = action("subsystem");
+            const auto pty = action("pty");
+            const auto environment = action("environment");
+            const auto local_forward = action("local_forward");
+            const auto remote_forward = action("remote_forward");
+            const auto x11 = action("x11");
+            const auto agent = action("agent");
+            if (!host_key || host_key->empty() || !host_key_policy ||
+                (*host_key_policy != "" && *host_key_policy != "insecure" &&
+                 *host_key_policy != "accept-new" && *host_key_policy != "strict") ||
+                !shell || !exec || !subsystem || !pty || !environment || !local_forward ||
+                !remote_forward || !x11 || !agent) {
+                return {std::nullopt, "Smithproxy returned an invalid SSH profile"};
+            }
+            ssh = ConfigSshProfile{
+                host_key_policy->empty() ? "accept-new" : *host_key_policy,
+                *shell, *exec, *subsystem, *pty, *environment, *local_forward, *remote_forward, *x11, *agent,
+            };
+        } else if (type == "dns") {
+            const auto match = boolean_scalar(profile, "match_request_id", false);
+            const auto randomize = boolean_scalar(profile, "randomize_id", false);
+            const auto cached = boolean_scalar(profile, "cached_responses", false);
+            if (!match || !randomize || !cached) {
+                return {std::nullopt, "Smithproxy returned an invalid DNS ALG profile"};
+            }
+            dns = ConfigDnsProfile{*match, *randomize, *cached};
         }
         result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type),
-                          std::move(routing), std::move(tls), std::move(detection), std::move(content)});
+                          std::move(routing), std::move(tls), std::move(detection), std::move(content),
+                          std::move(ssh), std::move(dns)});
     }
     return {std::move(result), {}};
 }

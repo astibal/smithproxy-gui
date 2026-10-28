@@ -309,6 +309,33 @@ private:
                             (content.session_filter_configured ? "true" : "false") +
                             ",\"rule_count\":" + std::to_string(content.rule_count) + "}";
             }
+            profiles += ",\"ssh\":";
+            if (!profile.ssh) {
+                profiles += "null";
+            } else {
+                const auto& ssh = *profile.ssh;
+                profiles += "{\"host_key_configured\":true,\"host_key_policy\":" +
+                            json_string(ssh.host_key_policy) +
+                            ",\"shell\":" + (ssh.shell ? "true" : "false") +
+                            ",\"exec\":" + (ssh.exec ? "true" : "false") +
+                            ",\"subsystem\":" + (ssh.subsystem ? "true" : "false") +
+                            ",\"pty\":" + (ssh.pty ? "true" : "false") +
+                            ",\"environment\":" + (ssh.environment ? "true" : "false") +
+                            ",\"local_forward\":" + (ssh.local_forward ? "true" : "false") +
+                            ",\"remote_forward\":" + (ssh.remote_forward ? "true" : "false") +
+                            ",\"x11\":" + (ssh.x11 ? "true" : "false") +
+                            ",\"agent\":" + (ssh.agent ? "true" : "false") + "}";
+            }
+            profiles += ",\"dns\":";
+            if (!profile.dns) {
+                profiles += "null";
+            } else {
+                const auto& dns = *profile.dns;
+                profiles += "{\"match_request_id\":" +
+                            std::string(dns.match_request_id ? "true" : "false") +
+                            ",\"randomize_id\":" + (dns.randomize_id ? "true" : "false") +
+                            ",\"cached_responses\":" + (dns.cached_responses ? "true" : "false") + "}";
+            }
             profiles += '}';
         }
         profiles += ']';

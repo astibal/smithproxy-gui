@@ -51,7 +51,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         "detection_profiles": {"default-detection": {"mode": "1"}},
         "content_profiles": {"safe-content": {"write_payload": "false"}},
         "tls_profiles": {"inspect": {}},
-        "ssh_profiles": {},
+        "ssh_profiles": {"default-ssh": {"host_key": "/redacted/test-key"}},
         "alg_dns_profiles": {},
         "script_profiles": {"audit-script": {}},
         "auth_profiles": {},
@@ -379,7 +379,7 @@ def main() -> int:
             assert config_snapshot["ports"][0]["start"] == 443
             assert config_snapshot["protocols"][0]["number"] == 6
             assert {item["type"] for item in config_snapshot["profiles"]} == {
-                "detection", "content", "tls", "script", "routing",
+                "detection", "content", "tls", "ssh", "script", "routing",
             }
             assert secret.encode() not in config_body
             assert gateway_secret.encode() not in config_body

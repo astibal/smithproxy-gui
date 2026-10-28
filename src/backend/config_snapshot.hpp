@@ -74,6 +74,25 @@ struct ConfigContentProfile {
     std::uint64_t rule_count{};
 };
 
+struct ConfigSshProfile {
+    std::string host_key_policy;
+    bool shell{};
+    bool exec{};
+    bool subsystem{};
+    bool pty{};
+    bool environment{};
+    bool local_forward{};
+    bool remote_forward{};
+    bool x11{};
+    bool agent{};
+};
+
+struct ConfigDnsProfile {
+    bool match_request_id{};
+    bool randomize_id{};
+    bool cached_responses{};
+};
+
 struct ConfigProfile {
     std::string id;
     std::string name;
@@ -82,6 +101,8 @@ struct ConfigProfile {
     std::optional<ConfigTlsProfile> tls;
     std::optional<ConfigDetectionProfile> detection;
     std::optional<ConfigContentProfile> content;
+    std::optional<ConfigSshProfile> ssh;
+    std::optional<ConfigDnsProfile> dns;
 };
 
 struct ConfigPolicy {

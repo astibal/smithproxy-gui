@@ -156,9 +156,9 @@ export class SmithproxyApp extends LitElement {
     }
 
     .brand { display: flex; gap: 10px; align-items: center; margin: 0 8px 24px; font-weight: 700; }
-    .brand-mark { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 8px; background: var(--app-brand); color: var(--app-on-brand); }
+    .brand-mark { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 4px; background: var(--app-brand); color: var(--app-on-brand); }
     nav { display: grid; gap: 4px; }
-    nav button { width: 100%; padding: 10px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--app-muted); text-align: left; cursor: pointer; }
+    nav button { width: 100%; padding: 10px 12px; border: 0; border-radius: 3px; background: transparent; color: var(--app-muted); text-align: left; cursor: pointer; }
     nav button:hover { background: var(--app-raised); color: var(--app-text); }
     nav button[aria-current='page'] { background: var(--app-raised); color: var(--app-text); box-shadow: inset 3px 0 var(--app-brand); }
 
@@ -166,7 +166,7 @@ export class SmithproxyApp extends LitElement {
     .topbar { display: flex; gap: 16px; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--app-border); background: color-mix(in srgb, var(--app-surface) 88%, transparent); }
     .topbar h1 { margin: 0; font-size: 18px; }
     .topbar p { flex: 1; margin: 0; color: var(--app-muted); }
-    .search { width: min(300px, 32vw); padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 7px; background: var(--app-input); color: var(--app-text); }
+    .search { width: min(300px, 32vw); padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
 
     .workspace { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
     .content-layer { height: 100%; }
@@ -174,12 +174,12 @@ export class SmithproxyApp extends LitElement {
     .section-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 16px; }
     .section-head h2 { margin: 0 0 3px; font-size: 20px; }
     .section-head p { margin: 0; color: var(--app-muted); }
-    .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 7px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
+    .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 3px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .55; }
 
     .dashboard { display: grid; gap: 18px; }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
-    .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
+    .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .metric { min-height: 116px; padding: 15px 16px; }
     .metric-label { color: var(--app-muted); font-size: 12px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
     .metric-value { display: block; margin-top: 8px; font-size: 25px; font-weight: 700; }
@@ -191,7 +191,7 @@ export class SmithproxyApp extends LitElement {
     .monitor-panel h3 { margin: 0; font-size: 15px; }
     .monitor-panel p { margin: 4px 0 0; color: var(--app-muted); }
     .probe-history { display: grid; grid-template-columns: repeat(60, minmax(3px, 1fr)); gap: 3px; height: 52px; margin-top: 16px; align-items: end; }
-    .probe { min-height: 12px; height: 100%; border-radius: 3px; background: var(--app-border); }
+    .probe { min-height: 12px; height: 100%; border-radius: 1px; background: var(--app-border); }
     .probe.ready { background: var(--app-success); }
     .probe.starting, .probe.unreachable, .probe.unconfigured { background: var(--app-warning); }
     .probe.unauthorized, .probe.error { background: var(--app-danger); }
@@ -210,13 +210,13 @@ export class SmithproxyApp extends LitElement {
     .listener-table th { color: var(--app-muted); font-size: 12px; font-weight: 600; }
     .listener-table tbody tr:last-child td { border-bottom: 0; }
     .listener-name { font-weight: 650; }
-    .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 8px; color: var(--app-muted); }
+    .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 3px; color: var(--app-muted); }
     .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
-    .capacity-track { height: 8px; overflow: hidden; border-radius: 999px; background: var(--app-border); }
+    .capacity-track { height: 8px; overflow: hidden; border-radius: 2px; background: var(--app-border); }
     .capacity-fill { height: 100%; border-radius: inherit; background: var(--app-brand); }
 
     .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
-    .domain-card { padding: 16px; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
+    .domain-card { padding: 16px; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .domain-card header { display: flex; gap: 12px; align-items: start; justify-content: space-between; }
     .domain-card h3 { margin: 0; font-size: 16px; }
     .domain-card p { margin: 5px 0 0; color: var(--app-muted); }
@@ -231,7 +231,7 @@ export class SmithproxyApp extends LitElement {
     .system-grid .domain-card dl { grid-template-columns: minmax(110px, .6fr) minmax(150px, 1fr); }
     .system-grid .domain-card dd { overflow-wrap: anywhere; }
 
-    .table { overflow: hidden; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
+    .table { overflow: hidden; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .row { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px; gap: 16px; align-items: center; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--app-border); background: transparent; text-align: left; cursor: pointer; }
     .row:last-child { border-bottom: 0; }
     .row:not(.heading):hover { background: var(--app-raised); }
@@ -264,20 +264,20 @@ export class SmithproxyApp extends LitElement {
     .drawer-title { flex: 1; min-width: 0; }
     .drawer-title small { display: block; color: var(--app-muted); }
     .drawer-title h2 { overflow: hidden; margin: 1px 0 0; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
-    .icon-button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--app-border); border-radius: 7px; background: transparent; cursor: pointer; }
+    .icon-button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--app-border); border-radius: 3px; background: transparent; cursor: pointer; }
     .drawer-body { overflow: auto; padding: 22px 24px 32px; }
     .drawer-foot { display: flex; gap: 10px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--app-border); background: var(--app-raised); }
     .drawer-foot .validation { flex: 1; color: var(--app-success); }
-    .secondary { padding: 8px 13px; border: 1px solid var(--app-border-strong); border-radius: 7px; background: transparent; cursor: pointer; }
+    .secondary { padding: 8px 13px; border: 1px solid var(--app-border-strong); border-radius: 3px; background: transparent; cursor: pointer; }
     .form-grid { display: grid; grid-template-columns: minmax(120px, 0.35fr) minmax(240px, 1fr); gap: 18px 24px; max-width: 920px; }
     .form-grid label { align-self: center; color: var(--app-muted); }
-    .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 7px; background: var(--app-input); color: var(--app-text); }
+    .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
     .form-grid input[readonly], .form-grid select:disabled { border-style: dashed; opacity: .8; }
     .reference-stack { display: grid; gap: 7px; }
-    .reference { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 7px; background: var(--app-input); cursor: pointer; }
+    .reference { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); cursor: pointer; }
     .section { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--app-border); }
     .section h3 { margin: 0 0 12px; font-size: 15px; }
-    .impact { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--app-warning) 48%, var(--app-border)); border-radius: 8px; background: var(--app-warning-bg); color: var(--app-warning); }
+    .impact { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--app-warning) 48%, var(--app-border)); border-radius: 3px; background: var(--app-warning-bg); color: var(--app-warning); }
     .usage { margin: 12px 0 0; padding: 0; list-style: none; }
     .usage li { padding: 7px 0; border-bottom: 1px solid var(--app-border); }
 
@@ -289,7 +289,7 @@ export class SmithproxyApp extends LitElement {
     .draft { color: var(--app-warning); }
     .spacer { flex: 1; }
 
-    .error { margin: 24px; padding: 16px; border: 1px solid var(--app-danger); border-radius: 8px; color: var(--app-danger); }
+    .error { margin: 24px; padding: 16px; border: 1px solid var(--app-danger); border-radius: 3px; color: var(--app-danger); }
     .empty-state { display: grid; height: 100%; place-content: center; padding: 24px; color: var(--app-muted); text-align: center; }
     .empty-state h2 { margin: 0 0 6px; color: var(--app-text); }
     .empty-state p { max-width: 460px; margin: 0; }
@@ -774,7 +774,7 @@ export class SmithproxyApp extends LitElement {
               <button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
                 <strong>${profile.name}</strong><span class="action">${profile.type}</span>
-                <span>${profile.routing || profile.tls || profile.detection || profile.content
+                <span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh || profile.dns
                   ? 'Typed details' : 'Metadata only'}</span><span>${profile.usedBy.length}</span>
               </button>
             `)}
@@ -1327,6 +1327,8 @@ export class SmithproxyApp extends LitElement {
     const tls = profile.tls;
     const detection = profile.detection;
     const content = profile.content;
+    const ssh = profile.ssh;
+    const dns = profile.dns;
     return html`
       <div class="form-grid">
         <label>Name</label><span>${profile.name}</span>
@@ -1378,9 +1380,25 @@ export class SmithproxyApp extends LitElement {
           <label>JA4 HTTP</label><span>${content.ja4Http ? 'Enabled' : 'Disabled'}</span>
           <label>Session filter</label><span>${content.sessionFilterConfigured ? 'Configured · redacted' : 'Not configured'}</span>
           <label>Content rules</label><span>${content.ruleCount} redacted rules</span>
+        ` : ssh ? html`
+          <label>Host key</label><span>${ssh.hostKeyConfigured ? 'Configured · path redacted' : 'Missing'}</span>
+          <label>Upstream host-key policy</label><span>${ssh.hostKeyPolicy}</span>
+          <label>Shell</label><span>${ssh.shell ? 'Pass' : 'Reject'}</span>
+          <label>Exec</label><span>${ssh.exec ? 'Pass' : 'Reject'}</span>
+          <label>Subsystem</label><span>${ssh.subsystem ? 'Pass' : 'Reject'}</span>
+          <label>PTY</label><span>${ssh.pty ? 'Pass' : 'Reject'}</span>
+          <label>Environment</label><span>${ssh.environment ? 'Pass' : 'Reject'}</span>
+          <label>Local forwarding</label><span>${ssh.localForward ? 'Pass' : 'Reject'}</span>
+          <label>Remote forwarding</label><span>${ssh.remoteForward ? 'Pass' : 'Reject'}</span>
+          <label>X11 forwarding</label><span>${ssh.x11 ? 'Pass' : 'Reject'}</span>
+          <label>Agent forwarding</label><span>${ssh.agent ? 'Pass' : 'Reject'}</span>
+        ` : dns ? html`
+          <label>Match request ID</label><span>${dns.matchRequestId ? 'Enabled' : 'Disabled'}</span>
+          <label>Randomize upstream ID</label><span>${dns.randomizeId ? 'Enabled' : 'Disabled'}</span>
+          <label>Cached responses</label><span>${dns.cachedResponses ? 'Enabled' : 'Disabled'}</span>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
-      ${routing || tls || detection || content ? nothing : html`<div class="privacy-note section">
+      ${routing || tls || detection || content || ssh || dns ? nothing : html`<div class="privacy-note section">
         Profile values remain inside the GUI core until a typed, redacted editor is available.
       </div>`}
       ${tls ? html`<div class="privacy-note section">
@@ -1388,6 +1406,9 @@ export class SmithproxyApp extends LitElement {
       </div>` : nothing}
       ${content ? html`<div class="privacy-note section">
         Content rule patterns, replacements, and session filters stay inside the GUI core.
+      </div>` : nothing}
+      ${ssh ? html`<div class="privacy-note section">
+        The private host-key path stays inside the GUI core.
       </div>` : nothing}
       ${this.renderObjectUsage(profile)}
     `;

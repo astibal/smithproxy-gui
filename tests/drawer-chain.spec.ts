@@ -104,6 +104,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           },
           detection: null,
           content: null,
+          ssh: null,
+          dns: null,
         },
         {
           id: 'routing-0', name: 'main', type: 'routing',
@@ -114,6 +116,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           tls: null,
           detection: null,
           content: null,
+          ssh: null,
+          dns: null,
         },
       ],
     }}));
@@ -277,6 +281,16 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(contentEditor.getByText('2 redacted rules')).toBeVisible();
   await expect(contentEditor.getByText(/patterns, replacements, and session filters stay inside/i)).toBeVisible();
   await page.keyboard.press('Escape');
+  await profiles.getByRole('button', {name: /default-ssh ssh Typed details/i}).click();
+  const sshEditor = page.getByRole('dialog', {name: 'Edit default-ssh'});
+  await expect(sshEditor.getByText('Configured · path redacted')).toBeVisible();
+  await expect(sshEditor.getByText('strict')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await profiles.getByRole('button', {name: /safe-dns dns Typed details/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit safe-dns'}).getByText('Randomize upstream ID')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCSS('border-radius', '4px');
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();

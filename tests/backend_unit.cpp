@@ -182,6 +182,22 @@ int main() {
     assert(!parse_config_profiles(
         R"({"success":{"content_profiles":{"bad":{"write_payload":"false","write_format":"raw"}}}})",
         "content_profiles", "content").profiles);
+    const auto ssh_profiles = parse_config_profiles(
+        R"({"success":{"ssh_profiles":{"strict":{"host_key":"/sensitive/key/path","hostkey_policy":"strict","shell":"pass","exec":"reject","subsystem":"pass","pty":"pass","environment":"reject","local_forward":"reject","remote_forward":"reject","x11":"reject","agent":"reject"}}}})",
+        "ssh_profiles", "ssh");
+    assert(ssh_profiles.profiles);
+    assert(ssh_profiles.profiles->front().ssh);
+    assert(ssh_profiles.profiles->front().ssh->host_key_policy == "strict");
+    assert(!ssh_profiles.profiles->front().ssh->exec);
+    const auto dns_profiles = parse_config_profiles(
+        R"({"success":{"alg_dns_profiles":{"safe":{"match_request_id":"true","randomize_id":"true","cached_responses":"false"}}}})",
+        "alg_dns_profiles", "dns");
+    assert(dns_profiles.profiles);
+    assert(dns_profiles.profiles->front().dns);
+    assert(dns_profiles.profiles->front().dns->randomize_id);
+    assert(!parse_config_profiles(
+        R"({"success":{"ssh_profiles":{"bad":{"host_key":"/key","shell":"allow"}}}})",
+        "ssh_profiles", "ssh").profiles);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

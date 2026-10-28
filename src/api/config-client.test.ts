@@ -34,6 +34,8 @@ const liveSnapshot = {
       },
       detection: null,
       content: null,
+      ssh: null,
+      dns: null,
     },
     {
       id: 'routing-0', name: 'main', type: 'routing',
@@ -44,10 +46,13 @@ const liveSnapshot = {
       tls: null,
       detection: null,
       content: null,
+      ssh: null,
+      dns: null,
     },
     {
       id: 'detection-0', name: 'default', type: 'detection', routing: null, tls: null,
       detection: {mode: 2, engines_enabled: true, knowledge_base_enabled: false}, content: null,
+      ssh: null, dns: null,
     },
     {
       id: 'content-0', name: 'capture', type: 'content', routing: null, tls: null, detection: null,
@@ -57,6 +62,8 @@ const liveSnapshot = {
         ja4_tls_client_hello_ignores_sni: true, ja4_tls_server_hello: false,
         ja4_http: true, session_filter_configured: true, rule_count: 2,
       },
+      ssh: null,
+      dns: null,
     },
   ],
 };

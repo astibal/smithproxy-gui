@@ -99,6 +99,26 @@ export interface ContentProfileDetails {
   ruleCount: number;
 }
 
+export interface SshProfileDetails {
+  hostKeyConfigured: boolean;
+  hostKeyPolicy: 'insecure' | 'accept-new' | 'strict';
+  shell: boolean;
+  exec: boolean;
+  subsystem: boolean;
+  pty: boolean;
+  environment: boolean;
+  localForward: boolean;
+  remoteForward: boolean;
+  x11: boolean;
+  agent: boolean;
+}
+
+export interface DnsProfileDetails {
+  matchRequestId: boolean;
+  randomizeId: boolean;
+  cachedResponses: boolean;
+}
+
 export interface ProfileObject {
   id: string;
   name: string;
@@ -107,6 +127,8 @@ export interface ProfileObject {
   tls: TlsProfileDetails | null;
   detection: DetectionProfileDetails | null;
   content: ContentProfileDetails | null;
+  ssh: SshProfileDetails | null;
+  dns: DnsProfileDetails | null;
   usedBy: ReadonlyArray<ConfigUsage>;
 }
 

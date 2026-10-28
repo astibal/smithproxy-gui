@@ -213,6 +213,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     let tls: ProfileObject['tls'] = null;
     let detection: ProfileObject['detection'] = null;
     let content: ProfileObject['content'] = null;
+    let ssh: ProfileObject['ssh'] = null;
+    let dns: ProfileObject['dns'] = null;
     if (type === 'routing') {
       if (!isObject(item.routing)) throw new Error('Invalid routing profile.');
       const loadBalancingMethod = safeString(item.routing.load_balancing_method, 'routing load-balancing method', 32);
@@ -299,6 +301,36 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     } else if (item.content !== null) {
       throw new Error('Invalid non-content profile details.');
     }
+    if (type === 'ssh') {
+      if (!isObject(item.ssh)) throw new Error('Invalid SSH profile.');
+      const hostKeyPolicy = safeString(item.ssh.host_key_policy, 'SSH host-key policy', 16);
+      if (!['insecure', 'accept-new', 'strict'].includes(hostKeyPolicy)) throw new Error('Invalid SSH host-key policy.');
+      ssh = {
+        hostKeyConfigured: safeBoolean(item.ssh.host_key_configured, 'SSH host-key state'),
+        hostKeyPolicy: hostKeyPolicy as 'insecure' | 'accept-new' | 'strict',
+        shell: safeBoolean(item.ssh.shell, 'SSH shell action'),
+        exec: safeBoolean(item.ssh.exec, 'SSH exec action'),
+        subsystem: safeBoolean(item.ssh.subsystem, 'SSH subsystem action'),
+        pty: safeBoolean(item.ssh.pty, 'SSH PTY action'),
+        environment: safeBoolean(item.ssh.environment, 'SSH environment action'),
+        localForward: safeBoolean(item.ssh.local_forward, 'SSH local-forward action'),
+        remoteForward: safeBoolean(item.ssh.remote_forward, 'SSH remote-forward action'),
+        x11: safeBoolean(item.ssh.x11, 'SSH X11 action'),
+        agent: safeBoolean(item.ssh.agent, 'SSH agent action'),
+      };
+    } else if (item.ssh !== null) {
+      throw new Error('Invalid non-SSH profile details.');
+    }
+    if (type === 'dns') {
+      if (!isObject(item.dns)) throw new Error('Invalid DNS ALG profile.');
+      dns = {
+        matchRequestId: safeBoolean(item.dns.match_request_id, 'DNS request-ID matching state'),
+        randomizeId: safeBoolean(item.dns.randomize_id, 'DNS randomization state'),
+        cachedResponses: safeBoolean(item.dns.cached_responses, 'DNS cache response state'),
+      };
+    } else if (item.dns !== null) {
+      throw new Error('Invalid non-DNS profile details.');
+    }
     return {
       id: safeString(item.id, 'profile ID', 128),
       name: safeString(item.name, 'profile name', 128),
@@ -307,6 +339,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       tls,
       detection,
       content,
+      ssh,
+      dns,
       usedBy: [],
     };
   });
