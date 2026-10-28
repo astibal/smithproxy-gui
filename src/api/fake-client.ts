@@ -183,6 +183,16 @@ const snapshot: ConfigSnapshot = {
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
   ],
+  settings: {
+    acceptTproxy: true, acceptRedirect: true, acceptSocks: true,
+    acceptHttpConnect: true, acceptApi: true,
+    policyFailOpen: false, accessRequestFailOpen: false,
+    workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 1, httpConnect: 1},
+    tlsAutodetect: true, tlsAutodetectHarder: false, kernelTls: false,
+    nameserverCount: 2,
+    httpApi: {keyCount: 1, allowedIpCount: 1, loopbackOnly: true, pamLogin: false, allowApiHeader: false},
+    webhook: {enabled: false, tlsVerify: true, urlConfigured: false, siftEnabled: false, apiOverride: false},
+  },
 };
 
 export class FakeConfigClient implements ConfigClient {

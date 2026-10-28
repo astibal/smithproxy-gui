@@ -140,6 +140,37 @@ struct ConfigPolicy {
     std::string script_profile;
 };
 
+struct ConfigSystemSettings {
+    bool accept_tproxy{};
+    bool accept_redirect{};
+    bool accept_socks{};
+    bool accept_http_connect{};
+    bool accept_api{};
+    bool policy_fail_open{};
+    bool access_request_fail_open{};
+    std::uint64_t plaintext_workers{};
+    std::uint64_t tls_workers{};
+    std::uint64_t udp_workers{};
+    std::uint64_t dtls_workers{};
+    std::uint64_t quic_workers{};
+    std::uint64_t socks_workers{};
+    std::uint64_t http_connect_workers{};
+    bool tls_autodetect{};
+    bool tls_autodetect_harder{};
+    bool kernel_tls{};
+    std::uint64_t nameserver_count{};
+    std::uint64_t api_key_count{};
+    std::uint64_t api_allowed_ip_count{};
+    bool api_loopback_only{};
+    bool api_pam_login{};
+    bool api_header_allowed{};
+    bool webhook_enabled{};
+    bool webhook_tls_verify{};
+    bool webhook_url_configured{};
+    bool webhook_sift_enabled{};
+    bool webhook_api_override{};
+};
+
 struct ConfigSnapshot {
     std::string state{"unconfigured"};
     std::string detail{"Smithproxy configuration is not configured"};
@@ -150,6 +181,7 @@ struct ConfigSnapshot {
     std::vector<ConfigPortObject> ports;
     std::vector<ConfigProtocolObject> protocols;
     std::vector<ConfigProfile> profiles;
+    std::optional<ConfigSystemSettings> settings;
 };
 
 struct ConfigSnapshotParseResult {
@@ -172,5 +204,12 @@ ConfigProfileParseResult parse_config_profiles(
     std::string_view payload,
     std::string_view section,
     std::string_view type);
+
+struct ConfigSettingsParseResult {
+    std::optional<ConfigSystemSettings> settings;
+    std::string error;
+};
+
+ConfigSettingsParseResult parse_config_settings(std::string_view payload);
 
 } // namespace smithproxy::gui

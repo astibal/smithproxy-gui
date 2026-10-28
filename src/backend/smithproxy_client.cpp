@@ -561,6 +561,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     auto addresses_future = std::async(std::launch::async, fetch_section, "address_objects");
     auto ports_future = std::async(std::launch::async, fetch_section, "port_objects");
     auto protocols_future = std::async(std::launch::async, fetch_section, "proto_objects");
+    auto settings_future = std::async(std::launch::async, fetch_section, "settings");
     const std::array profile_categories{
         std::pair{"detection_profiles", "detection"},
         std::pair{"content_profiles", "content"},
@@ -581,9 +582,10 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     auto addresses = addresses_future.get();
     auto ports = ports_future.get();
     auto protocols = protocols_future.get();
+    auto settings = settings_future.get();
     snapshot.checked_at = std::chrono::system_clock::now();
 
-    for (const auto* response : {&policies, &addresses, &ports, &protocols}) {
+    for (const auto* response : {&policies, &addresses, &ports, &protocols, &settings}) {
         if (!response->body) {
             snapshot.detail = response->error;
             return snapshot;
@@ -595,6 +597,12 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         snapshot.detail = std::move(parsed.error);
         return snapshot;
     }
+    auto parsed_settings = parse_config_settings(*settings.body);
+    if (!parsed_settings.settings) {
+        snapshot.detail = std::move(parsed_settings.error);
+        return snapshot;
+    }
+    parsed.snapshot->settings = std::move(parsed_settings.settings);
     for (std::size_t index = 0; index < profile_categories.size(); ++index) {
         auto response = profile_futures[index].get();
         if (!response.body) {

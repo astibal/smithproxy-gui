@@ -215,6 +215,15 @@ int main() {
     assert(!parse_config_profiles(
         R"({"success":{"script_profiles":{"bad":{"type":"7"}}}})",
         "script_profiles", "script").profiles);
+    const auto settings = parse_config_settings(
+        R"({"success":{"settings":{"accept_tproxy":"true","policy_fail_open":"false","plaintext_workers":"2","ssl_workers":"4","nameservers":["192.0.2.53"],"http_api":{"keys":["secret"],"allowed_ips":["127.0.0.1"],"loopback_only":"true"},"webhook":{"enabled":"true","tls_verify":"true","url":"https://private.example/"}}}})");
+    assert(settings.settings);
+    assert(settings.settings->accept_tproxy);
+    assert(settings.settings->tls_workers == 4U);
+    assert(settings.settings->api_key_count == 1U);
+    assert(settings.settings->webhook_url_configured);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"http_api":{"keys":"secret"}}}})").settings);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

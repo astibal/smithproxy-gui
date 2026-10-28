@@ -95,6 +95,17 @@ std::optional<std::size_t> optional_named_object_size(const Json& object, const 
     return value->size();
 }
 
+std::optional<std::size_t> optional_string_array_size(
+    const Json& object, const char* key, const std::size_t maximum_item_length = maximum_value_length) {
+    const auto value = object.find(key);
+    if (value == object.end()) return 0U;
+    if (!value->is_array() || value->size() > maximum_references) return std::nullopt;
+    for (const auto& item : *value) {
+        if (!item.is_string() || item.get_ref<const std::string&>().size() > maximum_item_length) return std::nullopt;
+    }
+    return value->size();
+}
+
 std::optional<bool> boolean_scalar(const Json& object, const char* key, const bool fallback) {
     const auto value = object.find(key);
     if (value == object.end()) return fallback;
@@ -441,6 +452,71 @@ ConfigProfileParseResult parse_config_profiles(
                           std::move(ssh), std::move(dns), std::move(script), std::move(authentication)});
     }
     return {std::move(result), {}};
+}
+
+ConfigSettingsParseResult parse_config_settings(const std::string_view payload) {
+    const auto value = section_value(payload, "settings");
+    if (!value || !value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid system settings"};
+    }
+    const auto accept_tproxy = boolean_scalar(*value, "accept_tproxy", false);
+    const auto accept_redirect = boolean_scalar(*value, "accept_redirect", false);
+    const auto accept_socks = boolean_scalar(*value, "accept_socks", false);
+    const auto accept_http_connect = boolean_scalar(*value, "accept_http_connect", false);
+    const auto accept_api = boolean_scalar(*value, "accept_api", false);
+    const auto policy_fail_open = boolean_scalar(*value, "policy_fail_open", false);
+    const auto access_fail_open = boolean_scalar(*value, "policy_access_request_fail_open", false);
+    const auto plaintext_workers = optional_decimal(*value, "plaintext_workers", 0U, 4096U);
+    const auto tls_workers = optional_decimal(*value, "ssl_workers", 0U, 4096U);
+    const auto udp_workers = optional_decimal(*value, "udp_workers", 0U, 4096U);
+    const auto dtls_workers = optional_decimal(*value, "dtls_workers", 0U, 4096U);
+    const auto quic_workers = optional_decimal(*value, "quic_workers", 0U, 4096U);
+    const auto socks_workers = optional_decimal(*value, "socks_workers", 0U, 4096U);
+    const auto http_connect_workers = optional_decimal(*value, "http_connect_workers", 0U, 4096U);
+    const auto tls_autodetect = boolean_scalar(*value, "ssl_autodetect", false);
+    const auto tls_autodetect_harder = boolean_scalar(*value, "ssl_autodetect_harder", false);
+    const auto kernel_tls = boolean_scalar(*value, "ssl_use_ktls", false);
+    const auto nameservers = optional_string_array_size(*value, "nameservers", maximum_name_length);
+
+    Json empty = Json::object();
+    const auto http_api_value = value->find("http_api");
+    if (http_api_value != value->end() && !http_api_value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid HTTP API settings"};
+    }
+    const Json& http_api = http_api_value != value->end() && http_api_value->is_object() ? *http_api_value : empty;
+    const auto api_keys = optional_string_array_size(http_api, "keys");
+    const auto allowed_ips = optional_string_array_size(http_api, "allowed_ips", maximum_name_length);
+    const auto loopback_only = boolean_scalar(http_api, "loopback_only", true);
+    const auto pam_login = boolean_scalar(http_api, "pam_login", false);
+    const auto api_header = boolean_scalar(http_api, "allow_api_header", false);
+
+    const auto webhook_value = value->find("webhook");
+    if (webhook_value != value->end() && !webhook_value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid webhook settings"};
+    }
+    const Json& webhook = webhook_value != value->end() && webhook_value->is_object() ? *webhook_value : empty;
+    const auto webhook_enabled = boolean_scalar(webhook, "enabled", false);
+    const auto webhook_tls_verify = boolean_scalar(webhook, "tls_verify", true);
+    const auto webhook_url = bounded_string(webhook, "url", maximum_value_length, true);
+    const auto webhook_sift = boolean_scalar(webhook, "sift", false);
+    const auto webhook_api_override = boolean_scalar(webhook, "api_override", false);
+
+    if (!accept_tproxy || !accept_redirect || !accept_socks || !accept_http_connect || !accept_api ||
+        !policy_fail_open || !access_fail_open || !plaintext_workers || !tls_workers || !udp_workers ||
+        !dtls_workers || !quic_workers || !socks_workers || !http_connect_workers || !tls_autodetect ||
+        !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips || !loopback_only ||
+        !pam_login || !api_header || !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
+        !webhook_api_override) {
+        return {std::nullopt, "Smithproxy returned invalid system settings fields"};
+    }
+    return {ConfigSystemSettings{
+                *accept_tproxy, *accept_redirect, *accept_socks, *accept_http_connect, *accept_api,
+                *policy_fail_open, *access_fail_open, *plaintext_workers, *tls_workers, *udp_workers,
+                *dtls_workers, *quic_workers, *socks_workers, *http_connect_workers, *tls_autodetect,
+                *tls_autodetect_harder, *kernel_tls, *nameservers, *api_keys, *allowed_ips,
+                *loopback_only, *pam_login, *api_header, *webhook_enabled, *webhook_tls_verify,
+                !webhook_url->empty(), *webhook_sift, *webhook_api_override,
+            }, {}};
 }
 
 } // namespace smithproxy::gui

@@ -1105,6 +1105,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderSystem() {
+    const settings = this.snapshot?.settings;
     return html`
       <div class="content dashboard">
         <div class="section-head">
@@ -1145,6 +1146,49 @@ export class SmithproxyApp extends LitElement {
               <dt>External redirects</dt><dd>Rejected</dd>
             </dl>
           </article>
+          ${settings ? html`
+            <article class="domain-card">
+              <header><div><h3>Traffic admission</h3><p>Runtime listener and failure policy</p></div></header>
+              <dl>
+                <dt>TPROXY / REDIRECT</dt><dd>${settings.acceptTproxy ? 'On' : 'Off'} / ${settings.acceptRedirect ? 'On' : 'Off'}</dd>
+                <dt>SOCKS / CONNECT</dt><dd>${settings.acceptSocks ? 'On' : 'Off'} / ${settings.acceptHttpConnect ? 'On' : 'Off'}</dd>
+                <dt>Policy failure</dt><dd>${settings.policyFailOpen ? 'Fail open' : 'Fail closed'}</dd>
+                <dt>Access request failure</dt><dd>${settings.accessRequestFailOpen ? 'Fail open' : 'Fail closed'}</dd>
+              </dl>
+            </article>
+            <article class="domain-card">
+              <header><div><h3>Worker pools</h3><p>Configured runtime concurrency</p></div></header>
+              <dl>
+                <dt>Plaintext / TLS</dt><dd>${settings.workers.plaintext} / ${settings.workers.tls}</dd>
+                <dt>UDP / DTLS / QUIC</dt><dd>${settings.workers.udp} / ${settings.workers.dtls} / ${settings.workers.quic}</dd>
+                <dt>SOCKS / CONNECT</dt><dd>${settings.workers.socks} / ${settings.workers.httpConnect}</dd>
+                <dt>TLS autodetect</dt><dd>${settings.tlsAutodetect ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Kernel TLS</dt><dd>${settings.kernelTls ? 'Requested' : 'Disabled'}</dd>
+              </dl>
+            </article>
+            <article class="domain-card">
+              <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div></header>
+              <dl>
+                <dt>Listener</dt><dd>${settings.acceptApi ? 'Enabled' : 'Disabled'}</dd>
+                <dt>API keys</dt><dd>${settings.httpApi.keyCount} configured</dd>
+                <dt>Allowed IPs</dt><dd>${settings.httpApi.allowedIpCount} configured</dd>
+                <dt>Loopback only</dt><dd>${settings.httpApi.loopbackOnly ? 'Yes' : 'No'}</dd>
+                <dt>API header access</dt><dd>${settings.httpApi.allowApiHeader ? 'Allowed' : 'Blocked'}</dd>
+                <dt>PAM login</dt><dd>${settings.httpApi.pamLogin ? 'Enabled' : 'Disabled'}</dd>
+              </dl>
+            </article>
+            <article class="domain-card">
+              <header><div><h3>Webhook posture</h3><p>URLs and identities are redacted</p></div></header>
+              <dl>
+                <dt>Webhook</dt><dd>${settings.webhook.enabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>URL</dt><dd>${settings.webhook.urlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>TLS verification</dt><dd>${settings.webhook.tlsVerify ? 'Required' : 'Disabled'}</dd>
+                <dt>Sift</dt><dd>${settings.webhook.siftEnabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>API override</dt><dd>${settings.webhook.apiOverride ? 'Allowed' : 'Blocked'}</dd>
+                <dt>Nameservers</dt><dd>${settings.nameserverCount} configured</dd>
+              </dl>
+            </article>
+          ` : nothing}
         </div>
       </div>
     `;

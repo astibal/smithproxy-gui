@@ -72,6 +72,16 @@ const liveSnapshot = {
       authentication: null,
     },
   ],
+  settings: {
+    accept_tproxy: true, accept_redirect: true, accept_socks: false,
+    accept_http_connect: true, accept_api: true, policy_fail_open: false,
+    access_request_fail_open: false,
+    workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 0, http_connect: 1},
+    tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
+    nameserver_count: 2,
+    http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
+    webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
+  },
 };
 
 function response(value: unknown, status = 200): Response {
@@ -104,6 +114,7 @@ describe('ApiConfigClient', () => {
     expect(snapshot.ports[0]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
     expect(snapshot.profiles[2]?.detection).toMatchObject({mode: 2, knowledgeBaseEnabled: false});
     expect(snapshot.profiles[3]?.content).toMatchObject({ruleCount: 2, sessionFilterConfigured: true});
+    expect(snapshot.settings).toMatchObject({policyFailOpen: false, workers: {tls: 4}});
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/config/snapshot',
       expect.objectContaining({cache: 'no-store', credentials: 'same-origin', redirect: 'error'}),

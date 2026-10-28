@@ -359,6 +359,40 @@ private:
         }
         profiles += ']';
 
+        std::string settings{"null"};
+        if (snapshot.settings) {
+            const auto& value = *snapshot.settings;
+            settings = "{\"accept_tproxy\":" + std::string(value.accept_tproxy ? "true" : "false") +
+                       ",\"accept_redirect\":" + (value.accept_redirect ? "true" : "false") +
+                       ",\"accept_socks\":" + (value.accept_socks ? "true" : "false") +
+                       ",\"accept_http_connect\":" + (value.accept_http_connect ? "true" : "false") +
+                       ",\"accept_api\":" + (value.accept_api ? "true" : "false") +
+                       ",\"policy_fail_open\":" + (value.policy_fail_open ? "true" : "false") +
+                       ",\"access_request_fail_open\":" +
+                       (value.access_request_fail_open ? "true" : "false") +
+                       ",\"workers\":{\"plaintext\":" + std::to_string(value.plaintext_workers) +
+                       ",\"tls\":" + std::to_string(value.tls_workers) +
+                       ",\"udp\":" + std::to_string(value.udp_workers) +
+                       ",\"dtls\":" + std::to_string(value.dtls_workers) +
+                       ",\"quic\":" + std::to_string(value.quic_workers) +
+                       ",\"socks\":" + std::to_string(value.socks_workers) +
+                       ",\"http_connect\":" + std::to_string(value.http_connect_workers) + "}" +
+                       ",\"tls_autodetect\":" + (value.tls_autodetect ? "true" : "false") +
+                       ",\"tls_autodetect_harder\":" + (value.tls_autodetect_harder ? "true" : "false") +
+                       ",\"kernel_tls\":" + (value.kernel_tls ? "true" : "false") +
+                       ",\"nameserver_count\":" + std::to_string(value.nameserver_count) +
+                       ",\"http_api\":{\"key_count\":" + std::to_string(value.api_key_count) +
+                       ",\"allowed_ip_count\":" + std::to_string(value.api_allowed_ip_count) +
+                       ",\"loopback_only\":" + (value.api_loopback_only ? "true" : "false") +
+                       ",\"pam_login\":" + (value.api_pam_login ? "true" : "false") +
+                       ",\"allow_api_header\":" + (value.api_header_allowed ? "true" : "false") + "}" +
+                       ",\"webhook\":{\"enabled\":" + (value.webhook_enabled ? "true" : "false") +
+                       ",\"tls_verify\":" + (value.webhook_tls_verify ? "true" : "false") +
+                       ",\"url_configured\":" + (value.webhook_url_configured ? "true" : "false") +
+                       ",\"sift_enabled\":" + (value.webhook_sift_enabled ? "true" : "false") +
+                       ",\"api_override\":" + (value.webhook_api_override ? "true" : "false") + "}}";
+        }
+
         return {200, "application/json; charset=utf-8",
                 "{\"state\":" + json_string(snapshot.state) +
                     ",\"detail\":" + json_string(snapshot.detail) +
@@ -366,7 +400,8 @@ private:
                     ",\"last_success_at_unix_ms\":" + timestamp_json(snapshot.last_success_at) +
                     ",\"view\":\"runtime\",\"revision\":null,\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
-                    ",\"protocols\":" + protocols + ",\"profiles\":" + profiles + "}"};
+                    ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +
+                    ",\"settings\":" + settings + "}"};
     }
 
     Response status() const {

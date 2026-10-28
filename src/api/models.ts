@@ -146,6 +146,35 @@ export interface ProfileObject {
   usedBy: ReadonlyArray<ConfigUsage>;
 }
 
+export interface SystemSettings {
+  acceptTproxy: boolean;
+  acceptRedirect: boolean;
+  acceptSocks: boolean;
+  acceptHttpConnect: boolean;
+  acceptApi: boolean;
+  policyFailOpen: boolean;
+  accessRequestFailOpen: boolean;
+  workers: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'dtls' | 'quic' | 'socks' | 'httpConnect', number>>;
+  tlsAutodetect: boolean;
+  tlsAutodetectHarder: boolean;
+  kernelTls: boolean;
+  nameserverCount: number;
+  httpApi: {
+    keyCount: number;
+    allowedIpCount: number;
+    loopbackOnly: boolean;
+    pamLogin: boolean;
+    allowApiHeader: boolean;
+  };
+  webhook: {
+    enabled: boolean;
+    tlsVerify: boolean;
+    urlConfigured: boolean;
+    siftEnabled: boolean;
+    apiOverride: boolean;
+  };
+}
+
 export interface ConfigSnapshot {
   source: 'preview' | 'live';
   state: 'ready' | 'starting' | 'unavailable' | 'unconfigured';
@@ -158,6 +187,7 @@ export interface ConfigSnapshot {
   ports: ReadonlyArray<PortObject>;
   protocols: ReadonlyArray<ProtocolObject>;
   profiles: ReadonlyArray<ProfileObject>;
+  settings: SystemSettings | null;
 }
 
 export interface ConfigClient {

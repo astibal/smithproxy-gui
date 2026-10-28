@@ -124,6 +124,16 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           authentication: null,
         },
       ],
+      settings: {
+        accept_tproxy: true, accept_redirect: true, accept_socks: false,
+        accept_http_connect: true, accept_api: true, policy_fail_open: false,
+        access_request_fail_open: false,
+        workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 0, http_connect: 1},
+        tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
+        nameserver_count: 2,
+        http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
+        webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
+      },
     }}));
   }
 }
@@ -309,6 +319,10 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();
   await expect(page.getByText('Smithproxy key')).toBeVisible();
   await expect(page.getByText('Never exposed')).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Traffic admission'})).toBeVisible();
+  await expect(page.getByText('Fail closed')).toHaveCount(2);
+  await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
 });
 
 test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {

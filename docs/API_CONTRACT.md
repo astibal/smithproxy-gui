@@ -33,10 +33,16 @@ credentials return HTTP 401. The response contains a bounded and validated
 runtime view of policies and address, port, and protocol objects. It does not
 contain Smithproxy API credentials, gateway secrets, or filesystem data.
 
-The snapshot also includes a metadata-only inventory of detection, content,
-TLS, SSH, DNS, authentication, and routing profiles. This inventory contains
-stable IDs, names, categories, and derived policy usage. Profile field values
-are not exposed until a typed endpoint defines explicit redaction semantics.
+The snapshot also includes typed, bounded views of detection, content, TLS,
+SSH, DNS, script, legacy authentication, and routing profiles. Filesystem paths,
+SNI bypass entries, content rules, session filters, and identity mappings are
+reduced to explicit configured flags or counts before crossing the browser
+boundary. Stable IDs and derived reverse references support nested drawers.
+
+The system-settings posture covers listener admission, fail-open behavior,
+worker pools, TLS autodetection, kernel TLS, HTTP API access, and webhooks. API
+keys, addresses, nameservers, webhook URLs, and identity values are never
+serialized; only bounded counts and configured flags are exposed.
 
 GUI nesmí odhadovat podporu funkce pouze z čísla verze. Capability odpověď určuje
 dostupné endpointy, limity a feature flags.

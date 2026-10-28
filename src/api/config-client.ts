@@ -8,6 +8,7 @@ import type {
   PortObject,
   ProfileObject,
   ProtocolObject,
+  SystemSettings,
 } from './models';
 
 type JsonObject = Record<string, unknown>;
@@ -412,6 +413,52 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     }
   }
 
+  let settings: SystemSettings | null = null;
+  if (value.settings !== null) {
+    if (!isObject(value.settings) || !isObject(value.settings.workers) ||
+        !isObject(value.settings.http_api) || !isObject(value.settings.webhook)) {
+      throw new Error('Invalid system settings.');
+    }
+    settings = {
+      acceptTproxy: safeBoolean(value.settings.accept_tproxy, 'TPROXY listener state'),
+      acceptRedirect: safeBoolean(value.settings.accept_redirect, 'REDIRECT listener state'),
+      acceptSocks: safeBoolean(value.settings.accept_socks, 'SOCKS listener state'),
+      acceptHttpConnect: safeBoolean(value.settings.accept_http_connect, 'HTTP CONNECT listener state'),
+      acceptApi: safeBoolean(value.settings.accept_api, 'Smithproxy API listener state'),
+      policyFailOpen: safeBoolean(value.settings.policy_fail_open, 'policy fail-open state'),
+      accessRequestFailOpen: safeBoolean(
+        value.settings.access_request_fail_open, 'access-request fail-open state',
+      ),
+      workers: {
+        plaintext: safeInteger(value.settings.workers.plaintext, 'plaintext workers', 4096),
+        tls: safeInteger(value.settings.workers.tls, 'TLS workers', 4096),
+        udp: safeInteger(value.settings.workers.udp, 'UDP workers', 4096),
+        dtls: safeInteger(value.settings.workers.dtls, 'DTLS workers', 4096),
+        quic: safeInteger(value.settings.workers.quic, 'QUIC workers', 4096),
+        socks: safeInteger(value.settings.workers.socks, 'SOCKS workers', 4096),
+        httpConnect: safeInteger(value.settings.workers.http_connect, 'HTTP CONNECT workers', 4096),
+      },
+      tlsAutodetect: safeBoolean(value.settings.tls_autodetect, 'TLS autodetection state'),
+      tlsAutodetectHarder: safeBoolean(value.settings.tls_autodetect_harder, 'hard TLS autodetection state'),
+      kernelTls: safeBoolean(value.settings.kernel_tls, 'kernel TLS state'),
+      nameserverCount: safeInteger(value.settings.nameserver_count, 'nameserver count', MAX_REFERENCES),
+      httpApi: {
+        keyCount: safeInteger(value.settings.http_api.key_count, 'API key count', MAX_REFERENCES),
+        allowedIpCount: safeInteger(value.settings.http_api.allowed_ip_count, 'API allowed-IP count', MAX_REFERENCES),
+        loopbackOnly: safeBoolean(value.settings.http_api.loopback_only, 'API loopback state'),
+        pamLogin: safeBoolean(value.settings.http_api.pam_login, 'API PAM state'),
+        allowApiHeader: safeBoolean(value.settings.http_api.allow_api_header, 'API header state'),
+      },
+      webhook: {
+        enabled: safeBoolean(value.settings.webhook.enabled, 'webhook state'),
+        tlsVerify: safeBoolean(value.settings.webhook.tls_verify, 'webhook TLS verification state'),
+        urlConfigured: safeBoolean(value.settings.webhook.url_configured, 'webhook URL state'),
+        siftEnabled: safeBoolean(value.settings.webhook.sift_enabled, 'Sift state'),
+        apiOverride: safeBoolean(value.settings.webhook.api_override, 'webhook API override state'),
+      },
+    };
+  }
+
   return {
     source: 'live',
     state: value.state as ConfigSnapshot['state'],
@@ -424,6 +471,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     ports,
     protocols,
     profiles,
+    settings,
   };
 }
 

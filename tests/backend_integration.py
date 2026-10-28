@@ -56,6 +56,24 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         "script_profiles": {"audit-script": {}},
         "auth_profiles": {},
         "routing": {"main": {}},
+        "settings": {
+            "accept_tproxy": "true", "accept_redirect": "true",
+            "accept_socks": "false", "accept_http_connect": "true", "accept_api": "true",
+            "policy_fail_open": "false", "policy_access_request_fail_open": "false",
+            "plaintext_workers": "2", "ssl_workers": "4", "udp_workers": "1",
+            "dtls_workers": "1", "quic_workers": "0", "socks_workers": "0",
+            "http_connect_workers": "1", "ssl_autodetect": "true",
+            "ssl_autodetect_harder": "false", "ssl_use_ktls": "false",
+            "nameservers": ["192.0.2.53"],
+            "http_api": {
+                "keys": ["backend-secret-value"], "allowed_ips": ["127.0.0.1"],
+                "loopback_only": "true", "pam_login": "false", "allow_api_header": "false",
+            },
+            "webhook": {
+                "enabled": "true", "tls_verify": "true",
+                "url": "https://private-webhook.example/", "sift": "false", "api_override": "false",
+            },
+        },
     }
 
     def do_GET(self):
@@ -383,6 +401,8 @@ def main() -> int:
             }
             assert secret.encode() not in config_body
             assert gateway_secret.encode() not in config_body
+            assert b"backend-secret-value" not in config_body
+            assert b"private-webhook.example" not in config_body
 
             status, _, body = request(configured_port, "/api/v1/auth/session")
             assert status == 200
