@@ -41,8 +41,8 @@ std::string mime_type(const std::filesystem::path& path) {
     return "application/octet-stream";
 }
 
-std::string timestamp(const std::chrono::system_clock::time_point value) {
-    if (value.time_since_epoch().count() == 0) return {};
+std::string timestamp_json(const std::chrono::system_clock::time_point value) {
+    if (value.time_since_epoch().count() == 0) return "null";
     return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
                               value.time_since_epoch()).count());
 }
@@ -110,7 +110,7 @@ private:
         return {200, "application/json; charset=utf-8",
                 "{\"status\":\"ok\",\"smithproxy\":{\"state\":" + json_string(status.state) +
                     ",\"detail\":" + json_string(status.detail) +
-                    ",\"checked_at_unix_ms\":" + json_string(timestamp(status.checked_at)) + "}}"};
+                    ",\"checked_at_unix_ms\":" + timestamp_json(status.checked_at) + "}}"};
     }
 
     Response capabilities() const {

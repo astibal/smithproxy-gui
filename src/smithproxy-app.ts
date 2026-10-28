@@ -2,8 +2,17 @@ import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {FakeConfigClient} from './api/fake-client';
 import type {AddressObject, ConfigSnapshot, PolicySummary} from './api/models';
+import {SystemClient} from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {DrawerStore, type DrawerEntry} from './state/drawer-store';
+import {
+  connectingSystemStatus,
+  displayState,
+  statusFromFailure,
+  statusFromHealth,
+  statusTone,
+  type SystemStatus,
+} from './state/system-status';
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
 
@@ -15,10 +24,15 @@ export class SmithproxyApp extends LitElement {
   @state() private activeSection = 'Policy';
   @state() private drawers: ReadonlyArray<DrawerEntry> = [];
   @state() private draftObjects = new Set<string>();
+  @state() private systemStatus: SystemStatus = connectingSystemStatus;
+  @state() private apiVersion = 'discovering';
 
   private readonly client = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
   private runtime?: RuntimeConfig;
+  private systemClient?: SystemClient;
+  private systemProbeTimer: number | undefined;
+  private systemProbeInFlight = false;
 
   static styles = css`
     :host {
@@ -140,7 +154,10 @@ export class SmithproxyApp extends LitElement {
     .usage li { padding: 7px 0; border-bottom: 1px solid var(--app-border); }
 
     .statusbar { grid-column: 1 / -1; display: flex; gap: 20px; align-items: center; padding: 0 12px; border-top: 1px solid var(--app-border); background: var(--app-raised); color: var(--app-muted); font-size: 12px; }
-    .health { color: var(--app-success); }
+    .system-state { color: var(--app-muted); }
+    .system-state.success { color: var(--app-success); }
+    .system-state.warning { color: var(--app-warning); }
+    .system-state.danger { color: var(--app-danger); }
     .draft { color: var(--app-warning); }
     .spacer { flex: 1; }
 
@@ -192,7 +209,77 @@ export class SmithproxyApp extends LitElement {
     super.connectedCallback();
     this.runtime = readRuntimeConfig(this);
     this.mode = this.runtime.mode;
+    try {
+      this.systemClient = new SystemClient(this.runtime.apiBase, this.runtime.basePath);
+      void this.loadCapabilities();
+      void this.probeSystem();
+    } catch (error) {
+      this.systemStatus = statusFromFailure(error);
+    }
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    window.addEventListener('online', this.handleOnline);
     void this.load();
+  }
+
+  disconnectedCallback(): void {
+    this.clearSystemProbe();
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+    window.removeEventListener('online', this.handleOnline);
+    super.disconnectedCallback();
+  }
+
+  private readonly handleVisibilityChange = (): void => {
+    if (document.visibilityState === 'hidden') {
+      this.clearSystemProbe();
+    } else {
+      void this.probeSystem();
+    }
+  };
+
+  private readonly handleOnline = (): void => {
+    void this.probeSystem();
+  };
+
+  private clearSystemProbe(): void {
+    if (this.systemProbeTimer !== undefined) window.clearTimeout(this.systemProbeTimer);
+    this.systemProbeTimer = undefined;
+  }
+
+  private scheduleSystemProbe(): void {
+    this.clearSystemProbe();
+    if (!this.isConnected || !this.systemClient || document.visibilityState === 'hidden') return;
+    this.systemProbeTimer = window.setTimeout(() => void this.probeSystem(), 5000);
+  }
+
+  private async probeSystem(): Promise<void> {
+    this.clearSystemProbe();
+    if (!this.systemClient || this.systemProbeInFlight || document.visibilityState === 'hidden') return;
+    this.systemProbeInFlight = true;
+    try {
+      this.systemStatus = statusFromHealth(await this.systemClient.health());
+      if (this.apiVersion === 'unavailable') void this.loadCapabilities();
+    } catch (error) {
+      this.systemStatus = statusFromFailure(error);
+    } finally {
+      this.systemProbeInFlight = false;
+      this.scheduleSystemProbe();
+    }
+  }
+
+  private async loadCapabilities(): Promise<void> {
+    if (!this.systemClient) return;
+    try {
+      this.apiVersion = (await this.systemClient.capabilities()).apiVersion;
+    } catch {
+      this.apiVersion = 'unavailable';
+    }
+  }
+
+  private systemStatusTitle(): string {
+    const checked = this.systemStatus.checkedAtUnixMs === null
+      ? 'not checked yet'
+      : new Date(this.systemStatus.checkedAtUnixMs).toLocaleString();
+    return `${this.systemStatus.detail} Last Smithproxy check: ${checked}.`;
   }
 
   private async load(): Promise<void> {
@@ -377,9 +464,14 @@ export class SmithproxyApp extends LitElement {
           </div>
         </main>
         <footer class="statusbar">
-          <span class="health">● Healthy</span>
+          <span class="system-state ${this.systemStatus.core === 'online' ? 'success' : this.systemStatus.core === 'offline' ? 'danger' : 'warning'}">
+            ● Core: ${displayState(this.systemStatus.core)}
+          </span>
+          <span class="system-state ${statusTone(this.systemStatus)}" title=${this.systemStatusTitle()} aria-live="polite">
+            ● Smithproxy: ${displayState(this.systemStatus.smithproxy)}
+          </span>
           <span class=${this.draftObjects.size ? 'draft' : ''}>Draft: ${this.draftObjects.size} changes</span>
-          <span>Jobs: 0</span><span>Alerts: 0</span><span class="spacer"></span>
+          <span>Config: demo</span><span>API: ${this.apiVersion}</span><span class="spacer"></span>
           <span>Revision ${this.snapshot?.revision ?? 'loading'}</span>
         </footer>
       </div>

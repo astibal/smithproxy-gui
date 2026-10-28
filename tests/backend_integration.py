@@ -84,7 +84,9 @@ def main() -> int:
 
         status, headers, body = request(port, "/healthz")
         assert status == 200
-        assert json.loads(body)["smithproxy"]["state"] == "unconfigured"
+        health = json.loads(body)
+        assert health["smithproxy"]["state"] == "unconfigured"
+        assert health["smithproxy"]["checked_at_unix_ms"] is None
         assert headers["X-Content-Type-Options"] == "nosniff"
         assert "default-src 'self'" in headers["Content-Security-Policy"]
 
@@ -134,6 +136,7 @@ def main() -> int:
             health_body = wait_for_state(configured_port, "ready")
             assert FakeSmithproxy.api_key == secret
             assert secret.encode() not in health_body
+            assert isinstance(json.loads(health_body)["smithproxy"]["checked_at_unix_ms"], int)
         finally:
             configured.send_signal(signal.SIGTERM)
             configured.wait(timeout=4)
