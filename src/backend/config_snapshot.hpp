@@ -29,10 +29,19 @@ struct ConfigProtocolObject {
     std::uint64_t number{};
 };
 
+struct ConfigRoutingProfile {
+    std::vector<std::string> destination_addresses;
+    std::vector<std::string> destination_ports;
+    std::string load_balancing_method;
+    std::string rewrite_sni;
+    std::string rewrite_sni_to;
+};
+
 struct ConfigProfile {
     std::string id;
     std::string name;
     std::string type;
+    std::optional<ConfigRoutingProfile> routing;
 };
 
 struct ConfigPolicy {

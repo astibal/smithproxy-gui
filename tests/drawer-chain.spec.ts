@@ -82,7 +82,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
         source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
         features: ['sinkhole'],
-        action: 'accept', nat: '', routing: '', tls_profile: 'inspect',
+        action: 'accept', nat: '', routing: 'main', tls_profile: 'inspect',
         ssh_profile: '', detection_profile: '', content_profile: '', auth_profile: '',
         dns_profile: '', script_profile: '',
       }],
@@ -93,8 +93,14 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       ports: [{id: 'port-0', name: 'https', start: 443, end: 443}],
       protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
       profiles: [
-        {id: 'tls-0', name: 'inspect', type: 'tls'},
-        {id: 'routing-0', name: 'main', type: 'routing'},
+        {id: 'tls-0', name: 'inspect', type: 'tls', routing: null},
+        {
+          id: 'routing-0', name: 'main', type: 'routing',
+          routing: {
+            destination_addresses: ['internet'], destination_ports: ['https'],
+            load_balancing_method: 'round-robin', rewrite_sni: '', rewrite_sni_to: '',
+          },
+        },
       ],
     }}));
   }
@@ -119,6 +125,14 @@ test('loads authenticated runtime configuration as a read-only view', async ({pa
   await editor.getByRole('button', {name: 'inspect', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit inspect'})).toBeVisible();
   await expect(page.getByText(/profile values remain inside the GUI core/i)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await editor.getByRole('button', {name: 'main', exact: true}).click();
+  const routingEditor = page.getByRole('dialog', {name: 'Edit main'});
+  await expect(routingEditor.getByText('round-robin')).toBeVisible();
+  await expect(routingEditor.getByText('Disabled')).toBeVisible();
+  await routingEditor.getByRole('button', {name: 'internet', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await editor.getByRole('button', {name: 'office', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();

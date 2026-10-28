@@ -61,7 +61,7 @@ const snapshot: ConfigSnapshot = {
         {id: 'policy-office', kind: 'policy', name: 'office'},
         {id: 'policy-admin', kind: 'policy', name: 'admin'},
         {id: 'policy-vpn', kind: 'policy', name: 'vpn'},
-        {id: 'routing-office', kind: 'routing-rule', name: 'office-egress'},
+        {id: 'routing-office', kind: 'routing-profile', name: 'office-egress'},
       ],
     },
     {
@@ -94,9 +94,17 @@ const snapshot: ConfigSnapshot = {
   profiles: [
     {
       id: 'tls-0', name: 'inspect', type: 'tls',
+      routing: null,
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
-    {id: 'routing-0', name: 'main', type: 'routing', usedBy: []},
+    {
+      id: 'routing-0', name: 'main', type: 'routing',
+      routing: {
+        destinationAddresses: ['internet'], destinationPorts: ['https'],
+        loadBalancingMethod: 'round-robin', rewriteSni: '', rewriteSniTo: '',
+      },
+      usedBy: [],
+    },
   ],
 };
 

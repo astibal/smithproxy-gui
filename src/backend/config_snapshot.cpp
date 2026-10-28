@@ -255,7 +255,27 @@ ConfigProfileParseResult parse_config_profiles(
         if (!valid_name(name) || !profile.is_object()) {
             return {std::nullopt, "Smithproxy returned an invalid profile entry"};
         }
-        result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type)});
+        std::optional<ConfigRoutingProfile> routing;
+        if (type == "routing") {
+            const auto addresses = string_array(profile, "dnat_address", true);
+            const auto ports = string_array(profile, "dnat_port", true);
+            const auto method = bounded_string(profile, "dnat_lb_method", 32U, true);
+            const auto rewrite_sni = bounded_string(profile, "rewrite_sni", maximum_value_length, true);
+            const auto rewrite_sni_to = bounded_string(profile, "rewrite_sni_to", maximum_value_length, true);
+            if (!addresses || !ports || !method ||
+                (*method != "" && *method != "round-robin" && *method != "sticky-l3" && *method != "sticky-l4") ||
+                !rewrite_sni || !rewrite_sni_to || (rewrite_sni->empty() != rewrite_sni_to->empty())) {
+                return {std::nullopt, "Smithproxy returned an invalid routing profile"};
+            }
+            routing = ConfigRoutingProfile{
+                *addresses,
+                *ports,
+                method->empty() ? "round-robin" : *method,
+                *rewrite_sni,
+                *rewrite_sni_to,
+            };
+        }
+        result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type), std::move(routing)});
     }
     return {std::move(result), {}};
 }

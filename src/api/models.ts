@@ -25,12 +25,18 @@ export interface ConfigReference {
   name: string;
 }
 
+export interface ConfigUsage {
+  id: string;
+  kind: 'policy' | 'routing-profile';
+  name: string;
+}
+
 export interface AddressObject {
   id: string;
   name: string;
   type: 'cidr' | 'fqdn' | 'host' | 'subnet' | 'range';
   value: string;
-  usedBy: ReadonlyArray<{id: string; kind: 'policy' | 'routing-rule'; name: string}>;
+  usedBy: ReadonlyArray<ConfigUsage>;
 }
 
 export interface PortObject {
@@ -38,21 +44,30 @@ export interface PortObject {
   name: string;
   start: number;
   end: number;
-  usedBy: ReadonlyArray<{id: string; kind: 'policy'; name: string}>;
+  usedBy: ReadonlyArray<ConfigUsage>;
 }
 
 export interface ProtocolObject {
   id: string;
   name: string;
   number: number;
-  usedBy: ReadonlyArray<{id: string; kind: 'policy'; name: string}>;
+  usedBy: ReadonlyArray<ConfigUsage>;
+}
+
+export interface RoutingProfileDetails {
+  destinationAddresses: ReadonlyArray<string>;
+  destinationPorts: ReadonlyArray<string>;
+  loadBalancingMethod: 'round-robin' | 'sticky-l3' | 'sticky-l4';
+  rewriteSni: string;
+  rewriteSniTo: string;
 }
 
 export interface ProfileObject {
   id: string;
   name: string;
   type: string;
-  usedBy: ReadonlyArray<{id: string; kind: 'policy'; name: string}>;
+  routing: RoutingProfileDetails | null;
+  usedBy: ReadonlyArray<ConfigUsage>;
 }
 
 export interface ConfigSnapshot {

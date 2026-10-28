@@ -140,6 +140,20 @@ int main() {
     assert(profiles.profiles->size() == 2U);
     assert(profiles.profiles->front().type == "tls");
     assert(!parse_config_profiles("{}", "tls_profiles", "tls").profiles);
+    const auto routing_profiles = parse_config_profiles(
+        R"({"success":{"routing":{"main":{"dnat_address":["internet"],"dnat_port":["https"],"dnat_lb_method":"sticky-l4","rewrite_sni":"old.example","rewrite_sni_to":"new.example"}}}})",
+        "routing", "routing");
+    assert(routing_profiles.profiles);
+    assert(routing_profiles.profiles->front().routing);
+    assert(routing_profiles.profiles->front().routing->destination_addresses ==
+           std::vector<std::string>{"internet"});
+    assert(routing_profiles.profiles->front().routing->load_balancing_method == "sticky-l4");
+    assert(!parse_config_profiles(
+        R"({"success":{"routing":{"bad":{"dnat_lb_method":"random"}}}})",
+        "routing", "routing").profiles);
+    assert(!parse_config_profiles(
+        R"({"success":{"routing":{"bad":{"rewrite_sni":"one-sided.example"}}}})",
+        "routing", "routing").profiles);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

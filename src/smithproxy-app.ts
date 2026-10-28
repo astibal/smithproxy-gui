@@ -1322,15 +1322,31 @@ export class SmithproxyApp extends LitElement {
   private renderProfileEditor(entry: DrawerEntry) {
     const profile = this.snapshot?.profiles.find(item => item.id === entry.id);
     if (!profile) return nothing;
+    const routing = profile.routing;
     return html`
       <div class="form-grid">
         <label>Name</label><span>${profile.name}</span>
         <label>Profile type</label><span class="action">${profile.type}</span>
-        <label>Value exposure</label><span>Metadata only</span>
+        ${routing ? html`
+          <label>Destination addresses</label>
+          <div class="reference-stack">${routing.destinationAddresses.length === 0 ? html`<span>None</span>` :
+            routing.destinationAddresses.map(name => {
+              const address = this.snapshot?.addresses.find(item => item.name === name);
+              return address ? html`<button class="reference" type="button"
+                @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
+                <span>${name}</span><span aria-hidden="true">→</span>
+              </button>` : html`<span>${name}</span>`;
+            })}</div>
+          <label>Destination ports</label>
+          ${this.renderPortReferences(routing.destinationPorts)}
+          <label>Load balancing</label><span>${routing.loadBalancingMethod}</span>
+          <label>SNI rewrite</label>
+          <span>${routing.rewriteSni.length === 0 ? 'Disabled' : `${routing.rewriteSni} → ${routing.rewriteSniTo}`}</span>
+        ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
-      <div class="privacy-note section">
+      ${routing ? nothing : html`<div class="privacy-note section">
         Profile values remain inside the GUI core until a typed, redacted editor is available.
-      </div>
+      </div>`}
       ${this.renderObjectUsage(profile)}
     `;
   }
@@ -1339,9 +1355,9 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="section">
         <h3>Impact</h3>
-        <div class="impact">This shared object is used by ${object.usedBy.length} policies.</div>
+        <div class="impact">This shared object is used by ${object.usedBy.length} configuration entries.</div>
         <ul class="usage">
-          ${object.usedBy.map(reference => html`<li><strong>${reference.name}</strong> · policy</li>`)}
+          ${object.usedBy.map(reference => html`<li><strong>${reference.name}</strong> · ${reference.kind}</li>`)}
         </ul>
       </div>
     `;

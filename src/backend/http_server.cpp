@@ -247,7 +247,17 @@ private:
             const auto& profile = snapshot.profiles[index];
             profiles += "{\"id\":" + json_string(profile.id) +
                         ",\"name\":" + json_string(profile.name) +
-                        ",\"type\":" + json_string(profile.type) + "}";
+                        ",\"type\":" + json_string(profile.type) + ",\"routing\":";
+            if (!profile.routing) {
+                profiles += "null";
+            } else {
+                profiles += "{\"destination_addresses\":" + string_array_json(profile.routing->destination_addresses) +
+                            ",\"destination_ports\":" + string_array_json(profile.routing->destination_ports) +
+                            ",\"load_balancing_method\":" + json_string(profile.routing->load_balancing_method) +
+                            ",\"rewrite_sni\":" + json_string(profile.routing->rewrite_sni) +
+                            ",\"rewrite_sni_to\":" + json_string(profile.routing->rewrite_sni_to) + "}";
+            }
+            profiles += '}';
         }
         profiles += ']';
 

@@ -3,6 +3,7 @@ import type {
   ConfigClient,
   ConfigReference,
   ConfigSnapshot,
+  ConfigUsage,
   PolicySummary,
   PortObject,
   ProfileObject,
@@ -10,7 +11,7 @@ import type {
 } from './models';
 
 type JsonObject = Record<string, unknown>;
-type Usage = {id: string; kind: 'policy'; name: string};
+type Usage = ConfigUsage;
 type MutableAddress = Omit<AddressObject, 'usedBy'> & {usedBy: Usage[]};
 type MutablePort = Omit<PortObject, 'usedBy'> & {usedBy: Usage[]};
 type MutableProtocol = Omit<ProtocolObject, 'usedBy'> & {usedBy: Usage[]};
@@ -207,10 +208,32 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   });
   const profiles = boundedArray(value.profiles, 'profile collection', MAX_OBJECTS).map((item): MutableProfile => {
     if (!isObject(item)) throw new Error('Invalid profile.');
+    const type = safeString(item.type, 'profile type', 32);
+    let routing: ProfileObject['routing'] = null;
+    if (type === 'routing') {
+      if (!isObject(item.routing)) throw new Error('Invalid routing profile.');
+      const loadBalancingMethod = safeString(item.routing.load_balancing_method, 'routing load-balancing method', 32);
+      if (!['round-robin', 'sticky-l3', 'sticky-l4'].includes(loadBalancingMethod)) {
+        throw new Error('Invalid routing load-balancing method.');
+      }
+      const rewriteSni = optionalString(item.routing.rewrite_sni, 'routing source SNI', 1024);
+      const rewriteSniTo = optionalString(item.routing.rewrite_sni_to, 'routing destination SNI', 1024);
+      if ((rewriteSni.length === 0) !== (rewriteSniTo.length === 0)) throw new Error('Invalid routing SNI rewrite.');
+      routing = {
+        destinationAddresses: stringArray(item.routing.destination_addresses, 'routing destination addresses'),
+        destinationPorts: stringArray(item.routing.destination_ports, 'routing destination ports'),
+        loadBalancingMethod: loadBalancingMethod as 'round-robin' | 'sticky-l3' | 'sticky-l4',
+        rewriteSni,
+        rewriteSniTo,
+      };
+    } else if (item.routing !== null) {
+      throw new Error('Invalid non-routing profile details.');
+    }
     return {
       id: safeString(item.id, 'profile ID', 128),
       name: safeString(item.name, 'profile name', 128),
-      type: safeString(item.type, 'profile type', 32),
+      type,
+      routing,
       usedBy: [],
     };
   });
@@ -239,6 +262,18 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     profilesByIdentity.get(`script:${policy.scriptProfile}`)?.usedBy.push(usage);
     for (const name of new Set([...policy.sourcePorts, ...policy.destinationPorts])) {
       portsByName.get(name)?.usedBy.push(usage);
+    }
+  }
+  for (const profile of profiles) {
+    if (!profile.routing) continue;
+    const usage: Usage = {id: profile.id, kind: 'routing-profile', name: profile.name};
+    for (const name of new Set(profile.routing.destinationAddresses)) {
+      const address = addressNames.get(name);
+      if (address && !address.usedBy.some(item => item.id === profile.id)) address.usedBy.push(usage);
+    }
+    for (const name of new Set(profile.routing.destinationPorts)) {
+      const port = portsByName.get(name);
+      if (port && !port.usedBy.some(item => item.id === profile.id)) port.usedBy.push(usage);
     }
   }
 
