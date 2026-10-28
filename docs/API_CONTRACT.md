@@ -119,6 +119,11 @@ X11, and agent actions while the redacted private host-key path remains unchange
 Script profile batches cover the runtime while the module path remains redacted
 and unchanged. Deprecated authentication profile batches cover authentication
 and identity resolution while redacted identity mappings remain unchanged.
+System-setting batches cover listener admission, fail-open behavior, worker
+pools, TLS detection, HTTP API posture, and webhook switches. Capture batches
+cover enablement, formats, quota, tunnel TTL, and checksum behavior. Nameservers,
+API credentials and allowed addresses, webhook URLs, capture paths, remote
+destinations, and bound interfaces remain redacted and unchanged.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.

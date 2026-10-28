@@ -23,6 +23,11 @@ describe('drawer route', () => {
     expect(drawerRouteSearch('?edit=policy%3Aoffice&view=compact', [])).toBe('?view=compact');
   });
 
+  it('accepts system configuration editors', () => {
+    expect(parseDrawerRoute('?edit=settings:settings')).toEqual([{kind: 'settings', id: 'settings'}]);
+    expect(parseDrawerRoute('?edit=captures:captures')).toEqual([{kind: 'captures', id: 'captures'}]);
+  });
+
   it.each([
     '?edit=unknown:item',
     '?edit=policy:../secret',

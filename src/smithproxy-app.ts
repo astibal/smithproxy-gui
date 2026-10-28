@@ -627,6 +627,8 @@ export class SmithproxyApp extends LitElement {
         const item = this.snapshot?.profiles.filter(profile => profile.authentication !== null)[Number(authentication[1])];
         if (item) objects.add(`profile:${item.id}`);
       }
+      if (change.path.startsWith('settings.')) objects.add('settings:settings');
+      if (change.path.startsWith('captures.')) objects.add('captures:captures');
     }
     this.draftObjects = objects;
   }
@@ -710,6 +712,12 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({kind: 'profile', id: profile.id, title: profile.name}, origin);
   }
 
+  private openSystemDrawer(kind: 'settings' | 'captures', origin?: HTMLElement): void {
+    if ((kind === 'settings' && !this.snapshot?.settings) ||
+        (kind === 'captures' && !this.snapshot?.captures)) return;
+    this.openObjectDrawer({kind, id: kind, title: kind === 'settings' ? 'System settings' : 'Capture settings'}, origin);
+  }
+
   private openObjectDrawer(entry: DrawerEntry, origin?: HTMLElement): void {
     this.drawerStore.open(entry);
     this.drawerOrigins = [
@@ -780,7 +788,8 @@ export class SmithproxyApp extends LitElement {
     }
     this.drawers = [...this.drawerStore.entries];
     if (this.drawers[0]?.kind === 'policy') this.activeSection = 'Policy';
-    if (this.drawers[0] && this.drawers[0].kind !== 'policy') this.activeSection = 'Objects';
+    if (this.drawers[0] && ['settings', 'captures'].includes(this.drawers[0].kind)) this.activeSection = 'System';
+    else if (this.drawers[0] && this.drawers[0].kind !== 'policy') this.activeSection = 'Objects';
     this.focusMode = false;
     void this.updateComplete.then(() => this.focusActiveDrawer());
   }
@@ -791,6 +800,12 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'address') return this.snapshot.addresses.find(item => item.id === entry.id);
     if (entry.kind === 'port') return this.snapshot.ports.find(item => item.id === entry.id);
     if (entry.kind === 'protocol') return this.snapshot.protocols.find(item => item.id === entry.id);
+    if (entry.kind === 'settings' && entry.id === 'settings' && this.snapshot.settings) {
+      return {id: 'settings', name: 'System settings'};
+    }
+    if (entry.kind === 'captures' && entry.id === 'captures' && this.snapshot.captures) {
+      return {id: 'captures', name: 'Capture settings'};
+    }
     return this.snapshot.profiles.find(item => item.id === entry.id);
   }
 
@@ -828,6 +843,8 @@ export class SmithproxyApp extends LitElement {
 
   private draftChanges(entry: DrawerEntry): ReadonlyArray<DraftChange> | undefined {
     if (!this.snapshot) return undefined;
+    if (entry.kind === 'settings') return this.systemSettingsDraftChanges();
+    if (entry.kind === 'captures') return this.captureSettingsDraftChanges();
     if (entry.kind === 'policy') {
       const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
       const name = this.renderRoot.querySelector<HTMLInputElement>(`#policy-name-${entry.id}`);
@@ -1113,6 +1130,75 @@ export class SmithproxyApp extends LitElement {
       }
     }
     return undefined;
+  }
+
+  private systemSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
+    const booleanFields = [
+      ['accept_tproxy', 'accept-tproxy'], ['accept_redirect', 'accept-redirect'],
+      ['accept_socks', 'accept-socks'], ['accept_http_connect', 'accept-http-connect'],
+      ['accept_api', 'accept-api'], ['policy_fail_open', 'policy-fail-open'],
+      ['policy_access_request_fail_open', 'access-fail-open'],
+      ['ssl_autodetect', 'tls-autodetect'], ['ssl_autodetect_harder', 'tls-autodetect-harder'],
+      ['ssl_use_ktls', 'kernel-tls'], ['http_api.loopback_only', 'api-loopback'],
+      ['http_api.pam_login', 'api-pam'], ['http_api.allow_api_header', 'api-header'],
+      ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
+      ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
+    ] as const;
+    const changes: DraftChange[] = [];
+    for (const [path, id] of booleanFields) {
+      const select = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-${id}`);
+      if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
+      changes.push({path: `settings.${path}`, value: select.value === 'true'});
+    }
+    const workerFields = [
+      ['plaintext_workers', 'plaintext'], ['ssl_workers', 'tls'], ['udp_workers', 'udp'],
+      ['dtls_workers', 'dtls'], ['quic_workers', 'quic'], ['socks_workers', 'socks'],
+      ['http_connect_workers', 'http-connect'],
+    ] as const;
+    for (const [path, id] of workerFields) {
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-worker-${id}`);
+      const value = input?.valueAsNumber ?? Number.NaN;
+      if (!input || !Number.isInteger(value) || value < 0 || value > 4096) {
+        this.draftError = 'Worker counts must be integers from 0 to 4096.';
+        return undefined;
+      }
+      changes.push({path: `settings.${path}`, value});
+    }
+    return changes;
+  }
+
+  private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
+    const booleanFields = [
+      ['local.enabled', 'local-enabled'], ['remote.enabled', 'remote-enabled'],
+      ['options.calculate_checksums', 'checksums'],
+    ] as const;
+    const changes: DraftChange[] = [];
+    for (const [path, id] of booleanFields) {
+      const select = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-${id}`);
+      if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
+      changes.push({path: `captures.${path}`, value: select.value === 'true'});
+    }
+    const format = this.renderRoot.querySelector<HTMLSelectElement>('#captures-local-format');
+    const greFormat = this.renderRoot.querySelector<HTMLSelectElement>('#captures-gre-format');
+    const quota = this.renderRoot.querySelector<HTMLInputElement>('#captures-local-quota');
+    const ttl = this.renderRoot.querySelector<HTMLInputElement>('#captures-remote-ttl');
+    const quotaValue = quota?.valueAsNumber ?? Number.NaN;
+    const ttlValue = ttl?.valueAsNumber ?? Number.NaN;
+    if (!format || !greFormat || !quota || !ttl ||
+        !['pcap_single', 'pcap', 'smcap'].includes(format.value) ||
+        !['traffic', 'pcapng'].includes(greFormat.value) ||
+        !Number.isInteger(quotaValue) || quotaValue < 0 || quotaValue > 1048576 ||
+        !Number.isInteger(ttlValue) || ttlValue < 0 || ttlValue > 255) {
+      this.draftError = 'Capture format, quota, or tunnel TTL is invalid.';
+      return undefined;
+    }
+    return [
+      ...changes,
+      {path: 'captures.local.format', value: format.value},
+      {path: 'captures.local.pcap_quota', value: quotaValue},
+      {path: 'captures.remote.gre_format', value: greFormat.value},
+      {path: 'captures.remote.tun_ttl', value: ttlValue},
+    ];
   }
 
   private handleKeydown(event: KeyboardEvent): void {
@@ -1661,7 +1747,9 @@ export class SmithproxyApp extends LitElement {
           </article>
           ${settings ? html`
             <article class="domain-card">
-              <header><div><h3>Traffic admission</h3><p>Runtime listener and failure policy</p></div></header>
+              <header><div><h3>Traffic admission</h3><p>Runtime listener and failure policy</p></div>
+                <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
+              </header>
               <dl>
                 <dt>TPROXY / REDIRECT</dt><dd>${settings.acceptTproxy ? 'On' : 'Off'} / ${settings.acceptRedirect ? 'On' : 'Off'}</dd>
                 <dt>SOCKS / CONNECT</dt><dd>${settings.acceptSocks ? 'On' : 'Off'} / ${settings.acceptHttpConnect ? 'On' : 'Off'}</dd>
@@ -1704,7 +1792,9 @@ export class SmithproxyApp extends LitElement {
           ` : nothing}
           ${captures ? html`
             <article class="domain-card">
-              <header><div><h3>Capture posture</h3><p>Paths and destinations are redacted</p></div></header>
+              <header><div><h3>Capture posture</h3><p>Paths and destinations are redacted</p></div>
+                <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('captures', event.currentTarget as HTMLElement)}>Edit</button>
+              </header>
               <dl>
                 <dt>Local capture</dt><dd>${captures.local.enabled ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Local target</dt><dd>${captures.local.directoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
@@ -2186,6 +2276,90 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderSystemSettingsEditor() {
+    const settings = this.snapshot?.settings;
+    if (!settings) return nothing;
+    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const booleanField = (id: string, label: string, value: boolean) => html`
+      <label for="settings-${id}">${label}</label>
+      ${this.renderBooleanSelect(`settings-${id}`, value, disabled)}
+    `;
+    const workerField = (id: string, label: string, value: number) => html`
+      <label for="settings-worker-${id}">${label}</label>
+      <input id="settings-worker-${id}" type="number" min="0" max="4096"
+        .value=${String(value)} .readOnly=${disabled} />
+    `;
+    return html`
+      <div class="form-grid wide-form-grid">
+        ${booleanField('accept-tproxy', 'TPROXY listener', settings.acceptTproxy)}
+        ${booleanField('accept-redirect', 'REDIRECT listener', settings.acceptRedirect)}
+        ${booleanField('accept-socks', 'SOCKS listener', settings.acceptSocks)}
+        ${booleanField('accept-http-connect', 'HTTP CONNECT listener', settings.acceptHttpConnect)}
+        ${booleanField('accept-api', 'Smithproxy API listener', settings.acceptApi)}
+        ${booleanField('policy-fail-open', 'Policy failure', settings.policyFailOpen)}
+        ${booleanField('access-fail-open', 'Access request failure', settings.accessRequestFailOpen)}
+        ${workerField('plaintext', 'Plaintext workers', settings.workers.plaintext)}
+        ${workerField('tls', 'TLS workers', settings.workers.tls)}
+        ${workerField('udp', 'UDP workers', settings.workers.udp)}
+        ${workerField('dtls', 'DTLS workers', settings.workers.dtls)}
+        ${workerField('quic', 'QUIC workers', settings.workers.quic)}
+        ${workerField('socks', 'SOCKS workers', settings.workers.socks)}
+        ${workerField('http-connect', 'HTTP CONNECT workers', settings.workers.httpConnect)}
+        ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
+        ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
+        ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}
+        ${booleanField('api-loopback', 'API loopback only', settings.httpApi.loopbackOnly)}
+        ${booleanField('api-pam', 'API PAM login', settings.httpApi.pamLogin)}
+        ${booleanField('api-header', 'API header access', settings.httpApi.allowApiHeader)}
+        ${booleanField('webhook-enabled', 'Webhook', settings.webhook.enabled)}
+        ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
+        ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
+        ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
+        <label>Nameservers</label><span>${settings.nameserverCount} redacted entries · unchanged</span>
+        <label>HTTP API keys</label><span>${settings.httpApi.keyCount} redacted entries · unchanged</span>
+        <label>HTTP API allowed IPs</label><span>${settings.httpApi.allowedIpCount} redacted entries · unchanged</span>
+        <label>Webhook URL</label><span>${settings.webhook.urlConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+      </div>
+    `;
+  }
+
+  private renderCaptureSettingsEditor() {
+    const captures = this.snapshot?.captures;
+    if (!captures) return nothing;
+    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    return html`
+      <div class="form-grid wide-form-grid">
+        <label for="captures-local-enabled">Local capture</label>
+        ${this.renderBooleanSelect('captures-local-enabled', captures.local.enabled, disabled)}
+        <label for="captures-local-format">Local format</label>
+        <select id="captures-local-format" .value=${captures.local.format} ?disabled=${disabled}>
+          <option value="pcap_single">PCAP single</option><option value="pcap">PCAP</option><option value="smcap">SMCAP</option>
+        </select>
+        <label for="captures-local-quota">Local quota (MiB)</label>
+        <input id="captures-local-quota" type="number" min="0" max="1048576"
+          .value=${String(captures.local.quotaMiB)} .readOnly=${disabled} />
+        <label>Local directory</label>
+        <span>${captures.local.directoryConfigured ? 'Configured · path redacted · unchanged' : 'Not configured'}</span>
+        <label for="captures-remote-enabled">Remote capture</label>
+        ${this.renderBooleanSelect('captures-remote-enabled', captures.remote.enabled, disabled)}
+        <label>Tunnel type</label><span>${captures.remote.tunnelType.toUpperCase()} · unchanged</span>
+        <label for="captures-gre-format">GRE format</label>
+        <select id="captures-gre-format" .value=${captures.remote.greFormat} ?disabled=${disabled}>
+          <option value="traffic">Traffic</option><option value="pcapng">PCAPNG</option>
+        </select>
+        <label for="captures-remote-ttl">Tunnel TTL</label>
+        <input id="captures-remote-ttl" type="number" min="0" max="255"
+          .value=${String(captures.remote.ttl)} .readOnly=${disabled} />
+        <label>Remote destination</label>
+        <span>${captures.remote.destinationConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>Bound interface</label>
+        <span>${captures.remote.bindInterfaceConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label for="captures-checksums">Calculate checksums</label>
+        ${this.renderBooleanSelect('captures-checksums', captures.calculateChecksums, disabled)}
+      </div>
+    `;
+  }
+
   private renderObjectUsage(object: PortObject | ProtocolObject | ProfileObject) {
     return html`
       <div class="section">
@@ -2203,6 +2377,8 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'address') return this.renderAddressEditor(entry);
     if (entry.kind === 'port') return this.renderPortEditor(entry);
     if (entry.kind === 'protocol') return this.renderProtocolEditor(entry);
+    if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
+    if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     return this.renderProfileEditor(entry);
   }
 
@@ -2212,7 +2388,9 @@ export class SmithproxyApp extends LitElement {
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
-    const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = ['policy', 'address', 'port', 'protocol'];
+    const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = [
+      'policy', 'address', 'port', 'protocol', 'settings', 'captures',
+    ];
     const profile = entry.kind === 'profile'
       ? this.snapshot?.profiles.find(item => item.id === entry.id)
       : undefined;

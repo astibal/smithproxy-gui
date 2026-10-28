@@ -570,6 +570,52 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(trustPosture.getByText(/paths and signature expressions are redacted/i)).toBeVisible();
 });
 
+test('saves typed system and capture settings without exposing redacted values', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+
+  const trafficCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Traffic admission'}),
+  });
+  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await settingsEditor.getByLabel('Policy failure').selectOption('true');
+  await settingsEditor.getByLabel('TLS workers', {exact: true}).fill('8');
+  await settingsEditor.getByLabel('API header access').selectOption('true');
+  await expect(settingsEditor.getByText('1 redacted entries · unchanged')).toHaveCount(2);
+  await expect(settingsEditor.getByText('Not configured')).toBeVisible();
+  await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(page.getByText('Draft: 24 changes')).toBeVisible();
+  await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  const captureCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Capture posture'}),
+  });
+  await captureCard.getByRole('button', {name: 'Edit'}).click();
+  const captureEditor = page.getByRole('dialog', {name: 'Edit Capture settings'});
+  await captureEditor.getByLabel('Local capture').selectOption('true');
+  await captureEditor.getByLabel('Local format').selectOption('smcap');
+  await captureEditor.getByLabel('Tunnel TTL').fill('32');
+  await expect(captureEditor.getByText('Configured · path redacted · unchanged')).toBeVisible();
+  await expect(captureEditor.getByText('Not configured')).toHaveCount(2);
+  await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(page.getByText('Draft: 31 changes')).toBeVisible();
+  await captureEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Review draft · 31'}).click();
+  const changes = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(changes).toContainText('settings.ssl_workers');
+  await expect(changes).toContainText('settings.http_api.allow_api_header');
+  await expect(changes).toContainText('captures.local.format');
+  await expect(changes).toContainText('captures.remote.tun_ttl');
+  await expect(changes).not.toContainText('webhook.url');
+  await expect(changes).not.toContainText('captures.local.dir');
+  await expect(changes).not.toContainText('captures.remote.tun_dst');
+});
+
 test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'});
   await page.setViewportSize({width: 390, height: 844});
