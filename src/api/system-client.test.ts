@@ -26,14 +26,16 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
       features: {
-        config_read: false, config_write: false, jobs: false, events: false,
+        config_read: false, config_write: false, jobs: false, events: true,
+        smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
       },
     }));
     const client = new SystemClient('/api/v1', '/', fetcher);
 
     await expect(client.capabilities()).resolves.toMatchObject({
-      apiVersion: 'v1', smithproxyState: 'unconfigured', features: {configWrite: false, metrics: true},
+      apiVersion: 'v1', smithproxyState: 'unconfigured',
+      features: {configWrite: false, events: true, smithproxyEvents: false, metrics: true},
     });
   });
 
@@ -166,6 +168,36 @@ describe('SystemClient', () => {
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/network/neighbors/summary', expect.anything(),
     );
+  });
+
+  it('loads bounded operational events', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      source: 'gui-core', smithproxy_events_available: false,
+      events: [{
+        id: '4-100', occurred_at_unix_ms: 100, severity: 'error', source: 'gui-core',
+        message: 'Smithproxy control plane changed to unreachable',
+      }],
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.recentEvents()).resolves.toMatchObject({
+      smithproxyEventsAvailable: false,
+      events: [{id: '4-100', severity: 'error', occurredAtUnixMs: 100}],
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/events/recent', expect.anything(),
+    );
+  });
+
+  it('rejects unsafe operational event text', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', smithproxy_events_available: false,
+      events: [{
+        id: 'event', occurred_at_unix_ms: 1, severity: 'info', source: 'gui-core',
+        message: 'unsafe\nmessage',
+      }],
+    }));
+    await expect(client.recentEvents()).rejects.toThrow('Invalid operational event entry');
   });
 
   it('rejects inconsistent neighborhood aggregates', async () => {

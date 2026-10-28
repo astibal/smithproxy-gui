@@ -25,6 +25,7 @@ export interface SystemCapabilities {
     configWrite: boolean;
     jobs: boolean;
     events: boolean;
+    smithproxyEvents: boolean;
     metrics: boolean;
     sessionActivity: boolean;
     tlsMonitoring: boolean;
@@ -118,6 +119,22 @@ export interface NeighborSnapshot {
   bytesDown: number;
 }
 
+export type EventSeverity = 'info' | 'notice' | 'warning' | 'error';
+
+export interface OperationalEvent {
+  id: string;
+  occurredAtUnixMs: number;
+  severity: EventSeverity;
+  source: 'gui-core';
+  message: string;
+}
+
+export interface EventSnapshot {
+  source: 'gui-core';
+  smithproxyEventsAvailable: boolean;
+  events: ReadonlyArray<OperationalEvent>;
+}
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -178,6 +195,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof features.jobs !== 'boolean' || typeof features.events !== 'boolean' ||
+      typeof features.smithproxy_events !== 'boolean' ||
       typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean' ||
       typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
@@ -192,6 +210,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       configWrite: features.config_write,
       jobs: features.jobs,
       events: features.events,
+      smithproxyEvents: features.smithproxy_events,
       metrics: features.metrics,
       sessionActivity: features.session_activity,
       tlsMonitoring: features.tls_monitoring,
@@ -381,6 +400,33 @@ function parseNeighbors(value: unknown): NeighborSnapshot {
   };
 }
 
+function parseEvents(value: unknown): EventSnapshot {
+  if (!isObject(value) || value.source !== 'gui-core' ||
+      typeof value.smithproxy_events_available !== 'boolean' || !Array.isArray(value.events) ||
+      value.events.length > 60) {
+    throw new Error('Invalid operational event response.');
+  }
+  const ids = new Set<string>();
+  const events = value.events.map((item): OperationalEvent => {
+    if (!isObject(item) || typeof item.id !== 'string' || item.id.length === 0 || item.id.length > 96 ||
+        ids.has(item.id) || !isNonNegativeInteger(item.occurred_at_unix_ms) ||
+        !['info', 'notice', 'warning', 'error'].includes(String(item.severity)) ||
+        item.source !== 'gui-core' || typeof item.message !== 'string' ||
+        item.message.length === 0 || item.message.length > 256 || /[\u0000-\u001f\u007f]/u.test(item.message)) {
+      throw new Error('Invalid operational event entry.');
+    }
+    ids.add(item.id);
+    return {
+      id: item.id,
+      occurredAtUnixMs: item.occurred_at_unix_ms,
+      severity: item.severity as EventSeverity,
+      source: 'gui-core',
+      message: item.message,
+    };
+  });
+  return {source: 'gui-core', smithproxyEventsAvailable: value.smithproxy_events_available, events};
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -425,6 +471,10 @@ export class SystemClient {
 
   async neighborSummary(): Promise<NeighborSnapshot> {
     return parseNeighbors(await this.#request(joinedPath(this.#apiBase, '/network/neighbors/summary')));
+  }
+
+  async recentEvents(): Promise<EventSnapshot> {
+    return parseEvents(await this.#request(joinedPath(this.#apiBase, '/events/recent')));
   }
 
   async #request(path: string): Promise<unknown> {

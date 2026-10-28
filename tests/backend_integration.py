@@ -258,6 +258,8 @@ def main() -> int:
         assert capabilities["base_path"] == "/ws001/smithproxy-gui"
         assert capabilities["features"]["config_read"] is False
         assert capabilities["features"]["config_write"] is False
+        assert capabilities["features"]["events"] is True
+        assert capabilities["features"]["smithproxy_events"] is False
         assert capabilities["features"]["metrics"] is True
         assert capabilities["features"]["session_activity"] is True
         assert capabilities["features"]["tls_monitoring"] is True
@@ -287,6 +289,10 @@ def main() -> int:
         neighbors = json.loads(body)
         assert status == 200
         assert neighbors["state"] == "unconfigured"
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/events/recent")
+        assert status == 200
+        assert json.loads(body) == {
+            "source": "gui-core", "smithproxy_events_available": False, "events": []}
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/auth/session")
         assert status == 200
@@ -345,6 +351,12 @@ def main() -> int:
             assert isinstance(snapshot["smithproxy"]["latency_ms"], int)
             assert len(snapshot["smithproxy"]["history"]) >= 1
             assert snapshot["smithproxy"]["availability_window"]["successful"] >= 1
+            status, _, body = request(configured_port, "/api/v1/events/recent")
+            events = json.loads(body)
+            assert status == 200
+            assert events["smithproxy_events_available"] is False
+            assert events["events"][-1]["message"] == "Smithproxy control plane is reachable"
+            assert len(events["events"]) <= 60
             last_success = snapshot["smithproxy"]["last_success_at_unix_ms"]
             status, _, body = request(configured_port, "/api/v1/metrics/summary")
             metrics = json.loads(body)
@@ -437,6 +449,10 @@ def main() -> int:
             assert snapshot["smithproxy"]["consecutive_failures"] == 1
             assert snapshot["smithproxy"]["last_success_at_unix_ms"] == last_success
             assert snapshot["smithproxy"]["history"][-1]["state"] == "error"
+            status, _, body = request(configured_port, "/api/v1/events/recent")
+            events = json.loads(body)["events"]
+            assert events[-1]["severity"] == "error"
+            assert events[-1]["message"] == "Smithproxy control plane changed to error"
             assert snapshot["smithproxy"]["availability_window"]["samples"] >= 2
             status, _, body = request(configured_port, "/api/v1/metrics/summary")
             stale_metrics = json.loads(body)

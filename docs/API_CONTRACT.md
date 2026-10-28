@@ -83,6 +83,7 @@ GET /api/v1/listeners
 GET /api/v1/sessions/activity
 GET /api/v1/tls/cache/summary
 GET /api/v1/network/neighbors/summary
+GET /api/v1/events/recent
 GET /api/v1/alerts
 GET /api/v1/logs
 GET /api/v1/events
@@ -101,6 +102,13 @@ must not expose certificate subjects, SAN values, domain names, or cache keys.
 windows, observations, and byte totals. Hostnames, tags, labels, and per-endpoint
 timelines are consumed only inside the GUI core and are never serialized to the
 browser response.
+
+`/events/recent` currently exposes at most 60 structured GUI-core control-plane
+state transitions. Messages are generated from a fixed vocabulary and validated
+for length and control characters in the browser client. The capability response
+distinguishes these events from the unavailable Smithproxy event ring. Smithproxy
+event text must only be added through a bounded authenticated HTTP API; the GUI
+core does not parse the administrative CLI.
 
 `/events` používá SSE. Každá událost obsahuje typ, čas serveru, monotónní event ID,
 source revision a minimální payload. Po ztrátě kontinuity si klient vyžádá nový

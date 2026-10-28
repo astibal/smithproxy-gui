@@ -130,6 +130,7 @@ private:
         if (*relative == "/api/v1/tls/cache/summary") return tls_cache_summary();
         if (*relative == "/api/v1/network/neighbors/summary") return neighbor_summary();
         if (*relative == "/api/v1/sessions/activity") return session_activity();
+        if (*relative == "/api/v1/events/recent") return recent_events();
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
         if (*relative == "/api/v1/config/snapshot") {
@@ -160,7 +161,7 @@ private:
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":false,"
-                    "\"jobs\":false,\"events\":false,\"metrics\":true,"
+                    "\"jobs\":false,\"events\":true,\"smithproxy_events\":false,\"metrics\":true,"
                     "\"session_activity\":true,\"tls_monitoring\":true,"
                     "\"neighbor_monitoring\":true}}"};
     }
@@ -451,6 +452,33 @@ private:
                     ",\"consecutive_failures\":" + std::to_string(status.consecutive_failures) +
                     ",\"availability_window\":{\"samples\":" + std::to_string(status.history.size()) +
                     ",\"successful\":" + std::to_string(successful) + "},\"history\":" + history + "}}"};
+    }
+
+    Response recent_events() const {
+        const auto status = monitor_.status();
+        std::string events{"["};
+        std::string previous_state;
+        std::size_t emitted{};
+        for (std::size_t index = 0; index < status.history.size(); ++index) {
+            const auto& sample = status.history[index];
+            if (sample.state == previous_state) continue;
+            previous_state = sample.state;
+            if (emitted++ != 0U) events += ',';
+            const auto severity = sample.state == "ready" ? "info" :
+                                  sample.state == "starting" ? "notice" : "error";
+            const auto message = sample.state == "ready" ? "Smithproxy control plane is reachable" :
+                                 sample.state == "starting" ? "Smithproxy probe is starting" :
+                                 "Smithproxy control plane changed to " + sample.state;
+            events += "{\"id\":" + json_string(std::to_string(index) + "-" +
+                          timestamp_json(sample.checked_at)) +
+                      ",\"occurred_at_unix_ms\":" + timestamp_json(sample.checked_at) +
+                      ",\"severity\":" + json_string(severity) +
+                      ",\"source\":\"gui-core\",\"message\":" + json_string(message) + "}";
+        }
+        events += ']';
+        return {200, "application/json; charset=utf-8",
+                "{\"source\":\"gui-core\",\"smithproxy_events_available\":false,\"events\":" +
+                    events + "}"};
     }
 
     Response metrics_summary() const {

@@ -9,7 +9,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     base_path: '/',
     smithproxy_state: state.smithproxy,
     features: {
-      config_read: configRead, config_write: false, jobs: false, events: false,
+      config_read: configRead, config_write: false, jobs: false, events: true,
+      smithproxy_events: false,
       metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
     },
   }}));
@@ -73,6 +74,19 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     checked_at_unix_ms: Date.now(), last_success_at_unix_ms: Date.now() - 5000,
     hosts_total: 8, active_today: 3, active_week: 6, tagged_hosts: 4,
     observations: 20, bytes_up: 1000, bytes_down: 2000,
+  }}));
+  await page.route('**/api/v1/events/recent', async route => route.fulfill({json: {
+    source: 'gui-core', smithproxy_events_available: false,
+    events: [
+      {
+        id: '0-100', occurred_at_unix_ms: Date.now() - 5000, severity: 'info',
+        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+      },
+      ...(state.smithproxy === 'ready' ? [] : [{
+        id: '1-200', occurred_at_unix_ms: Date.now(), severity: 'error',
+        source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
+      }]),
+    ],
   }}));
   if (configRead) {
     await page.route('**/api/v1/config/snapshot', async route => route.fulfill({json: {
@@ -322,6 +336,12 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
 
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCSS('border-radius', '4px');
+
+  await page.getByRole('button', {name: 'Logs', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Operational events'})).toBeVisible();
+  const events = page.getByRole('list', {name: 'Operational events'});
+  await expect(events.getByText('Smithproxy control plane is reachable')).toBeVisible();
+  await expect(page.getByText(/does not parse the administrative CLI/i)).toBeVisible();
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();

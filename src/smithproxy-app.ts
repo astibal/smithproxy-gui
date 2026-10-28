@@ -12,6 +12,7 @@ import type {
 } from './api/models';
 import {
   SystemClient,
+  type EventSnapshot,
   type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
   type SessionActivitySnapshot,
@@ -74,6 +75,12 @@ const initialNeighbors: NeighborSnapshot = {
   bytesDown: 0,
 };
 
+const initialEvents: EventSnapshot = {
+  source: 'gui-core',
+  smithproxyEventsAvailable: false,
+  events: [],
+};
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -88,6 +95,8 @@ export class SmithproxyApp extends LitElement {
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
   @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
   @state() private neighbors: NeighborSnapshot = initialNeighbors;
+  @state() private operationalEvents: EventSnapshot = initialEvents;
+  @state() private eventsError: string | undefined;
   @state() private focusMode = false;
   @state() private configWriteAvailable = false;
   @state() private configError: string | undefined;
@@ -212,6 +221,14 @@ export class SmithproxyApp extends LitElement {
     .listener-name { font-weight: 650; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 3px; color: var(--app-muted); }
     .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
+    .event-list { display: grid; overflow: hidden; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
+    .event-row { display: grid; grid-template-columns: 150px 78px minmax(180px, 1fr) 100px; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
+    .event-row:last-child { border-bottom: 0; }
+    .event-time, .event-source { color: var(--app-muted); font-size: 12px; }
+    .event-severity { font-size: 12px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+    .event-severity.info { color: var(--app-success); }
+    .event-severity.notice, .event-severity.warning { color: var(--app-warning); }
+    .event-severity.error { color: var(--app-danger); }
     .capacity-track { height: 8px; overflow: hidden; border-radius: 2px; background: var(--app-border); }
     .capacity-fill { height: 100%; border-radius: inherit; background: var(--app-brand); }
 
@@ -331,6 +348,8 @@ export class SmithproxyApp extends LitElement {
       .metric-grid { grid-template-columns: 1fr; }
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
+      .event-row { grid-template-columns: 110px 66px minmax(120px, 1fr); }
+      .event-source { display: none; }
       .probe-history { gap: 2px; }
     }
 
@@ -439,6 +458,12 @@ export class SmithproxyApp extends LitElement {
           state: 'unavailable',
           detail: error instanceof Error ? error.message : 'Neighborhood metrics are unavailable.',
         };
+      }
+      try {
+        this.operationalEvents = await this.systemClient.recentEvents();
+        this.eventsError = undefined;
+      } catch (error) {
+        this.eventsError = error instanceof Error ? error.message : 'Operational events are unavailable.';
       }
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
@@ -1210,6 +1235,44 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderLogs() {
+    const events = [...this.operationalEvents.events].reverse();
+    return html`
+      <div class="content dashboard">
+        <div class="section-head">
+          <div>
+            <h2>Operational events</h2>
+            <p>Bounded, privacy-safe control-plane state transitions from the GUI core.</p>
+          </div>
+          <span class="runtime-state ${this.eventsError ? 'danger' : 'success'}">
+            ${this.eventsError ? 'Unavailable' : `${events.length} transitions`}
+          </span>
+        </div>
+        <div class="privacy-note">
+          Smithproxy event-ring messages require a future authenticated Smithproxy HTTP API.
+          This view intentionally does not parse the administrative CLI or expose arbitrary log text.
+        </div>
+        ${this.eventsError ? html`<div class="metrics-message">${this.eventsError}</div>` : nothing}
+        ${events.length === 0 ? html`
+          <div class="metrics-message">No control-plane state transition has been observed yet.</div>
+        ` : html`
+          <div class="event-list" role="list" aria-label="Operational events">
+            ${events.map(event => html`
+              <article class="event-row" role="listitem">
+                <time class="event-time" datetime=${new Date(event.occurredAtUnixMs).toISOString()}>
+                  ${new Date(event.occurredAtUnixMs).toLocaleString()}
+                </time>
+                <span class="event-severity ${event.severity}">${event.severity}</span>
+                <strong>${event.message}</strong>
+                <span class="event-source">${event.source}</span>
+              </article>
+            `)}
+          </div>
+        `}
+      </div>
+    `;
+  }
+
   private renderContent() {
     if (this.activeSection === 'Dashboard') {
       return this.renderDashboard();
@@ -1225,6 +1288,9 @@ export class SmithproxyApp extends LitElement {
     }
     if (this.activeSection === 'Monitoring') {
       return this.renderMonitoring();
+    }
+    if (this.activeSection === 'Logs') {
+      return this.renderLogs();
     }
     if (this.activeSection === 'System') {
       return this.renderSystem();
