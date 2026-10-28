@@ -114,7 +114,8 @@ TLS profile batches cover the exposed validation, negotiation, timeout, client
 certificate, alert, and diagnostic controls. The redacted SNI bypass collection
 is explicitly left unchanged. Content profile batches cover capture, webhook,
 and JA4 controls while redacted session filters and content rules remain
-unchanged.
+unchanged. SSH profile batches cover the host-key policy and channel, forwarding,
+X11, and agent actions while the redacted private host-key path remains unchanged.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.

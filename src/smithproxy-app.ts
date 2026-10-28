@@ -612,6 +612,11 @@ export class SmithproxyApp extends LitElement {
         const item = this.snapshot?.profiles.filter(profile => profile.content !== null)[Number(content[1])];
         if (item) objects.add(`profile:${item.id}`);
       }
+      const ssh = /^ssh_profiles\.\[(\d+)\]\./u.exec(change.path);
+      if (ssh) {
+        const item = this.snapshot?.profiles.filter(profile => profile.ssh !== null)[Number(ssh[1])];
+        if (item) objects.add(`profile:${item.id}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -997,6 +1002,38 @@ export class SmithproxyApp extends LitElement {
           {path: `content_profiles.[${index}].name`, value: name.value.trim()},
           ...changes,
           {path: `content_profiles.[${index}].write_format`, value: format.value},
+        ];
+      }
+      if (profile.ssh) {
+        const profiles = this.snapshot.profiles.filter(item => item.ssh !== null);
+        const index = profiles.findIndex(item => item.id === entry.id);
+        if (index < 0) return undefined;
+        const policy = this.renderRoot.querySelector<HTMLSelectElement>(`#ssh-host-key-policy-${entry.id}`);
+        if (!policy || !['insecure', 'accept-new', 'strict'].includes(policy.value)) {
+          this.draftError = 'SSH host-key policy is invalid.';
+          return undefined;
+        }
+        const actions = [
+          ['shell', 'shell'],
+          ['exec', 'exec'],
+          ['subsystem', 'subsystem'],
+          ['pty', 'pty'],
+          ['environment', 'environment'],
+          ['local_forward', 'local-forward'],
+          ['remote_forward', 'remote-forward'],
+          ['x11', 'x11'],
+          ['agent', 'agent'],
+        ] as const;
+        const changes: DraftChange[] = [];
+        for (const [path, id] of actions) {
+          const select = this.renderRoot.querySelector<HTMLSelectElement>(`#ssh-${id}-${entry.id}`);
+          if (!select || (select.value !== 'pass' && select.value !== 'reject')) return undefined;
+          changes.push({path: `ssh_profiles.[${index}].${path}`, value: select.value});
+        }
+        return [
+          {path: `ssh_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `ssh_profiles.[${index}].hostkey_policy`, value: policy.value},
+          ...changes,
         ];
       }
       if (profile.detection) {
@@ -1899,6 +1936,12 @@ export class SmithproxyApp extends LitElement {
     </select>`;
   }
 
+  private renderPassRejectSelect(id: string, value: boolean, disabled: boolean) {
+    return html`<select id=${id} .value=${value ? 'pass' : 'reject'} ?disabled=${disabled}>
+      <option value="pass">Pass</option><option value="reject">Reject</option>
+    </select>`;
+  }
+
   private renderProfileEditor(entry: DrawerEntry) {
     const profile = this.snapshot?.profiles.find(item => item.id === entry.id);
     if (!profile) return nothing;
@@ -1910,10 +1953,10 @@ export class SmithproxyApp extends LitElement {
     const dns = profile.dns;
     const script = profile.script;
     const authentication = profile.authentication;
-    const mapped = Boolean(routing || tls || detection || content || dns);
+    const mapped = Boolean(routing || tls || detection || content || ssh || dns);
     const mappedReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
-      <div class=${tls || content ? 'form-grid wide-form-grid' : 'form-grid'}>
+      <div class=${tls || content || ssh ? 'form-grid wide-form-grid' : 'form-grid'}>
         <label for=${mapped ? `profile-name-${entry.id}` : nothing}>Name</label>
         ${mapped ? html`<input id="profile-name-${entry.id}"
           .value=${profile.name} .readOnly=${mappedReadOnly} />` : html`<span>${profile.name}</span>`}
@@ -2027,17 +2070,31 @@ export class SmithproxyApp extends LitElement {
           <span>${content.sessionFilterConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
           <label>Content rules</label><span>${content.ruleCount} redacted rules · unchanged</span>
         ` : ssh ? html`
-          <label>Host key</label><span>${ssh.hostKeyConfigured ? 'Configured · path redacted' : 'Missing'}</span>
-          <label>Upstream host-key policy</label><span>${ssh.hostKeyPolicy}</span>
-          <label>Shell</label><span>${ssh.shell ? 'Pass' : 'Reject'}</span>
-          <label>Exec</label><span>${ssh.exec ? 'Pass' : 'Reject'}</span>
-          <label>Subsystem</label><span>${ssh.subsystem ? 'Pass' : 'Reject'}</span>
-          <label>PTY</label><span>${ssh.pty ? 'Pass' : 'Reject'}</span>
-          <label>Environment</label><span>${ssh.environment ? 'Pass' : 'Reject'}</span>
-          <label>Local forwarding</label><span>${ssh.localForward ? 'Pass' : 'Reject'}</span>
-          <label>Remote forwarding</label><span>${ssh.remoteForward ? 'Pass' : 'Reject'}</span>
-          <label>X11 forwarding</label><span>${ssh.x11 ? 'Pass' : 'Reject'}</span>
-          <label>Agent forwarding</label><span>${ssh.agent ? 'Pass' : 'Reject'}</span>
+          <label>Host key</label>
+          <span>${ssh.hostKeyConfigured ? 'Configured · path redacted · unchanged' : 'Missing'}</span>
+          <label for="ssh-host-key-policy-${entry.id}">Upstream host-key policy</label>
+          <select id="ssh-host-key-policy-${entry.id}" .value=${ssh.hostKeyPolicy} ?disabled=${mappedReadOnly}>
+            <option value="insecure">Insecure</option><option value="accept-new">Accept new</option>
+            <option value="strict">Strict</option>
+          </select>
+          <label for="ssh-shell-${entry.id}">Shell</label>
+          ${this.renderPassRejectSelect(`ssh-shell-${entry.id}`, ssh.shell, mappedReadOnly)}
+          <label for="ssh-exec-${entry.id}">Exec</label>
+          ${this.renderPassRejectSelect(`ssh-exec-${entry.id}`, ssh.exec, mappedReadOnly)}
+          <label for="ssh-subsystem-${entry.id}">Subsystem</label>
+          ${this.renderPassRejectSelect(`ssh-subsystem-${entry.id}`, ssh.subsystem, mappedReadOnly)}
+          <label for="ssh-pty-${entry.id}">PTY</label>
+          ${this.renderPassRejectSelect(`ssh-pty-${entry.id}`, ssh.pty, mappedReadOnly)}
+          <label for="ssh-environment-${entry.id}">Environment</label>
+          ${this.renderPassRejectSelect(`ssh-environment-${entry.id}`, ssh.environment, mappedReadOnly)}
+          <label for="ssh-local-forward-${entry.id}">Local forwarding</label>
+          ${this.renderPassRejectSelect(`ssh-local-forward-${entry.id}`, ssh.localForward, mappedReadOnly)}
+          <label for="ssh-remote-forward-${entry.id}">Remote forwarding</label>
+          ${this.renderPassRejectSelect(`ssh-remote-forward-${entry.id}`, ssh.remoteForward, mappedReadOnly)}
+          <label for="ssh-x11-${entry.id}">X11 forwarding</label>
+          ${this.renderPassRejectSelect(`ssh-x11-${entry.id}`, ssh.x11, mappedReadOnly)}
+          <label for="ssh-agent-${entry.id}">Agent forwarding</label>
+          ${this.renderPassRejectSelect(`ssh-agent-${entry.id}`, ssh.agent, mappedReadOnly)}
         ` : dns ? html`
           <label for="dns-match-${entry.id}">Match request ID</label>
           <select id="dns-match-${entry.id}" .value=${String(dns.matchRequestId)} ?disabled=${mappedReadOnly}>
@@ -2114,7 +2171,7 @@ export class SmithproxyApp extends LitElement {
       ? this.snapshot?.profiles.find(item => item.id === entry.id)
       : undefined;
     const mappedProfile = Boolean(
-      profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.dns,
+      profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns,
     );
     const draftable = this.snapshot?.source !== 'live' ||
       (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
