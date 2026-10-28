@@ -232,6 +232,19 @@ int main() {
     assert(captures.captures->remote_destination_configured);
     assert(!parse_config_captures(
         R"({"success":{"captures":{"local":{"enabled":"true","dir":"/tmp","format":"raw"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"","tun_ttl":"1"}}}})").captures);
+    const auto security_assets = parse_config_security_assets(
+        R"({"success":{"tls_ca":{"default":{"path":"/private/ca"}}}})",
+        R"({"success":{"starttls_signatures":[{"flow":[{},{}]}]}})",
+        R"({"success":{"detection_signatures":[{"flow":[{}]},{"flow":[{},{}]}]}})");
+    assert(security_assets.security_assets);
+    assert(security_assets.security_assets->certificate_authority_count == 1U);
+    assert(security_assets.security_assets->starttls_flow_step_count == 2U);
+    assert(security_assets.security_assets->detection_signature_count == 2U);
+    assert(security_assets.security_assets->detection_flow_step_count == 3U);
+    assert(!parse_config_security_assets(
+        R"({"success":{"tls_ca":{}}})",
+        R"({"success":{"starttls_signatures":[{"flow":"secret"}]}})",
+        R"({"success":{"detection_signatures":[]}})").security_assets);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

@@ -1132,6 +1132,7 @@ export class SmithproxyApp extends LitElement {
   private renderSystem() {
     const settings = this.snapshot?.settings;
     const captures = this.snapshot?.captures;
+    const securityAssets = this.snapshot?.securityAssets;
     return html`
       <div class="content dashboard">
         <div class="section-head">
@@ -1227,6 +1228,19 @@ export class SmithproxyApp extends LitElement {
                 <dt>Remote target</dt><dd>${captures.remote.destinationConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>TTL / bound interface</dt><dd>${captures.remote.ttl} / ${captures.remote.bindInterfaceConfigured ? 'Yes' : 'No'}</dd>
                 <dt>Checksums</dt><dd>${captures.calculateChecksums ? 'Calculated' : 'Preserved'}</dd>
+              </dl>
+            </article>
+          ` : nothing}
+          ${securityAssets ? html`
+            <article class="domain-card">
+              <header><div><h3>Trust and signatures</h3><p>Paths and signature expressions are redacted</p></div></header>
+              <dl>
+                <dt>Certificate authorities</dt><dd>${securityAssets.certificateAuthorityCount}</dd>
+                <dt>CA paths configured</dt><dd>${securityAssets.certificateAuthorityPathCount}</dd>
+                <dt>STARTTLS signatures</dt><dd>${securityAssets.starttlsSignatureCount}</dd>
+                <dt>STARTTLS flow steps</dt><dd>${securityAssets.starttlsFlowStepCount}</dd>
+                <dt>Detection signatures</dt><dd>${securityAssets.detectionSignatureCount}</dd>
+                <dt>Detection flow steps</dt><dd>${securityAssets.detectionFlowStepCount}</dd>
               </dl>
             </article>
           ` : nothing}

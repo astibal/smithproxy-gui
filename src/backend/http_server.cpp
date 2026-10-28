@@ -411,6 +411,22 @@ private:
                        (value.remote_bind_interface_configured ? "true" : "false") + "}" +
                        ",\"calculate_checksums\":" + (value.calculate_checksums ? "true" : "false") + "}";
         }
+        std::string security_assets{"null"};
+        if (snapshot.security_assets) {
+            const auto& value = *snapshot.security_assets;
+            security_assets = "{\"certificate_authority_count\":" +
+                              std::to_string(value.certificate_authority_count) +
+                              ",\"certificate_authority_path_count\":" +
+                              std::to_string(value.certificate_authority_path_count) +
+                              ",\"starttls_signature_count\":" +
+                              std::to_string(value.starttls_signature_count) +
+                              ",\"starttls_flow_step_count\":" +
+                              std::to_string(value.starttls_flow_step_count) +
+                              ",\"detection_signature_count\":" +
+                              std::to_string(value.detection_signature_count) +
+                              ",\"detection_flow_step_count\":" +
+                              std::to_string(value.detection_flow_step_count) + "}";
+        }
 
         return {200, "application/json; charset=utf-8",
                 "{\"state\":" + json_string(snapshot.state) +
@@ -420,7 +436,8 @@ private:
                     ",\"view\":\"runtime\",\"revision\":null,\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +
-                    ",\"settings\":" + settings + ",\"captures\":" + captures + "}"};
+                    ",\"settings\":" + settings + ",\"captures\":" + captures +
+                    ",\"security_assets\":" + security_assets + "}"};
     }
 
     Response status() const {

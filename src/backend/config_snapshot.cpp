@@ -559,4 +559,53 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
             }, {}};
 }
 
+ConfigSecurityAssetsParseResult parse_config_security_assets(
+    const std::string_view certificate_authority_payload,
+    const std::string_view starttls_signature_payload,
+    const std::string_view detection_signature_payload) {
+    const auto authorities = section_value(certificate_authority_payload, "tls_ca");
+    const auto starttls = section_value(starttls_signature_payload, "starttls_signatures");
+    const auto detection = section_value(detection_signature_payload, "detection_signatures");
+    if (!authorities || !authorities->is_object() || authorities->size() > maximum_named_objects ||
+        !starttls || !starttls->is_array() || starttls->size() > maximum_named_objects ||
+        !detection || !detection->is_array() || detection->size() > maximum_named_objects) {
+        return {std::nullopt, "Smithproxy returned invalid trust or signature collections"};
+    }
+
+    std::uint64_t authority_paths{};
+    for (const auto& [name, authority] : authorities->items()) {
+        if (!valid_name(name) || !authority.is_object()) {
+            return {std::nullopt, "Smithproxy returned an invalid certificate authority entry"};
+        }
+        const auto path = bounded_string(authority, "path", maximum_value_length, true);
+        if (!path) return {std::nullopt, "Smithproxy returned an invalid certificate authority path"};
+        if (!path->empty()) ++authority_paths;
+    }
+
+    const auto flow_steps = [](const Json& signatures) -> std::optional<std::uint64_t> {
+        std::uint64_t total{};
+        for (const auto& signature : signatures) {
+            if (!signature.is_object()) return std::nullopt;
+            const auto flow = signature.find("flow");
+            if (flow == signature.end() || !flow->is_array() || flow->size() > maximum_references) {
+                return std::nullopt;
+            }
+            for (const auto& step : *flow) {
+                if (!step.is_object()) return std::nullopt;
+            }
+            total += flow->size();
+        }
+        return total;
+    };
+    const auto starttls_steps = flow_steps(*starttls);
+    const auto detection_steps = flow_steps(*detection);
+    if (!starttls_steps || !detection_steps) {
+        return {std::nullopt, "Smithproxy returned an invalid signature flow"};
+    }
+    return {ConfigSecurityAssets{
+                authorities->size(), authority_paths, starttls->size(), *starttls_steps,
+                detection->size(), *detection_steps,
+            }, {}};
+}
+
 } // namespace smithproxy::gui

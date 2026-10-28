@@ -193,6 +193,15 @@ export interface CaptureSettings {
   calculateChecksums: boolean;
 }
 
+export interface SecurityAssets {
+  certificateAuthorityCount: number;
+  certificateAuthorityPathCount: number;
+  starttlsSignatureCount: number;
+  starttlsFlowStepCount: number;
+  detectionSignatureCount: number;
+  detectionFlowStepCount: number;
+}
+
 export interface ConfigSnapshot {
   source: 'preview' | 'live';
   state: 'ready' | 'starting' | 'unavailable' | 'unconfigured';
@@ -207,6 +216,7 @@ export interface ConfigSnapshot {
   profiles: ReadonlyArray<ProfileObject>;
   settings: SystemSettings | null;
   captures: CaptureSettings | null;
+  securityAssets: SecurityAssets | null;
 }
 
 export interface ConfigClient {

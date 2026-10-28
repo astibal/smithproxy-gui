@@ -85,6 +85,18 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             },
             "options": {"calculate_checksums": "true"},
         },
+        "tls_ca": {
+            "default": {"path": "/private/ca/default"},
+        },
+        "starttls_signatures": [
+            {"name": "smtp/starttls", "flow": [{"signature": "secret-starttls-regex"}]},
+        ],
+        "detection_signatures": [
+            {"name": "http/request", "flow": [
+                {"signature": "secret-detection-regex"},
+                {"signature": "another-secret-regex"},
+            ]},
+        ],
     }
 
     def do_GET(self):
@@ -207,16 +219,18 @@ def wait_for_snapshot_state(port: int, expected: str):
 
 def wait_for_config(port: int, gateway_secret: str):
     headers = {"X-Smithproxy-GUI-Gateway": gateway_secret}
+    last_snapshot = None
     for _ in range(140):
         try:
             status, _, body = request(port, "/api/v1/config/snapshot", headers=headers)
             snapshot = json.loads(body)
+            last_snapshot = snapshot
             if status == 200 and snapshot["state"] == "ready":
                 return snapshot, body
         except OSError:
             pass
         time.sleep(0.05)
-    raise AssertionError("configuration endpoint did not become ready")
+    raise AssertionError(f"configuration endpoint did not become ready: {last_snapshot}")
 
 
 def main() -> int:
@@ -429,6 +443,17 @@ def main() -> int:
             assert b"/private/captures" not in config_body
             assert b"192.0.2.10" not in config_body
             assert b"private0" not in config_body
+            assert config_snapshot["security_assets"] == {
+                "certificate_authority_count": 1,
+                "certificate_authority_path_count": 1,
+                "starttls_signature_count": 1,
+                "starttls_flow_step_count": 1,
+                "detection_signature_count": 1,
+                "detection_flow_step_count": 2,
+            }
+            assert b"/private/ca/default" not in config_body
+            assert b"secret-starttls-regex" not in config_body
+            assert b"secret-detection-regex" not in config_body
 
             status, _, body = request(configured_port, "/api/v1/auth/session")
             assert status == 200

@@ -1,6 +1,7 @@
 import type {
   AddressObject,
   CaptureSettings,
+  SecurityAssets,
   ConfigClient,
   ConfigReference,
   ConfigSnapshot,
@@ -495,6 +496,33 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       calculateChecksums: safeBoolean(value.captures.calculate_checksums, 'capture checksum state'),
     };
   }
+  let securityAssets: SecurityAssets | null = null;
+  if (value.security_assets !== null) {
+    if (!isObject(value.security_assets)) throw new Error('Invalid security asset posture.');
+    securityAssets = {
+      certificateAuthorityCount: safeInteger(
+        value.security_assets.certificate_authority_count, 'certificate authority count', MAX_OBJECTS,
+      ),
+      certificateAuthorityPathCount: safeInteger(
+        value.security_assets.certificate_authority_path_count, 'certificate authority path count', MAX_OBJECTS,
+      ),
+      starttlsSignatureCount: safeInteger(
+        value.security_assets.starttls_signature_count, 'STARTTLS signature count', MAX_OBJECTS,
+      ),
+      starttlsFlowStepCount: safeInteger(
+        value.security_assets.starttls_flow_step_count, 'STARTTLS flow-step count', MAX_OBJECTS * MAX_REFERENCES,
+      ),
+      detectionSignatureCount: safeInteger(
+        value.security_assets.detection_signature_count, 'detection signature count', MAX_OBJECTS,
+      ),
+      detectionFlowStepCount: safeInteger(
+        value.security_assets.detection_flow_step_count, 'detection flow-step count', MAX_OBJECTS * MAX_REFERENCES,
+      ),
+    };
+    if (securityAssets.certificateAuthorityPathCount > securityAssets.certificateAuthorityCount) {
+      throw new Error('Invalid certificate authority posture.');
+    }
+  }
 
   return {
     source: 'live',
@@ -510,6 +538,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     profiles,
     settings,
     captures,
+    securityAssets,
   };
 }
 

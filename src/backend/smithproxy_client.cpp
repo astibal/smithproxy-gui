@@ -243,6 +243,9 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                         config.ports = std::move(previous_config.ports);
                         config.protocols = std::move(previous_config.protocols);
                         config.profiles = std::move(previous_config.profiles);
+                        config.settings = std::move(previous_config.settings);
+                        config.captures = std::move(previous_config.captures);
+                        config.security_assets = std::move(previous_config.security_assets);
                     }
                     latest.config_snapshot = std::move(config);
                 } else {
@@ -563,6 +566,10 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     auto protocols_future = std::async(std::launch::async, fetch_section, "proto_objects");
     auto settings_future = std::async(std::launch::async, fetch_section, "settings");
     auto captures_future = std::async(std::launch::async, fetch_section, "captures");
+    auto authorities_future = std::async(std::launch::async, fetch_section, "tls_ca");
+    auto starttls_future = std::async(std::launch::async, fetch_section, "starttls_signatures");
+    auto detection_signatures_future = std::async(
+        std::launch::async, fetch_section, "detection_signatures");
     const std::array profile_categories{
         std::pair{"detection_profiles", "detection"},
         std::pair{"content_profiles", "content"},
@@ -585,9 +592,13 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     auto protocols = protocols_future.get();
     auto settings = settings_future.get();
     auto captures = captures_future.get();
+    auto authorities = authorities_future.get();
+    auto starttls = starttls_future.get();
+    auto detection_signatures = detection_signatures_future.get();
     snapshot.checked_at = std::chrono::system_clock::now();
 
-    for (const auto* response : {&policies, &addresses, &ports, &protocols, &settings, &captures}) {
+    for (const auto* response : {&policies, &addresses, &ports, &protocols, &settings, &captures,
+                                 &authorities, &starttls, &detection_signatures}) {
         if (!response->body) {
             snapshot.detail = response->error;
             return snapshot;
@@ -611,6 +622,13 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         return snapshot;
     }
     parsed.snapshot->captures = std::move(parsed_captures.captures);
+    auto parsed_security_assets = parse_config_security_assets(
+        *authorities.body, *starttls.body, *detection_signatures.body);
+    if (!parsed_security_assets.security_assets) {
+        snapshot.detail = std::move(parsed_security_assets.error);
+        return snapshot;
+    }
+    parsed.snapshot->security_assets = std::move(parsed_security_assets.security_assets);
     for (std::size_t index = 0; index < profile_categories.size(); ++index) {
         auto response = profile_futures[index].get();
         if (!response.body) {

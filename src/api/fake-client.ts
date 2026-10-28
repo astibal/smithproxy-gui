@@ -201,6 +201,14 @@ const snapshot: ConfigSnapshot = {
     },
     calculateChecksums: true,
   },
+  securityAssets: {
+    certificateAuthorityCount: 1,
+    certificateAuthorityPathCount: 1,
+    starttlsSignatureCount: 6,
+    starttlsFlowStepCount: 12,
+    detectionSignatureCount: 24,
+    detectionFlowStepCount: 31,
+  },
 };
 
 export class FakeConfigClient implements ConfigClient {

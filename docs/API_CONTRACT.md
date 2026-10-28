@@ -48,6 +48,11 @@ Capture posture includes local format and quota, remote tunnel mode and TTL,
 and checksum behavior. Capture directories, filename components, tunnel
 destinations, and bind interfaces are reduced to configured flags.
 
+Trust and signature posture covers configured TLS certificate-authority entries,
+STARTTLS signatures, detection signatures, and their aggregate flow-step counts.
+Certificate paths, signature names, categories, groups, engines, expressions,
+and match windows remain inside the GUI core and are never serialized.
+
 GUI nesmí odhadovat podporu funkce pouze z čísla verze. Capability odpověď určuje
 dostupné endpointy, limity a feature flags.
 

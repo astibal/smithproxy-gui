@@ -156,6 +156,11 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         },
         calculate_checksums: true,
       },
+      security_assets: {
+        certificate_authority_count: 1, certificate_authority_path_count: 1,
+        starttls_signature_count: 6, starttls_flow_step_count: 12,
+        detection_signature_count: 24, detection_flow_step_count: 31,
+      },
     }}));
   }
 }
@@ -354,6 +359,10 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const capturePosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Capture posture'})});
   await expect(capturePosture).toBeVisible();
   await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
+  const trustPosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
+  await expect(trustPosture).toBeVisible();
+  await expect(trustPosture.getByText('24', {exact: true})).toBeVisible();
+  await expect(trustPosture.getByText(/paths and signature expressions are redacted/i)).toBeVisible();
 });
 
 test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {

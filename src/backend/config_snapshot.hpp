@@ -185,6 +185,15 @@ struct ConfigCaptureSettings {
     bool calculate_checksums{};
 };
 
+struct ConfigSecurityAssets {
+    std::uint64_t certificate_authority_count{};
+    std::uint64_t certificate_authority_path_count{};
+    std::uint64_t starttls_signature_count{};
+    std::uint64_t starttls_flow_step_count{};
+    std::uint64_t detection_signature_count{};
+    std::uint64_t detection_flow_step_count{};
+};
+
 struct ConfigSnapshot {
     std::string state{"unconfigured"};
     std::string detail{"Smithproxy configuration is not configured"};
@@ -197,6 +206,7 @@ struct ConfigSnapshot {
     std::vector<ConfigProfile> profiles;
     std::optional<ConfigSystemSettings> settings;
     std::optional<ConfigCaptureSettings> captures;
+    std::optional<ConfigSecurityAssets> security_assets;
 };
 
 struct ConfigSnapshotParseResult {
@@ -233,5 +243,15 @@ struct ConfigCapturesParseResult {
 };
 
 ConfigCapturesParseResult parse_config_captures(std::string_view payload);
+
+struct ConfigSecurityAssetsParseResult {
+    std::optional<ConfigSecurityAssets> security_assets;
+    std::string error;
+};
+
+ConfigSecurityAssetsParseResult parse_config_security_assets(
+    std::string_view certificate_authority_payload,
+    std::string_view starttls_signature_payload,
+    std::string_view detection_signature_payload);
 
 } // namespace smithproxy::gui
