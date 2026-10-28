@@ -205,7 +205,10 @@ const snapshot: ConfigSnapshot = {
     },
     tlsAutodetect: true, tlsAutodetectHarder: false, kernelTls: false,
     nameserverCount: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
-    httpApi: {keyCount: 1, allowedIpCount: 1, loopbackOnly: true, pamLogin: false, allowApiHeader: false},
+    httpApi: {
+      keyCount: 1, allowedIpCount: 1, allowedIps: ['127.0.0.1'],
+      loopbackOnly: true, pamLogin: false, allowApiHeader: false,
+    },
     webhook: {enabled: false, tlsVerify: true, urlConfigured: false, siftEnabled: false, apiOverride: false},
   },
   debug: {

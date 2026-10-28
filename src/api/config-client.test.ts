@@ -94,7 +94,10 @@ const liveSnapshot = {
     },
     tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
     nameserver_count: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
-    http_api: {key_count: 1, allowed_ip_count: 1, loopback_only: true, pam_login: false, allow_api_header: false},
+    http_api: {
+      key_count: 1, allowed_ip_count: 1, allowed_ips: ['127.0.0.1'],
+      loopback_only: true, pam_login: false, allow_api_header: false,
+    },
     webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
   },
   debug: {
@@ -157,6 +160,7 @@ describe('ApiConfigClient', () => {
       logging: {level: 6, pcapSingleQuota: 100, syslogFamily: 4},
       auxiliary: {cliPort: 50000, socksAsyncDns: true, udpQuickPorts: ['0']},
       nameservers: ['192.0.2.53', '2001:db8::53'],
+      httpApi: {allowedIps: ['127.0.0.1']},
     });
     expect(snapshot.captures).toMatchObject({local: {enabled: true, quotaMiB: 512}});
     expect(snapshot.securityAssets).toMatchObject({

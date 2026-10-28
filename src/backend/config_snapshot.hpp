@@ -193,6 +193,7 @@ struct ConfigSystemSettings {
     std::vector<std::string> nameservers;
     std::uint64_t api_key_count{};
     std::uint64_t api_allowed_ip_count{};
+    std::vector<std::string> api_allowed_ips;
     bool api_loopback_only{};
     bool api_pam_login{};
     bool api_header_allowed{};

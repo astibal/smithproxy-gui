@@ -501,6 +501,7 @@ def main() -> int:
                 "socks_async_dns": True,
             }
             assert config_snapshot["settings"]["nameservers"] == ["192.0.2.53"]
+            assert config_snapshot["settings"]["http_api"]["allowed_ips"] == ["127.0.0.1"]
             assert config_snapshot["debug"] == {
                 "log_data_crc": False,
                 "log_sockets": True,

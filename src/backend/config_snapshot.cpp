@@ -567,7 +567,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     }
     const Json& http_api = http_api_value != value->end() && http_api_value->is_object() ? *http_api_value : empty;
     const auto api_keys = optional_string_array_size(http_api, "keys");
-    const auto allowed_ips = optional_string_array_size(http_api, "allowed_ips", maximum_name_length);
+    const auto allowed_ips = string_array(http_api, "allowed_ips", true);
     const auto loopback_only = boolean_scalar(http_api, "loopback_only", true);
     const auto pam_login = boolean_scalar(http_api, "pam_login", false);
     const auto api_header = boolean_scalar(http_api, "allow_api_header", false);
@@ -608,8 +608,9 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
             return {std::nullopt, "Smithproxy returned invalid UDP quick ports"};
         }
     }
-    if (!std::all_of(nameservers->begin(), nameservers->end(), valid_name)) {
-        return {std::nullopt, "Smithproxy returned invalid nameservers"};
+    if (!std::all_of(nameservers->begin(), nameservers->end(), valid_name) ||
+        !std::all_of(allowed_ips->begin(), allowed_ips->end(), valid_name)) {
+        return {std::nullopt, "Smithproxy returned invalid network address settings"};
     }
     return {ConfigSystemSettings{
                 *accept_tproxy, *accept_redirect, *accept_socks, *accept_http_connect, *accept_api,
@@ -627,7 +628,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !payload_file_suffix->empty(), *cli_port, !cli_password->empty(),
                 !rating_key->empty(), *socks_async_dns, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, nameservers->size(), *nameservers,
-                *api_keys, *allowed_ips,
+                *api_keys, allowed_ips->size(), *allowed_ips,
                 *loopback_only, *pam_login, *api_header, *webhook_enabled, *webhook_tls_verify,
                 !webhook_url->empty(), *webhook_sift, *webhook_api_override,
             }, {}};

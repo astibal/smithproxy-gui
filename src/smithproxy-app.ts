@@ -1238,19 +1238,24 @@ export class SmithproxyApp extends LitElement {
     changes.push({path: 'settings.syslog_family', value: Number(syslogFamily.value)});
     const nameserversInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-nameservers');
     const quickPortsInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-udp-quick-ports');
-    if (!nameserversInput || !quickPortsInput) return undefined;
+    const allowedIpsInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-allowed-ips');
+    if (!nameserversInput || !quickPortsInput || !allowedIpsInput) return undefined;
     const splitList = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
     const nameservers = splitList(nameserversInput.value);
     const quickPorts = splitList(quickPortsInput.value);
+    const allowedIps = splitList(allowedIpsInput.value);
     if (nameservers.length > 256 || new Set(nameservers).size !== nameservers.length ||
         nameservers.some(item => !/^[A-Za-z0-9:._-]{1,128}$/u.test(item)) ||
         quickPorts.length > 256 || new Set(quickPorts).size !== quickPorts.length ||
-        quickPorts.some(item => !/^\d{1,5}$/u.test(item) || Number(item) > 65535)) {
-      this.draftError = 'Nameservers and UDP quick ports must be unique, bounded values.';
+        quickPorts.some(item => !/^\d{1,5}$/u.test(item) || Number(item) > 65535) ||
+        allowedIps.length > 256 || new Set(allowedIps).size !== allowedIps.length ||
+        allowedIps.some(item => !/^[A-Za-z0-9:._/-]{1,128}$/u.test(item))) {
+      this.draftError = 'Nameservers, API allowlists, and UDP quick ports must be unique, bounded values.';
       return undefined;
     }
     changes.push({path: 'settings.nameservers', value: nameservers});
     changes.push({path: 'settings.udp_quick_ports', value: quickPorts});
+    changes.push({path: 'settings.http_api.allowed_ips', value: allowedIps});
     if (this.snapshot?.debug) {
       const debugFields = [
         ['log_data_crc', 'data-crc'], ['log_sockets', 'sockets'],
@@ -2035,7 +2040,7 @@ export class SmithproxyApp extends LitElement {
               <dl>
                 <dt>Listener</dt><dd>${settings.acceptApi ? 'Enabled' : 'Disabled'}</dd>
                 <dt>API keys</dt><dd>${settings.httpApi.keyCount} configured</dd>
-                <dt>Allowed IPs</dt><dd>${settings.httpApi.allowedIpCount} configured</dd>
+                <dt>Allowed IPs</dt><dd>${settings.httpApi.allowedIps.join(', ') || 'None'}</dd>
                 <dt>Loopback only</dt><dd>${settings.httpApi.loopbackOnly ? 'Yes' : 'No'}</dd>
                 <dt>API header access</dt><dd>${settings.httpApi.allowApiHeader ? 'Allowed' : 'Blocked'}</dd>
                 <dt>PAM login</dt><dd>${settings.httpApi.pamLogin ? 'Enabled' : 'Disabled'}</dd>
@@ -2635,7 +2640,9 @@ export class SmithproxyApp extends LitElement {
         <input id="settings-nameservers" .value=${settings.nameservers.join(', ')}
           placeholder="192.0.2.53, resolver.example" .readOnly=${disabled} />
         <label>HTTP API keys</label><span>${settings.httpApi.keyCount} redacted entries · unchanged</span>
-        <label>HTTP API allowed IPs</label><span>${settings.httpApi.allowedIpCount} redacted entries · unchanged</span>
+        <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
+        <input id="settings-api-allowed-ips" .value=${settings.httpApi.allowedIps.join(', ')}
+          placeholder="127.0.0.1, 192.0.2.0/24" .readOnly=${disabled} />
         <label>Webhook URL</label><span>${settings.webhook.urlConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
         ${this.snapshot?.debug ? html`
           <h3 class="form-span">Debug logging</h3>

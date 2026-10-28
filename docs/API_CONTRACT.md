@@ -42,7 +42,7 @@ boundary. Stable IDs and derived reverse references support nested drawers.
 The system-settings posture covers listener admission and ports, fail-open
 behavior, worker pools, certificate-status cache TTLs, TLS autodetection, kernel
 TLS, payload retention, logging, syslog posture, HTTP API access, and webhooks.
-API keys, allowed API client addresses, webhook URLs, filesystem paths, syslog targets,
+API keys, webhook URLs, filesystem paths, syslog targets,
 certificate and CLI passwords, web-rating keys, and identity values are never
 serialized; only bounded counts and configured flags are exposed.
 

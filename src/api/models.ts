@@ -194,6 +194,7 @@ export interface SystemSettings {
   httpApi: {
     keyCount: number;
     allowedIpCount: number;
+    allowedIps: ReadonlyArray<string>;
     loopbackOnly: boolean;
     pamLogin: boolean;
     allowApiHeader: boolean;

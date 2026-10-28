@@ -589,6 +589,7 @@ private:
                        ",\"nameservers\":" + string_array_json(value.nameservers) +
                        ",\"http_api\":{\"key_count\":" + std::to_string(value.api_key_count) +
                        ",\"allowed_ip_count\":" + std::to_string(value.api_allowed_ip_count) +
+                       ",\"allowed_ips\":" + string_array_json(value.api_allowed_ips) +
                        ",\"loopback_only\":" + (value.api_loopback_only ? "true" : "false") +
                        ",\"pam_login\":" + (value.api_pam_login ? "true" : "false") +
                        ",\"allow_api_header\":" + (value.api_header_allowed ? "true" : "false") + "}" +

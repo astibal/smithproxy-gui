@@ -288,6 +288,7 @@ int main() {
     assert(settings.settings->socks_async_dns);
     assert(settings.settings->nameservers == std::vector<std::string>{"192.0.2.53"});
     assert(settings.settings->api_key_count == 1U);
+    assert(settings.settings->api_allowed_ips == std::vector<std::string>{"127.0.0.1"});
     assert(settings.settings->webhook_url_configured);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"http_api":{"keys":"secret"}}}})").settings);
