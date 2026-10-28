@@ -1510,6 +1510,68 @@ export class SmithproxyApp extends LitElement {
     return `${(ratio * 100).toFixed(ratio === 1 ? 0 : 1)}%`;
   }
 
+  private sampleAgeLabel(value: number | null): string {
+    if (value === null) return 'Never sampled';
+    const seconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
+    if (seconds < 2) return 'Now';
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
+  }
+
+  private renderOperationalHealth() {
+    const items = [
+      {name: 'Control plane', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs},
+      {name: 'Listener metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs},
+      {name: 'Session activity', state: this.sessionActivity.state, checked: this.sessionActivity.checkedAtUnixMs},
+      {name: 'TLS cache', state: this.tlsCache.state, checked: this.tlsCache.checkedAtUnixMs},
+      {name: 'Neighborhood', state: this.neighbors.state, checked: this.neighbors.checkedAtUnixMs},
+      {name: 'Configuration', state: this.snapshot?.state ?? 'starting', checked: this.snapshot?.checkedAtUnixMs ?? null},
+    ];
+    return html`
+      <section class="runtime-summary" aria-label="Operational health matrix">
+        <div class="runtime-heading">
+          <div><h3>Operational health</h3><p>Current state and freshness across GUI core data planes</p></div>
+        </div>
+        <div class="card-grid">
+          ${items.map(item => {
+            const tone = item.state === 'ready' ? 'success' :
+              ['unreachable', 'unauthorized', 'error', 'unavailable'].includes(item.state) ? 'danger' : 'warning';
+            return html`<article class="domain-card">
+              <header><div><h3>${item.name}</h3><p>${this.sampleAgeLabel(item.checked)}</p></div>
+                <span class="runtime-state ${tone}">● ${displayState(item.state)}</span>
+              </header>
+            </article>`;
+          })}
+        </div>
+      </section>`;
+  }
+
+  private renderProbeAnalysis() {
+    const history = this.systemStatus.history;
+    const latencies = history.flatMap(sample => sample.state === 'ready' && sample.latencyMs !== null
+      ? [sample.latencyMs] : []).sort((left, right) => left - right);
+    const percentile = (fraction: number): string => {
+      if (latencies.length === 0) return '—';
+      const index = Math.min(latencies.length - 1, Math.max(0, Math.ceil(latencies.length * fraction) - 1));
+      return `${latencies[index]} ms`;
+    };
+    const incidents = history.filter(sample => sample.state !== 'ready').length;
+    return html`
+      <div class="metric-grid" aria-label="Probe latency analysis">
+        <article class="metric"><span class="metric-label">Median latency</span>
+          <strong class="metric-value">${percentile(.5)}</strong><span class="metric-note">p50 successful probes</span></article>
+        <article class="metric"><span class="metric-label">Tail latency</span>
+          <strong class="metric-value">${percentile(.95)}</strong><span class="metric-note">p95 successful probes</span></article>
+        <article class="metric"><span class="metric-label">Maximum latency</span>
+          <strong class="metric-value">${latencies.length ? `${latencies.at(-1)} ms` : '—'}</strong>
+          <span class="metric-note">Successful probes in window</span></article>
+        <article class="metric"><span class="metric-label">Incident samples</span>
+          <strong class="metric-value ${incidents ? 'danger' : ''}">${incidents}</strong>
+          <span class="metric-note">Non-ready states in window</span></article>
+      </div>`;
+  }
+
   private timeLabel(value: number | null): string {
     return value === null ? 'Never' : new Date(value).toLocaleString();
   }
@@ -1646,6 +1708,7 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">${this.systemStatus.totalProbes} probes · ${this.systemStatus.consecutiveFailures} consecutive failures</span>
           </article>
         </div>
+        ${this.renderOperationalHealth()}
         ${this.renderRuntimeSummary()}
         ${this.renderTlsCache()}
         <section class="monitor-panel" aria-label="Probe history">
@@ -1657,6 +1720,7 @@ export class SmithproxyApp extends LitElement {
               <span class="probe ${sample.state}" title="${displayState(sample.state)} · ${sample.latencyMs ?? '—'} ms · ${this.timeLabel(sample.checkedAtUnixMs)}" aria-hidden="true"></span>
             `)}
           </div>
+          ${this.renderProbeAnalysis()}
         </section>
         <div class="scope-note">
           Control-plane health and listener counters are live. TLS inspection outcomes and deeper dataplane health will be added as dedicated monitoring surfaces.
@@ -1672,6 +1736,8 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
         </div>
+        ${this.renderOperationalHealth()}
+        ${this.renderProbeAnalysis()}
         ${this.renderRuntimeSummary()}
         ${this.renderTlsCache()}
         ${this.renderSessionActivity()}

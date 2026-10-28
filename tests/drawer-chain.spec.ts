@@ -468,7 +468,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
 
   await expect(page.getByText('Core: Online')).toBeVisible();
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
-  await expect(page.getByText('12 ms')).toBeVisible();
+  await expect(page.getByText('Probe latency').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
   await expect(page.getByText(/control-plane health and listener counters are live/i)).toBeVisible();
   await expect(page.getByRole('region', {name: 'Runtime metrics summary'}).getByText('4', {exact: true})).toBeVisible();
@@ -493,6 +493,13 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   state.smithproxy = 'ready';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
+  const health = page.getByRole('region', {name: 'Operational health matrix'});
+  await expect(health.getByRole('heading', {name: 'Control plane'})).toBeVisible();
+  await expect(health.getByRole('heading', {name: 'TLS cache'})).toBeVisible();
+  const analysis = page.getByLabel('Probe latency analysis');
+  await expect(analysis.getByText('11 ms', {exact: true})).toBeVisible();
+  await expect(analysis.getByText('12 ms', {exact: true})).toHaveCount(2);
+  await expect(analysis.getByText('0', {exact: true})).toBeVisible();
 });
 
 test('exposes network, object, and system vertical slices', async ({page}) => {
@@ -644,7 +651,7 @@ test('searches policies and configuration objects without unsafe markup', async 
   await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
   await expect(page.locator('smithproxy-gui script')).toHaveCount(0);
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('heading', {name: 'Control plane'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Control plane', level: 2})).toBeVisible();
 });
 
 test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {
