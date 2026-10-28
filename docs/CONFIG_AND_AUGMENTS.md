@@ -34,6 +34,10 @@ editoru pouze pro čtení; augment se nesmí nevědomky přepsat změnou base co
 
 Úplnost se měří proti strojově čitelnému schema manifestu Smithproxy. Každý uzel
 má stabilní identifikátor, typ, omezení, citlivost, schopnosti a podporované akce.
+Do doby, než upstream schema poskytne přímo Smithproxy API, je autoritativní
+inventurou GUI soubor [`CONFIG_COVERAGE.json`](CONFIG_COVERAGE.json). Explicitně
+rozlišuje plné, částečné, metadata-only a nepodporované sekce. Coverage test
+hlídá, aby známá mezera nebyla omylem prezentována jako hotová podpora.
 
 ```text
 schema node

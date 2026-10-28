@@ -105,4 +105,7 @@ if(BUILD_TESTING)
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/backend_integration.py"
                 "$<TARGET_FILE:smithproxy-gui>" "${SMITHPROXY_GUI_TEST_ASSET_DIR}")
     set_tests_properties(backend_integration_tests PROPERTIES TIMEOUT 20)
+    add_test(NAME config_coverage_tests
+        COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/config_coverage.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/CONFIG_COVERAGE.json")
 endif()

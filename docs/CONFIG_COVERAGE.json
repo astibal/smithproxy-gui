@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "repository": "astibal/smithproxy",
+    "revision": "495d0aa51bf5b86c39d999222152b4d2789f2ede",
+    "reference_config": "etc/smithproxy.cfg"
+  },
+  "status_definitions": {
+    "read": ["full", "partial", "metadata", "unsupported"],
+    "edit": ["typed", "partial", "none"]
+  },
+  "sections": [
+    {
+      "name": "settings",
+      "origin": "reference_config",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "secret-bearing",
+      "tracked_fields": [
+        "accept_tproxy", "accept_redirect", "accept_socks", "accept_http_connect",
+        "accept_api", "policy_fail_open", "policy_access_request_fail_open",
+        "plaintext_workers", "ssl_workers", "udp_workers", "dtls_workers",
+        "quic_workers", "socks_workers", "http_connect_workers", "ssl_autodetect",
+        "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
+      ],
+      "notes": "Listener, worker, API, webhook, and fail-open posture is typed. Paths, credentials, logging, ports, quotas, and nested CLI/rating settings are not yet editable; secret values stay redacted."
+    },
+    {
+      "name": "debug",
+      "origin": "reference_config",
+      "read": "unsupported",
+      "edit": "none",
+      "sensitivity": "operational",
+      "tracked_fields": [],
+      "notes": "Debug flags and per-module logging overrides are not fetched by the GUI."
+    },
+    {
+      "name": "address_objects",
+      "origin": "reference_config",
+      "read": "full",
+      "edit": "typed",
+      "sensitivity": "configuration",
+      "tracked_fields": ["name", "type", "value"],
+      "notes": "CIDR and FQDN address objects are represented by the typed object editor."
+    },
+    {
+      "name": "port_objects",
+      "origin": "reference_config",
+      "read": "full",
+      "edit": "typed",
+      "sensitivity": "configuration",
+      "tracked_fields": ["name", "start", "end"],
+      "notes": "Port ranges are represented by the typed object editor."
+    },
+    {
+      "name": "proto_objects",
+      "origin": "reference_config",
+      "read": "full",
+      "edit": "typed",
+      "sensitivity": "configuration",
+      "tracked_fields": ["name", "id"],
+      "notes": "Protocol identifiers are represented by the typed object editor."
+    },
+    {
+      "name": "detection_profiles",
+      "origin": "reference_config",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "configuration",
+      "tracked_fields": ["name", "mode", "engines", "kb_enabled"],
+      "notes": "Common detection controls are typed; unknown future profile fields need a schema-backed fallback."
+    },
+    {
+      "name": "captures",
+      "origin": "api_extension",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "path-bearing",
+      "tracked_fields": ["local_enabled", "remote_enabled", "remote_port", "remote_ttl", "calculate_checksums"],
+      "notes": "Capture posture is typed. Local paths, destination addresses, and interface names stay redacted and unchanged."
+    },
+    {
+      "name": "content_profiles",
+      "origin": "reference_config",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "rule-bearing",
+      "tracked_fields": ["name", "write_payload", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_sh", "ja4_http"],
+      "notes": "Common content controls are typed; filters and rule payloads remain redacted."
+    },
+    {
+      "name": "tls_ca",
+      "origin": "reference_config",
+      "read": "metadata",
+      "edit": "none",
+      "sensitivity": "secret-bearing",
+      "tracked_fields": ["count", "configured_path_count"],
+      "notes": "Only aggregate certificate-authority counts reach the browser; key and certificate paths remain server-side."
+    },
+    {
+      "name": "tls_profiles",
+      "origin": "reference_config",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "security-critical",
+      "tracked_fields": ["name", "inspect", "no_fallback_bypass", "use_pfs", "left_ca", "right_ca", "ocsp_mode"],
+      "notes": "Core TLS controls are typed; SNI bypass material and unrecognized fields remain redacted."
+    },
+    {
+      "name": "ssh_profiles",
+      "origin": "reference_config",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "secret-bearing",
+      "tracked_fields": ["name", "inspect", "allow_password_auth", "allow_public_key_auth"],
+      "notes": "Authentication posture is typed; host-key paths and future channel policy fields remain redacted."
+    },
+    {
+      "name": "alg_dns_profiles",
+      "origin": "reference_config",
+      "read": "full",
+      "edit": "typed",
+      "sensitivity": "configuration",
+      "tracked_fields": ["name", "match_request_id", "randomize_id", "cached_responses"],
+      "notes": "The current DNS ALG profile schema is represented by the typed editor."
+    },
+    {
+      "name": "routing",
+      "origin": "reference_config",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "configuration",
+      "tracked_fields": ["name", "dnat_address", "dnat_port", "dnat_lb_method", "dnat_lb_state"],
+      "notes": "Current DNAT controls are typed; unknown future routing fields need a schema-backed fallback."
+    },
+    {
+      "name": "policy",
+      "origin": "reference_config",
+      "read": "full",
+      "edit": "typed",
+      "sensitivity": "security-critical",
+      "tracked_fields": [
+        "name", "action", "proto", "src", "sport", "dst", "dport", "tls_profile",
+        "ssh_profile", "detection_profile", "content_profile", "alg_dns_profile",
+        "script_profile", "auth_profile", "nat", "routing", "write_payload", "disabled"
+      ],
+      "notes": "All fields currently returned by the policy snapshot contract are represented by the typed editor."
+    },
+    {
+      "name": "starttls_signatures",
+      "origin": "reference_config",
+      "read": "metadata",
+      "edit": "none",
+      "sensitivity": "rule-bearing",
+      "tracked_fields": ["signature_count", "flow_step_count"],
+      "notes": "Only aggregate counts reach the browser; expressions and flow definitions remain server-side."
+    },
+    {
+      "name": "detection_signatures",
+      "origin": "reference_config",
+      "read": "metadata",
+      "edit": "none",
+      "sensitivity": "rule-bearing",
+      "tracked_fields": ["signature_count", "flow_step_count"],
+      "notes": "Only aggregate counts reach the browser; expressions and flow definitions remain server-side."
+    },
+    {
+      "name": "script_profiles",
+      "origin": "api_extension",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "code-bearing",
+      "tracked_fields": ["name", "runtime", "module_path_configured"],
+      "notes": "Runtime selection is typed; executable paths and script contents remain redacted."
+    },
+    {
+      "name": "auth_profiles",
+      "origin": "api_extension",
+      "read": "partial",
+      "edit": "partial",
+      "sensitivity": "identity-bearing",
+      "tracked_fields": ["name", "authenticate", "resolve", "identity_count"],
+      "notes": "Authentication posture is typed; identity mappings remain redacted."
+    }
+  ]
+}

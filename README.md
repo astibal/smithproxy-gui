@@ -28,6 +28,7 @@ documentation:
 - [Architecture](docs/ARCHITECTURE.md)
 - [UX and information architecture](docs/UX.md)
 - [Configuration, drafts, and augments](docs/CONFIG_AND_AUGMENTS.md)
+- [Machine-readable configuration coverage](docs/CONFIG_COVERAGE.json)
 - [API contract](docs/API_CONTRACT.md)
 - [Security](docs/SECURITY.md)
 - [Testing strategy](docs/TESTING.md)
