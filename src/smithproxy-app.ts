@@ -1190,6 +1190,7 @@ export class SmithproxyApp extends LitElement {
       ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
       ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
       ['default_write_payload', 'logging-default-payload'], ['log_console', 'logging-console'],
+      ['socks.async_dns', 'aux-socks-async-dns'],
     ] as const;
     const changes: DraftChange[] = [];
     for (const [path, id] of booleanFields) {
@@ -1221,6 +1222,7 @@ export class SmithproxyApp extends LitElement {
       ['log_level', 'logging-level', 10], ['syslog_port', 'logging-syslog-port', 65535],
       ['syslog_facility', 'logging-syslog-facility', 23],
       ['syslog_level', 'logging-syslog-level', 10],
+      ['cli.port', 'aux-cli-port', 65535],
     ] as const;
     for (const [path, id, maximum] of numericFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-${id}`);
@@ -2001,6 +2003,19 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card">
+              <header><div><h3>Auxiliary services</h3><p>Credentials and filesystem paths stay redacted</p></div></header>
+              <dl>
+                <dt>CLI port / password</dt><dd>${settings.auxiliary.cliPort} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
+                <dt>SOCKS async DNS</dt><dd>${settings.auxiliary.socksAsyncDns ? 'Enabled' : 'Disabled'}</dd>
+                <dt>UDP quick ports</dt><dd>${settings.auxiliary.udpQuickPortCount} configured · unchanged</dd>
+                <dt>Certificates / CA bundle</dt><dd>${settings.auxiliary.certificatesPathConfigured ? 'Configured' : 'Missing'} / ${settings.auxiliary.caBundlePathConfigured ? 'Configured' : 'Missing'}</dd>
+                <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Message assets</dt><dd>${settings.auxiliary.messagesDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Payload filename parts</dt><dd>${settings.auxiliary.payloadFilePrefixConfigured ? 'Prefix' : 'No prefix'} / ${settings.auxiliary.payloadFileSuffixConfigured ? 'Suffix' : 'No suffix'}</dd>
+                <dt>Web rating key</dt><dd>${settings.auxiliary.webRatingKeyConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+              </dl>
+            </article>
+            <article class="domain-card">
               <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div></header>
               <dl>
                 <dt>Listener</dt><dd>${settings.acceptApi ? 'Enabled' : 'Disabled'}</dd>
@@ -2577,6 +2592,18 @@ export class SmithproxyApp extends LitElement {
         <label>Log file</label><span>${settings.logging.fileConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
         <label>TLS key log file</label><span>${settings.logging.sslKeyFileConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
         <label>Syslog server</label><span>${settings.logging.syslogServerConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <h3 class="form-span">Auxiliary services</h3>
+        ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 65535)}
+        ${booleanField('aux-socks-async-dns', 'SOCKS asynchronous DNS', settings.auxiliary.socksAsyncDns)}
+        <label>CLI password</label><span>${settings.auxiliary.cliPasswordConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>UDP quick ports</label><span>${settings.auxiliary.udpQuickPortCount} redacted entries · unchanged</span>
+        <label>Certificates path</label><span>${settings.auxiliary.certificatesPathConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>Certificate password</label><span>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>CA bundle path</label><span>${settings.auxiliary.caBundlePathConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>Message assets</label><span>${settings.auxiliary.messagesDirectoryConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>Payload filename prefix</label><span>${settings.auxiliary.payloadFilePrefixConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>Payload filename suffix</label><span>${settings.auxiliary.payloadFileSuffixConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        <label>Web rating key</label><span>${settings.auxiliary.webRatingKeyConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
         ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}

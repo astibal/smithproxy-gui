@@ -72,6 +72,14 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "sslkeylog_file": "/private/log/tls.keys", "syslog_server": "192.0.2.60",
             "syslog_port": "514", "syslog_facility": "23", "syslog_level": "6",
             "syslog_family": "4",
+            "udp_quick_ports": ["0"], "certs_path": "/private/certs",
+            "certs_ca_key_password": "private-ca-password",
+            "ca_bundle_path": "/private/ca-bundle", "messages_dir": "/private/messages",
+            "write_payload_file_prefix": "private-prefix",
+            "write_payload_file_suffix": "private-suffix",
+            "cli": {"port": "50000", "enable_password": "private-cli-password"},
+            "web_rating": {"wot_key": "private-rating-key"},
+            "socks": {"async_dns": "true"},
             "ssl_autodetect_harder": "false", "ssl_use_ktls": "false",
             "nameservers": ["192.0.2.53"],
             "http_api": {
@@ -478,6 +486,19 @@ def main() -> int:
                 "syslog_level": 6,
                 "syslog_family": 4,
             }
+            assert config_snapshot["settings"]["auxiliary"] == {
+                "udp_quick_port_count": 1,
+                "certificates_path_configured": True,
+                "certificate_password_configured": True,
+                "ca_bundle_path_configured": True,
+                "messages_directory_configured": True,
+                "payload_file_prefix_configured": True,
+                "payload_file_suffix_configured": True,
+                "cli_port": 50000,
+                "cli_password_configured": True,
+                "web_rating_key_configured": True,
+                "socks_async_dns": True,
+            }
             assert config_snapshot["debug"] == {
                 "log_data_crc": False,
                 "log_sockets": True,
@@ -499,6 +520,12 @@ def main() -> int:
             assert b"/private/payloads" not in config_body
             assert b"/private/log" not in config_body
             assert b"192.0.2.60" not in config_body
+            for private_value in (
+                b"/private/certs", b"private-ca-password", b"/private/ca-bundle",
+                b"/private/messages", b"private-prefix", b"private-suffix",
+                b"private-cli-password", b"private-rating-key",
+            ):
+                assert private_value not in config_body
             assert config_snapshot["security_assets"] == {
                 "certificate_authority_count": 1,
                 "certificate_authority_path_count": 1,

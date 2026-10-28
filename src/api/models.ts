@@ -172,6 +172,19 @@ export interface SystemSettings {
     syslogLevel: number;
     syslogFamily: 4 | 6;
   };
+  auxiliary: {
+    udpQuickPortCount: number;
+    certificatesPathConfigured: boolean;
+    certificatePasswordConfigured: boolean;
+    caBundlePathConfigured: boolean;
+    messagesDirectoryConfigured: boolean;
+    payloadFilePrefixConfigured: boolean;
+    payloadFileSuffixConfigured: boolean;
+    cliPort: number;
+    cliPasswordConfigured: boolean;
+    webRatingKeyConfigured: boolean;
+    socksAsyncDns: boolean;
+  };
   tlsAutodetect: boolean;
   tlsAutodetectHarder: boolean;
   kernelTls: boolean;

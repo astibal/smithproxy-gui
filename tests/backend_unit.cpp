@@ -268,7 +268,7 @@ int main() {
         R"({"success":{"script_profiles":{"bad":{"type":"7"}}}})",
         "script_profiles", "script").profiles);
     const auto settings = parse_config_settings(
-        R"({"success":{"settings":{"accept_tproxy":"true","policy_fail_open":"false","plaintext_workers":"2","ssl_workers":"4","quic_workers":"-1","socks_workers":"-1","plaintext_port":"50080","ssl_port":"50443","udp_port":"50080","quic_port":"443","http_connect_port":"3128","ssl_ocsp_status_ttl":"1800","ssl_crl_status_ttl":"86400","default_write_payload":"false","write_payload_dir":"/private/payloads","write_pcap_single_quota":"100","log_level":"6","log_file":"/private/messages.log","log_console":"true","sslkeylog_file":"/private/tls.keys","syslog_server":"192.0.2.60","syslog_port":"514","syslog_facility":"23","syslog_level":"6","syslog_family":"4","nameservers":["192.0.2.53"],"http_api":{"keys":["secret"],"allowed_ips":["127.0.0.1"],"loopback_only":"true"},"webhook":{"enabled":"true","tls_verify":"true","url":"https://private.example/"}}}})");
+        R"({"success":{"settings":{"accept_tproxy":"true","policy_fail_open":"false","plaintext_workers":"2","ssl_workers":"4","quic_workers":"-1","socks_workers":"-1","plaintext_port":"50080","ssl_port":"50443","udp_port":"50080","quic_port":"443","http_connect_port":"3128","ssl_ocsp_status_ttl":"1800","ssl_crl_status_ttl":"86400","default_write_payload":"false","write_payload_dir":"/private/payloads","write_pcap_single_quota":"100","log_level":"6","log_file":"/private/messages.log","log_console":"true","sslkeylog_file":"/private/tls.keys","syslog_server":"192.0.2.60","syslog_port":"514","syslog_facility":"23","syslog_level":"6","syslog_family":"4","udp_quick_ports":["0"],"certs_path":"/private/certs","certs_ca_key_password":"password","ca_bundle_path":"/private/ca","messages_dir":"/private/messages","write_payload_file_prefix":"prefix","write_payload_file_suffix":"suffix","cli":{"port":"50000","enable_password":"password"},"web_rating":{"wot_key":"key"},"socks":{"async_dns":"true"},"nameservers":["192.0.2.53"],"http_api":{"keys":["secret"],"allowed_ips":["127.0.0.1"],"loopback_only":"true"},"webhook":{"enabled":"true","tls_verify":"true","url":"https://private.example/"}}}})");
     assert(settings.settings);
     assert(settings.settings->accept_tproxy);
     assert(settings.settings->tls_workers == 4);
@@ -280,6 +280,11 @@ int main() {
     assert(settings.settings->log_file_configured);
     assert(settings.settings->syslog_server_configured);
     assert(settings.settings->syslog_family == 4U);
+    assert(settings.settings->udp_quick_port_count == 1U);
+    assert(settings.settings->certificate_password_configured);
+    assert(settings.settings->cli_password_configured);
+    assert(settings.settings->web_rating_key_configured);
+    assert(settings.settings->socks_async_dns);
     assert(settings.settings->api_key_count == 1U);
     assert(settings.settings->webhook_url_configured);
     assert(!parse_config_settings(

@@ -561,6 +561,26 @@ private:
                        ",\"syslog_facility\":" + std::to_string(value.syslog_facility) +
                        ",\"syslog_level\":" + std::to_string(value.syslog_level) +
                        ",\"syslog_family\":" + std::to_string(value.syslog_family) + "}" +
+                       ",\"auxiliary\":{\"udp_quick_port_count\":" +
+                       std::to_string(value.udp_quick_port_count) +
+                       ",\"certificates_path_configured\":" +
+                       (value.certificates_path_configured ? "true" : "false") +
+                       ",\"certificate_password_configured\":" +
+                       (value.certificate_password_configured ? "true" : "false") +
+                       ",\"ca_bundle_path_configured\":" +
+                       (value.ca_bundle_path_configured ? "true" : "false") +
+                       ",\"messages_directory_configured\":" +
+                       (value.messages_directory_configured ? "true" : "false") +
+                       ",\"payload_file_prefix_configured\":" +
+                       (value.payload_file_prefix_configured ? "true" : "false") +
+                       ",\"payload_file_suffix_configured\":" +
+                       (value.payload_file_suffix_configured ? "true" : "false") +
+                       ",\"cli_port\":" + std::to_string(value.cli_port) +
+                       ",\"cli_password_configured\":" +
+                       (value.cli_password_configured ? "true" : "false") +
+                       ",\"web_rating_key_configured\":" +
+                       (value.web_rating_key_configured ? "true" : "false") +
+                       ",\"socks_async_dns\":" + (value.socks_async_dns ? "true" : "false") + "}" +
                        ",\"tls_autodetect\":" + (value.tls_autodetect ? "true" : "false") +
                        ",\"tls_autodetect_harder\":" + (value.tls_autodetect_harder ? "true" : "false") +
                        ",\"kernel_tls\":" + (value.kernel_tls ? "true" : "false") +

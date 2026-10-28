@@ -196,6 +196,13 @@ const snapshot: ConfigSnapshot = {
       syslogServerConfigured: false, syslogPort: 514, syslogFacility: 23,
       syslogLevel: 6, syslogFamily: 4,
     },
+    auxiliary: {
+      udpQuickPortCount: 1, certificatesPathConfigured: true,
+      certificatePasswordConfigured: true, caBundlePathConfigured: true,
+      messagesDirectoryConfigured: true, payloadFilePrefixConfigured: false,
+      payloadFileSuffixConfigured: false, cliPort: 50000, cliPasswordConfigured: false,
+      webRatingKeyConfigured: false, socksAsyncDns: true,
+    },
     tlsAutodetect: true, tlsAutodetectHarder: false, kernelTls: false,
     nameserverCount: 2,
     httpApi: {keyCount: 1, allowedIpCount: 1, loopbackOnly: true, pamLogin: false, allowApiHeader: false},

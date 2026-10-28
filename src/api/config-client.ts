@@ -441,7 +441,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   let settings: SystemSettings | null = null;
   if (value.settings !== null) {
     if (!isObject(value.settings) || !isObject(value.settings.workers) || !isObject(value.settings.ports) ||
-        !isObject(value.settings.logging) || !isObject(value.settings.http_api) ||
+        !isObject(value.settings.logging) || !isObject(value.settings.auxiliary) ||
+        !isObject(value.settings.http_api) ||
         !isObject(value.settings.webhook)) {
       throw new Error('Invalid system settings.');
     }
@@ -496,6 +497,37 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         syslogFacility: safeInteger(value.settings.logging.syslog_facility, 'syslog facility', 23),
         syslogLevel: safeInteger(value.settings.logging.syslog_level, 'syslog level', 10),
         syslogFamily: allowedInteger(value.settings.logging.syslog_family, 'syslog family', [4, 6]) as 4 | 6,
+      },
+      auxiliary: {
+        udpQuickPortCount: safeInteger(
+          value.settings.auxiliary.udp_quick_port_count, 'UDP quick-port count', MAX_REFERENCES,
+        ),
+        certificatesPathConfigured: safeBoolean(
+          value.settings.auxiliary.certificates_path_configured, 'certificate path state',
+        ),
+        certificatePasswordConfigured: safeBoolean(
+          value.settings.auxiliary.certificate_password_configured, 'certificate password state',
+        ),
+        caBundlePathConfigured: safeBoolean(
+          value.settings.auxiliary.ca_bundle_path_configured, 'CA bundle path state',
+        ),
+        messagesDirectoryConfigured: safeBoolean(
+          value.settings.auxiliary.messages_directory_configured, 'message directory state',
+        ),
+        payloadFilePrefixConfigured: safeBoolean(
+          value.settings.auxiliary.payload_file_prefix_configured, 'payload prefix state',
+        ),
+        payloadFileSuffixConfigured: safeBoolean(
+          value.settings.auxiliary.payload_file_suffix_configured, 'payload suffix state',
+        ),
+        cliPort: safeInteger(value.settings.auxiliary.cli_port, 'CLI port', 65535),
+        cliPasswordConfigured: safeBoolean(
+          value.settings.auxiliary.cli_password_configured, 'CLI password state',
+        ),
+        webRatingKeyConfigured: safeBoolean(
+          value.settings.auxiliary.web_rating_key_configured, 'web-rating key state',
+        ),
+        socksAsyncDns: safeBoolean(value.settings.auxiliary.socks_async_dns, 'SOCKS async DNS state'),
       },
       tlsAutodetect: safeBoolean(value.settings.tls_autodetect, 'TLS autodetection state'),
       tlsAutodetectHarder: safeBoolean(value.settings.tls_autodetect_harder, 'hard TLS autodetection state'),

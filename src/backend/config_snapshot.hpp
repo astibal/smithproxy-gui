@@ -174,6 +174,17 @@ struct ConfigSystemSettings {
     std::uint64_t syslog_facility{};
     std::uint64_t syslog_level{};
     std::uint64_t syslog_family{};
+    std::uint64_t udp_quick_port_count{};
+    bool certificates_path_configured{};
+    bool certificate_password_configured{};
+    bool ca_bundle_path_configured{};
+    bool messages_directory_configured{};
+    bool payload_file_prefix_configured{};
+    bool payload_file_suffix_configured{};
+    std::uint64_t cli_port{};
+    bool cli_password_configured{};
+    bool web_rating_key_configured{};
+    bool socks_async_dns{};
     bool tls_autodetect{};
     bool tls_autodetect_harder{};
     bool kernel_tls{};

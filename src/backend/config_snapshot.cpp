@@ -523,12 +523,44 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto syslog_facility = optional_decimal(*value, "syslog_facility", 23U, 23U);
     const auto syslog_level = optional_decimal(*value, "syslog_level", 6U, 10U);
     const auto syslog_family = optional_decimal(*value, "syslog_family", 4U, 6U);
+    const auto udp_quick_ports = optional_string_array_size(*value, "udp_quick_ports", 5U);
+    const auto certificates_path = bounded_string(*value, "certs_path", maximum_value_length, true);
+    const auto certificate_password = bounded_string(
+        *value, "certs_ca_key_password", maximum_value_length, true);
+    const auto ca_bundle_path = bounded_string(*value, "ca_bundle_path", maximum_value_length, true);
+    const auto messages_directory = bounded_string(*value, "messages_dir", maximum_value_length, true);
+    const auto payload_file_prefix = bounded_string(
+        *value, "write_payload_file_prefix", maximum_name_length, true);
+    const auto payload_file_suffix = bounded_string(
+        *value, "write_payload_file_suffix", maximum_name_length, true);
+
+    Json empty = Json::object();
+    const auto cli_value = value->find("cli");
+    if (cli_value != value->end() && !cli_value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid CLI settings"};
+    }
+    const Json& cli = cli_value != value->end() && cli_value->is_object() ? *cli_value : empty;
+    const auto cli_port = optional_decimal(cli, "port", 50000U, 65535U);
+    const auto cli_password = bounded_string(cli, "enable_password", maximum_value_length, true);
+
+    const auto rating_value = value->find("web_rating");
+    if (rating_value != value->end() && !rating_value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid web-rating settings"};
+    }
+    const Json& rating = rating_value != value->end() && rating_value->is_object() ? *rating_value : empty;
+    const auto rating_key = bounded_string(rating, "wot_key", maximum_value_length, true);
+
+    const auto socks_value = value->find("socks");
+    if (socks_value != value->end() && !socks_value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid SOCKS settings"};
+    }
+    const Json& socks = socks_value != value->end() && socks_value->is_object() ? *socks_value : empty;
+    const auto socks_async_dns = boolean_scalar(socks, "async_dns", true);
     const auto tls_autodetect = boolean_scalar(*value, "ssl_autodetect", false);
     const auto tls_autodetect_harder = boolean_scalar(*value, "ssl_autodetect_harder", false);
     const auto kernel_tls = boolean_scalar(*value, "ssl_use_ktls", false);
     const auto nameservers = optional_string_array_size(*value, "nameservers", maximum_name_length);
 
-    Json empty = Json::object();
     const auto http_api_value = value->find("http_api");
     if (http_api_value != value->end() && !http_api_value->is_object()) {
         return {std::nullopt, "Smithproxy returned invalid HTTP API settings"};
@@ -559,6 +591,9 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !write_pcap_single_quota || !log_level || !log_file || !log_console ||
         !ssl_key_log_file || !syslog_server || !syslog_port || !syslog_facility ||
         !syslog_level || !syslog_family || (*syslog_family != 4U && *syslog_family != 6U) ||
+        !udp_quick_ports || !certificates_path || !certificate_password || !ca_bundle_path ||
+        !messages_directory || !payload_file_prefix || !payload_file_suffix || !cli_port ||
+        !cli_password || !rating_key || !socks_async_dns ||
         !tls_autodetect ||
         !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips || !loopback_only ||
         !pam_login || !api_header || !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
@@ -574,7 +609,11 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !payload_directory->empty(), *write_pcap_single_quota, *log_level,
                 !log_file->empty(), *log_console, !ssl_key_log_file->empty(),
                 !syslog_server->empty(), *syslog_port, *syslog_facility, *syslog_level,
-                *syslog_family, *tls_autodetect,
+                *syslog_family, *udp_quick_ports, !certificates_path->empty(),
+                !certificate_password->empty(), !ca_bundle_path->empty(),
+                !messages_directory->empty(), !payload_file_prefix->empty(),
+                !payload_file_suffix->empty(), *cli_port, !cli_password->empty(),
+                !rating_key->empty(), *socks_async_dns, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, *nameservers, *api_keys, *allowed_ips,
                 *loopback_only, *pam_login, *api_header, *webhook_enabled, *webhook_tls_verify,
                 !webhook_url->empty(), *webhook_sift, *webhook_api_override,
