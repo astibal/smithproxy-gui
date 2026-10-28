@@ -44,7 +44,10 @@ Draft mutations additionally fail closed unless `Origin` exactly matches the
 request host and the request carries JSON content type plus the custom
 `X-Smithproxy-GUI-CSRF: 1` header. Optional Fetch Metadata must report
 `same-origin`. The GUI core does not emit permissive CORS headers. These checks
-are enforced independently of trusted-gateway authentication.
+are enforced independently of trusted-gateway authentication. Individual
+requests are limited to 64 KiB, accumulated draft values to 1 MiB, and browser
+responses to 8 MiB before parsing. Clearing a draft uses the same authentication,
+CSRF, and optimistic-concurrency checks as an upsert.
 
 ## Oprávnění
 

@@ -532,6 +532,23 @@ def main() -> int:
             assert batch_snapshot["version"] == 2
             assert batch_snapshot["changes"][-1] == {
                 "path": "policy.[0].dst", "value": ["internet", "backup"]}
+            clear_change = json.dumps({"expected_version": 2})
+            assert request(
+                configured_port, "/api/v1/config/draft/clear", "POST",
+                headers={**mutation_headers, "Origin": "https://attacker.invalid"},
+                body=clear_change,
+            )[0] == 403
+            status, _, body = request(
+                configured_port, "/api/v1/config/draft/clear", "POST",
+                headers=mutation_headers, body=clear_change)
+            assert status == 200
+            cleared_snapshot = json.loads(body)
+            assert cleared_snapshot["version"] == 3
+            assert cleared_snapshot["changes"] == []
+            assert request(
+                configured_port, "/api/v1/config/draft/clear", "POST",
+                headers=mutation_headers, body=clear_change,
+            )[0] == 409
 
             FakeSmithproxy.response_status = 503
             snapshot = wait_for_snapshot_state(configured_port, "error")

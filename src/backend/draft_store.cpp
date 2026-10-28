@@ -11,6 +11,22 @@ constexpr std::size_t maximum_changes = 4096U;
 constexpr std::size_t maximum_path_length = 512U;
 constexpr std::size_t maximum_string_length = 65536U;
 constexpr std::size_t maximum_array_items = 256U;
+constexpr std::size_t maximum_draft_bytes = 1024U * 1024U;
+
+std::size_t value_size(const DraftScalar& value) {
+    return std::visit([](const auto& item) -> std::size_t {
+        using Value = std::decay_t<decltype(item)>;
+        if constexpr (std::is_same_v<Value, std::string>) {
+            return item.size();
+        } else if constexpr (std::is_same_v<Value, std::vector<std::string>>) {
+            std::size_t total{};
+            for (const auto& entry : item) total += entry.size();
+            return total;
+        } else {
+            return sizeof(item);
+        }
+    }, value);
+}
 
 } // namespace
 
@@ -50,6 +66,18 @@ DraftMutationResult DraftStore::upsert_many(
         else found->value = std::move(change.value);
     }
     if (proposed.size() > maximum_changes) return DraftMutationResult::CapacityExceeded;
+    std::size_t proposed_size{};
+    for (const auto& change : proposed) {
+        if (change.path.size() > maximum_draft_bytes - proposed_size) {
+            return DraftMutationResult::CapacityExceeded;
+        }
+        proposed_size += change.path.size();
+        const auto size = value_size(change.value);
+        if (size > maximum_draft_bytes - proposed_size) {
+            return DraftMutationResult::CapacityExceeded;
+        }
+        proposed_size += size;
+    }
     draft_.changes = std::move(proposed);
     ++draft_.version;
     return DraftMutationResult::Applied;

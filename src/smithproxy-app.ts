@@ -1,7 +1,7 @@
 import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {ApiConfigClient} from './api/config-client';
-import {DraftClient, type DraftSnapshot} from './api/draft-client';
+import {DraftClient, type DraftScalar, type DraftSnapshot} from './api/draft-client';
 import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
@@ -103,6 +103,8 @@ export class SmithproxyApp extends LitElement {
   @state() private draftAvailable = false;
   @state() private draftVersion = 0;
   @state() private draftChangeCount = 0;
+  @state() private workspaceDraft?: DraftSnapshot;
+  @state() private discardDraftArmed = false;
   @state() private draftSaving = false;
   @state() private draftError: string | undefined;
   @state() private configError: string | undefined;
@@ -263,6 +265,12 @@ export class SmithproxyApp extends LitElement {
     .row:not(.heading):hover { background: var(--app-raised); }
     .row.heading { color: var(--app-muted); font-size: 12px; cursor: default; }
     .row strong { font-weight: 650; }
+    .draft-row { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr); gap: 18px; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
+    .draft-row:last-child { border-bottom: 0; }
+    .draft-row.heading { color: var(--app-muted); font-size: 12px; }
+    .draft-path { overflow-wrap: anywhere; color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    .draft-value { overflow-wrap: anywhere; }
+    .danger-button { border-color: var(--app-danger); background: transparent; color: var(--app-danger); }
     .status { display: inline-flex; width: fit-content; gap: 6px; align-items: center; color: var(--app-success); }
     .status::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ''; }
     .status.disabled { color: var(--app-muted); }
@@ -358,6 +366,7 @@ export class SmithproxyApp extends LitElement {
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
       .event-row { grid-template-columns: 110px 66px minmax(120px, 1fr); }
+      .draft-row { grid-template-columns: 1fr; gap: 5px; }
       .event-source { display: none; }
       .probe-history { gap: 2px; }
     }
@@ -549,8 +558,10 @@ export class SmithproxyApp extends LitElement {
   }
 
   private applyDraft(snapshot: DraftSnapshot): void {
+    this.workspaceDraft = snapshot;
     this.draftVersion = snapshot.version;
     this.draftChangeCount = snapshot.changes.length;
+    if (snapshot.changes.length === 0) this.discardDraftArmed = false;
     const objects = new Set<string>();
     for (const change of snapshot.changes) {
       const policy = /^policy\.\[(\d+)\]\./u.exec(change.path);
@@ -585,6 +596,35 @@ export class SmithproxyApp extends LitElement {
     } catch (error) {
       this.draftError = error instanceof Error ? error.message : 'Workspace draft is unavailable.';
     }
+  }
+
+  private async discardDraft(): Promise<void> {
+    if (!this.draftAvailable || !this.draftClient || this.draftChangeCount === 0) return;
+    if (!this.discardDraftArmed) {
+      this.discardDraftArmed = true;
+      return;
+    }
+    this.draftSaving = true;
+    this.draftError = undefined;
+    try {
+      this.applyDraft(await this.draftClient.clear(this.draftVersion));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Workspace draft could not be discarded.';
+      await this.loadDraft();
+      this.draftError = message;
+    } finally {
+      this.draftSaving = false;
+      this.discardDraftArmed = false;
+    }
+  }
+
+  private draftValueSummary(value: DraftScalar): string {
+    if (Array.isArray(value)) {
+      const preview = value.slice(0, 3).join(', ');
+      return `${value.length} item${value.length === 1 ? '' : 's'}${preview ? ` · ${preview}` : ''}${value.length > 3 ? ', …' : ''}`;
+    }
+    const text = String(value);
+    return text.length > 160 ? `${text.slice(0, 157)}…` : text;
   }
 
   private openPolicy(policy: PolicySummary, origin?: HTMLElement): void {
@@ -843,6 +883,52 @@ export class SmithproxyApp extends LitElement {
       event.preventDefault();
       focusable[0]?.focus();
     }
+  }
+
+  private renderDraftReview() {
+    const changes = this.workspaceDraft?.changes ?? [];
+    return html`
+      <div class="content">
+        <div class="section-head">
+          <div>
+            <h2>Workspace draft</h2>
+            <p>Version ${this.draftVersion} · ${changes.length} pending changes</p>
+          </div>
+          <button class="secondary danger-button" type="button"
+            ?disabled=${changes.length === 0 || this.draftSaving}
+            @click=${() => this.discardDraft()}>
+            ${this.draftSaving
+              ? 'Discarding…'
+              : this.discardDraftArmed
+                ? `Confirm discard ${changes.length} changes`
+                : 'Discard draft'}
+          </button>
+        </div>
+        ${this.draftError ? html`<div class="error" role="alert">${this.draftError}</div>` : nothing}
+        ${changes.length === 0 ? html`
+          <div class="empty-state">
+            <h2>No pending changes</h2>
+            <p>Edits from policy and referenced-object drawers will appear here before validation and commit.</p>
+          </div>
+        ` : html`
+          <div class="table" role="table" aria-label="Pending draft changes">
+            <div class="draft-row heading" role="row">
+              <span role="columnheader">Configuration path</span>
+              <span role="columnheader">Draft value</span>
+            </div>
+            ${changes.map(change => html`
+              <div class="draft-row" role="row">
+                <span class="draft-path" role="cell">${change.path}</span>
+                <span class="draft-value" role="cell">${this.draftValueSummary(change.value)}</span>
+              </div>
+            `)}
+          </div>
+          <div class="scope-note section">
+            This is a pending management draft only. It has not changed persistent or runtime Smithproxy configuration.
+          </div>
+        `}
+      </div>
+    `;
   }
 
   private renderPolicyList() {
@@ -1433,6 +1519,9 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderContent() {
+    if (this.activeSection === 'Draft') {
+      return this.renderDraftReview();
+    }
     if (this.activeSection === 'Dashboard') {
       return this.renderDashboard();
     }
@@ -1808,6 +1897,14 @@ export class SmithproxyApp extends LitElement {
           <header class="topbar">
             <h1>${this.activeSection}</h1>
             <p>${this.runtime?.mode === 'embedded' ? 'Saslik Tools' : 'Smithproxy management'}</p>
+            ${this.snapshot?.source === 'live' && this.draftChangeCount > 0 ? html`
+              <button class="secondary" type="button"
+                ?disabled=${this.drawers.length > 0}
+                @click=${() => {
+                  this.discardDraftArmed = false;
+                  this.activeSection = 'Draft';
+                }}>Review draft · ${this.draftChangeCount}</button>
+            ` : nothing}
             <input class="search" type="search" aria-label="Search" placeholder="Search policies and objects" />
           </header>
           <div class="workspace">

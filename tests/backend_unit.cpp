@@ -65,6 +65,19 @@ int main() {
     assert(draft.clear(4U) == DraftMutationResult::Applied);
     assert(draft.snapshot().version == 5U);
 
+    DraftStore bounded_draft{"bounded"};
+    std::vector<DraftChange> oversized_changes;
+    for (std::size_t index = 0; index < 17U; ++index) {
+        oversized_changes.push_back({
+            "settings.large.[" + std::to_string(index) + "]",
+            std::string(65536U, 'x'),
+        });
+    }
+    assert(bounded_draft.upsert_many(0U, std::move(oversized_changes)) ==
+           DraftMutationResult::CapacityExceeded);
+    assert(bounded_draft.snapshot().changes.empty());
+    assert(bounded_draft.snapshot().version == 0U);
+
     assert(path_below_base("/ws001/gui", "/ws001/gui") == "/");
     assert(path_below_base("/ws001/gui/assets/a.js", "/ws001/gui") == "/assets/a.js");
     assert(!path_below_base("/ws001/gui-evil", "/ws001/gui"));

@@ -90,6 +90,15 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     ],
   }}));
   await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
+  await page.route('**/api/v1/config/draft/clear', async route => {
+    const body = route.request().postDataJSON() as {expected_version: number};
+    if (body.expected_version !== draft.version) {
+      await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
+      return;
+    }
+    draft = {...draft, version: draft.version + 1, changes: []};
+    await route.fulfill({json: draft});
+  });
   await page.route('**/api/v1/config/draft/changes', async route => {
     const request = route.request();
     const body = request.postDataJSON() as {
@@ -250,6 +259,20 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(addressEditor.getByText('Saved to draft')).toBeVisible();
   await expect(page.getByText('Draft: 12 changes')).toBeVisible();
+  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(addressEditor).not.toBeVisible();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
+  await page.getByRole('button', {name: 'Review draft · 12'}).click();
+  await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('address_objects.[0].value');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.0/24');
+  await page.getByRole('button', {name: 'Discard draft'}).click();
+  await expect(page.getByRole('button', {name: 'Confirm discard 12 changes'})).toBeVisible();
+  await expect(page.getByText('Draft: 12 changes')).toBeVisible();
+  await page.getByRole('button', {name: 'Confirm discard 12 changes'}).click();
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
+  await expect(page.getByText('No pending changes')).toBeVisible();
 });
 
 test('opens a policy and its referenced address object', async ({page}) => {

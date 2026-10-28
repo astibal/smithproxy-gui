@@ -166,7 +166,8 @@ private:
         if (!relative) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};
         }
-        if (*relative != "/api/v1/config/draft/changes") {
+        if (*relative != "/api/v1/config/draft/changes" &&
+            *relative != "/api/v1/config/draft/clear") {
             return relative->starts_with("/api/")
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
                 : Response{405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
@@ -178,6 +179,20 @@ private:
             return {403, "application/json; charset=utf-8", "{\"error\":\"same-origin CSRF check failed\"}"};
         }
         const auto document = nlohmann::json::parse(body, nullptr, false);
+        if (*relative == "/api/v1/config/draft/clear") {
+            if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
+                !document.contains("expected_version") ||
+                !document["expected_version"].is_number_unsigned()) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid draft clear request\"}"};
+            }
+            const auto result = draft_.clear(document["expected_version"].get<std::uint64_t>());
+            if (result == DraftMutationResult::VersionConflict) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"draft version conflict\"}"};
+            }
+            return draft_snapshot();
+        }
         if (document.is_discarded() || !document.is_object() ||
             !document.contains("expected_version") || !document["expected_version"].is_number_unsigned()) {
             return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};

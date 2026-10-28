@@ -87,16 +87,20 @@ pojmenované objekty a seřazené kolekce.
 
 The GUI core currently exposes one workspace-scoped foundation draft at
 `GET /api/v1/config/draft` and accepts typed atomic batches at
-`POST /api/v1/config/draft/changes`. A batch carries one expected version and a
+`POST /api/v1/config/draft/changes`. The complete draft can be discarded with
+`POST /api/v1/config/draft/clear`. A batch carries one expected version and a
 bounded `changes` array; it is rejected without partial application when any
 path or value is invalid. Supported foundation values are booleans, finite
 numbers, strings, and bounded string arrays. Every mutation requires the trusted
 gateway handoff, an exact same-origin `Origin`, `Sec-Fetch-Site: same-origin` when the
 browser supplies it, JSON content type, and `X-Smithproxy-GUI-CSRF: 1`. The
 custom header and absent CORS support prevent cross-origin form submission.
-Requests are limited to 64 KiB, paths and values are bounded, and an expected
-draft version is mandatory; stale writers receive HTTP 409. This store is not
-yet a commit path and cannot mutate Smithproxy configuration.
+Requests are limited to 64 KiB, the accumulated draft payload is limited to
+1 MiB, paths and values are bounded, and an expected draft version is mandatory;
+stale writers receive HTTP 409. The browser also rejects draft responses above
+8 MiB before JSON parsing, leaving room for worst-case JSON escaping of the
+bounded raw draft. This store is not yet a commit path and cannot mutate
+Smithproxy configuration.
 
 The first browser integration atomically persists `policy.[n].name`,
 `policy.[n].disabled`, `policy.[n].dst`, and `policy.[n].action` through this

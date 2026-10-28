@@ -53,6 +53,26 @@ describe('DraftClient', () => {
     ])).rejects.toThrow('Invalid draft path');
   });
 
+  it('clears a draft with optimistic concurrency headers', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      id: 'workspace-draft', base_revision: null, version: 4, changes: [],
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+    await expect(client.clear(3)).resolves.toMatchObject({version: 4, changes: []});
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/clear', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({expected_version: 3}),
+      headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+    }));
+  });
+
+  it('rejects oversized draft responses before parsing', async () => {
+    const client = new DraftClient('/api/v1', async () => new Response('{}', {
+      headers: {'Content-Length': String(8 * 1024 * 1024 + 1)},
+    }));
+    await expect(client.load()).rejects.toThrow('size limit');
+  });
+
   it('rejects malformed drafts and stale server responses', async () => {
     const malformed = new DraftClient('/api/v1', async () => response({
       id: 'workspace-draft', base_revision: null, version: 0,

@@ -13,6 +13,7 @@ export interface DraftSnapshot {
 }
 
 type JsonObject = Record<string, unknown>;
+const MAX_DRAFT_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -38,6 +39,38 @@ function scalar(value: unknown): DraftScalar {
     return value;
   }
   throw new Error('Invalid draft scalar.');
+}
+
+async function boundedJson(response: Response): Promise<unknown> {
+  const declaredLength = response.headers.get('Content-Length');
+  if (declaredLength !== null &&
+      (!/^\d+$/u.test(declaredLength) || Number(declaredLength) > MAX_DRAFT_RESPONSE_BYTES)) {
+    throw new Error('Draft response exceeded the size limit.');
+  }
+  if (!response.body) return JSON.parse(await response.text()) as unknown;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8', {fatal: true});
+  let size = 0;
+  let payload = '';
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_DRAFT_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error('Draft response exceeded the size limit.');
+      }
+      payload += decoder.decode(value, {stream: true});
+    }
+    payload += decoder.decode();
+    return JSON.parse(payload) as unknown;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('size limit')) throw error;
+    throw new Error('Draft API returned invalid JSON.');
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function parseDraft(value: unknown): DraftSnapshot {
@@ -98,6 +131,15 @@ export class DraftClient {
     }));
   }
 
+  async clear(expectedVersion: number): Promise<DraftSnapshot> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid draft version.');
+    return parseDraft(await this.#request(`${this.#endpoint}/clear`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({expected_version: expectedVersion}),
+    }));
+  }
+
   async #request(path: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController();
     const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
@@ -111,7 +153,7 @@ export class DraftClient {
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`Draft API returned HTTP ${response.status}.`);
-      return await response.json() as unknown;
+      return await boundedJson(response);
     } finally {
       globalThis.clearTimeout(timeout);
     }
