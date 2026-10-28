@@ -1,0 +1,15 @@
+:root {
+  color-scheme: dark;
+  background: var(--st-canvas, #0c1923);
+}
+html,
+body {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+  background: var(--st-canvas, #0c1923);
+}
+
+body {
+  overflow: hidden;
+}

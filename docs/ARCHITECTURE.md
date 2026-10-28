@@ -66,6 +66,24 @@ Výchozí nasazení poslouchá pouze na loopbacku nebo Unix socketu. Vzdálené
 nasazení vyžaduje TLS a explicitní autentizační konfiguraci. GUI a API mají být
 pokud možno pod stejným originem.
 
+## Integrace do Saslik Tools
+
+Stejný frontendový build podporuje samostatný i vložený režim:
+
+```text
+standalone Smithproxy GUI
+Saslik → Tools → Smithproxy GUI
+```
+
+Kořenová komponenta `<smithproxy-gui>` přijímá `mode`, `base-path` a `api-base`.
+Nesmí předpokládat vlastnictví celé stránky, root URL ani samostatnou autentizaci.
+Vložený režim převezme hostitelský auth adapter a navigační kontext Saslíka.
+Shadow DOM izoluje komponentové styly, zatímco CSS custom properties Saslik
+appearance contractu přirozeně procházejí do komponent.
+
+Produkční assety musí fungovat pod konfigurovatelným URL prefixem. Routování,
+odkazy ani API klient nesmí obsahovat natvrdo zapsaný `/` jako deployment root.
+
 ## Hranice změn
 
 Chybějící schopnost Smithproxy se řeší verzovaným rozšířením Smithproxy API.

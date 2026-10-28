@@ -67,6 +67,13 @@ Editor sdíleného objektu vždy ukáže známá použití a před uložením im
 - tablet/mobil: editor jako celá obrazovka, breadcrumb místo viditelných hran;
 - stavová lišta se na úzké obrazovce redukuje na nejdůležitější indikátory.
 
+## Vložení do Saslik Tools
+
+V embedded režimu Saslik vlastní globální navigaci, autentizaci a vnější stránku.
+Smithproxy GUI si ponechá svou doménovou navigaci a drawer chain uvnitř přidělené
+pracovní plochy. Samostatný a vložený režim používají stejné komponenty, stavové
+modely a testovací scénáře; liší se pouze hostitelským adaptérem a rámcem stránky.
+
 ## Přístupnost
 
 - ovládání celé aplikace z klávesnice;
