@@ -31,11 +31,12 @@ def request(port: int, path: str, method: str = "GET"):
 
 class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     api_key = None
+    response_status = 200
 
     def do_GET(self):
         if self.path == "/api/status/ping":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
-            self.send_response(200)
+            self.send_response(FakeSmithproxy.response_status)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
@@ -56,6 +57,19 @@ def wait_for_state(port: int, expected: str):
             pass
         time.sleep(0.05)
     raise AssertionError(f"server did not reach Smithproxy state {expected}")
+
+
+def wait_for_snapshot_state(port: int, expected: str):
+    for _ in range(140):
+        try:
+            status, _, body = request(port, "/api/v1/status")
+            snapshot = json.loads(body)
+            if status == 200 and snapshot["smithproxy"]["state"] == expected:
+                return snapshot
+        except OSError:
+            pass
+        time.sleep(0.05)
+    raise AssertionError(f"status endpoint did not reach Smithproxy state {expected}")
 
 
 def main() -> int:
@@ -95,6 +109,13 @@ def main() -> int:
         assert status == 200
         assert capabilities["base_path"] == "/ws001/smithproxy-gui"
         assert capabilities["features"]["config_write"] is False
+
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/status")
+        snapshot = json.loads(body)
+        assert status == 200
+        assert snapshot["smithproxy"]["configured"] is False
+        assert snapshot["smithproxy"]["total_probes"] == 0
+        assert snapshot["smithproxy"]["history"] == []
 
         status, _, body = request(port, "/ws001/smithproxy-gui/")
         assert status == 200
@@ -137,7 +158,25 @@ def main() -> int:
             assert FakeSmithproxy.api_key == secret
             assert secret.encode() not in health_body
             assert isinstance(json.loads(health_body)["smithproxy"]["checked_at_unix_ms"], int)
+            status, _, body = request(configured_port, "/api/v1/status")
+            snapshot = json.loads(body)
+            assert status == 200
+            assert snapshot["smithproxy"]["configured"] is True
+            assert snapshot["smithproxy"]["state"] == "ready"
+            assert snapshot["smithproxy"]["total_probes"] >= 1
+            assert isinstance(snapshot["smithproxy"]["latency_ms"], int)
+            assert len(snapshot["smithproxy"]["history"]) >= 1
+            assert snapshot["smithproxy"]["availability_window"]["successful"] >= 1
+            last_success = snapshot["smithproxy"]["last_success_at_unix_ms"]
+
+            FakeSmithproxy.response_status = 503
+            snapshot = wait_for_snapshot_state(configured_port, "error")
+            assert snapshot["smithproxy"]["consecutive_failures"] == 1
+            assert snapshot["smithproxy"]["last_success_at_unix_ms"] == last_success
+            assert snapshot["smithproxy"]["history"][-1]["state"] == "error"
+            assert snapshot["smithproxy"]["availability_window"]["samples"] >= 2
         finally:
+            FakeSmithproxy.response_status = 200
             configured.send_signal(signal.SIGTERM)
             configured.wait(timeout=4)
         output = configured.stdout.read() + configured.stderr.read()

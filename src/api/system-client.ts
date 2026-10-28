@@ -28,6 +28,29 @@ export interface SystemCapabilities {
   };
 }
 
+export interface ProbeSample {
+  state: SmithproxyState;
+  checkedAtUnixMs: number;
+  latencyMs: number | null;
+}
+
+export interface SystemSnapshot {
+  service: 'smithproxy-gui';
+  uptimeMs: number;
+  smithproxy: {
+    configured: boolean;
+    state: SmithproxyState;
+    detail: string;
+    checkedAtUnixMs: number | null;
+    lastSuccessAtUnixMs: number | null;
+    latencyMs: number | null;
+    totalProbes: number;
+    consecutiveFailures: number;
+    availabilityWindow: {samples: number; successful: number};
+    history: ReadonlyArray<ProbeSample>;
+  };
+}
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -37,6 +60,14 @@ function isObject(value: unknown): value is JsonObject {
 function isSmithproxyState(value: unknown): value is SmithproxyState {
   return typeof value === 'string' &&
     ['starting', 'ready', 'unreachable', 'unauthorized', 'unconfigured', 'error'].includes(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isNullableNonNegativeInteger(value: unknown): value is number | null {
+  return value === null || isNonNegativeInteger(value);
 }
 
 function normalizedPath(value: string, label: string): string {
@@ -91,6 +122,54 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   };
 }
 
+function parseStatus(value: unknown): SystemSnapshot {
+  if (!isObject(value) || value.service !== 'smithproxy-gui' || !isNonNegativeInteger(value.uptime_ms) ||
+      !isObject(value.smithproxy)) {
+    throw new Error('Invalid system status response.');
+  }
+  const source = value.smithproxy;
+  if (typeof source.configured !== 'boolean' || !isSmithproxyState(source.state) ||
+      typeof source.detail !== 'string' || !isNullableNonNegativeInteger(source.checked_at_unix_ms) ||
+      !isNullableNonNegativeInteger(source.last_success_at_unix_ms) ||
+      !isNullableNonNegativeInteger(source.latency_ms) || !isNonNegativeInteger(source.total_probes) ||
+      !isNonNegativeInteger(source.consecutive_failures) || !isObject(source.availability_window) ||
+      !isNonNegativeInteger(source.availability_window.samples) ||
+      !isNonNegativeInteger(source.availability_window.successful) ||
+      source.availability_window.successful > source.availability_window.samples ||
+      !Array.isArray(source.history) || source.history.length > 60) {
+    throw new Error('Invalid Smithproxy status response.');
+  }
+  const history = source.history.map((item): ProbeSample => {
+    if (!isObject(item) || !isSmithproxyState(item.state) ||
+        !isNonNegativeInteger(item.checked_at_unix_ms) || !isNullableNonNegativeInteger(item.latency_ms)) {
+      throw new Error('Invalid Smithproxy probe history.');
+    }
+    return {state: item.state, checkedAtUnixMs: item.checked_at_unix_ms, latencyMs: item.latency_ms};
+  });
+  if (source.availability_window.samples !== history.length || source.total_probes < history.length) {
+    throw new Error('Inconsistent Smithproxy status counters.');
+  }
+  return {
+    service: 'smithproxy-gui',
+    uptimeMs: value.uptime_ms,
+    smithproxy: {
+      configured: source.configured,
+      state: source.state,
+      detail: source.detail,
+      checkedAtUnixMs: source.checked_at_unix_ms,
+      lastSuccessAtUnixMs: source.last_success_at_unix_ms,
+      latencyMs: source.latency_ms,
+      totalProbes: source.total_probes,
+      consecutiveFailures: source.consecutive_failures,
+      availabilityWindow: {
+        samples: source.availability_window.samples,
+        successful: source.availability_window.successful,
+      },
+      history,
+    },
+  };
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -115,6 +194,10 @@ export class SystemClient {
 
   async capabilities(): Promise<SystemCapabilities> {
     return parseCapabilities(await this.#request(joinedPath(this.#apiBase, '/capabilities')));
+  }
+
+  async status(): Promise<SystemSnapshot> {
+    return parseStatus(await this.#request(joinedPath(this.#apiBase, '/status')));
   }
 
   async #request(path: string): Promise<unknown> {

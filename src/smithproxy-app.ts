@@ -9,7 +9,7 @@ import {
   connectingSystemStatus,
   displayState,
   statusFromFailure,
-  statusFromHealth,
+  statusFromSnapshot,
   statusTone,
   type SystemStatus,
 } from './state/system-status';
@@ -21,7 +21,7 @@ export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
   @state() private snapshot?: ConfigSnapshot;
   @state() private loadingError?: string;
-  @state() private activeSection = 'Policy';
+  @state() private activeSection = 'Dashboard';
   @state() private drawers: ReadonlyArray<DrawerEntry> = [];
   @state() private draftObjects = new Set<string>();
   @state() private systemStatus: SystemStatus = connectingSystemStatus;
@@ -106,6 +106,26 @@ export class SmithproxyApp extends LitElement {
     .section-head p { margin: 0; color: var(--app-muted); }
     .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 7px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
 
+    .dashboard { display: grid; gap: 18px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
+    .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
+    .metric { min-height: 116px; padding: 15px 16px; }
+    .metric-label { color: var(--app-muted); font-size: 12px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
+    .metric-value { display: block; margin-top: 8px; font-size: 25px; font-weight: 700; }
+    .metric-value.success { color: var(--app-success); }
+    .metric-value.warning { color: var(--app-warning); }
+    .metric-value.danger { color: var(--app-danger); }
+    .metric-note { display: block; margin-top: 5px; color: var(--app-muted); font-size: 12px; }
+    .monitor-panel { padding: 16px; }
+    .monitor-panel h3 { margin: 0; font-size: 15px; }
+    .monitor-panel p { margin: 4px 0 0; color: var(--app-muted); }
+    .probe-history { display: grid; grid-template-columns: repeat(60, minmax(3px, 1fr)); gap: 3px; height: 52px; margin-top: 16px; align-items: end; }
+    .probe { min-height: 12px; height: 100%; border-radius: 3px; background: var(--app-border); }
+    .probe.ready { background: var(--app-success); }
+    .probe.starting, .probe.unreachable, .probe.unconfigured { background: var(--app-warning); }
+    .probe.unauthorized, .probe.error { background: var(--app-danger); }
+    .scope-note { padding: 12px 14px; border-left: 3px solid var(--app-brand); background: var(--app-raised); color: var(--app-muted); }
+
     .table { overflow: hidden; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); }
     .row { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px; gap: 16px; align-items: center; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--app-border); background: transparent; text-align: left; cursor: pointer; }
     .row:last-child { border-bottom: 0; }
@@ -181,6 +201,7 @@ export class SmithproxyApp extends LitElement {
       .drawer[data-depth='5'] { left: calc(8% + 90px); }
       .row { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
       .row > :nth-child(3), .row > :nth-child(5) { display: none; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
     }
 
     @media (max-width: 620px) {
@@ -198,6 +219,8 @@ export class SmithproxyApp extends LitElement {
       .form-grid label:not(:first-child) { margin-top: 10px; }
       .statusbar { grid-row: 3; }
       .statusbar span:nth-of-type(n + 3) { display: none; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .probe-history { gap: 2px; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -256,7 +279,7 @@ export class SmithproxyApp extends LitElement {
     if (!this.systemClient || this.systemProbeInFlight || document.visibilityState === 'hidden') return;
     this.systemProbeInFlight = true;
     try {
-      this.systemStatus = statusFromHealth(await this.systemClient.health());
+      this.systemStatus = statusFromSnapshot(await this.systemClient.status());
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -348,7 +371,76 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private availabilityLabel(): string {
+    if (this.systemStatus.availabilitySamples === 0) return 'No samples';
+    const ratio = this.systemStatus.availabilitySuccessful / this.systemStatus.availabilitySamples;
+    return `${(ratio * 100).toFixed(ratio === 1 ? 0 : 1)}%`;
+  }
+
+  private timeLabel(value: number | null): string {
+    return value === null ? 'Never' : new Date(value).toLocaleString();
+  }
+
+  private uptimeLabel(): string {
+    const milliseconds = this.systemStatus.uptimeMs;
+    if (milliseconds === null) return 'Unknown';
+    const seconds = Math.floor(milliseconds / 1000);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${seconds % 60}s`;
+  }
+
+  private renderDashboard() {
+    const history = this.systemStatus.history;
+    const emptySlots = Math.max(0, 60 - history.length);
+    return html`
+      <div class="content dashboard">
+        <div class="section-head">
+          <div><h2>Control plane</h2><p>Live reachability of the Smithproxy API</p></div>
+        </div>
+        <div class="metric-grid">
+          <article class="metric">
+            <span class="metric-label">Smithproxy API</span>
+            <strong class="metric-value ${statusTone(this.systemStatus)}">${displayState(this.systemStatus.smithproxy)}</strong>
+            <span class="metric-note">${this.systemStatus.detail}</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Probe latency</span>
+            <strong class="metric-value">${this.systemStatus.latencyMs === null ? '—' : `${this.systemStatus.latencyMs} ms`}</strong>
+            <span class="metric-note">Last API ping round trip</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Window availability</span>
+            <strong class="metric-value">${this.availabilityLabel()}</strong>
+            <span class="metric-note">${this.systemStatus.availabilitySuccessful} / ${this.systemStatus.availabilitySamples} successful probes</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">GUI core uptime</span>
+            <strong class="metric-value">${this.uptimeLabel()}</strong>
+            <span class="metric-note">${this.systemStatus.totalProbes} probes · ${this.systemStatus.consecutiveFailures} consecutive failures</span>
+          </article>
+        </div>
+        <section class="monitor-panel" aria-label="Probe history">
+          <h3>Recent probe history</h3>
+          <p>Up to five minutes at the current five-second sampling interval. Last success: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}.</p>
+          <div class="probe-history" aria-label="${history.length} probe samples">
+            ${Array.from({length: emptySlots}, () => html`<span class="probe" aria-hidden="true"></span>`)}
+            ${history.map(sample => html`
+              <span class="probe ${sample.state}" title="${displayState(sample.state)} · ${sample.latencyMs ?? '—'} ms · ${this.timeLabel(sample.checkedAtUnixMs)}" aria-hidden="true"></span>
+            `)}
+          </div>
+        </section>
+        <div class="scope-note">
+          This view measures the authenticated control-plane API ping only. It does not yet represent listener, traffic, TLS inspection, or dataplane health.
+        </div>
+      </div>
+    `;
+  }
+
   private renderContent() {
+    if (this.activeSection === 'Dashboard') {
+      return this.renderDashboard();
+    }
     if (this.activeSection === 'Policy') {
       return this.renderPolicyList();
     }

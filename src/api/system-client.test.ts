@@ -34,6 +34,40 @@ describe('SystemClient', () => {
     });
   });
 
+  it('loads and validates the monitoring snapshot', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      service: 'smithproxy-gui', uptime_ms: 1234,
+      smithproxy: {
+        configured: true, state: 'ready', detail: 'Connected', checked_at_unix_ms: 100,
+        last_success_at_unix_ms: 100, latency_ms: 7, total_probes: 2, consecutive_failures: 0,
+        availability_window: {samples: 2, successful: 1},
+        history: [
+          {state: 'unreachable', checked_at_unix_ms: 90, latency_ms: 2500},
+          {state: 'ready', checked_at_unix_ms: 100, latency_ms: 7},
+        ],
+      },
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.status()).resolves.toMatchObject({
+      uptimeMs: 1234,
+      smithproxy: {latencyMs: 7, totalProbes: 2, availabilityWindow: {samples: 2, successful: 1}},
+    });
+    expect(fetcher).toHaveBeenCalledWith('/ws001/smithproxy-gui/api/v1/status', expect.anything());
+  });
+
+  it('rejects inconsistent monitoring counters', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      service: 'smithproxy-gui', uptime_ms: 1,
+      smithproxy: {
+        configured: true, state: 'ready', detail: 'Connected', checked_at_unix_ms: 1,
+        last_success_at_unix_ms: 1, latency_ms: 1, total_probes: 1, consecutive_failures: 0,
+        availability_window: {samples: 2, successful: 2}, history: [],
+      },
+    }));
+    await expect(client.status()).rejects.toThrow('Inconsistent Smithproxy status counters');
+  });
+
   it('rejects malformed responses and unsafe endpoint configuration', async () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({status: 'ok'}));
     await expect(client.health()).rejects.toThrow('Invalid health response');

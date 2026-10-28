@@ -1,10 +1,18 @@
-import type {SmithproxyState, SystemHealth} from '../api/system-client';
+import type {ProbeSample, SmithproxyState, SystemHealth, SystemSnapshot} from '../api/system-client';
 
 export interface SystemStatus {
   core: 'connecting' | 'online' | 'offline';
   smithproxy: SmithproxyState | 'unknown';
   detail: string;
   checkedAtUnixMs: number | null;
+  lastSuccessAtUnixMs: number | null;
+  latencyMs: number | null;
+  uptimeMs: number | null;
+  totalProbes: number;
+  consecutiveFailures: number;
+  availabilitySamples: number;
+  availabilitySuccessful: number;
+  history: ReadonlyArray<ProbeSample>;
 }
 
 export const connectingSystemStatus: SystemStatus = {
@@ -12,6 +20,14 @@ export const connectingSystemStatus: SystemStatus = {
   smithproxy: 'unknown',
   detail: 'Connecting to the Smithproxy GUI core.',
   checkedAtUnixMs: null,
+  lastSuccessAtUnixMs: null,
+  latencyMs: null,
+  uptimeMs: null,
+  totalProbes: 0,
+  consecutiveFailures: 0,
+  availabilitySamples: 0,
+  availabilitySuccessful: 0,
+  history: [],
 };
 
 export function statusFromHealth(health: SystemHealth): SystemStatus {
@@ -20,6 +36,31 @@ export function statusFromHealth(health: SystemHealth): SystemStatus {
     smithproxy: health.smithproxy.state,
     detail: health.smithproxy.detail,
     checkedAtUnixMs: health.smithproxy.checkedAtUnixMs,
+    lastSuccessAtUnixMs: health.smithproxy.state === 'ready' ? health.smithproxy.checkedAtUnixMs : null,
+    latencyMs: null,
+    uptimeMs: null,
+    totalProbes: 0,
+    consecutiveFailures: 0,
+    availabilitySamples: 0,
+    availabilitySuccessful: 0,
+    history: [],
+  };
+}
+
+export function statusFromSnapshot(snapshot: SystemSnapshot): SystemStatus {
+  return {
+    core: 'online',
+    smithproxy: snapshot.smithproxy.state,
+    detail: snapshot.smithproxy.detail,
+    checkedAtUnixMs: snapshot.smithproxy.checkedAtUnixMs,
+    lastSuccessAtUnixMs: snapshot.smithproxy.lastSuccessAtUnixMs,
+    latencyMs: snapshot.smithproxy.latencyMs,
+    uptimeMs: snapshot.uptimeMs,
+    totalProbes: snapshot.smithproxy.totalProbes,
+    consecutiveFailures: snapshot.smithproxy.consecutiveFailures,
+    availabilitySamples: snapshot.smithproxy.availabilityWindow.samples,
+    availabilitySuccessful: snapshot.smithproxy.availabilityWindow.successful,
+    history: snapshot.smithproxy.history,
   };
 }
 
@@ -29,6 +70,14 @@ export function statusFromFailure(error: unknown): SystemStatus {
     smithproxy: 'unknown',
     detail: error instanceof Error ? error.message : 'The Smithproxy GUI core is unavailable.',
     checkedAtUnixMs: null,
+    lastSuccessAtUnixMs: null,
+    latencyMs: null,
+    uptimeMs: null,
+    totalProbes: 0,
+    consecutiveFailures: 0,
+    availabilitySamples: 0,
+    availabilitySuccessful: 0,
+    history: [],
   };
 }
 

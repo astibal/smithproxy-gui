@@ -6,6 +6,7 @@
 #include <lmhttpd.hpp>
 #include <microhttpd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -47,6 +48,10 @@ std::string timestamp_json(const std::chrono::system_clock::time_point value) {
                               value.time_since_epoch()).count());
 }
 
+std::string optional_number_json(const std::optional<std::uint64_t> value) {
+    return value ? std::to_string(*value) : "null";
+}
+
 bool confined_to_root(const std::filesystem::path& root, const std::filesystem::path& candidate) {
     std::error_code error;
     const auto canonical_root = std::filesystem::weakly_canonical(root, error);
@@ -64,7 +69,7 @@ bool confined_to_root(const std::filesystem::path& root, const std::filesystem::
 class GuiController final : public lmh::Controller {
 public:
     GuiController(const AppConfig& config, SmithproxyMonitor& monitor)
-        : config_(config), monitor_(monitor) {}
+        : config_(config), monitor_(monitor), started_at_(std::chrono::steady_clock::now()) {}
 
     bool validPath(const char*, const char*) override { return true; }
     lmh::ConnectionState* create_state() override { return new RequestState(*this); }
@@ -98,6 +103,7 @@ private:
         const auto relative = path_below_base(url, config_.base_path);
         if (!relative) return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
         if (*relative == "/healthz") return health();
+        if (*relative == "/api/v1/status") return status();
         if (*relative == "/api/v1/capabilities") return capabilities();
         if (relative->starts_with("/api/")) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};
@@ -120,6 +126,37 @@ private:
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
                     ",\"features\":{\"config_read\":false,\"config_write\":false,"
                     "\"jobs\":false,\"events\":false}}"};
+    }
+
+    Response status() const {
+        const auto status = monitor_.status();
+        const auto uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started_at_).count();
+        const auto successful = std::count_if(status.history.begin(), status.history.end(),
+                                              [](const ProbeSample& sample) { return sample.state == "ready"; });
+
+        std::string history = "[";
+        for (std::size_t index = 0; index < status.history.size(); ++index) {
+            if (index != 0U) history += ',';
+            const auto& sample = status.history[index];
+            history += "{\"state\":" + json_string(sample.state) +
+                       ",\"checked_at_unix_ms\":" + timestamp_json(sample.checked_at) +
+                       ",\"latency_ms\":" + optional_number_json(sample.latency_ms) + "}";
+        }
+        history += ']';
+
+        return {200, "application/json; charset=utf-8",
+                "{\"service\":\"smithproxy-gui\",\"uptime_ms\":" + std::to_string(uptime_ms) +
+                    ",\"smithproxy\":{\"configured\":" + (monitor_.configured() ? "true" : "false") +
+                    ",\"state\":" + json_string(status.state) +
+                    ",\"detail\":" + json_string(status.detail) +
+                    ",\"checked_at_unix_ms\":" + timestamp_json(status.checked_at) +
+                    ",\"last_success_at_unix_ms\":" + timestamp_json(status.last_success_at) +
+                    ",\"latency_ms\":" + optional_number_json(status.latency_ms) +
+                    ",\"total_probes\":" + std::to_string(status.total_probes) +
+                    ",\"consecutive_failures\":" + std::to_string(status.consecutive_failures) +
+                    ",\"availability_window\":{\"samples\":" + std::to_string(status.history.size()) +
+                    ",\"successful\":" + std::to_string(successful) + "},\"history\":" + history + "}}"};
     }
 
     Response static_asset(const std::string_view relative) const {
@@ -169,6 +206,7 @@ private:
 
     const AppConfig& config_;
     SmithproxyMonitor& monitor_;
+    const std::chrono::steady_clock::time_point started_at_;
 };
 
 } // namespace

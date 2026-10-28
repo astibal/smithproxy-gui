@@ -10,12 +10,28 @@ async function mockSystemApi(page: Page, state: MockState): Promise<void> {
     smithproxy_state: state.smithproxy,
     features: {config_read: false, config_write: false, jobs: false, events: false},
   }}));
-  await page.route('**/healthz', async route => route.fulfill({json: {
-    status: 'ok',
+  await page.route('**/api/v1/status', async route => route.fulfill({json: {
+    service: 'smithproxy-gui',
+    uptime_ms: 65000,
     smithproxy: {
+      configured: true,
       state: state.smithproxy,
       detail: state.smithproxy === 'ready' ? 'Connected' : 'Connection timed out',
       checked_at_unix_ms: Date.now(),
+      last_success_at_unix_ms: Date.now() - 5000,
+      latency_ms: state.smithproxy === 'ready' ? 12 : 2500,
+      total_probes: 3,
+      consecutive_failures: state.smithproxy === 'ready' ? 0 : 1,
+      availability_window: {samples: 2, successful: state.smithproxy === 'ready' ? 2 : 1},
+      history: state.smithproxy === 'ready'
+        ? [
+            {state: 'ready', checked_at_unix_ms: Date.now() - 5000, latency_ms: 11},
+            {state: 'ready', checked_at_unix_ms: Date.now(), latency_ms: 12},
+          ]
+        : [
+            {state: 'ready', checked_at_unix_ms: Date.now() - 5000, latency_ms: 11},
+            {state: 'unreachable', checked_at_unix_ms: Date.now(), latency_ms: 2500},
+          ],
     },
   }}));
 }
@@ -23,6 +39,7 @@ async function mockSystemApi(page: Page, state: MockState): Promise<void> {
 test('opens a policy and its referenced address object', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'});
   await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /office office-net/i}).click();
   await expect(page.getByRole('region', {name: 'Edit office'})).toBeVisible();
 
@@ -46,6 +63,9 @@ test('shows live Smithproxy status transitions', async ({page}) => {
 
   await expect(page.getByText('Core: Online')).toBeVisible();
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
+  await expect(page.getByText('12 ms')).toBeVisible();
+  await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
+  await expect(page.getByText(/control-plane API ping only/i)).toBeVisible();
 
   state.smithproxy = 'unreachable';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
