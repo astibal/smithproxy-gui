@@ -686,7 +686,9 @@ export class SmithproxyApp extends LitElement {
     ]);
     const indexedSensitivePath =
       (path.startsWith('ssh_profiles.[') && path.endsWith('].host_key')) ||
-      (path.startsWith('script_profiles.[') && path.endsWith('].script-file'));
+      (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
+      (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
+      (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter'));
     if (sensitivePaths.has(path) || indexedSensitivePath) {
       if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared · redacted';
       const count = Array.isArray(value) ? ` · ${value.length} item${value.length === 1 ? '' : 's'}` : '';
@@ -861,7 +863,7 @@ export class SmithproxyApp extends LitElement {
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
       if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile') {
-        this.renderRoot.querySelectorAll<HTMLInputElement>(
+        this.renderRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
           '[id*="-write-"][id$="-value"], #settings-api-keys-value',
         ).forEach(input => { input.value = ''; });
         this.renderRoot.querySelectorAll<HTMLSelectElement>(
@@ -1055,15 +1057,35 @@ export class SmithproxyApp extends LitElement {
         const handshakeTimeout = this.renderRoot.querySelector<HTMLInputElement>(`#tls-handshake-timeout-${entry.id}`);
         const clientAction = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-client-action-${entry.id}`);
         const alerts = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-alerts-${entry.id}`);
+        const bypassMode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-write-sni-${entry.id}-mode`);
+        const bypassInput = this.renderRoot.querySelector<HTMLTextAreaElement>(`#tls-write-sni-${entry.id}-value`);
         const helloValue = helloTimeout?.valueAsNumber ?? Number.NaN;
         const handshakeValue = handshakeTimeout?.valueAsNumber ?? Number.NaN;
-        if (!helloTimeout || !handshakeTimeout || !clientAction || !alerts ||
+        if (!helloTimeout || !handshakeTimeout || !clientAction || !alerts || !bypassMode || !bypassInput ||
             !Number.isInteger(helloValue) || helloValue < 1 || helloValue > 3600000 ||
             !Number.isInteger(handshakeValue) || handshakeValue < 1 || handshakeValue > 3600000 ||
             !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
-            !['all', 'unusual', 'mute'].includes(alerts.value)) {
+            !['all', 'unusual', 'mute'].includes(alerts.value) ||
+            !['unchanged', 'replace', 'clear'].includes(bypassMode.value)) {
           this.draftError = 'TLS timeouts and policy selections are invalid.';
           return undefined;
+        }
+        let bypassReplacement: string[] | undefined;
+        if (bypassMode.value === 'replace') {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(bypassInput.value);
+          } catch {
+            parsed = undefined;
+          }
+          if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 256 ||
+              !parsed.every(item => typeof item === 'string' && item.length > 0 &&
+                item.length <= 1024 && !item.includes('\0')) ||
+              new Set(parsed).size !== parsed.length) {
+            this.draftError = 'SNI bypass replacement must be a unique, non-empty JSON string array.';
+            return undefined;
+          }
+          bypassReplacement = parsed as string[];
         }
         return [
           {path: `tls_profiles.[${index}].name`, value: name.value.trim()},
@@ -1072,6 +1094,11 @@ export class SmithproxyApp extends LitElement {
           {path: `tls_profiles.[${index}].handshake_timeout`, value: handshakeValue},
           {path: `tls_profiles.[${index}].client_cert_action`, value: clientAction.value},
           {path: `tls_profiles.[${index}].alerts`, value: alerts.value},
+          ...(bypassMode.value === 'replace'
+            ? [{path: `tls_profiles.[${index}].sni_filter_bypass`, value: bypassReplacement!}]
+            : bypassMode.value === 'clear'
+              ? [{path: `tls_profiles.[${index}].sni_filter_bypass`, value: []}]
+              : []),
         ];
       }
       if (profile.content) {
@@ -1094,14 +1121,29 @@ export class SmithproxyApp extends LitElement {
           changes.push({path: `content_profiles.[${index}].${path}`, value: select.value === 'true'});
         }
         const format = this.renderRoot.querySelector<HTMLSelectElement>(`#content-format-${entry.id}`);
-        if (!format || !['smcap', 'pcap', 'pcap_single'].includes(format.value)) {
+        const filterMode = this.renderRoot.querySelector<HTMLSelectElement>(`#content-write-filter-${entry.id}-mode`);
+        const filterInput = this.renderRoot.querySelector<HTMLTextAreaElement>(`#content-write-filter-${entry.id}-value`);
+        if (!format || !filterMode || !filterInput ||
+            !['smcap', 'pcap', 'pcap_single'].includes(format.value) ||
+            !['unchanged', 'replace', 'clear'].includes(filterMode.value)) {
           this.draftError = 'Content capture format is invalid.';
+          return undefined;
+        }
+        const filterReplacement = filterInput.value;
+        if (filterMode.value === 'replace' &&
+            (filterReplacement.length === 0 || filterReplacement.length > 65536 || filterReplacement.includes('\0'))) {
+          this.draftError = 'A session-filter replacement up to 65536 characters is required.';
           return undefined;
         }
         return [
           {path: `content_profiles.[${index}].name`, value: name.value.trim()},
           ...changes,
           {path: `content_profiles.[${index}].write_format`, value: format.value},
+          ...(filterMode.value === 'replace'
+            ? [{path: `content_profiles.[${index}].rules_session_filter`, value: filterReplacement}]
+            : filterMode.value === 'clear'
+              ? [{path: `content_profiles.[${index}].rules_session_filter`, value: ''}]
+              : []),
         ];
       }
       if (profile.ssh) {
@@ -2585,7 +2627,16 @@ export class SmithproxyApp extends LitElement {
           <select id="tls-alerts-${entry.id}" .value=${tls.alerts} ?disabled=${mappedReadOnly}>
             <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
           </select>
-          <label>SNI bypass list</label><span>${tls.sniBypassEntries} redacted entries · unchanged</span>
+          <label for="tls-write-sni-${entry.id}-mode">SNI bypass list</label>
+          <div class="write-only-control">
+            <select id="tls-write-sni-${entry.id}-mode" ?disabled=${mappedReadOnly}>
+              <option value="unchanged">Keep ${tls.sniBypassEntries} configured entries</option>
+              <option value="replace">Replace</option><option value="clear">Clear</option>
+            </select>
+            <textarea id="tls-write-sni-${entry.id}-value" aria-label="SNI bypass list replacement"
+              placeholder='["private.example"] (write-only)' autocomplete="off"
+              .readOnly=${mappedReadOnly}></textarea>
+          </div>
         ` : detection ? html`
           <label for="detection-mode-${entry.id}">Detection phase</label>
           <select id="detection-mode-${entry.id}" .value=${String(detection.mode)} ?disabled=${mappedReadOnly}>
@@ -2621,8 +2672,16 @@ export class SmithproxyApp extends LitElement {
           ${this.renderBooleanSelect(`content-ja4-server-${entry.id}`, content.ja4TlsServerHello, mappedReadOnly)}
           <label for="content-ja4-http-${entry.id}">JA4 HTTP</label>
           ${this.renderBooleanSelect(`content-ja4-http-${entry.id}`, content.ja4Http, mappedReadOnly)}
-          <label>Session filter</label>
-          <span>${content.sessionFilterConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+          <label for="content-write-filter-${entry.id}-mode">Session filter</label>
+          <div class="write-only-control">
+            <select id="content-write-filter-${entry.id}-mode" ?disabled=${mappedReadOnly}>
+              <option value="unchanged">${content.sessionFilterConfigured ? 'Keep configured filter' : 'Keep empty'}</option>
+              <option value="replace">Replace</option><option value="clear">Clear</option>
+            </select>
+            <textarea id="content-write-filter-${entry.id}-value" aria-label="Session filter replacement"
+              placeholder="New expression (write-only)" autocomplete="off"
+              .readOnly=${mappedReadOnly}></textarea>
+          </div>
           <label>Content rules</label><span>${content.ruleCount} redacted rules · unchanged</span>
         ` : ssh ? html`
           <label for="ssh-write-host-key-${entry.id}-mode">Host key</label>
@@ -2698,10 +2757,10 @@ export class SmithproxyApp extends LitElement {
         Profile values remain inside the GUI core until a typed, redacted editor is available.
       </div>`}
       ${tls ? html`<div class="privacy-note section">
-        SNI bypass values stay inside the GUI core; only their bounded count is exposed.
+        Current SNI bypass values stay inside the GUI core; replacements are write-only.
       </div>` : nothing}
       ${content ? html`<div class="privacy-note section">
-        Content rule patterns, replacements, and session filters stay inside the GUI core.
+        Current session filters and all content-rule payloads stay inside the GUI core. Filter replacements are write-only.
       </div>` : nothing}
       ${ssh ? html`<div class="privacy-note section">
         The current private host-key path stays inside the GUI core. Replacements are write-only.

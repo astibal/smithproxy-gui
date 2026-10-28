@@ -95,7 +95,9 @@ bool sensitive_draft_path(const std::string_view path) {
         return true;
     }
     return (path.starts_with("ssh_profiles.[") && path.ends_with("].host_key")) ||
-           (path.starts_with("script_profiles.[") && path.ends_with("].script-file"));
+           (path.starts_with("script_profiles.[") && path.ends_with("].script-file")) ||
+           (path.starts_with("tls_profiles.[") && path.ends_with("].sni_filter_bypass")) ||
+           (path.starts_with("content_profiles.[") && path.ends_with("].rules_session_filter"));
 }
 
 bool confined_to_root(const std::filesystem::path& root, const std::filesystem::path& candidate) {

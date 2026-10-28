@@ -97,7 +97,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["name", "write_payload", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_sh", "ja4_http"],
-      "notes": "Common content controls are typed; filters and rule payloads remain redacted."
+      "notes": "Common content controls are typed; session filters support write-only replace or clear while content-rule payloads remain redacted."
     },
     {
       "name": "tls_ca",
@@ -115,7 +115,7 @@
       "edit": "partial",
       "sensitivity": "security-critical",
       "tracked_fields": ["name", "inspect", "no_fallback_bypass", "use_pfs", "left_ca", "right_ca", "ocsp_mode"],
-      "notes": "Core TLS controls are typed; SNI bypass material and unrecognized fields remain redacted."
+      "notes": "Core TLS controls are typed; SNI bypass lists support write-only replace or clear while unrecognized fields remain redacted."
     },
     {
       "name": "ssh_profiles",
