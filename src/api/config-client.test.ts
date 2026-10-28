@@ -103,6 +103,7 @@ const liveSnapshot = {
   debug: {
     log_data_crc: false, log_sockets: true, log_online_cx_name: false,
     log_srclines: true, log_srclines_always: false, module_override_count: 1,
+    module_overrides: [{name: 'proxy', kind: 'integer', value: 7}],
   },
   captures: {
     local: {
@@ -215,6 +216,21 @@ describe('ApiConfigClient', () => {
         layers: [{id: 'unexpected', priority: null}], editable: false,
       }],
     })).toThrow('Unexpected provenance without augment support');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      debug: {...liveSnapshot.debug, module_override_count: 2},
+    })).toThrow('Invalid debug module override count');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      debug: {
+        ...liveSnapshot.debug,
+        module_override_count: 2,
+        module_overrides: [
+          {name: 'proxy', kind: 'integer', value: 7},
+          {name: 'proxy', kind: 'boolean', value: false},
+        ],
+      },
+    })).toThrow('Invalid debug module name');
 
     const client = new ApiConfigClient('/api/v1', async () => response({}, 401));
     await expect(client.loadSnapshot()).rejects.toThrow('HTTP 401');

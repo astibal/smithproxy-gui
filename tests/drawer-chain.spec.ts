@@ -242,6 +242,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       debug: {
         log_data_crc: false, log_sockets: false, log_online_cx_name: false,
         log_srclines: false, log_srclines_always: false, module_override_count: 1,
+        module_overrides: [{name: 'proxy', kind: 'integer', value: 6}],
       },
       captures: {
         local: {
@@ -680,10 +681,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('Syslog server', {exact: true}).selectOption('clear');
   await settingsEditor.getByLabel('HTTP API keys', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('HTTP API keys replacement').fill('["new-api-key", "overlap-api-key"]');
+  await settingsEditor.getByLabel('proxy module override').fill('8');
   await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(6);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 53 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 54 changes')).toBeVisible();
   await expect(settingsEditor.getByLabel('HTTP API keys replacement')).toHaveValue('');
   await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -701,11 +703,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 62 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 63 changes')).toBeVisible();
   await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 62'}).click();
+  await page.getByRole('button', {name: 'Review draft · 63'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
@@ -722,6 +724,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('Cleared · redacted');
   await expect(changes).toContainText('settings.http_api.allow_api_header');
   await expect(changes).toContainText('debug.log_sockets');
+  await expect(changes).toContainText('debug.log.proxy');
   await expect(changes).toContainText('captures.local.format');
   await expect(changes).toContainText('captures.remote.tun_ttl');
   await expect(changes).toContainText('captures.local.dir');

@@ -511,6 +511,7 @@ def main() -> int:
                 "log_srclines": True,
                 "log_srclines_always": False,
                 "module_override_count": 1,
+                "module_overrides": [{"name": "proxy", "kind": "integer", "value": 7}],
             }
             assert {item["type"] for item in config_snapshot["profiles"]} == {
                 "detection", "content", "tls", "ssh", "script", "routing",

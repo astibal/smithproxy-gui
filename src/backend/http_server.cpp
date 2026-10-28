@@ -634,6 +634,18 @@ private:
         std::string debug{"null"};
         if (snapshot.debug) {
             const auto& value = *snapshot.debug;
+            std::string overrides{"["};
+            for (std::size_t index = 0; index < value.module_overrides.size(); ++index) {
+                if (index != 0U) overrides += ',';
+                const auto& item = value.module_overrides[index];
+                const auto rendered_value = item.kind == "boolean"
+                    ? item.value
+                    : item.kind == "integer" ? item.value : json_string(item.value);
+                overrides += "{\"name\":" + json_string(item.name) +
+                             ",\"kind\":" + json_string(item.kind) +
+                             ",\"value\":" + rendered_value + "}";
+            }
+            overrides += ']';
             debug = "{\"log_data_crc\":" + std::string(value.log_data_crc ? "true" : "false") +
                     ",\"log_sockets\":" + (value.log_sockets ? "true" : "false") +
                     ",\"log_online_cx_name\":" +
@@ -642,7 +654,8 @@ private:
                     ",\"log_srclines_always\":" +
                     (value.log_source_lines_always ? "true" : "false") +
                     ",\"module_override_count\":" +
-                    std::to_string(value.module_override_count) + "}";
+                    std::to_string(value.module_override_count) +
+                    ",\"module_overrides\":" + overrides + "}";
         }
         if (snapshot.captures) {
             const auto& value = *snapshot.captures;

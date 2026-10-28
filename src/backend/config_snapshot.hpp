@@ -205,12 +205,19 @@ struct ConfigSystemSettings {
 };
 
 struct ConfigDebugSettings {
+    struct ModuleOverride {
+        std::string name;
+        std::string kind;
+        std::string value;
+    };
+
     bool log_data_crc{};
     bool log_sockets{};
     bool log_online_connection_name{};
     bool log_source_lines{};
     bool log_source_lines_always{};
     std::uint64_t module_override_count{};
+    std::vector<ModuleOverride> module_overrides;
 };
 
 struct ConfigCaptureSettings {

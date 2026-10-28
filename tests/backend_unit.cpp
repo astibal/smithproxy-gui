@@ -301,6 +301,10 @@ int main() {
     assert(debug.debug->log_online_connection_name);
     assert(debug.debug->log_source_lines_always);
     assert(debug.debug->module_override_count == 2U);
+    assert(debug.debug->module_overrides.size() == 2U);
+    assert(debug.debug->module_overrides[0].name == "proxy");
+    assert(debug.debug->module_overrides[0].kind == "integer");
+    assert(debug.debug->module_overrides[0].value == "7");
     assert(!parse_config_debug(
         R"({"success":{"debug":{"log":{"proxy":{}}}}})").debug);
     const auto captures = parse_config_captures(

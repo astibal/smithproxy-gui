@@ -213,7 +213,11 @@ const snapshot: ConfigSnapshot = {
   },
   debug: {
     logDataCrc: false, logSockets: false, logOnlineConnectionName: false,
-    logSourceLines: false, logSourceLinesAlways: false, moduleOverrideCount: 0,
+    logSourceLines: false, logSourceLinesAlways: false, moduleOverrideCount: 2,
+    moduleOverrides: [
+      {name: 'proxy', kind: 'integer', value: 6},
+      {name: 'mtrace', kind: 'boolean', value: false},
+    ],
   },
   captures: {
     local: {

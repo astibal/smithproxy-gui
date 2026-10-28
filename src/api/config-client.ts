@@ -565,6 +565,35 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   let debug: DebugSettings | null = null;
   if (value.debug !== null) {
     if (!isObject(value.debug)) throw new Error('Invalid debug settings.');
+    const moduleOverrideCount = safeInteger(
+      value.debug.module_override_count, 'debug module override count', MAX_OBJECTS,
+    );
+    const moduleNames = new Set<string>();
+    const moduleOverrides = boundedArray(
+      value.debug.module_overrides, 'debug module overrides', MAX_REFERENCES,
+    ).map((item): DebugSettings['moduleOverrides'][number] => {
+      if (!isObject(item)) throw new Error('Invalid debug module override.');
+      const name = safeString(item.name, 'debug module name', 128);
+      if (!/^[A-Za-z0-9_-]+$/u.test(name) || moduleNames.has(name)) {
+        throw new Error('Invalid debug module name.');
+      }
+      moduleNames.add(name);
+      const kind = safeString(item.kind, 'debug module kind', 16);
+      if (kind === 'boolean' && typeof item.value === 'boolean') {
+        return {name, kind, value: item.value};
+      }
+      if (kind === 'integer' && typeof item.value === 'number' && Number.isSafeInteger(item.value)) {
+        return {name, kind, value: item.value};
+      }
+      if (kind === 'string' && typeof item.value === 'string' && item.value.length <= 32 &&
+          !/[\u0000-\u001f\u007f]/u.test(item.value)) {
+        return {name, kind, value: item.value};
+      }
+      throw new Error('Invalid debug module override.');
+    });
+    if (moduleOverrideCount !== moduleOverrides.length) {
+      throw new Error('Invalid debug module override count.');
+    }
     debug = {
       logDataCrc: safeBoolean(value.debug.log_data_crc, 'payload CRC logging state'),
       logSockets: safeBoolean(value.debug.log_sockets, 'socket logging state'),
@@ -575,9 +604,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       logSourceLinesAlways: safeBoolean(
         value.debug.log_srclines_always, 'unconditional source-line logging state',
       ),
-      moduleOverrideCount: safeInteger(
-        value.debug.module_override_count, 'debug module override count', MAX_OBJECTS,
-      ),
+      moduleOverrideCount,
+      moduleOverrides,
     };
   }
   if (value.captures !== null) {

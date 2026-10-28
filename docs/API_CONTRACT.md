@@ -46,9 +46,10 @@ API keys, webhook URLs, filesystem paths, syslog targets,
 certificate and CLI passwords, web-rating keys, and identity values are never
 serialized; only bounded counts and configured flags are exposed.
 
-Debug posture includes the five global diagnostic logging flags and only the
-bounded count of per-module overrides. Module names and override values remain
-inside the GUI core until Smithproxy publishes a stable module schema.
+Debug posture includes the five global diagnostic logging flags and a bounded,
+typed list of current per-module overrides. Boolean, 32-bit integer, and bounded
+string values are editable; module identifiers must be safe configuration-path
+segments.
 
 Capture posture includes local format and quota, remote tunnel mode and TTL,
 and checksum behavior. Capture directories, filename components, tunnel

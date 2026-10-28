@@ -644,6 +644,7 @@ export class SmithproxyApp extends LitElement {
         if (item) objects.add(`authority:${item.id}`);
       }
       if (change.path.startsWith('settings.')) objects.add('settings:settings');
+      if (change.path.startsWith('debug.')) objects.add('settings:settings');
       if (change.path.startsWith('captures.')) objects.add('captures:captures');
     }
     this.draftObjects = objects;
@@ -1476,6 +1477,31 @@ export class SmithproxyApp extends LitElement {
         if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
         changes.push({path: `debug.${path}`, value: select.value === 'true'});
       }
+      for (const [index, override] of this.snapshot.debug.moduleOverrides.entries()) {
+        const id = `debug-module-${index}`;
+        if (override.kind === 'boolean') {
+          const select = this.renderRoot.querySelector<HTMLSelectElement>(`#${id}`);
+          if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
+          changes.push({path: `debug.log.${override.name}`, value: select.value === 'true'});
+          continue;
+        }
+        const input = this.renderRoot.querySelector<HTMLInputElement>(`#${id}`);
+        if (!input) return undefined;
+        if (override.kind === 'integer') {
+          const value = input.valueAsNumber;
+          if (!Number.isSafeInteger(value) || value < -2147483648 || value > 2147483647) {
+            this.draftError = `${override.name} debug override must be a 32-bit integer.`;
+            return undefined;
+          }
+          changes.push({path: `debug.log.${override.name}`, value});
+          continue;
+        }
+        if (input.value.length > 32 || /[\u0000-\u001f\u007f]/u.test(input.value)) {
+          this.draftError = `${override.name} debug override is invalid.`;
+          return undefined;
+        }
+        changes.push({path: `debug.log.${override.name}`, value: input.value});
+      }
     }
     return changes;
   }
@@ -2306,7 +2332,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Socket events</dt><dd>${debug.logSockets ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Resolve online names</dt><dd>${debug.logOnlineConnectionName ? 'Enabled · expensive' : 'Disabled'}</dd>
                 <dt>Source lines</dt><dd>${debug.logSourceLinesAlways ? 'Always' : debug.logSourceLines ? 'Diagnostic levels' : 'Disabled'}</dd>
-                <dt>Module overrides</dt><dd>${debug.moduleOverrideCount} configured · unchanged</dd>
+                <dt>Module overrides</dt><dd>${debug.moduleOverrideCount} configured</dd>
               </dl>
             </article>
           ` : nothing}
@@ -2964,8 +2990,24 @@ export class SmithproxyApp extends LitElement {
           ${this.renderBooleanSelect('debug-source-lines', this.snapshot.debug.logSourceLines, disabled)}
           <label for="debug-source-lines-always">Source lines at every level</label>
           ${this.renderBooleanSelect('debug-source-lines-always', this.snapshot.debug.logSourceLinesAlways, disabled)}
-          <label>Per-module overrides</label>
-          <span>${this.snapshot.debug.moduleOverrideCount} configured · unchanged</span>
+          <h3 class="form-span">Per-module overrides</h3>
+          ${this.snapshot.debug.moduleOverrides.map((override, index) => {
+            const id = `debug-module-${index}`;
+            const label = `${override.name} module override`;
+            return html`
+              <label for=${id}>${label}</label>
+              ${override.kind === 'boolean'
+                ? this.renderBooleanSelect(id, Boolean(override.value), disabled)
+                : html`<input id=${id} type=${override.kind === 'integer' ? 'number' : 'text'}
+                    min=${override.kind === 'integer' ? '-2147483648' : nothing}
+                    max=${override.kind === 'integer' ? '2147483647' : nothing}
+                    maxlength=${override.kind === 'string' ? '32' : nothing}
+                    .value=${String(override.value)} .readOnly=${disabled} />`}
+            `;
+          })}
+          ${this.snapshot.debug.moduleOverrideCount === 0
+            ? html`<span class="form-span">No per-module overrides are configured.</span>`
+            : nothing}
         ` : nothing}
       </div>
     `;

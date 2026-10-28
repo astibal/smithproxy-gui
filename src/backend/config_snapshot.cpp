@@ -2,7 +2,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <charconv>
+#include <cctype>
+#include <limits>
 
 namespace smithproxy::gui {
 namespace {
@@ -106,20 +109,6 @@ std::optional<std::size_t> optional_named_object_size(const Json& object, const 
     if (!value->is_object() || value->size() > maximum_references) return std::nullopt;
     for (const auto& [name, item] : value->items()) {
         if (!valid_name(name) || !item.is_object()) return std::nullopt;
-    }
-    return value->size();
-}
-
-std::optional<std::size_t> optional_named_scalar_size(const Json& object, const char* key) {
-    const auto value = object.find(key);
-    if (value == object.end()) return 0U;
-    if (!value->is_object() || value->size() > maximum_references) return std::nullopt;
-    for (const auto& [name, item] : value->items()) {
-        if (!valid_name(name) ||
-            (!item.is_boolean() && !item.is_number_integer() &&
-             (!item.is_string() || item.get_ref<const std::string&>().size() > 32U))) {
-            return std::nullopt;
-        }
     }
     return value->size();
 }
@@ -644,14 +633,72 @@ ConfigDebugParseResult parse_config_debug(const std::string_view payload) {
     const auto log_online_connection_name = boolean_scalar(*value, "log_online_cx_name", false);
     const auto log_source_lines = boolean_scalar(*value, "log_srclines", false);
     const auto log_source_lines_always = boolean_scalar(*value, "log_srclines_always", false);
-    const auto module_overrides = optional_named_scalar_size(*value, "log");
+    const auto log = value->find("log");
+    std::vector<ConfigDebugSettings::ModuleOverride> module_overrides;
+    if (log != value->end()) {
+        if (!log->is_object() || log->size() > maximum_references) {
+            return {std::nullopt, "Smithproxy returned invalid debug module overrides"};
+        }
+        module_overrides.reserve(log->size());
+        for (const auto& [name, raw] : log->items()) {
+            const auto path_safe_name = !name.empty() && std::all_of(
+                name.begin(), name.end(), [](const unsigned char character) {
+                    return std::isalnum(character) != 0 || character == '_' || character == '-';
+                });
+            if (!valid_name(name) || !path_safe_name) {
+                return {std::nullopt, "Smithproxy returned invalid debug module name"};
+            }
+            std::string kind;
+            std::string normalized;
+            if (raw.is_boolean()) {
+                kind = "boolean";
+                normalized = raw.get<bool>() ? "true" : "false";
+            } else if (raw.is_number_integer()) {
+                try {
+                    const auto integer = raw.get<std::int64_t>();
+                    if (integer < std::numeric_limits<std::int32_t>::min() ||
+                        integer > std::numeric_limits<std::int32_t>::max()) {
+                        return {std::nullopt, "Smithproxy returned invalid debug module value"};
+                    }
+                    normalized = std::to_string(integer);
+                } catch (const Json::exception&) {
+                    return {std::nullopt, "Smithproxy returned invalid debug module value"};
+                }
+                kind = "integer";
+            } else if (raw.is_string()) {
+                normalized = raw.get<std::string>();
+                if (normalized.size() > 32U) {
+                    return {std::nullopt, "Smithproxy returned invalid debug module value"};
+                }
+                if (normalized == "true" || normalized == "false") {
+                    kind = "boolean";
+                } else {
+                    std::int64_t integer{};
+                    const auto [end, error] = std::from_chars(
+                        normalized.data(), normalized.data() + normalized.size(), integer);
+                    if (error == std::errc{} && end == normalized.data() + normalized.size()) {
+                        if (integer < std::numeric_limits<std::int32_t>::min() ||
+                            integer > std::numeric_limits<std::int32_t>::max()) {
+                            return {std::nullopt, "Smithproxy returned invalid debug module value"};
+                        }
+                        kind = "integer";
+                    } else {
+                        kind = "string";
+                    }
+                }
+            } else {
+                return {std::nullopt, "Smithproxy returned invalid debug module value"};
+            }
+            module_overrides.push_back({name, std::move(kind), std::move(normalized)});
+        }
+    }
     if (!log_data_crc || !log_sockets || !log_online_connection_name || !log_source_lines ||
-        !log_source_lines_always || !module_overrides) {
+        !log_source_lines_always) {
         return {std::nullopt, "Smithproxy returned invalid debug setting fields"};
     }
     return {ConfigDebugSettings{
                 *log_data_crc, *log_sockets, *log_online_connection_name, *log_source_lines,
-                *log_source_lines_always, *module_overrides,
+                *log_source_lines_always, module_overrides.size(), std::move(module_overrides),
             }, {}};
 }
 

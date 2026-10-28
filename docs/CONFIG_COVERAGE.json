@@ -36,14 +36,14 @@
     {
       "name": "debug",
       "origin": "reference_config",
-      "read": "partial",
-      "edit": "partial",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "operational",
       "tracked_fields": [
         "log_data_crc", "log_sockets", "log_online_cx_name", "log_srclines",
         "log_srclines_always", "log"
       ],
-      "notes": "Global debug flags are typed. Per-module logging overrides are counted but remain unchanged until their module schema is available."
+      "notes": "Global debug flags and the current per-module boolean, integer, and bounded string logging overrides are typed and editable. Module names are constrained to draft-path-safe identifiers."
     },
     {
       "name": "address_objects",

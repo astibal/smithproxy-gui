@@ -235,6 +235,11 @@ export interface DebugSettings {
   logSourceLines: boolean;
   logSourceLinesAlways: boolean;
   moduleOverrideCount: number;
+  moduleOverrides: ReadonlyArray<{
+    name: string;
+    kind: 'boolean' | 'integer' | 'string';
+    value: boolean | number | string;
+  }>;
 }
 
 export interface CertificateAuthoritySummary {
