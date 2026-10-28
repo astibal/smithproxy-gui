@@ -32,6 +32,7 @@ struct ConfigProtocolObject {
 struct ConfigPolicy {
     std::string id;
     std::string name;
+    bool enabled{true};
     std::string protocol;
     std::vector<std::string> sources;
     std::vector<std::string> source_ports;

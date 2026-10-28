@@ -1,5 +1,6 @@
 import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
+import {ApiConfigClient} from './api/config-client';
 import {FakeConfigClient} from './api/fake-client';
 import type {AddressObject, ConfigSnapshot, PolicySummary} from './api/models';
 import {
@@ -54,8 +55,10 @@ export class SmithproxyApp extends LitElement {
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
   @state() private focusMode = false;
+  @state() private configWriteAvailable = false;
+  @state() private configError: string | undefined;
 
-  private readonly client = new FakeConfigClient();
+  private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
   private runtime?: RuntimeConfig;
   private systemClient?: SystemClient;
@@ -137,6 +140,7 @@ export class SmithproxyApp extends LitElement {
     .section-head h2 { margin: 0 0 3px; font-size: 20px; }
     .section-head p { margin: 0; color: var(--app-muted); }
     .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 7px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
 
     .dashboard { display: grid; gap: 18px; }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
@@ -229,6 +233,8 @@ export class SmithproxyApp extends LitElement {
     .form-grid { display: grid; grid-template-columns: minmax(120px, 0.35fr) minmax(240px, 1fr); gap: 18px 24px; max-width: 920px; }
     .form-grid label { align-self: center; color: var(--app-muted); }
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 7px; background: var(--app-input); color: var(--app-text); }
+    .form-grid input[readonly], .form-grid select:disabled { border-style: dashed; opacity: .8; }
+    .reference-stack { display: grid; gap: 7px; }
     .reference { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 7px; background: var(--app-input); cursor: pointer; }
     .section { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--app-border); }
     .section h3 { margin: 0 0 12px; font-size: 15px; }
@@ -300,7 +306,6 @@ export class SmithproxyApp extends LitElement {
     this.mode = this.runtime.mode;
     try {
       this.systemClient = new SystemClient(this.runtime.apiBase, this.runtime.basePath);
-      void this.loadCapabilities();
       void this.probeSystem();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -308,7 +313,7 @@ export class SmithproxyApp extends LitElement {
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     window.addEventListener('online', this.handleOnline);
     window.addEventListener('popstate', this.handlePopState);
-    void this.load();
+    void this.loadConfiguration();
   }
 
   disconnectedCallback(): void {
@@ -396,7 +401,18 @@ export class SmithproxyApp extends LitElement {
   private async loadCapabilities(): Promise<void> {
     if (!this.systemClient) return;
     try {
-      this.apiVersion = (await this.systemClient.capabilities()).apiVersion;
+      const capabilities = await this.systemClient.capabilities();
+      this.apiVersion = capabilities.apiVersion;
+      this.configWriteAvailable = capabilities.features.configWrite;
+      if (capabilities.features.configRead && this.runtime && this.snapshot?.source !== 'live') {
+        try {
+          this.snapshot = await new ApiConfigClient(this.runtime.apiBase).loadSnapshot();
+          this.configError = undefined;
+          this.restoreDrawerRoute();
+        } catch (error) {
+          this.configError = error instanceof Error ? error.message : 'Live configuration is unavailable.';
+        }
+      }
     } catch {
       this.apiVersion = 'unavailable';
     }
@@ -409,10 +425,11 @@ export class SmithproxyApp extends LitElement {
     return `${this.systemStatus.detail} Last Smithproxy check: ${checked}.`;
   }
 
-  private async load(): Promise<void> {
+  private async loadConfiguration(): Promise<void> {
     try {
-      this.snapshot = await this.client.loadSnapshot();
+      this.snapshot = await this.previewClient.loadSnapshot();
       this.restoreDrawerRoute();
+      await this.loadCapabilities();
     } catch (error) {
       this.loadingError = error instanceof Error ? error.message : 'Unable to load configuration.';
     }
@@ -556,7 +573,8 @@ export class SmithproxyApp extends LitElement {
       <div class="content">
         <div class="section-head">
           <div><h2>Policies</h2><p>Traffic decisions and inspection behavior</p></div>
-          <button class="primary" type="button">New policy</button>
+          <button class="primary" type="button"
+            ?disabled=${this.snapshot?.source === 'live' && !this.configWriteAvailable}>New policy</button>
         </div>
         <div class="table" role="group" aria-label="Policies">
           <div class="row heading" aria-hidden="true">
@@ -566,8 +584,8 @@ export class SmithproxyApp extends LitElement {
             <button class="row" type="button"
               @click=${(event: MouseEvent) => this.openPolicy(policy, event.currentTarget as HTMLElement)}>
               <strong>${policy.name}</strong>
-              <span>${policy.sourceName}</span>
-              <span>${policy.destinationName}</span>
+              <span>${this.referenceSummary(policy.sources)}</span>
+              <span>${this.referenceSummary(policy.destinations)}</span>
               <span class="action">${policy.action}</span>
               <span class="status ${policy.enabled ? '' : 'disabled'}">${policy.enabled ? 'Enabled' : 'Disabled'}</span>
             </button>
@@ -577,12 +595,19 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private referenceSummary(references: PolicySummary['sources']): string {
+    if (references.length === 0) return 'None';
+    const [first, ...rest] = references;
+    return `${first!.name}${rest.length > 0 ? ` +${rest.length}` : ''}`;
+  }
+
   private renderObjects() {
     return html`
       <div class="content">
         <div class="section-head">
           <div><h2>Address objects</h2><p>Reusable sources and destinations referenced by policy</p></div>
-          <button class="primary" type="button">New address object</button>
+          <button class="primary" type="button"
+            ?disabled=${this.snapshot?.source === 'live' && !this.configWriteAvailable}>New address object</button>
         </div>
         <div class="table" role="group" aria-label="Address objects">
           <div class="row object-row heading" aria-hidden="true">
@@ -919,41 +944,48 @@ export class SmithproxyApp extends LitElement {
   private renderPolicyEditor(entry: DrawerEntry) {
     const policy = this.snapshot?.policies.find(item => item.id === entry.id);
     if (!policy) return nothing;
+    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
     return html`
       <div class="form-grid">
         <label for="policy-name-${entry.id}">Name</label>
-        <input id="policy-name-${entry.id}" .value=${policy.name} />
+        <input id="policy-name-${entry.id}" .value=${policy.name} .readOnly=${readOnly} />
         <label>Enabled</label>
-        <label><input type="checkbox" .checked=${policy.enabled} /> Accept traffic for evaluation</label>
-        <label>Source</label>
-        <button class="reference" type="button"
-          @click=${(event: MouseEvent) => this.openAddress(policy.sourceId, event.currentTarget as HTMLElement)}>
-          <span>${policy.sourceName}</span><span aria-hidden="true">→</span>
-        </button>
-        <label for="destination-${entry.id}">Destination</label>
-        <input id="destination-${entry.id}" .value=${policy.destinationName} />
+        <label><input type="checkbox" .checked=${policy.enabled} ?disabled=${readOnly} /> Accept traffic for evaluation</label>
+        <label>Sources</label>
+        <div class="reference-stack">${policy.sources.map(reference => reference.id ? html`
+          <button class="reference" type="button"
+            @click=${(event: MouseEvent) => this.openAddress(reference.id!, event.currentTarget as HTMLElement)}>
+            <span>${reference.name}</span><span aria-hidden="true">→</span>
+          </button>
+        ` : html`<span>${reference.name}</span>`)}</div>
+        <label for="destination-${entry.id}">Destinations</label>
+        <input id="destination-${entry.id}"
+          .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${readOnly} />
         <label for="action-${entry.id}">Action</label>
-        <select id="action-${entry.id}" .value=${policy.action}>
-          <option value="inspect">Inspect</option><option value="bypass">Bypass</option><option value="block">Block</option>
-        </select>
+        <input id="action-${entry.id}" .value=${policy.action} .readOnly=${readOnly} />
       </div>
-      <div class="section"><h3>Advanced</h3><p>Protocol, TLS, content and logging controls will be generated from the configuration schema.</p></div>
+      <div class="section">
+        <h3>Advanced</h3>
+        <p>Protocol: ${policy.protocol} · Source ports: ${policy.sourcePorts.join(', ')} ·
+          Destination ports: ${policy.destinationPorts.join(', ')}</p>
+      </div>
     `;
   }
 
   private renderAddressEditor(entry: DrawerEntry) {
     const address = this.snapshot?.addresses.find(item => item.id === entry.id);
     if (!address) return nothing;
+    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
     return html`
       <div class="form-grid">
         <label for="address-name-${entry.id}">Name</label>
-        <input id="address-name-${entry.id}" .value=${address.name} />
+        <input id="address-name-${entry.id}" .value=${address.name} .readOnly=${readOnly} />
         <label for="address-type-${entry.id}">Type</label>
-        <select id="address-type-${entry.id}" .value=${address.type}>
-          <option value="host">Host</option><option value="subnet">Subnet</option><option value="range">Range</option>
+        <select id="address-type-${entry.id}" .value=${address.type} ?disabled=${readOnly}>
+          <option value="cidr">CIDR</option><option value="fqdn">FQDN</option><option value="host">Host</option><option value="subnet">Subnet</option><option value="range">Range</option>
         </select>
         <label for="address-value-${entry.id}">Address</label>
-        <input id="address-value-${entry.id}" .value=${address.value} />
+        <input id="address-value-${entry.id}" .value=${address.value} .readOnly=${readOnly} />
       </div>
       ${this.renderImpact(address)}
     `;
@@ -977,6 +1009,7 @@ export class SmithproxyApp extends LitElement {
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
+    const readOnly = this.snapshot?.source === 'live' && !this.configWriteAvailable;
     return html`
       <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''}"
         data-depth=${visibleDepth} role="dialog" aria-modal=${active ? 'true' : 'false'}
@@ -995,9 +1028,9 @@ export class SmithproxyApp extends LitElement {
           ${entry.kind === 'policy' ? this.renderPolicyEditor(entry) : this.renderAddressEditor(entry)}
         </div>
         <footer class="drawer-foot">
-          <span class="validation">${saved ? 'Saved to draft' : 'Validation ready'}</span>
+          <span class="validation">${readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready'}</span>
           <button class="secondary" type="button" @click=${() => this.closeDrawer(index)}>Cancel</button>
-          <button class="primary" type="button" @click=${() => this.saveToDraft(entry)}>Save to draft</button>
+          <button class="primary" type="button" ?disabled=${readOnly} @click=${() => this.saveToDraft(entry)}>Save to draft</button>
         </footer>
       </section>
     `;
@@ -1037,8 +1070,13 @@ export class SmithproxyApp extends LitElement {
             ● Smithproxy: ${displayState(this.systemStatus.smithproxy)}
           </span>
           <span class=${this.draftObjects.size ? 'draft' : ''}>Draft: ${this.draftObjects.size} changes</span>
-          <span>Config: unavailable</span><span>API: ${this.apiVersion}</span><span class="spacer"></span>
-          <span>Revision ${this.snapshot?.revision ?? 'loading'}</span>
+          <span title=${this.configError ?? this.snapshot?.detail ?? ''}>
+            Config: ${this.snapshot?.source === 'live'
+              ? displayState(this.snapshot.state)
+              : this.configError ? 'Preview · live unavailable' : this.snapshot ? 'Preview' : 'Loading'}
+          </span>
+          <span>API: ${this.apiVersion}</span><span class="spacer"></span>
+          <span>Revision ${this.snapshot?.revision ?? 'runtime'}</span>
         </footer>
       </div>
     `;

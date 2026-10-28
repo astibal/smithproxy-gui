@@ -34,6 +34,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     response_status = 200
     config_sections = {
         "policy": [{
+            "name": "office policy", "disabled": "0",
             "proto": "tcp", "src": ["office"], "sport": ["any"],
             "dst": ["internet"], "dport": ["https"], "action": "accept",
             "nat": "masquerade", "routing": "main", "tls_profile": "inspect",
@@ -309,6 +310,8 @@ def main() -> int:
             assert config_snapshot["view"] == "runtime"
             assert config_snapshot["revision"] is None
             assert len(config_snapshot["policies"]) == 1
+            assert config_snapshot["policies"][0]["name"] == "office policy"
+            assert config_snapshot["policies"][0]["enabled"] is True
             assert config_snapshot["policies"][0]["sources"] == ["office"]
             assert len(config_snapshot["addresses"]) == 2
             assert config_snapshot["ports"][0]["start"] == 443

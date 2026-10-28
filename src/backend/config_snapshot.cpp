@@ -60,6 +60,16 @@ std::optional<std::uint64_t> decimal(const Json& object, const char* key) {
     return result;
 }
 
+std::optional<bool> boolean_scalar(const Json& object, const char* key, const bool fallback) {
+    const auto value = object.find(key);
+    if (value == object.end()) return fallback;
+    if (!value->is_string()) return std::nullopt;
+    const auto text = value->get<std::string>();
+    if (text == "0" || text == "false") return false;
+    if (text == "1" || text == "true") return true;
+    return std::nullopt;
+}
+
 bool valid_name(const std::string& value) {
     if (value.empty() || value.size() > maximum_name_length) return false;
     for (const unsigned char character : value) {
@@ -159,6 +169,8 @@ bool parse_policies(const Json& section, ConfigSnapshot& snapshot, std::string& 
             error = "Smithproxy returned an invalid policy entry";
             return false;
         }
+        const auto configured_name = bounded_string(value, "name", maximum_name_length, true);
+        const auto disabled = boolean_scalar(value, "disabled", false);
         const auto protocol = bounded_string(value, "proto", maximum_name_length);
         const auto sources = string_array(value, "src");
         const auto source_ports = string_array(value, "sport");
@@ -168,13 +180,15 @@ bool parse_policies(const Json& section, ConfigSnapshot& snapshot, std::string& 
         const auto nat = bounded_string(value, "nat", maximum_name_length, true);
         const auto routing = bounded_string(value, "routing", maximum_name_length, true);
         const auto tls_profile = bounded_string(value, "tls_profile", maximum_name_length, true);
-        if (!protocol || protocol->empty() || !sources || !source_ports || !destinations ||
+        if (!configured_name || !disabled || !protocol || protocol->empty() || !sources || !source_ports || !destinations ||
             !destination_ports || !action || action->empty() || !nat || !routing || !tls_profile) {
             error = "Smithproxy policy fields are invalid";
             return false;
         }
         snapshot.policies.push_back({
-            stable_id("policy", index), "Policy " + std::to_string(index + 1U), *protocol,
+            stable_id("policy", index),
+            configured_name->empty() ? "Policy " + std::to_string(index + 1U) : *configured_name,
+            !*disabled, *protocol,
             *sources, *source_ports, *destinations, *destination_ports,
             *action, *nat, *routing, *tls_profile,
         });

@@ -2,14 +2,14 @@ import {expect, test, type Page} from '@playwright/test';
 
 type MockState = {smithproxy: 'ready' | 'unreachable'};
 
-async function mockSystemApi(page: Page, state: MockState): Promise<void> {
+async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
   await page.route('**/api/v1/capabilities', async route => route.fulfill({json: {
     service: 'smithproxy-gui',
     api_version: 'v1',
     base_path: '/',
     smithproxy_state: state.smithproxy,
     features: {
-      config_read: false, config_write: false, jobs: false, events: false,
+      config_read: configRead, config_write: false, jobs: false, events: false,
       metrics: true, session_activity: true,
     },
   }}));
@@ -61,7 +61,38 @@ async function mockSystemApi(page: Page, state: MockState): Promise<void> {
       {protocol: 'tls', sessions: 1, speed_up: 512, speed_down: 256, bytes_up: 2048, bytes_down: 1024},
     ],
   }}));
+  if (configRead) {
+    await page.route('**/api/v1/config/snapshot', async route => route.fulfill({json: {
+      state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: Date.now(),
+      last_success_at_unix_ms: Date.now(), view: 'runtime', revision: null,
+      policies: [{
+        id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
+        source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
+        action: 'accept', nat: '', routing: '', tls_profile: 'inspect',
+      }],
+      addresses: [
+        {id: 'address-0', name: 'office', type: 'cidr', value: '10.0.0.0/24'},
+        {id: 'address-1', name: 'internet', type: 'fqdn', value: 'example.test'},
+      ],
+      ports: [{id: 'port-0', name: 'https', start: 443, end: 443}],
+      protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
+    }}));
+  }
 }
+
+test('loads authenticated runtime configuration as a read-only view', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await expect(page.getByRole('button', {name: /Policy 1 office internet accept/i})).toBeVisible();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(editor.getByText('Read-only runtime view')).toBeVisible();
+  await expect(editor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
+  await expect(page.getByText('Config: Ready')).toBeVisible();
+  await editor.getByRole('button', {name: 'office', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+});
 
 test('opens a policy and its referenced address object', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'});

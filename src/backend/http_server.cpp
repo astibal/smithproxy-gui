@@ -186,6 +186,7 @@ private:
             const auto& policy = snapshot.policies[index];
             policies += "{\"id\":" + json_string(policy.id) +
                         ",\"name\":" + json_string(policy.name) +
+                        ",\"enabled\":" + (policy.enabled ? "true" : "false") +
                         ",\"protocol\":" + json_string(policy.protocol) +
                         ",\"sources\":" + string_array_json(policy.sources) +
                         ",\"source_ports\":" + string_array_json(policy.source_ports) +
