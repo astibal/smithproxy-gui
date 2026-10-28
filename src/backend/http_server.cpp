@@ -563,6 +563,7 @@ private:
                        ",\"syslog_family\":" + std::to_string(value.syslog_family) + "}" +
                        ",\"auxiliary\":{\"udp_quick_port_count\":" +
                        std::to_string(value.udp_quick_port_count) +
+                       ",\"udp_quick_ports\":" + string_array_json(value.udp_quick_ports) +
                        ",\"certificates_path_configured\":" +
                        (value.certificates_path_configured ? "true" : "false") +
                        ",\"certificate_password_configured\":" +
@@ -585,6 +586,7 @@ private:
                        ",\"tls_autodetect_harder\":" + (value.tls_autodetect_harder ? "true" : "false") +
                        ",\"kernel_tls\":" + (value.kernel_tls ? "true" : "false") +
                        ",\"nameserver_count\":" + std::to_string(value.nameserver_count) +
+                       ",\"nameservers\":" + string_array_json(value.nameservers) +
                        ",\"http_api\":{\"key_count\":" + std::to_string(value.api_key_count) +
                        ",\"allowed_ip_count\":" + std::to_string(value.api_allowed_ip_count) +
                        ",\"loopback_only\":" + (value.api_loopback_only ? "true" : "false") +

@@ -446,6 +446,13 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         !isObject(value.settings.webhook)) {
       throw new Error('Invalid system settings.');
     }
+    const nameservers = stringArray(value.settings.nameservers, 'nameserver');
+    const udpQuickPorts = stringArray(value.settings.auxiliary.udp_quick_ports, 'UDP quick port');
+    if (udpQuickPorts.some(port => !/^\d{1,5}$/u.test(port) || Number(port) > 65535) ||
+        value.settings.nameserver_count !== nameservers.length ||
+        value.settings.auxiliary.udp_quick_port_count !== udpQuickPorts.length) {
+      throw new Error('Invalid system address or quick-port collection.');
+    }
     settings = {
       acceptTproxy: safeBoolean(value.settings.accept_tproxy, 'TPROXY listener state'),
       acceptRedirect: safeBoolean(value.settings.accept_redirect, 'REDIRECT listener state'),
@@ -502,6 +509,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         udpQuickPortCount: safeInteger(
           value.settings.auxiliary.udp_quick_port_count, 'UDP quick-port count', MAX_REFERENCES,
         ),
+        udpQuickPorts,
         certificatesPathConfigured: safeBoolean(
           value.settings.auxiliary.certificates_path_configured, 'certificate path state',
         ),
@@ -533,6 +541,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       tlsAutodetectHarder: safeBoolean(value.settings.tls_autodetect_harder, 'hard TLS autodetection state'),
       kernelTls: safeBoolean(value.settings.kernel_tls, 'kernel TLS state'),
       nameserverCount: safeInteger(value.settings.nameserver_count, 'nameserver count', MAX_REFERENCES),
+      nameservers,
       httpApi: {
         keyCount: safeInteger(value.settings.http_api.key_count, 'API key count', MAX_REFERENCES),
         allowedIpCount: safeInteger(value.settings.http_api.allowed_ip_count, 'API allowed-IP count', MAX_REFERENCES),

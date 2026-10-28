@@ -281,10 +281,12 @@ int main() {
     assert(settings.settings->syslog_server_configured);
     assert(settings.settings->syslog_family == 4U);
     assert(settings.settings->udp_quick_port_count == 1U);
+    assert(settings.settings->udp_quick_ports == std::vector<std::string>{"0"});
     assert(settings.settings->certificate_password_configured);
     assert(settings.settings->cli_password_configured);
     assert(settings.settings->web_rating_key_configured);
     assert(settings.settings->socks_async_dns);
+    assert(settings.settings->nameservers == std::vector<std::string>{"192.0.2.53"});
     assert(settings.settings->api_key_count == 1U);
     assert(settings.settings->webhook_url_configured);
     assert(!parse_config_settings(

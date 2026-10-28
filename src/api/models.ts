@@ -174,6 +174,7 @@ export interface SystemSettings {
   };
   auxiliary: {
     udpQuickPortCount: number;
+    udpQuickPorts: ReadonlyArray<string>;
     certificatesPathConfigured: boolean;
     certificatePasswordConfigured: boolean;
     caBundlePathConfigured: boolean;
@@ -189,6 +190,7 @@ export interface SystemSettings {
   tlsAutodetectHarder: boolean;
   kernelTls: boolean;
   nameserverCount: number;
+  nameservers: ReadonlyArray<string>;
   httpApi: {
     keyCount: number;
     allowedIpCount: number;

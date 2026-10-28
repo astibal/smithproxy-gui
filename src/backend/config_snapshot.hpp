@@ -175,6 +175,7 @@ struct ConfigSystemSettings {
     std::uint64_t syslog_level{};
     std::uint64_t syslog_family{};
     std::uint64_t udp_quick_port_count{};
+    std::vector<std::string> udp_quick_ports;
     bool certificates_path_configured{};
     bool certificate_password_configured{};
     bool ca_bundle_path_configured{};
@@ -189,6 +190,7 @@ struct ConfigSystemSettings {
     bool tls_autodetect_harder{};
     bool kernel_tls{};
     std::uint64_t nameserver_count{};
+    std::vector<std::string> nameservers;
     std::uint64_t api_key_count{};
     std::uint64_t api_allowed_ip_count{};
     bool api_loopback_only{};

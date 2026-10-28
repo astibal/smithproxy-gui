@@ -1236,6 +1236,21 @@ export class SmithproxyApp extends LitElement {
     const syslogFamily = this.renderRoot.querySelector<HTMLSelectElement>('#settings-logging-syslog-family');
     if (!syslogFamily || (syslogFamily.value !== '4' && syslogFamily.value !== '6')) return undefined;
     changes.push({path: 'settings.syslog_family', value: Number(syslogFamily.value)});
+    const nameserversInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-nameservers');
+    const quickPortsInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-udp-quick-ports');
+    if (!nameserversInput || !quickPortsInput) return undefined;
+    const splitList = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
+    const nameservers = splitList(nameserversInput.value);
+    const quickPorts = splitList(quickPortsInput.value);
+    if (nameservers.length > 256 || new Set(nameservers).size !== nameservers.length ||
+        nameservers.some(item => !/^[A-Za-z0-9:._-]{1,128}$/u.test(item)) ||
+        quickPorts.length > 256 || new Set(quickPorts).size !== quickPorts.length ||
+        quickPorts.some(item => !/^\d{1,5}$/u.test(item) || Number(item) > 65535)) {
+      this.draftError = 'Nameservers and UDP quick ports must be unique, bounded values.';
+      return undefined;
+    }
+    changes.push({path: 'settings.nameservers', value: nameservers});
+    changes.push({path: 'settings.udp_quick_ports', value: quickPorts});
     if (this.snapshot?.debug) {
       const debugFields = [
         ['log_data_crc', 'data-crc'], ['log_sockets', 'sockets'],
@@ -2007,7 +2022,7 @@ export class SmithproxyApp extends LitElement {
               <dl>
                 <dt>CLI port / password</dt><dd>${settings.auxiliary.cliPort} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
                 <dt>SOCKS async DNS</dt><dd>${settings.auxiliary.socksAsyncDns ? 'Enabled' : 'Disabled'}</dd>
-                <dt>UDP quick ports</dt><dd>${settings.auxiliary.udpQuickPortCount} configured · unchanged</dd>
+                <dt>UDP quick ports</dt><dd>${settings.auxiliary.udpQuickPorts.join(', ') || 'None'}</dd>
                 <dt>Certificates / CA bundle</dt><dd>${settings.auxiliary.certificatesPathConfigured ? 'Configured' : 'Missing'} / ${settings.auxiliary.caBundlePathConfigured ? 'Configured' : 'Missing'}</dd>
                 <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>Message assets</dt><dd>${settings.auxiliary.messagesDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
@@ -2034,7 +2049,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>TLS verification</dt><dd>${settings.webhook.tlsVerify ? 'Required' : 'Disabled'}</dd>
                 <dt>Sift</dt><dd>${settings.webhook.siftEnabled ? 'Enabled' : 'Disabled'}</dd>
                 <dt>API override</dt><dd>${settings.webhook.apiOverride ? 'Allowed' : 'Blocked'}</dd>
-                <dt>Nameservers</dt><dd>${settings.nameserverCount} configured</dd>
+                <dt>Nameservers</dt><dd>${settings.nameservers.join(', ') || 'None'}</dd>
               </dl>
             </article>
           ` : nothing}
@@ -2596,7 +2611,9 @@ export class SmithproxyApp extends LitElement {
         ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 65535)}
         ${booleanField('aux-socks-async-dns', 'SOCKS asynchronous DNS', settings.auxiliary.socksAsyncDns)}
         <label>CLI password</label><span>${settings.auxiliary.cliPasswordConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>UDP quick ports</label><span>${settings.auxiliary.udpQuickPortCount} redacted entries · unchanged</span>
+        <label for="settings-udp-quick-ports">UDP quick ports</label>
+        <input id="settings-udp-quick-ports" .value=${settings.auxiliary.udpQuickPorts.join(', ')}
+          placeholder="0, 53, 443" .readOnly=${disabled} />
         <label>Certificates path</label><span>${settings.auxiliary.certificatesPathConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
         <label>Certificate password</label><span>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
         <label>CA bundle path</label><span>${settings.auxiliary.caBundlePathConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
@@ -2614,7 +2631,9 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
         ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
         ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
-        <label>Nameservers</label><span>${settings.nameserverCount} redacted entries · unchanged</span>
+        <label for="settings-nameservers">Nameservers</label>
+        <input id="settings-nameservers" .value=${settings.nameservers.join(', ')}
+          placeholder="192.0.2.53, resolver.example" .readOnly=${disabled} />
         <label>HTTP API keys</label><span>${settings.httpApi.keyCount} redacted entries · unchanged</span>
         <label>HTTP API allowed IPs</label><span>${settings.httpApi.allowedIpCount} redacted entries · unchanged</span>
         <label>Webhook URL</label><span>${settings.webhook.urlConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>

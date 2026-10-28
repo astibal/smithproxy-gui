@@ -31,7 +31,7 @@
         "cli", "web_rating", "socks",
         "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "Listener, worker, API, webhook, and fail-open posture is typed. Paths, credentials, logging, ports, quotas, and nested CLI/rating settings are not yet editable; secret values stay redacted."
+      "notes": "All non-secret scalar fields plus nameserver and UDP quick-port lists from the reference config are typed and editable. Filesystem paths, credentials, API allowlists, webhook and syslog targets, filename components, and rating keys remain configured-only and redacted."
     },
     {
       "name": "debug",

@@ -523,7 +523,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto syslog_facility = optional_decimal(*value, "syslog_facility", 23U, 23U);
     const auto syslog_level = optional_decimal(*value, "syslog_level", 6U, 10U);
     const auto syslog_family = optional_decimal(*value, "syslog_family", 4U, 6U);
-    const auto udp_quick_ports = optional_string_array_size(*value, "udp_quick_ports", 5U);
+    const auto udp_quick_ports = string_array(*value, "udp_quick_ports", true);
     const auto certificates_path = bounded_string(*value, "certs_path", maximum_value_length, true);
     const auto certificate_password = bounded_string(
         *value, "certs_ca_key_password", maximum_value_length, true);
@@ -559,7 +559,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto tls_autodetect = boolean_scalar(*value, "ssl_autodetect", false);
     const auto tls_autodetect_harder = boolean_scalar(*value, "ssl_autodetect_harder", false);
     const auto kernel_tls = boolean_scalar(*value, "ssl_use_ktls", false);
-    const auto nameservers = optional_string_array_size(*value, "nameservers", maximum_name_length);
+    const auto nameservers = string_array(*value, "nameservers", true);
 
     const auto http_api_value = value->find("http_api");
     if (http_api_value != value->end() && !http_api_value->is_object()) {
@@ -600,6 +600,17 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !webhook_api_override) {
         return {std::nullopt, "Smithproxy returned invalid system settings fields"};
     }
+    for (const auto& port : *udp_quick_ports) {
+        std::uint64_t number{};
+        const auto [end, error] = std::from_chars(
+            port.data(), port.data() + port.size(), number);
+        if (error != std::errc{} || end != port.data() + port.size() || number > 65535U) {
+            return {std::nullopt, "Smithproxy returned invalid UDP quick ports"};
+        }
+    }
+    if (!std::all_of(nameservers->begin(), nameservers->end(), valid_name)) {
+        return {std::nullopt, "Smithproxy returned invalid nameservers"};
+    }
     return {ConfigSystemSettings{
                 *accept_tproxy, *accept_redirect, *accept_socks, *accept_http_connect, *accept_api,
                 *policy_fail_open, *access_fail_open, *plaintext_workers, *tls_workers, *udp_workers,
@@ -609,12 +620,14 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !payload_directory->empty(), *write_pcap_single_quota, *log_level,
                 !log_file->empty(), *log_console, !ssl_key_log_file->empty(),
                 !syslog_server->empty(), *syslog_port, *syslog_facility, *syslog_level,
-                *syslog_family, *udp_quick_ports, !certificates_path->empty(),
+                *syslog_family, udp_quick_ports->size(), *udp_quick_ports,
+                !certificates_path->empty(),
                 !certificate_password->empty(), !ca_bundle_path->empty(),
                 !messages_directory->empty(), !payload_file_prefix->empty(),
                 !payload_file_suffix->empty(), *cli_port, !cli_password->empty(),
                 !rating_key->empty(), *socks_async_dns, *tls_autodetect,
-                *tls_autodetect_harder, *kernel_tls, *nameservers, *api_keys, *allowed_ips,
+                *tls_autodetect_harder, *kernel_tls, nameservers->size(), *nameservers,
+                *api_keys, *allowed_ips,
                 *loopback_only, *pam_login, *api_header, *webhook_enabled, *webhook_tls_verify,
                 !webhook_url->empty(), *webhook_sift, *webhook_api_override,
             }, {}};

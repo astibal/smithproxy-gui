@@ -488,6 +488,7 @@ def main() -> int:
             }
             assert config_snapshot["settings"]["auxiliary"] == {
                 "udp_quick_port_count": 1,
+                "udp_quick_ports": ["0"],
                 "certificates_path_configured": True,
                 "certificate_password_configured": True,
                 "ca_bundle_path_configured": True,
@@ -499,6 +500,7 @@ def main() -> int:
                 "web_rating_key_configured": True,
                 "socks_async_dns": True,
             }
+            assert config_snapshot["settings"]["nameservers"] == ["192.0.2.53"]
             assert config_snapshot["debug"] == {
                 "log_data_crc": False,
                 "log_sockets": True,
