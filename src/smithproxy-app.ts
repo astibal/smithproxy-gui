@@ -310,6 +310,7 @@ export class SmithproxyApp extends LitElement {
     .form-span { grid-column: 1 / -1; margin: var(--sp-space-3, 1rem) 0 0; }
     .form-grid label { align-self: center; color: var(--app-muted); }
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
+    .write-only-control { display: grid; grid-template-columns: minmax(150px, .35fr) minmax(180px, 1fr); gap: 8px; }
     .form-grid input[readonly], .form-grid select:disabled { border-style: dashed; opacity: .8; }
     .reference-stack { display: grid; gap: 7px; }
     .reference-edit { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 7px; align-items: center; }
@@ -370,6 +371,7 @@ export class SmithproxyApp extends LitElement {
       .workspace .drawer[data-depth] { inset: 0; left: 0; }
       .form-grid { grid-template-columns: 1fr; gap: 7px; }
       .form-grid.wide-form-grid { grid-template-columns: 1fr; }
+      .write-only-control { grid-template-columns: 1fr; }
       .form-grid > *, .reference-edit { min-width: 0; }
       .form-grid label:not(:first-child) { margin-top: 10px; }
       .statusbar { grid-row: 3; }
@@ -672,7 +674,19 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
-  private draftValueSummary(value: DraftScalar): string {
+  private draftValueSummary(path: string, value: DraftScalar): string {
+    const sensitivePaths = new Set([
+      'settings.webhook.url', 'settings.syslog_server', 'settings.write_payload_dir',
+      'settings.log_file', 'settings.sslkeylog_file', 'settings.certs_path',
+      'settings.certs_ca_key_password', 'settings.ca_bundle_path', 'settings.messages_dir',
+      'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
+      'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
+    ]);
+    if (sensitivePaths.has(path)) {
+      if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared · redacted';
+      const count = Array.isArray(value) ? ` · ${value.length} item${value.length === 1 ? '' : 's'}` : '';
+      return `Replaced · redacted${count}`;
+    }
     if (Array.isArray(value)) {
       const preview = value.slice(0, 3).join(', ');
       return `${value.length} item${value.length === 1 ? '' : 's'}${preview ? ` · ${preview}` : ''}${value.length > 3 ? ', …' : ''}`;
@@ -1256,6 +1270,46 @@ export class SmithproxyApp extends LitElement {
     changes.push({path: 'settings.nameservers', value: nameservers});
     changes.push({path: 'settings.udp_quick_ports', value: quickPorts});
     changes.push({path: 'settings.http_api.allowed_ips', value: allowedIps});
+    const writeOnlyFields = [
+      ['webhook.url', 'webhook-url', 'url'], ['syslog_server', 'syslog-server', 'host'],
+      ['write_payload_dir', 'payload-directory', 'path'], ['log_file', 'log-file', 'path'],
+      ['sslkeylog_file', 'tls-key-log-file', 'path'], ['certs_path', 'certificates-path', 'path'],
+      ['certs_ca_key_password', 'certificate-password', 'secret'],
+      ['ca_bundle_path', 'ca-bundle-path', 'path'], ['messages_dir', 'messages-directory', 'path'],
+      ['write_payload_file_prefix', 'payload-prefix', 'filename'],
+      ['write_payload_file_suffix', 'payload-suffix', 'filename'],
+      ['cli.enable_password', 'cli-password', 'secret'],
+      ['web_rating.wot_key', 'web-rating-key', 'secret'],
+    ] as const;
+    for (const [path, id, kind] of writeOnlyFields) {
+      const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-write-${id}-mode`);
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-write-${id}-value`);
+      if (!mode || !input || !['unchanged', 'replace', 'clear'].includes(mode.value)) return undefined;
+      if (mode.value === 'unchanged') continue;
+      if (mode.value === 'clear') {
+        changes.push({path: `settings.${path}`, value: ''});
+        continue;
+      }
+      const replacement = input.value;
+      let valid = replacement.length > 0 && replacement.length <= 1024 &&
+        !/[\u0000-\u001f\u007f]/u.test(replacement);
+      if (kind === 'path') valid = valid && replacement.startsWith('/');
+      if (kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
+      if (kind === 'filename') valid = valid && replacement.length <= 128 && !/[\\/]/u.test(replacement);
+      if (kind === 'url' && valid) {
+        try {
+          const url = new URL(replacement);
+          valid = ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+        } catch {
+          valid = false;
+        }
+      }
+      if (!valid) {
+        this.draftError = 'A write-only replacement is invalid for its configuration field.';
+        return undefined;
+      }
+      changes.push({path: `settings.${path}`, value: replacement});
+    }
     if (this.snapshot?.debug) {
       const debugFields = [
         ['log_data_crc', 'data-crc'], ['log_sockets', 'sockets'],
@@ -1370,7 +1424,7 @@ export class SmithproxyApp extends LitElement {
             ${changes.map(change => html`
               <div class="draft-row" role="row">
                 <span class="draft-path" role="cell">${change.path}</span>
-                <span class="draft-value" role="cell">${this.draftValueSummary(change.value)}</span>
+                <span class="draft-value" role="cell">${this.draftValueSummary(change.path, change.value)}</span>
               </div>
             `)}
           </div>
@@ -2571,6 +2625,21 @@ export class SmithproxyApp extends LitElement {
       <input id="settings-${id}" type="number" min="0" max=${String(maximum)}
         .value=${String(value)} .readOnly=${disabled} />
     `;
+    const writeOnlyField = (
+      id: string, label: string, configured: boolean, secret = false,
+    ) => html`
+      <label for="settings-write-${id}-mode">${label}</label>
+      <div class="write-only-control">
+        <select id="settings-write-${id}-mode" ?disabled=${disabled}>
+          <option value="unchanged">${configured ? 'Keep configured value' : 'Keep empty'}</option>
+          <option value="replace">Replace</option>
+          <option value="clear">Clear</option>
+        </select>
+        <input id="settings-write-${id}-value" type=${secret ? 'password' : 'text'}
+          aria-label="${label} replacement" placeholder="New value (write-only)"
+          autocomplete=${secret ? 'new-password' : 'off'} .readOnly=${disabled} />
+      </div>
+    `;
     return html`
       <div class="form-grid wide-form-grid">
         ${booleanField('accept-tproxy', 'TPROXY listener', settings.acceptTproxy)}
@@ -2608,24 +2677,24 @@ export class SmithproxyApp extends LitElement {
         <select id="settings-logging-syslog-family" .value=${String(settings.logging.syslogFamily)} ?disabled=${disabled}>
           <option value="4">IPv4</option><option value="6">IPv6</option>
         </select>
-        <label>Payload directory</label><span>${settings.logging.payloadDirectoryConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>Log file</label><span>${settings.logging.fileConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>TLS key log file</label><span>${settings.logging.sslKeyFileConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>Syslog server</label><span>${settings.logging.syslogServerConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        ${writeOnlyField('payload-directory', 'Payload directory', settings.logging.payloadDirectoryConfigured)}
+        ${writeOnlyField('log-file', 'Log file', settings.logging.fileConfigured)}
+        ${writeOnlyField('tls-key-log-file', 'TLS key log file', settings.logging.sslKeyFileConfigured)}
+        ${writeOnlyField('syslog-server', 'Syslog server', settings.logging.syslogServerConfigured)}
         <h3 class="form-span">Auxiliary services</h3>
         ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 65535)}
         ${booleanField('aux-socks-async-dns', 'SOCKS asynchronous DNS', settings.auxiliary.socksAsyncDns)}
-        <label>CLI password</label><span>${settings.auxiliary.cliPasswordConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        ${writeOnlyField('cli-password', 'CLI password', settings.auxiliary.cliPasswordConfigured, true)}
         <label for="settings-udp-quick-ports">UDP quick ports</label>
         <input id="settings-udp-quick-ports" .value=${settings.auxiliary.udpQuickPorts.join(', ')}
           placeholder="0, 53, 443" .readOnly=${disabled} />
-        <label>Certificates path</label><span>${settings.auxiliary.certificatesPathConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>Certificate password</label><span>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>CA bundle path</label><span>${settings.auxiliary.caBundlePathConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>Message assets</label><span>${settings.auxiliary.messagesDirectoryConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>Payload filename prefix</label><span>${settings.auxiliary.payloadFilePrefixConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>Payload filename suffix</label><span>${settings.auxiliary.payloadFileSuffixConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
-        <label>Web rating key</label><span>${settings.auxiliary.webRatingKeyConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        ${writeOnlyField('certificates-path', 'Certificates path', settings.auxiliary.certificatesPathConfigured)}
+        ${writeOnlyField('certificate-password', 'Certificate password', settings.auxiliary.certificatePasswordConfigured, true)}
+        ${writeOnlyField('ca-bundle-path', 'CA bundle path', settings.auxiliary.caBundlePathConfigured)}
+        ${writeOnlyField('messages-directory', 'Message assets', settings.auxiliary.messagesDirectoryConfigured)}
+        ${writeOnlyField('payload-prefix', 'Payload filename prefix', settings.auxiliary.payloadFilePrefixConfigured)}
+        ${writeOnlyField('payload-suffix', 'Payload filename suffix', settings.auxiliary.payloadFileSuffixConfigured)}
+        ${writeOnlyField('web-rating-key', 'Web rating key', settings.auxiliary.webRatingKeyConfigured, true)}
         ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}
@@ -2643,7 +2712,7 @@ export class SmithproxyApp extends LitElement {
         <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
         <input id="settings-api-allowed-ips" .value=${settings.httpApi.allowedIps.join(', ')}
           placeholder="127.0.0.1, 192.0.2.0/24" .readOnly=${disabled} />
-        <label>Webhook URL</label><span>${settings.webhook.urlConfigured ? 'Configured · redacted · unchanged' : 'Not configured'}</span>
+        ${writeOnlyField('webhook-url', 'Webhook URL', settings.webhook.urlConfigured)}
         ${this.snapshot?.debug ? html`
           <h3 class="form-span">Debug logging</h3>
           <label for="debug-data-crc">Payload CRC logging</label>

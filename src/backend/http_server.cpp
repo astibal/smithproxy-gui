@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -78,6 +79,17 @@ bool constant_time_equal(const std::string_view left, const std::string_view rig
         difference |= left_byte ^ right_byte;
     }
     return difference == 0U;
+}
+
+bool sensitive_draft_path(const std::string_view path) {
+    constexpr std::array sensitive_paths{
+        "settings.webhook.url", "settings.syslog_server", "settings.write_payload_dir",
+        "settings.log_file", "settings.sslkeylog_file", "settings.certs_path",
+        "settings.certs_ca_key_password", "settings.ca_bundle_path", "settings.messages_dir",
+        "settings.write_payload_file_prefix", "settings.write_payload_file_suffix",
+        "settings.cli.enable_password", "settings.web_rating.wot_key", "settings.http_api.keys",
+    };
+    return std::find(sensitive_paths.begin(), sensitive_paths.end(), path) != sensitive_paths.end();
 }
 
 bool confined_to_root(const std::filesystem::path& root, const std::filesystem::path& candidate) {
@@ -335,7 +347,14 @@ private:
             {"changes", nlohmann::json::array()},
         };
         for (const auto& change : draft.changes) {
-            auto value = std::visit([](const auto& item) { return nlohmann::json(item); }, change.value);
+            nlohmann::json value;
+            if (sensitive_draft_path(change.path)) {
+                const bool cleared = std::holds_alternative<std::string>(change.value) &&
+                                     std::get<std::string>(change.value).empty();
+                value = cleared ? nlohmann::json("") : nlohmann::json("[redacted]");
+            } else {
+                value = std::visit([](const auto& item) { return nlohmann::json(item); }, change.value);
+            }
             document["changes"].push_back({{"path", change.path}, {"value", std::move(value)}});
         }
         return {200, "application/json; charset=utf-8", document.dump()};

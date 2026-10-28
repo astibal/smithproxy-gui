@@ -108,6 +108,11 @@ stale writers receive HTTP 409. The browser also rejects draft responses above
 bounded raw draft. This store is not yet a commit path and cannot mutate
 Smithproxy configuration.
 
+Write-only paths accept explicit `unchanged`, `replace`, or `clear` intent in
+the frontend. The core retains a replacement only inside the server draft;
+every draft response substitutes `[redacted]`, and the review UI never renders
+the submitted path, credential, endpoint, or key value.
+
 The policy editor atomically persists the name, enabled state, protocol, source
 and destination address and port collections, features, action, NAT mode, and
 all routing and profile references through this endpoint. Nested editors use the

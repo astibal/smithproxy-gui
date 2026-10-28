@@ -607,6 +607,7 @@ def main() -> int:
                     {"path": "policy.[0].name", "value": "Office outbound"},
                     {"path": "policy.[0].disabled", "value": True},
                     {"path": "policy.[0].dst", "value": ["internet", "backup"]},
+                    {"path": "settings.certs_ca_key_password", "value": "new-private-password"},
                 ],
             })
             status, _, body = request(
@@ -615,8 +616,11 @@ def main() -> int:
             assert status == 200
             batch_snapshot = json.loads(body)
             assert batch_snapshot["version"] == 2
-            assert batch_snapshot["changes"][-1] == {
+            assert batch_snapshot["changes"][-2] == {
                 "path": "policy.[0].dst", "value": ["internet", "backup"]}
+            assert batch_snapshot["changes"][-1] == {
+                "path": "settings.certs_ca_key_password", "value": "[redacted]"}
+            assert b"new-private-password" not in body
             clear_change = json.dumps({"expected_version": 2})
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",
