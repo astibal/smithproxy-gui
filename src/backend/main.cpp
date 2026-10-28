@@ -32,7 +32,8 @@ int main(int argc, char** argv) {
 
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
-    smithproxy::gui::SmithproxyMonitor monitor(parsed.config->smithproxy);
+    smithproxy::gui::SmithproxyMonitor monitor(
+        parsed.config->smithproxy, parsed.config->gateway_secret.has_value());
     monitor.start();
     std::cout << "Smithproxy GUI listening on http://" << parsed.config->bind_address << ':'
               << parsed.config->port << parsed.config->base_path << '\n';

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -52,6 +53,27 @@ std::string optional_number_json(const std::optional<std::uint64_t> value) {
     return value ? std::to_string(*value) : "null";
 }
 
+std::string string_array_json(const std::vector<std::string>& values) {
+    std::string result{"["};
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index != 0U) result += ',';
+        result += json_string(values[index]);
+    }
+    result += ']';
+    return result;
+}
+
+bool constant_time_equal(const std::string_view left, const std::string_view right) {
+    const auto size = std::max(left.size(), right.size());
+    std::size_t difference = left.size() ^ right.size();
+    for (std::size_t index = 0; index < size; ++index) {
+        const auto left_byte = index < left.size() ? static_cast<unsigned char>(left[index]) : 0U;
+        const auto right_byte = index < right.size() ? static_cast<unsigned char>(right[index]) : 0U;
+        difference |= left_byte ^ right_byte;
+    }
+    return difference == 0U;
+}
+
 bool confined_to_root(const std::filesystem::path& root, const std::filesystem::path& candidate) {
     std::error_code error;
     const auto canonical_root = std::filesystem::weakly_canonical(root, error);
@@ -92,13 +114,13 @@ public:
         if (std::string_view(method) != "GET" && !head) {
             response = {405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
         } else {
-            response = route(url);
+            response = route(connection, url);
         }
         return send(connection, state, std::move(response), head);
     }
 
 private:
-    Response route(const std::string_view url) const {
+    Response route(MHD_Connection* connection, const std::string_view url) const {
         if (url == "/healthz") return health();
         const auto relative = path_below_base(url, config_.base_path);
         if (!relative) return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
@@ -106,7 +128,14 @@ private:
         if (*relative == "/api/v1/status") return status();
         if (*relative == "/api/v1/metrics/summary") return metrics_summary();
         if (*relative == "/api/v1/sessions/activity") return session_activity();
-        if (*relative == "/api/v1/capabilities") return capabilities();
+        if (*relative == "/api/v1/capabilities") return capabilities(connection);
+        if (*relative == "/api/v1/auth/session") return auth_session(connection);
+        if (*relative == "/api/v1/config/snapshot") {
+            if (!gateway_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+            }
+            return config_snapshot();
+        }
         if (relative->starts_with("/api/")) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};
         }
@@ -121,14 +150,94 @@ private:
                     ",\"checked_at_unix_ms\":" + timestamp_json(status.checked_at) + "}}"};
     }
 
-    Response capabilities() const {
+    Response capabilities(MHD_Connection* connection) const {
         const auto status = monitor_.status();
+        const bool config_read = monitor_.config_enabled() && gateway_authenticated(connection);
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
-                    ",\"features\":{\"config_read\":false,\"config_write\":false,"
+                    ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
+                    ",\"config_write\":false,"
                     "\"jobs\":false,\"events\":false,\"metrics\":true,"
                     "\"session_activity\":true}}"};
+    }
+
+    bool gateway_authenticated(MHD_Connection* connection) const {
+        if (!config_.gateway_secret) return false;
+        const auto* supplied = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "X-Smithproxy-GUI-Gateway");
+        return supplied != nullptr && constant_time_equal(supplied, *config_.gateway_secret);
+    }
+
+    Response auth_session(MHD_Connection* connection) const {
+        const bool enabled = config_.gateway_secret.has_value();
+        const bool authenticated = enabled && gateway_authenticated(connection);
+        return {200, "application/json; charset=utf-8",
+                "{\"mode\":" + json_string(enabled ? "gateway" : "disabled") +
+                    ",\"authenticated\":" + (authenticated ? "true" : "false") + "}"};
+    }
+
+    Response config_snapshot() const {
+        const auto snapshot = monitor_.status().config_snapshot;
+
+        std::string policies{"["};
+        for (std::size_t index = 0; index < snapshot.policies.size(); ++index) {
+            if (index != 0U) policies += ',';
+            const auto& policy = snapshot.policies[index];
+            policies += "{\"id\":" + json_string(policy.id) +
+                        ",\"name\":" + json_string(policy.name) +
+                        ",\"protocol\":" + json_string(policy.protocol) +
+                        ",\"sources\":" + string_array_json(policy.sources) +
+                        ",\"source_ports\":" + string_array_json(policy.source_ports) +
+                        ",\"destinations\":" + string_array_json(policy.destinations) +
+                        ",\"destination_ports\":" + string_array_json(policy.destination_ports) +
+                        ",\"action\":" + json_string(policy.action) +
+                        ",\"nat\":" + json_string(policy.nat) +
+                        ",\"routing\":" + json_string(policy.routing) +
+                        ",\"tls_profile\":" + json_string(policy.tls_profile) + "}";
+        }
+        policies += ']';
+
+        std::string addresses{"["};
+        for (std::size_t index = 0; index < snapshot.addresses.size(); ++index) {
+            if (index != 0U) addresses += ',';
+            const auto& address = snapshot.addresses[index];
+            addresses += "{\"id\":" + json_string(address.id) +
+                         ",\"name\":" + json_string(address.name) +
+                         ",\"type\":" + json_string(address.type) +
+                         ",\"value\":" + json_string(address.value) + "}";
+        }
+        addresses += ']';
+
+        std::string ports{"["};
+        for (std::size_t index = 0; index < snapshot.ports.size(); ++index) {
+            if (index != 0U) ports += ',';
+            const auto& port = snapshot.ports[index];
+            ports += "{\"id\":" + json_string(port.id) +
+                     ",\"name\":" + json_string(port.name) +
+                     ",\"start\":" + std::to_string(port.start) +
+                     ",\"end\":" + std::to_string(port.end) + "}";
+        }
+        ports += ']';
+
+        std::string protocols{"["};
+        for (std::size_t index = 0; index < snapshot.protocols.size(); ++index) {
+            if (index != 0U) protocols += ',';
+            const auto& protocol = snapshot.protocols[index];
+            protocols += "{\"id\":" + json_string(protocol.id) +
+                         ",\"name\":" + json_string(protocol.name) +
+                         ",\"number\":" + std::to_string(protocol.number) + "}";
+        }
+        protocols += ']';
+
+        return {200, "application/json; charset=utf-8",
+                "{\"state\":" + json_string(snapshot.state) +
+                    ",\"detail\":" + json_string(snapshot.detail) +
+                    ",\"checked_at_unix_ms\":" + timestamp_json(snapshot.checked_at) +
+                    ",\"last_success_at_unix_ms\":" + timestamp_json(snapshot.last_success_at) +
+                    ",\"view\":\"runtime\",\"revision\":null,\"policies\":" + policies +
+                    ",\"addresses\":" + addresses + ",\"ports\":" + ports +
+                    ",\"protocols\":" + protocols + "}"};
     }
 
     Response status() const {

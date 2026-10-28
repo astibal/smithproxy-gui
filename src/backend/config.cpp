@@ -115,6 +115,13 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
         while (normalized_url.ends_with('/')) normalized_url.pop_back();
         config.smithproxy = SmithproxyConfig{std::move(normalized_url), *key, *ca};
     }
+    if (auto gateway_secret = environment("SMITHPROXY_GUI_GATEWAY_SECRET")) {
+        if (gateway_secret->size() < 32U || gateway_secret->size() > 256U ||
+            !valid_header_value(*gateway_secret)) {
+            return failure("SMITHPROXY_GUI_GATEWAY_SECRET must contain 32..256 safe header characters");
+        }
+        config.gateway_secret = std::move(gateway_secret);
+    }
     return {std::move(config), {}, false};
 }
 
@@ -125,7 +132,8 @@ std::string usage() {
            "  --base-path PATH  public URL prefix (/)\n"
            "  --assets PATH     frontend asset directory (build/frontend)\n"
            "\nSmithproxy credentials are read only from SMITHPROXY_API_URL,\n"
-           "SMITHPROXY_API_KEY and SMITHPROXY_CA_CERT.\n";
+           "SMITHPROXY_API_KEY and SMITHPROXY_CA_CERT. A trusted reverse proxy\n"
+           "may authenticate sensitive browser APIs with SMITHPROXY_GUI_GATEWAY_SECRET.\n";
 }
 
 } // namespace smithproxy::gui

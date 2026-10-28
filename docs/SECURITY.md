@@ -25,6 +25,21 @@ musí být uzavřená a vzdálený přístup se povoluje explicitně.
 Konkrétní autentizační mechanismus bude zvolen podle deployment modelu. Podpora
 externího identity proxy nesmí automaticky znamenat důvěru libovolným hlavičkám.
 
+## Trusted gateway handoff
+
+Sensitive browser-facing APIs are disabled unless
+`SMITHPROXY_GUI_GATEWAY_SECRET` contains 32–256 safe header characters. A
+trusted reverse proxy must remove every client-supplied
+`X-Smithproxy-GUI-Gateway` header and inject the per-instance secret only after
+successful user authentication. The secret is compared without an early exit,
+is never returned to the browser, and must not be logged.
+
+Missing, incorrect, or unconfigured handoff credentials return HTTP 401 from
+sensitive endpoints. Capability discovery reports `config_read: false` unless
+the current request passed the same boundary. This contract deliberately fails
+closed; configuring the GUI process without the matching proxy injection does
+not expose configuration data.
+
 ## Oprávnění
 
 Minimální role:

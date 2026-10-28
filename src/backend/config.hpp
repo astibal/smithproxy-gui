@@ -19,6 +19,7 @@ struct AppConfig {
     std::string base_path{"/"};
     std::filesystem::path asset_root;
     std::optional<SmithproxyConfig> smithproxy;
+    std::optional<std::string> gateway_secret;
 };
 
 struct ParseResult {

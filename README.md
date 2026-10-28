@@ -64,6 +64,7 @@ The backend reads Smithproxy access exclusively from its process environment:
 SMITHPROXY_API_URL=https://127.0.0.1:55555
 SMITHPROXY_API_KEY=...
 SMITHPROXY_CA_CERT=/path/to/ca-cert.pem
+SMITHPROXY_GUI_GATEWAY_SECRET=at-least-32-random-characters
 ```
 
 The variables must be provided together. The API key is never accepted through
@@ -71,12 +72,21 @@ command-line arguments, exposed to the browser, or written to logs. For a
 deployment behind the Saslik gateway, use a base path such as
 `--base-path /ws001/smithproxy-gui/`.
 
-The configuration editor currently uses a fake API while the versioned
-Smithproxy configuration contract is being completed. Control-plane health and
-listener monitoring already use the production C++ backend and the authenticated
-Smithproxy API. Live session monitoring is aggregated by transport inside the GUI
-core; endpoint addresses, ports, session identifiers, and policy names are never
-sent to the browser. The root web component supports integration into Saslik Tools:
+Runtime configuration reads are fail-closed. They are enabled only when
+`SMITHPROXY_GUI_GATEWAY_SECRET` is configured and the trusted reverse proxy
+overwrites `X-Smithproxy-GUI-Gateway` with that secret on authenticated
+requests. The secret must never be exposed to browser code or forwarded from a
+client-supplied header. Missing or invalid handoff authentication returns HTTP
+401 and keeps `config_read` disabled in the capability response.
+
+The C++ backend can now retrieve a bounded, validated runtime configuration
+snapshot through the authenticated Smithproxy API. Frontend activation remains
+capability-gated until the trusted gateway handoff is configured. Configuration
+writes remain disabled while the versioned draft and commit contract is being
+completed. Control-plane health and listener monitoring use the production C++
+backend. Live session monitoring is aggregated by transport inside the GUI core;
+endpoint addresses, ports, session identifiers, and policy names are never sent
+to the browser. The root web component supports integration into Saslik Tools:
 
 ```html
 <smithproxy-gui

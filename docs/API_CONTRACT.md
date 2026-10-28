@@ -19,6 +19,20 @@ GET /api/v1/capabilities
 GET /api/v1/config/schema
 ```
 
+## Authenticated runtime snapshot
+
+```text
+GET /api/v1/auth/session
+GET /api/v1/config/snapshot
+```
+
+The session endpoint reveals only whether trusted gateway authentication is
+enabled and valid for the current request. The snapshot endpoint requires the
+trusted gateway handoff described in `SECURITY.md`; missing or invalid
+credentials return HTTP 401. The response contains a bounded and validated
+runtime view of policies and address, port, and protocol objects. It does not
+contain Smithproxy API credentials, gateway secrets, or filesystem data.
+
 GUI nesmí odhadovat podporu funkce pouze z čísla verze. Capability odpověď určuje
 dostupné endpointy, limity a feature flags.
 

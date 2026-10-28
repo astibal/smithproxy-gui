@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.hpp"
+#include "config_snapshot.hpp"
 #include "live_sessions.hpp"
 #include "runtime_metrics.hpp"
 
@@ -31,11 +32,12 @@ struct SmithproxyStatus {
     std::vector<ProbeSample> history;
     RuntimeMetrics runtime_metrics;
     LiveSessions live_sessions;
+    ConfigSnapshot config_snapshot;
 };
 
 class SmithproxyMonitor {
 public:
-    explicit SmithproxyMonitor(std::optional<SmithproxyConfig> config);
+    explicit SmithproxyMonitor(std::optional<SmithproxyConfig> config, bool config_enabled = false);
     ~SmithproxyMonitor();
 
     SmithproxyMonitor(const SmithproxyMonitor&) = delete;
@@ -45,14 +47,17 @@ public:
     void stop();
     [[nodiscard]] SmithproxyStatus status() const;
     [[nodiscard]] bool configured() const noexcept { return config_.has_value(); }
+    [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 
 private:
     void run(std::stop_token stop_token);
     SmithproxyStatus ping() const;
     RuntimeMetrics fetch_runtime_metrics() const;
     LiveSessions fetch_live_sessions() const;
+    ConfigSnapshot fetch_config_snapshot() const;
 
     std::optional<SmithproxyConfig> config_;
+    bool config_enabled_{};
     mutable std::mutex mutex_;
     SmithproxyStatus status_;
     std::jthread worker_;

@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "config_snapshot.hpp"
 #include "json.hpp"
 #include "live_sessions.hpp"
 #include "path.hpp"
@@ -16,6 +17,7 @@ int main() {
     unsetenv("SMITHPROXY_API_URL");
     unsetenv("SMITHPROXY_API_KEY");
     unsetenv("SMITHPROXY_CA_CERT");
+    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     assert(normalize_base_path("/") == "/");
     assert(normalize_base_path("/ws001/smithproxy-gui/") == "/ws001/smithproxy-gui");
     assert(!normalize_base_path("ws001"));
@@ -79,6 +81,31 @@ int main() {
     assert(!parse_live_sessions(R"([{"left":[{"com":"tls"}],"right":[{"com":"tls"}],
         "stats":{"speed":{"up":-1,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}])").snapshot);
 
+    const auto configuration = parse_config_snapshot(
+        R"({"success":{"policy":[{"proto":"tcp","src":["office"],"sport":["any"],"dst":["internet"],"dport":["https"],"action":"accept","nat":"masquerade","routing":"main","tls_profile":"inspect"}]}})",
+        R"({"success":{"address_objects":{"office":{"type":"cidr","value":"10.0.0.0/24"},"internet":{"type":"fqdn","value":"example.test"}}}})",
+        R"({"success":{"port_objects":{"https":{"start":"443","end":"443"}}}})",
+        R"({"success":{"proto_objects":{"tcp":{"id":"6"}}}})");
+    assert(configuration.snapshot);
+    assert(configuration.snapshot->policies.size() == 1U);
+    assert(configuration.snapshot->policies.front().sources == std::vector<std::string>{"office"});
+    assert(configuration.snapshot->addresses.size() == 2U);
+    assert(configuration.snapshot->ports.front().start == 443U);
+    assert(configuration.snapshot->protocols.front().number == 6U);
+
+    const auto legacy_address = parse_config_snapshot(
+        R"({"success":{"policy":[]}})",
+        R"({"success":{"address_objects":{"legacy":{"type":"0","cidr":"192.0.2.1/32"}}}})",
+        R"({"success":{"port_objects":{}}})",
+        R"({"success":{"proto_objects":{}}})");
+    assert(legacy_address.snapshot);
+    assert(legacy_address.snapshot->addresses.front().type == "cidr");
+    assert(!parse_config_snapshot("{}", "{}", "{}", "{}").snapshot);
+    assert(!parse_config_snapshot(
+        R"({"success":{"policy":[]}})", R"({"success":{"address_objects":{}}})",
+        R"({"success":{"port_objects":{"bad":{"start":"2","end":"1"}}}})",
+        R"({"success":{"proto_objects":{}}})").snapshot);
+
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;
     for (auto& argument : arguments) argv.push_back(argument.data());
@@ -86,5 +113,14 @@ int main() {
     assert(parsed.config);
     assert(parsed.config->base_path == "/");
     assert(parsed.config->port == 18082);
+
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "short", 1);
+    const auto invalid_secret = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
+    assert(!invalid_secret.config);
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
+    const auto authenticated = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
+    assert(authenticated.config);
+    assert(authenticated.config->gateway_secret == "0123456789abcdef0123456789abcdef");
+    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     return 0;
 }
