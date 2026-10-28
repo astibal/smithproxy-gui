@@ -589,6 +589,16 @@ export class SmithproxyApp extends LitElement {
         const item = this.snapshot?.profiles.filter(profile => profile.routing !== null)[Number(routing[1])];
         if (item) objects.add(`profile:${item.id}`);
       }
+      const detection = /^detection_profiles\.\[(\d+)\]\./u.exec(change.path);
+      if (detection) {
+        const item = this.snapshot?.profiles.filter(profile => profile.detection !== null)[Number(detection[1])];
+        if (item) objects.add(`profile:${item.id}`);
+      }
+      const dns = /^alg_dns_profiles\.\[(\d+)\]\./u.exec(change.path);
+      if (dns) {
+        const item = this.snapshot?.profiles.filter(profile => profile.dns !== null)[Number(dns[1])];
+        if (item) objects.add(`profile:${item.id}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -863,40 +873,80 @@ export class SmithproxyApp extends LitElement {
       ];
     }
     if (entry.kind === 'profile') {
-      const profiles = this.snapshot.profiles.filter(profile => profile.routing !== null);
-      const index = profiles.findIndex(profile => profile.id === entry.id);
-      const profile = profiles[index];
-      const name = this.renderRoot.querySelector<HTMLInputElement>(`#routing-name-${entry.id}`);
-      const addresses = this.renderRoot.querySelector<HTMLInputElement>(`#routing-addresses-${entry.id}`);
-      const ports = this.renderRoot.querySelector<HTMLInputElement>(`#routing-ports-${entry.id}`);
-      const loadBalancing = this.renderRoot.querySelector<HTMLSelectElement>(`#routing-load-balancing-${entry.id}`);
-      const rewriteSni = this.renderRoot.querySelector<HTMLInputElement>(`#routing-rewrite-sni-${entry.id}`);
-      const rewriteSniTo = this.renderRoot.querySelector<HTMLInputElement>(`#routing-rewrite-sni-to-${entry.id}`);
-      if (index < 0 || !profile?.routing || !name || !addresses || !ports ||
-          !loadBalancing || !rewriteSni || !rewriteSniTo) return undefined;
-      const addressValues = addresses.value.split(',').map(value => value.trim()).filter(Boolean);
-      const portValues = ports.value.split(',').map(value => value.trim()).filter(Boolean);
-      const sourceSni = rewriteSni.value.trim();
-      const targetSni = rewriteSniTo.value.trim();
-      const validReferences = (values: ReadonlyArray<string>) =>
-        values.length <= 256 && values.every(value => value.length <= 128) &&
-        new Set(values).size === values.length;
-      if (name.value.trim().length === 0 || name.value.trim().length > 128 ||
-          !validReferences(addressValues) || !validReferences(portValues) ||
-          !['round-robin', 'sticky-l3', 'sticky-l4'].includes(loadBalancing.value) ||
-          sourceSni.length > 1024 || targetSni.length > 1024 ||
-          (sourceSni.length === 0) !== (targetSni.length === 0)) {
-        this.draftError = 'Routing references must be unique and SNI rewrite requires both values.';
+      const profile = this.snapshot.profiles.find(item => item.id === entry.id);
+      const name = this.renderRoot.querySelector<HTMLInputElement>(`#profile-name-${entry.id}`);
+      if (!profile || !name || name.value.trim().length === 0 || name.value.trim().length > 128) {
+        this.draftError = 'A profile name up to 128 characters is required.';
         return undefined;
       }
-      return [
-        {path: `routing.[${index}].name`, value: name.value.trim()},
-        {path: `routing.[${index}].dnat_address`, value: addressValues},
-        {path: `routing.[${index}].dnat_port`, value: portValues},
-        {path: `routing.[${index}].dnat_lb_method`, value: loadBalancing.value},
-        {path: `routing.[${index}].rewrite_sni`, value: sourceSni},
-        {path: `routing.[${index}].rewrite_sni_to`, value: targetSni},
-      ];
+      if (profile.routing) {
+        const profiles = this.snapshot.profiles.filter(item => item.routing !== null);
+        const index = profiles.findIndex(item => item.id === entry.id);
+        const addresses = this.renderRoot.querySelector<HTMLInputElement>(`#routing-addresses-${entry.id}`);
+        const ports = this.renderRoot.querySelector<HTMLInputElement>(`#routing-ports-${entry.id}`);
+        const loadBalancing = this.renderRoot.querySelector<HTMLSelectElement>(`#routing-load-balancing-${entry.id}`);
+        const rewriteSni = this.renderRoot.querySelector<HTMLInputElement>(`#routing-rewrite-sni-${entry.id}`);
+        const rewriteSniTo = this.renderRoot.querySelector<HTMLInputElement>(`#routing-rewrite-sni-to-${entry.id}`);
+        if (index < 0 || !addresses || !ports || !loadBalancing || !rewriteSni || !rewriteSniTo) return undefined;
+        const addressValues = addresses.value.split(',').map(value => value.trim()).filter(Boolean);
+        const portValues = ports.value.split(',').map(value => value.trim()).filter(Boolean);
+        const sourceSni = rewriteSni.value.trim();
+        const targetSni = rewriteSniTo.value.trim();
+        const validReferences = (values: ReadonlyArray<string>) =>
+          values.length <= 256 && values.every(value => value.length <= 128) &&
+          new Set(values).size === values.length;
+        if (!validReferences(addressValues) || !validReferences(portValues) ||
+            !['round-robin', 'sticky-l3', 'sticky-l4'].includes(loadBalancing.value) ||
+            sourceSni.length > 1024 || targetSni.length > 1024 ||
+            (sourceSni.length === 0) !== (targetSni.length === 0)) {
+          this.draftError = 'Routing references must be unique and SNI rewrite requires both values.';
+          return undefined;
+        }
+        return [
+          {path: `routing.[${index}].name`, value: name.value.trim()},
+          {path: `routing.[${index}].dnat_address`, value: addressValues},
+          {path: `routing.[${index}].dnat_port`, value: portValues},
+          {path: `routing.[${index}].dnat_lb_method`, value: loadBalancing.value},
+          {path: `routing.[${index}].rewrite_sni`, value: sourceSni},
+          {path: `routing.[${index}].rewrite_sni_to`, value: targetSni},
+        ];
+      }
+      if (profile.detection) {
+        const profiles = this.snapshot.profiles.filter(item => item.detection !== null);
+        const index = profiles.findIndex(item => item.id === entry.id);
+        const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#detection-mode-${entry.id}`);
+        const engines = this.renderRoot.querySelector<HTMLSelectElement>(`#detection-engines-${entry.id}`);
+        const knowledgeBase = this.renderRoot.querySelector<HTMLSelectElement>(`#detection-kb-${entry.id}`);
+        const modeValue = Number(mode?.value);
+        if (index < 0 || !mode || !engines || !knowledgeBase ||
+            !Number.isInteger(modeValue) || modeValue < 0 || modeValue > 2 ||
+            ![engines.value, knowledgeBase.value].every(value => value === 'true' || value === 'false')) {
+          return undefined;
+        }
+        return [
+          {path: `detection_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `detection_profiles.[${index}].mode`, value: modeValue},
+          {path: `detection_profiles.[${index}].engines_enabled`, value: engines.value === 'true'},
+          {path: `detection_profiles.[${index}].kb_enabled`, value: knowledgeBase.value === 'true'},
+        ];
+      }
+      if (profile.dns) {
+        const profiles = this.snapshot.profiles.filter(item => item.dns !== null);
+        const index = profiles.findIndex(item => item.id === entry.id);
+        const match = this.renderRoot.querySelector<HTMLSelectElement>(`#dns-match-${entry.id}`);
+        const randomize = this.renderRoot.querySelector<HTMLSelectElement>(`#dns-randomize-${entry.id}`);
+        const cached = this.renderRoot.querySelector<HTMLSelectElement>(`#dns-cached-${entry.id}`);
+        if (index < 0 || !match || !randomize || !cached ||
+            ![match.value, randomize.value, cached.value].every(value => value === 'true' || value === 'false')) {
+          return undefined;
+        }
+        return [
+          {path: `alg_dns_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `alg_dns_profiles.[${index}].match_request_id`, value: match.value === 'true'},
+          {path: `alg_dns_profiles.[${index}].randomize_id`, value: randomize.value === 'true'},
+          {path: `alg_dns_profiles.[${index}].cached_responses`, value: cached.value === 'true'},
+        ];
+      }
     }
     return undefined;
   }
@@ -1763,17 +1813,18 @@ export class SmithproxyApp extends LitElement {
     const dns = profile.dns;
     const script = profile.script;
     const authentication = profile.authentication;
-    const routingReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const mapped = Boolean(routing || detection || dns);
+    const mappedReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class="form-grid">
-        <label for=${routing ? `routing-name-${entry.id}` : nothing}>Name</label>
-        ${routing ? html`<input id="routing-name-${entry.id}"
-          .value=${profile.name} .readOnly=${routingReadOnly} />` : html`<span>${profile.name}</span>`}
+        <label for=${mapped ? `profile-name-${entry.id}` : nothing}>Name</label>
+        ${mapped ? html`<input id="profile-name-${entry.id}"
+          .value=${profile.name} .readOnly=${mappedReadOnly} />` : html`<span>${profile.name}</span>`}
         <label>Profile type</label><span class="action">${profile.type}</span>
         ${routing ? html`
           <label for="routing-addresses-${entry.id}">Destination addresses</label>
           <input id="routing-addresses-${entry.id}"
-            .value=${routing.destinationAddresses.join(', ')} .readOnly=${routingReadOnly} />
+            .value=${routing.destinationAddresses.join(', ')} .readOnly=${mappedReadOnly} />
           <label>Address object links</label>
           <div class="reference-stack">${routing.destinationAddresses.length === 0 ? html`<span>None</span>` :
             routing.destinationAddresses.map(name => {
@@ -1785,22 +1836,22 @@ export class SmithproxyApp extends LitElement {
             })}</div>
           <label for="routing-ports-${entry.id}">Destination ports</label>
           <input id="routing-ports-${entry.id}"
-            .value=${routing.destinationPorts.join(', ')} .readOnly=${routingReadOnly} />
+            .value=${routing.destinationPorts.join(', ')} .readOnly=${mappedReadOnly} />
           <label>Port object links</label>
           ${this.renderPortReferences(routing.destinationPorts)}
           <label for="routing-load-balancing-${entry.id}">Load balancing</label>
           <select id="routing-load-balancing-${entry.id}"
-            .value=${routing.loadBalancingMethod} ?disabled=${routingReadOnly}>
+            .value=${routing.loadBalancingMethod} ?disabled=${mappedReadOnly}>
             <option value="round-robin">Round robin</option>
             <option value="sticky-l3">Sticky L3</option>
             <option value="sticky-l4">Sticky L4</option>
           </select>
           <label for="routing-rewrite-sni-${entry.id}">Rewrite SNI match</label>
           <input id="routing-rewrite-sni-${entry.id}"
-            .value=${routing.rewriteSni} .readOnly=${routingReadOnly} placeholder="Disabled" />
+            .value=${routing.rewriteSni} .readOnly=${mappedReadOnly} placeholder="Disabled" />
           <label for="routing-rewrite-sni-to-${entry.id}">Rewrite SNI target</label>
           <input id="routing-rewrite-sni-to-${entry.id}"
-            .value=${routing.rewriteSniTo} .readOnly=${routingReadOnly} placeholder="Disabled" />
+            .value=${routing.rewriteSniTo} .readOnly=${mappedReadOnly} placeholder="Disabled" />
         ` : tls ? html`
           <label>Inspection</label><span>${tls.inspect ? 'Enabled' : 'Disabled'}</span>
           <label>Certificate validation</label>
@@ -1818,10 +1869,20 @@ export class SmithproxyApp extends LitElement {
           <label>SSL key logging</label><span>${tls.sslKeyLog ? 'Enabled' : 'Disabled'}</span>
           <label>Alerts</label><span>${tls.alerts}</span>
         ` : detection ? html`
-          <label>Detection phase</label>
-          <span>${['Disabled', 'Pre-read', 'Post-read'][detection.mode]}</span>
-          <label>L7 engines</label><span>${detection.enginesEnabled ? 'Enabled' : 'Disabled'}</span>
-          <label>Knowledge base</label><span>${detection.knowledgeBaseEnabled ? 'Enabled' : 'Disabled'}</span>
+          <label for="detection-mode-${entry.id}">Detection phase</label>
+          <select id="detection-mode-${entry.id}" .value=${String(detection.mode)} ?disabled=${mappedReadOnly}>
+            <option value="0">Disabled</option><option value="1">Pre-read</option><option value="2">Post-read</option>
+          </select>
+          <label for="detection-engines-${entry.id}">L7 engines</label>
+          <select id="detection-engines-${entry.id}"
+            .value=${String(detection.enginesEnabled)} ?disabled=${mappedReadOnly}>
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
+          <label for="detection-kb-${entry.id}">Knowledge base</label>
+          <select id="detection-kb-${entry.id}"
+            .value=${String(detection.knowledgeBaseEnabled)} ?disabled=${mappedReadOnly}>
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
         ` : content ? html`
           <label>Payload capture</label><span>${content.writePayload ? 'Enabled' : 'Disabled'}</span>
           <label>Capture format</label><span>${content.writeFormat}</span>
@@ -1846,9 +1907,18 @@ export class SmithproxyApp extends LitElement {
           <label>X11 forwarding</label><span>${ssh.x11 ? 'Pass' : 'Reject'}</span>
           <label>Agent forwarding</label><span>${ssh.agent ? 'Pass' : 'Reject'}</span>
         ` : dns ? html`
-          <label>Match request ID</label><span>${dns.matchRequestId ? 'Enabled' : 'Disabled'}</span>
-          <label>Randomize upstream ID</label><span>${dns.randomizeId ? 'Enabled' : 'Disabled'}</span>
-          <label>Cached responses</label><span>${dns.cachedResponses ? 'Enabled' : 'Disabled'}</span>
+          <label for="dns-match-${entry.id}">Match request ID</label>
+          <select id="dns-match-${entry.id}" .value=${String(dns.matchRequestId)} ?disabled=${mappedReadOnly}>
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
+          <label for="dns-randomize-${entry.id}">Randomize upstream ID</label>
+          <select id="dns-randomize-${entry.id}" .value=${String(dns.randomizeId)} ?disabled=${mappedReadOnly}>
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
+          <label for="dns-cached-${entry.id}">Cached responses</label>
+          <select id="dns-cached-${entry.id}" .value=${String(dns.cachedResponses)} ?disabled=${mappedReadOnly}>
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
         ` : script ? html`
           <label>Runtime</label><span>${script.runtime}</span>
           <label>Module path</label><span>${script.modulePathConfigured ? 'Configured · path redacted' : 'Not configured'}</span>
@@ -1908,9 +1978,10 @@ export class SmithproxyApp extends LitElement {
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
     const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = ['policy', 'address', 'port', 'protocol'];
-    const mappedProfile = entry.kind === 'profile' && Boolean(
-      this.snapshot?.profiles.find(profile => profile.id === entry.id)?.routing,
-    );
+    const profile = entry.kind === 'profile'
+      ? this.snapshot?.profiles.find(item => item.id === entry.id)
+      : undefined;
+    const mappedProfile = Boolean(profile?.routing || profile?.detection || profile?.dns);
     const draftable = this.snapshot?.source !== 'live' ||
       (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
     const readOnly = !draftable;
