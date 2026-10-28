@@ -62,11 +62,30 @@ export interface RoutingProfileDetails {
   rewriteSniTo: string;
 }
 
+export interface TlsProfileDetails {
+  inspect: boolean;
+  allowUntrustedIssuers: boolean;
+  allowInvalidCertificates: boolean;
+  allowSelfSigned: boolean;
+  certificateTransparency: boolean;
+  ocspStapling: boolean;
+  blockAlpn: boolean;
+  onlyCustomCertificates: boolean;
+  noFallbackBypass: boolean;
+  sslKeyLog: boolean;
+  clientHelloTimeoutMs: number;
+  handshakeTimeoutMs: number;
+  sniBypassEntries: number;
+  clientCertificateAction: string;
+  alerts: 'all' | 'unusual' | 'mute';
+}
+
 export interface ProfileObject {
   id: string;
   name: string;
   type: string;
   routing: RoutingProfileDetails | null;
+  tls: TlsProfileDetails | null;
   usedBy: ReadonlyArray<ConfigUsage>;
 }
 

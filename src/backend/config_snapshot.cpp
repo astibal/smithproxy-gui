@@ -64,6 +64,14 @@ std::optional<std::uint64_t> decimal(const Json& object, const char* key) {
     return result;
 }
 
+std::optional<std::uint64_t> optional_decimal(
+    const Json& object, const char* key, const std::uint64_t fallback, const std::uint64_t maximum) {
+    if (object.find(key) == object.end()) return fallback;
+    const auto result = decimal(object, key);
+    if (!result || *result > maximum) return std::nullopt;
+    return result;
+}
+
 std::optional<bool> boolean_scalar(const Json& object, const char* key, const bool fallback) {
     const auto value = object.find(key);
     if (value == object.end()) return fallback;
@@ -256,6 +264,7 @@ ConfigProfileParseResult parse_config_profiles(
             return {std::nullopt, "Smithproxy returned an invalid profile entry"};
         }
         std::optional<ConfigRoutingProfile> routing;
+        std::optional<ConfigTlsProfile> tls;
         if (type == "routing") {
             const auto addresses = string_array(profile, "dnat_address", true);
             const auto ports = string_array(profile, "dnat_port", true);
@@ -274,8 +283,40 @@ ConfigProfileParseResult parse_config_profiles(
                 *rewrite_sni,
                 *rewrite_sni_to,
             };
+        } else if (type == "tls") {
+            const auto inspect = boolean_scalar(profile, "inspect", false);
+            const auto allow_untrusted = boolean_scalar(profile, "allow_untrusted_issuers", false);
+            const auto allow_invalid = boolean_scalar(profile, "allow_invalid_certs", false);
+            const auto allow_self_signed = boolean_scalar(profile, "allow_self_signed", false);
+            const auto ct = boolean_scalar(profile, "ct_enable", true);
+            const auto stapling = boolean_scalar(profile, "ocsp_stapling", true);
+            const auto alpn = boolean_scalar(profile, "alpn_block", false);
+            const auto custom_only = boolean_scalar(profile, "only_custom_certs", false);
+            const auto no_fallback = boolean_scalar(profile, "no_fallback_bypass", false);
+            const auto key_log = boolean_scalar(profile, "sslkeylog", false);
+            const auto hello_timeout = optional_decimal(profile, "client_hello_timeout", 3000U, 3600000U);
+            const auto handshake_timeout = optional_decimal(profile, "handshake_timeout", 10000U, 3600000U);
+            const auto bypass = string_array(profile, "sni_filter_bypass", true);
+            const auto client_action = bounded_string(profile, "client_cert_action", 32U, true);
+            const auto alerts = bounded_string(profile, "alerts", 16U, true);
+            if (!inspect || !allow_untrusted || !allow_invalid || !allow_self_signed || !ct || !stapling || !alpn ||
+                !custom_only || !no_fallback || !key_log || !hello_timeout || *hello_timeout == 0U ||
+                !handshake_timeout || *handshake_timeout == 0U || !bypass || !client_action ||
+                (*client_action != "" && *client_action != "block_or_replacement" &&
+                 *client_action != "empty_client_cert" && *client_action != "tls_bypass" &&
+                 *client_action != "use_configured") || !alerts ||
+                (*alerts != "" && *alerts != "all" && *alerts != "unusual" && *alerts != "mute")) {
+                return {std::nullopt, "Smithproxy returned an invalid TLS profile"};
+            }
+            tls = ConfigTlsProfile{
+                *inspect, *allow_untrusted, *allow_invalid, *allow_self_signed, *ct, *stapling, *alpn,
+                *custom_only, *no_fallback, *key_log, *hello_timeout, *handshake_timeout, bypass->size(),
+                client_action->empty() ? "use_configured" : *client_action,
+                alerts->empty() ? "all" : *alerts,
+            };
         }
-        result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type), std::move(routing)});
+        result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type),
+                          std::move(routing), std::move(tls)});
     }
     return {std::move(result), {}};
 }

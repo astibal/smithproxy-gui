@@ -154,6 +154,17 @@ int main() {
     assert(!parse_config_profiles(
         R"({"success":{"routing":{"bad":{"rewrite_sni":"one-sided.example"}}}})",
         "routing", "routing").profiles);
+    const auto tls_profiles = parse_config_profiles(
+        R"({"success":{"tls_profiles":{"strict":{"inspect":"true","allow_invalid_certs":"false","client_hello_timeout":"3000","handshake_timeout":"10000","sni_filter_bypass":["secret.example"],"client_cert_action":"use_configured","alerts":"unusual"}}}})",
+        "tls_profiles", "tls");
+    assert(tls_profiles.profiles);
+    assert(tls_profiles.profiles->front().tls);
+    assert(tls_profiles.profiles->front().tls->inspect);
+    assert(tls_profiles.profiles->front().tls->sni_bypass_entries == 1U);
+    assert(tls_profiles.profiles->front().tls->alerts == "unusual");
+    assert(!parse_config_profiles(
+        R"({"success":{"tls_profiles":{"bad":{"alerts":"verbose"}}}})",
+        "tls_profiles", "tls").profiles);
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

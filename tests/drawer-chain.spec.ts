@@ -93,13 +93,23 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       ports: [{id: 'port-0', name: 'https', start: 443, end: 443}],
       protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
       profiles: [
-        {id: 'tls-0', name: 'inspect', type: 'tls', routing: null},
+        {
+          id: 'tls-0', name: 'inspect', type: 'tls', routing: null,
+          tls: {
+            inspect: true, allow_untrusted_issuers: false, allow_invalid_certificates: false,
+            allow_self_signed: false, certificate_transparency: true, ocsp_stapling: true,
+            block_alpn: false, only_custom_certificates: false, no_fallback_bypass: true,
+            ssl_key_log: false, client_hello_timeout_ms: 3000, handshake_timeout_ms: 10000,
+            sni_bypass_entries: 2, client_certificate_action: 'use_configured', alerts: 'unusual',
+          },
+        },
         {
           id: 'routing-0', name: 'main', type: 'routing',
           routing: {
             destination_addresses: ['internet'], destination_ports: ['https'],
             load_balancing_method: 'round-robin', rewrite_sni: '', rewrite_sni_to: '',
           },
+          tls: null,
         },
       ],
     }}));
@@ -123,8 +133,11 @@ test('loads authenticated runtime configuration as a read-only view', async ({pa
   await expect(page.getByRole('dialog', {name: 'Edit https'})).toBeVisible();
   await page.keyboard.press('Escape');
   await editor.getByRole('button', {name: 'inspect', exact: true}).click();
-  await expect(page.getByRole('dialog', {name: 'Edit inspect'})).toBeVisible();
-  await expect(page.getByText(/profile values remain inside the GUI core/i)).toBeVisible();
+  const tlsEditor = page.getByRole('dialog', {name: 'Edit inspect'});
+  await expect(tlsEditor).toBeVisible();
+  await expect(tlsEditor.getByText('Strict')).toBeVisible();
+  await expect(tlsEditor.getByText('2 redacted entries')).toBeVisible();
+  await expect(tlsEditor.getByText(/SNI bypass values stay inside the GUI core/i)).toBeVisible();
   await page.keyboard.press('Escape');
   await editor.getByRole('button', {name: 'main', exact: true}).click();
   const routingEditor = page.getByRole('dialog', {name: 'Edit main'});

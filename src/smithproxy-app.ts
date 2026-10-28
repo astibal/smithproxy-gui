@@ -1323,6 +1323,7 @@ export class SmithproxyApp extends LitElement {
     const profile = this.snapshot?.profiles.find(item => item.id === entry.id);
     if (!profile) return nothing;
     const routing = profile.routing;
+    const tls = profile.tls;
     return html`
       <div class="form-grid">
         <label>Name</label><span>${profile.name}</span>
@@ -1342,11 +1343,30 @@ export class SmithproxyApp extends LitElement {
           <label>Load balancing</label><span>${routing.loadBalancingMethod}</span>
           <label>SNI rewrite</label>
           <span>${routing.rewriteSni.length === 0 ? 'Disabled' : `${routing.rewriteSni} → ${routing.rewriteSniTo}`}</span>
+        ` : tls ? html`
+          <label>Inspection</label><span>${tls.inspect ? 'Enabled' : 'Disabled'}</span>
+          <label>Certificate validation</label>
+          <span>${tls.allowInvalidCertificates || tls.allowUntrustedIssuers || tls.allowSelfSigned
+            ? 'Relaxed' : 'Strict'}</span>
+          <label>Certificate transparency</label><span>${tls.certificateTransparency ? 'Enabled' : 'Disabled'}</span>
+          <label>OCSP stapling</label><span>${tls.ocspStapling ? 'Enabled' : 'Disabled'}</span>
+          <label>Fallback bypass</label><span>${tls.noFallbackBypass ? 'Blocked' : 'Allowed'}</span>
+          <label>Custom certificates only</label><span>${tls.onlyCustomCertificates ? 'Yes' : 'No'}</span>
+          <label>ALPN negotiation</label><span>${tls.blockAlpn ? 'Blocked' : 'Allowed'}</span>
+          <label>Client certificate action</label><span>${tls.clientCertificateAction}</span>
+          <label>Client hello timeout</label><span>${tls.clientHelloTimeoutMs} ms</span>
+          <label>Handshake timeout</label><span>${tls.handshakeTimeoutMs} ms</span>
+          <label>SNI bypass list</label><span>${tls.sniBypassEntries} redacted entries</span>
+          <label>SSL key logging</label><span>${tls.sslKeyLog ? 'Enabled' : 'Disabled'}</span>
+          <label>Alerts</label><span>${tls.alerts}</span>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
-      ${routing ? nothing : html`<div class="privacy-note section">
+      ${routing || tls ? nothing : html`<div class="privacy-note section">
         Profile values remain inside the GUI core until a typed, redacted editor is available.
       </div>`}
+      ${tls ? html`<div class="privacy-note section">
+        SNI bypass values stay inside the GUI core; only their bounded count is exposed.
+      </div>` : nothing}
       ${this.renderObjectUsage(profile)}
     `;
   }

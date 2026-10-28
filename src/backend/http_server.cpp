@@ -257,6 +257,27 @@ private:
                             ",\"rewrite_sni\":" + json_string(profile.routing->rewrite_sni) +
                             ",\"rewrite_sni_to\":" + json_string(profile.routing->rewrite_sni_to) + "}";
             }
+            profiles += ",\"tls\":";
+            if (!profile.tls) {
+                profiles += "null";
+            } else {
+                const auto& tls = *profile.tls;
+                profiles += "{\"inspect\":" + std::string(tls.inspect ? "true" : "false") +
+                            ",\"allow_untrusted_issuers\":" + (tls.allow_untrusted_issuers ? "true" : "false") +
+                            ",\"allow_invalid_certificates\":" + (tls.allow_invalid_certificates ? "true" : "false") +
+                            ",\"allow_self_signed\":" + (tls.allow_self_signed ? "true" : "false") +
+                            ",\"certificate_transparency\":" + (tls.certificate_transparency ? "true" : "false") +
+                            ",\"ocsp_stapling\":" + (tls.ocsp_stapling ? "true" : "false") +
+                            ",\"block_alpn\":" + (tls.block_alpn ? "true" : "false") +
+                            ",\"only_custom_certificates\":" + (tls.only_custom_certificates ? "true" : "false") +
+                            ",\"no_fallback_bypass\":" + (tls.no_fallback_bypass ? "true" : "false") +
+                            ",\"ssl_key_log\":" + (tls.ssl_key_log ? "true" : "false") +
+                            ",\"client_hello_timeout_ms\":" + std::to_string(tls.client_hello_timeout_ms) +
+                            ",\"handshake_timeout_ms\":" + std::to_string(tls.handshake_timeout_ms) +
+                            ",\"sni_bypass_entries\":" + std::to_string(tls.sni_bypass_entries) +
+                            ",\"client_certificate_action\":" + json_string(tls.client_certificate_action) +
+                            ",\"alerts\":" + json_string(tls.alerts) + "}";
+            }
             profiles += '}';
         }
         profiles += ']';

@@ -37,11 +37,30 @@ struct ConfigRoutingProfile {
     std::string rewrite_sni_to;
 };
 
+struct ConfigTlsProfile {
+    bool inspect{};
+    bool allow_untrusted_issuers{};
+    bool allow_invalid_certificates{};
+    bool allow_self_signed{};
+    bool certificate_transparency{};
+    bool ocsp_stapling{};
+    bool block_alpn{};
+    bool only_custom_certificates{};
+    bool no_fallback_bypass{};
+    bool ssl_key_log{};
+    std::uint64_t client_hello_timeout_ms{};
+    std::uint64_t handshake_timeout_ms{};
+    std::uint64_t sni_bypass_entries{};
+    std::string client_certificate_action;
+    std::string alerts;
+};
+
 struct ConfigProfile {
     std::string id;
     std::string name;
     std::string type;
     std::optional<ConfigRoutingProfile> routing;
+    std::optional<ConfigTlsProfile> tls;
 };
 
 struct ConfigPolicy {

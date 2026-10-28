@@ -23,13 +23,23 @@ const liveSnapshot = {
   ports: [{id: 'port-0', name: 'https', start: 443, end: 443}],
   protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
   profiles: [
-    {id: 'tls-0', name: 'inspect', type: 'tls', routing: null},
+    {
+      id: 'tls-0', name: 'inspect', type: 'tls', routing: null,
+      tls: {
+        inspect: true, allow_untrusted_issuers: false, allow_invalid_certificates: false,
+        allow_self_signed: false, certificate_transparency: true, ocsp_stapling: true,
+        block_alpn: false, only_custom_certificates: false, no_fallback_bypass: true,
+        ssl_key_log: false, client_hello_timeout_ms: 3000, handshake_timeout_ms: 10000,
+        sni_bypass_entries: 2, client_certificate_action: 'use_configured', alerts: 'unusual',
+      },
+    },
     {
       id: 'routing-0', name: 'main', type: 'routing',
       routing: {
         destination_addresses: ['internet'], destination_ports: ['https'],
         load_balancing_method: 'sticky-l3', rewrite_sni: 'old.example', rewrite_sni_to: 'new.example',
       },
+      tls: null,
     },
   ],
 };

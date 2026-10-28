@@ -95,6 +95,13 @@ const snapshot: ConfigSnapshot = {
     {
       id: 'tls-0', name: 'inspect', type: 'tls',
       routing: null,
+      tls: {
+        inspect: true, allowUntrustedIssuers: false, allowInvalidCertificates: false,
+        allowSelfSigned: false, certificateTransparency: true, ocspStapling: true,
+        blockAlpn: false, onlyCustomCertificates: false, noFallbackBypass: true,
+        sslKeyLog: false, clientHelloTimeoutMs: 3000, handshakeTimeoutMs: 10000,
+        sniBypassEntries: 0, clientCertificateAction: 'use_configured', alerts: 'all',
+      },
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
@@ -103,6 +110,7 @@ const snapshot: ConfigSnapshot = {
         destinationAddresses: ['internet'], destinationPorts: ['https'],
         loadBalancingMethod: 'round-robin', rewriteSni: '', rewriteSniTo: '',
       },
+      tls: null,
       usedBy: [],
     },
   ],

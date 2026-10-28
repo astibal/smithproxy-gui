@@ -210,6 +210,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     if (!isObject(item)) throw new Error('Invalid profile.');
     const type = safeString(item.type, 'profile type', 32);
     let routing: ProfileObject['routing'] = null;
+    let tls: ProfileObject['tls'] = null;
     if (type === 'routing') {
       if (!isObject(item.routing)) throw new Error('Invalid routing profile.');
       const loadBalancingMethod = safeString(item.routing.load_balancing_method, 'routing load-balancing method', 32);
@@ -229,11 +230,43 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     } else if (item.routing !== null) {
       throw new Error('Invalid non-routing profile details.');
     }
+    if (type === 'tls') {
+      if (!isObject(item.tls)) throw new Error('Invalid TLS profile.');
+      const alerts = safeString(item.tls.alerts, 'TLS alert mode', 16);
+      if (!['all', 'unusual', 'mute'].includes(alerts)) throw new Error('Invalid TLS alert mode.');
+      const clientCertificateAction = safeString(
+        item.tls.client_certificate_action, 'TLS client certificate action', 32,
+      );
+      if (!['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientCertificateAction)) {
+        throw new Error('Invalid TLS client certificate action.');
+      }
+      tls = {
+        inspect: safeBoolean(item.tls.inspect, 'TLS inspection state'),
+        allowUntrustedIssuers: safeBoolean(item.tls.allow_untrusted_issuers, 'TLS untrusted issuer state'),
+        allowInvalidCertificates: safeBoolean(item.tls.allow_invalid_certificates, 'TLS invalid certificate state'),
+        allowSelfSigned: safeBoolean(item.tls.allow_self_signed, 'TLS self-signed state'),
+        certificateTransparency: safeBoolean(item.tls.certificate_transparency, 'TLS transparency state'),
+        ocspStapling: safeBoolean(item.tls.ocsp_stapling, 'TLS OCSP stapling state'),
+        blockAlpn: safeBoolean(item.tls.block_alpn, 'TLS ALPN state'),
+        onlyCustomCertificates: safeBoolean(item.tls.only_custom_certificates, 'TLS custom certificate state'),
+        noFallbackBypass: safeBoolean(item.tls.no_fallback_bypass, 'TLS fallback state'),
+        sslKeyLog: safeBoolean(item.tls.ssl_key_log, 'TLS key log state'),
+        clientHelloTimeoutMs: safeInteger(item.tls.client_hello_timeout_ms, 'TLS client hello timeout', 3600000),
+        handshakeTimeoutMs: safeInteger(item.tls.handshake_timeout_ms, 'TLS handshake timeout', 3600000),
+        sniBypassEntries: safeInteger(item.tls.sni_bypass_entries, 'TLS SNI bypass count', MAX_REFERENCES),
+        clientCertificateAction,
+        alerts: alerts as 'all' | 'unusual' | 'mute',
+      };
+      if (tls.clientHelloTimeoutMs === 0 || tls.handshakeTimeoutMs === 0) throw new Error('Invalid TLS timeout.');
+    } else if (item.tls !== null) {
+      throw new Error('Invalid non-TLS profile details.');
+    }
     return {
       id: safeString(item.id, 'profile ID', 128),
       name: safeString(item.name, 'profile name', 128),
       type,
       routing,
+      tls,
       usedBy: [],
     };
   });
