@@ -1799,6 +1799,14 @@ export class SmithproxyApp extends LitElement {
               <dt>External redirects</dt><dd>Rejected</dd>
             </dl>
           </article>
+          <article class="domain-card">
+            <header><div><h3>Augment overlays</h3><p>Persistent and effective value provenance</p></div></header>
+            <dl>
+              <dt>Capability</dt><dd>${this.snapshot?.augmentSupport ? 'Available' : 'Not advertised'}</dd>
+              <dt>Tracked values</dt><dd>${this.snapshot?.valueOrigins.length ?? 0}</dd>
+              <dt>Editing target</dt><dd>Persistent config</dd>
+            </dl>
+          </article>
           ${settings ? html`
             <article class="domain-card">
               <header><div><h3>Traffic admission</h3><p>Runtime listener and failure policy</p></div>
@@ -1978,18 +1986,8 @@ export class SmithproxyApp extends LitElement {
         <input id="destination-${entry.id}"
           .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
         <label for="action-${entry.id}">Action</label>
-        <input id="action-${entry.id}" .value=${policy.action} .readOnly=${liveReadOnly} />
-        ${actionOrigin ? html`
-          <span></span>
-          <div class="origin-note">
-            Effective <strong>${String(actionOrigin.effectiveValue)}</strong> overrides persistent
-            <strong>${String(actionOrigin.persistentValue)}</strong> via
-            ${actionOrigin.layers.map(layer => layer.priority === null
-              ? layer.id
-              : `${layer.id} (priority ${layer.priority})`).join(' → ')}.
-            ${actionOrigin.editable ? 'This value can be edited.' : 'The active layer owns this value.'}
-          </div>
-        ` : nothing}
+        <input id="action-${entry.id}" .value=${policy.action}
+          .readOnly=${liveReadOnly || actionOrigin?.editable === false} />
       </div>
       <div class="section">
         <h3>Advanced</h3>
@@ -2415,6 +2413,58 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private originPrefix(entry: DrawerEntry): string | undefined {
+    if (!this.snapshot) return undefined;
+    if (entry.kind === 'settings') return 'settings.';
+    if (entry.kind === 'captures') return 'captures.';
+    if (entry.kind === 'policy') {
+      const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
+      return index < 0 ? undefined : `policy.[${index}].`;
+    }
+    if (entry.kind === 'address') {
+      const index = this.snapshot.addresses.findIndex(item => item.id === entry.id);
+      return index < 0 ? undefined : `address_objects.[${index}].`;
+    }
+    if (entry.kind === 'port') {
+      const index = this.snapshot.ports.findIndex(item => item.id === entry.id);
+      return index < 0 ? undefined : `port_objects.[${index}].`;
+    }
+    if (entry.kind === 'protocol') {
+      const index = this.snapshot.protocols.findIndex(item => item.id === entry.id);
+      return index < 0 ? undefined : `proto_objects.[${index}].`;
+    }
+    const profile = this.snapshot.profiles.find(item => item.id === entry.id);
+    if (!profile) return undefined;
+    const section = profile.routing ? 'routing' : profile.tls ? 'tls_profiles' :
+      profile.detection ? 'detection_profiles' : profile.content ? 'content_profiles' :
+      profile.ssh ? 'ssh_profiles' : profile.dns ? 'alg_dns_profiles' :
+      profile.script ? 'script_profiles' : profile.authentication ? 'auth_profiles' : undefined;
+    if (!section) return undefined;
+    const index = this.snapshot.profiles.filter(item => item.type === profile.type).findIndex(item => item.id === entry.id);
+    return index < 0 ? undefined : `${section}.[${index}].`;
+  }
+
+  private renderAugmentOrigins(entry: DrawerEntry) {
+    const prefix = this.originPrefix(entry);
+    const origins = prefix ? this.snapshot?.valueOrigins.filter(item => item.path.startsWith(prefix)) ?? [] : [];
+    if (origins.length === 0) return nothing;
+    return html`
+      <section class="section" aria-label="Effective value overlays">
+        <h3>Effective value overlays</h3>
+        ${origins.map(origin => html`
+          <div class="origin-note">
+            <strong>${origin.path.slice(prefix!.length)}</strong><br />
+            Persistent <strong>${String(origin.persistentValue)}</strong>
+            → ${origin.layers.map(layer => layer.priority === null
+              ? layer.id
+              : `${layer.id} (priority ${layer.priority})`).join(' → ')}
+            → effective <strong>${String(origin.effectiveValue)}</strong>.
+            ${origin.editable ? 'The persistent value is editable.' : 'The active layer owns this value.'}
+          </div>
+        `)}
+      </section>`;
+  }
+
   private renderObjectUsage(object: PortObject | ProtocolObject | ProfileObject) {
     return html`
       <div class="section">
@@ -2472,6 +2522,7 @@ export class SmithproxyApp extends LitElement {
         </header>
         <div class="drawer-body">
           ${this.renderDrawerBody(entry)}
+          ${this.renderAugmentOrigins(entry)}
         </div>
         <footer class="drawer-foot">
           <span class="validation">${this.draftError ?? (readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}</span>

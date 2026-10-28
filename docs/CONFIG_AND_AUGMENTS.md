@@ -25,6 +25,11 @@ U každé hodnoty musí být dostupné:
 GUI nesmí ztratit informaci o původu tím, že efektivní config převede na obyčejný
 anonymní JSON strom.
 
+Aktuální frontend vykresluje obecnou provenance sekci ve všech typech editorů.
+Podporuje seřazený řetěz více vrstev, priority, persistentní i efektivní hodnota
+a příznak editovatelnosti. Pole vlastněné aktivní vrstvou je v persistentním
+editoru pouze pro čtení; augment se nesmí nevědomky přepsat změnou base configu.
+
 ## Coverage model
 
 Úplnost se měří proti strojově čitelnému schema manifestu Smithproxy. Každý uzel

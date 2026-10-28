@@ -408,7 +408,12 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await page.getByRole('button', {name: /office office-net/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
   await expect(page.getByText(/temporary-office-access \(priority 100\)/i)).toBeVisible();
-  await expect(page.locator('.origin-note')).toContainText('Effective accept overrides persistent reject');
+  await expect(page.getByText(/incident-response \(priority 200\)/i)).toBeVisible();
+  const overlay = page.getByRole('region', {name: 'Effective value overlays'});
+  await expect(overlay).toContainText('Persistent reject');
+  await expect(overlay).toContainText('effective accept');
+  await expect(overlay).toContainText('The active layer owns this value');
+  await expect(page.locator('#action-policy-office')).toHaveAttribute('readonly', '');
 
   await page.getByRole('button', {name: 'office-net', exact: true}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});

@@ -214,7 +214,10 @@ const snapshot: ConfigSnapshot = {
     path: 'policy.[0].action',
     persistentValue: 'reject',
     effectiveValue: 'accept',
-    layers: [{id: 'temporary-office-access', priority: 100}],
+    layers: [
+      {id: 'temporary-office-access', priority: 100},
+      {id: 'incident-response', priority: 200},
+    ],
     editable: false,
   }],
 };
