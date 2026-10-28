@@ -96,7 +96,10 @@ inside the GUI core;
 endpoint addresses, ports, session identifiers, and policy names are never sent
 to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The
-root web component supports integration into Saslik Tools:
+Network neighborhood monitoring follows the same rule: only endpoint counts,
+activity windows, observations, and traffic totals reach the browser; hostnames,
+tags, labels, and individual timelines do not. The root web component supports
+integration into Saslik Tools:
 
 ```html
 <smithproxy-gui

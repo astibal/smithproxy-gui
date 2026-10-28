@@ -12,6 +12,7 @@ import type {
 } from './api/models';
 import {
   SystemClient,
+  type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
   type SessionActivitySnapshot,
   type TlsCacheSnapshot,
@@ -59,6 +60,20 @@ const initialTlsCache: TlsCacheSnapshot = {
   capacity: 0,
 };
 
+const initialNeighbors: NeighborSnapshot = {
+  state: 'starting',
+  detail: 'Waiting for the first neighborhood sample.',
+  checkedAtUnixMs: null,
+  lastSuccessAtUnixMs: null,
+  hostsTotal: 0,
+  activeToday: 0,
+  activeWeek: 0,
+  taggedHosts: 0,
+  observations: 0,
+  bytesUp: 0,
+  bytesDown: 0,
+};
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -72,6 +87,7 @@ export class SmithproxyApp extends LitElement {
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
   @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
+  @state() private neighbors: NeighborSnapshot = initialNeighbors;
   @state() private focusMode = false;
   @state() private configWriteAvailable = false;
   @state() private configError: string | undefined;
@@ -415,6 +431,15 @@ export class SmithproxyApp extends LitElement {
           detail: error instanceof Error ? error.message : 'TLS cache metrics are unavailable.',
         };
       }
+      try {
+        this.neighbors = await this.systemClient.neighborSummary();
+      } catch (error) {
+        this.neighbors = {
+          ...this.neighbors,
+          state: 'unavailable',
+          detail: error instanceof Error ? error.message : 'Neighborhood metrics are unavailable.',
+        };
+      }
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -432,6 +457,11 @@ export class SmithproxyApp extends LitElement {
         ...this.tlsCache,
         state: 'unavailable',
         detail: 'TLS cache metrics are unavailable while the GUI core is offline.',
+      };
+      this.neighbors = {
+        ...this.neighbors,
+        state: 'unavailable',
+        detail: 'Neighborhood metrics are unavailable while the GUI core is offline.',
       };
     } finally {
       this.systemProbeInFlight = false;
@@ -760,6 +790,7 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Listener workload</h2><p>Runtime view of Smithproxy network entry points</p></div>
         </div>
+        ${this.renderNeighborSummary()}
         ${metrics.state === 'ready' ? nothing : html`
           <div class="metrics-message" role="status">${metrics.detail}</div>
         `}
@@ -781,6 +812,42 @@ export class SmithproxyApp extends LitElement {
           ${metrics.listeners.length === 0 ? html`<div class="metrics-message">No listener samples are available yet.</div>` : nothing}
         </div>
       </div>
+    `;
+  }
+
+  private renderNeighborSummary() {
+    const neighbors = this.neighbors;
+    return html`
+      <section class="runtime-summary" aria-label="Neighborhood activity">
+        <div class="runtime-heading">
+          <div><h3>Neighborhood activity</h3><p>Privacy-safe aggregates for recently observed endpoints</p></div>
+          <span class="runtime-state ${neighbors.state === 'ready' ? 'success' : neighbors.state === 'unavailable' ? 'danger' : 'warning'}"
+            title=${neighbors.detail}>● ${displayState(neighbors.state)}</span>
+        </div>
+        <div class="metric-grid">
+          <article class="metric">
+            <span class="metric-label">Known endpoints</span>
+            <strong class="metric-value">${neighbors.hostsTotal.toLocaleString()}</strong>
+            <span class="metric-note">Seen during the 30-day aggregation window</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Active today</span>
+            <strong class="metric-value">${neighbors.activeToday.toLocaleString()}</strong>
+            <span class="metric-note">${neighbors.activeWeek.toLocaleString()} active this week</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Observations</span>
+            <strong class="metric-value">${neighbors.observations.toLocaleString()}</strong>
+            <span class="metric-note">${neighbors.taggedHosts.toLocaleString()} endpoints carry tags</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Observed traffic</span>
+            <strong class="metric-value">${this.formatBytes(neighbors.bytesUp + neighbors.bytesDown)}</strong>
+            <span class="metric-note">Last success: ${this.timeLabel(neighbors.lastSuccessAtUnixMs)}</span>
+          </article>
+        </div>
+        <div class="privacy-note">Hostnames, tags, labels, and per-endpoint timelines remain inside the GUI core.</div>
+      </section>
     `;
   }
 

@@ -2,6 +2,7 @@
 #include "config_snapshot.hpp"
 #include "json.hpp"
 #include "live_sessions.hpp"
+#include "neighbor_metrics.hpp"
 #include "path.hpp"
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
@@ -88,6 +89,22 @@ int main() {
     assert(!parse_live_sessions("not json").snapshot);
     assert(!parse_live_sessions(R"([{"left":[{"com":"tls"}],"right":[{"com":"tls"}],
         "stats":{"speed":{"up":-1,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}])").snapshot);
+
+    const auto neighbors = parse_neighbor_metrics(R"([
+        {"hostname":"private.example","tags":"office","last_seen":1,"stats":[
+            {"relative_days":0,"counter":3,"bytes_up":100,"bytes_down":200},
+            {"relative_days":7,"counter":2,"bytes_up":50,"bytes_down":75}]},
+        {"hostname":"another.private","tags":"","last_seen":1,"stats":[
+            {"relative_days":3,"counter":4,"bytes_up":10,"bytes_down":20}]}
+    ])");
+    assert(neighbors.metrics);
+    assert(neighbors.metrics->hosts_total == 2U);
+    assert(neighbors.metrics->active_today == 1U);
+    assert(neighbors.metrics->active_week == 2U);
+    assert(neighbors.metrics->observations == 9U);
+    assert(neighbors.metrics->bytes_down == 295U);
+    assert(!parse_neighbor_metrics(R"([{"hostname":"duplicate","tags":"","last_seen":1,"stats":[]},
+        {"hostname":"duplicate","tags":"","last_seen":1,"stats":[]}])").metrics);
 
     const auto configuration = parse_config_snapshot(
         R"({"success":{"policy":[{"name":"office policy","disabled":"0","proto":"tcp","src":["office"],"sport":["any"],"dst":["internet"],"dport":["https"],"features":["sinkhole"],"action":"accept","nat":"masquerade","routing":"main","tls_profile":"inspect"}]}})",

@@ -61,6 +61,7 @@ add_library(smithproxy_gui_core
     src/backend/config_snapshot.cpp
     src/backend/json.cpp
     src/backend/live_sessions.cpp
+    src/backend/neighbor_metrics.cpp
     src/backend/path.cpp
     src/backend/runtime_metrics.cpp
     src/backend/smithproxy_client.cpp

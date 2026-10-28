@@ -85,6 +85,18 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"cache_size":42,"max_size":1000}')
             return
+        if self.path == "/api/diag/proxy/neighbor/list?max_days=30":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps([
+                {"hostname": "private-neighbor.example", "tags": "office", "last_seen": 1,
+                 "stats": [{"relative_days": 0, "counter": 3, "bytes_up": 100, "bytes_down": 200}]},
+                {"hostname": "another-private.example", "tags": "", "last_seen": 1,
+                 "stats": [{"relative_days": 3, "counter": 4, "bytes_up": 10, "bytes_down": 20}]},
+            ]).encode())
+            return
         if self.path == "/api/diag/proxy/session/list":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
             self.send_response(200)
@@ -220,6 +232,7 @@ def main() -> int:
         assert capabilities["features"]["metrics"] is True
         assert capabilities["features"]["session_activity"] is True
         assert capabilities["features"]["tls_monitoring"] is True
+        assert capabilities["features"]["neighbor_monitoring"] is True
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/status")
         snapshot = json.loads(body)
@@ -241,6 +254,10 @@ def main() -> int:
         tls_cache = json.loads(body)
         assert status == 200
         assert tls_cache["state"] == "unconfigured"
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/network/neighbors/summary")
+        neighbors = json.loads(body)
+        assert status == 200
+        assert neighbors["state"] == "unconfigured"
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/auth/session")
         assert status == 200
@@ -317,6 +334,18 @@ def main() -> int:
             assert tls_cache["size"] == 42
             assert tls_cache["capacity"] == 1000
             tls_cache_last_success = tls_cache["last_success_at_unix_ms"]
+            status, _, body = request(configured_port, "/api/v1/network/neighbors/summary")
+            neighbors = json.loads(body)
+            assert status == 200
+            assert neighbors["state"] == "ready"
+            assert neighbors["hosts_total"] == 2
+            assert neighbors["active_today"] == 1
+            assert neighbors["active_week"] == 2
+            assert neighbors["observations"] == 7
+            assert neighbors["bytes_up"] == 110
+            assert neighbors["bytes_down"] == 220
+            assert b"private-neighbor.example" not in body
+            neighbor_last_success = neighbors["last_success_at_unix_ms"]
             status, _, body = request(configured_port, "/api/v1/sessions/activity")
             activity = json.loads(body)
             assert status == 200
@@ -387,6 +416,12 @@ def main() -> int:
             assert stale_tls_cache["state"] == "unavailable"
             assert stale_tls_cache["last_success_at_unix_ms"] == tls_cache_last_success
             assert stale_tls_cache["size"] == 42
+            status, _, body = request(configured_port, "/api/v1/network/neighbors/summary")
+            stale_neighbors = json.loads(body)
+            assert status == 200
+            assert stale_neighbors["state"] == "unavailable"
+            assert stale_neighbors["last_success_at_unix_ms"] == neighbor_last_success
+            assert stale_neighbors["hosts_total"] == 2
             status, _, body = request(configured_port, "/api/v1/sessions/activity")
             stale_activity = json.loads(body)
             assert status == 200

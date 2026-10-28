@@ -128,6 +128,7 @@ private:
         if (*relative == "/api/v1/status") return status();
         if (*relative == "/api/v1/metrics/summary") return metrics_summary();
         if (*relative == "/api/v1/tls/cache/summary") return tls_cache_summary();
+        if (*relative == "/api/v1/network/neighbors/summary") return neighbor_summary();
         if (*relative == "/api/v1/sessions/activity") return session_activity();
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
@@ -160,7 +161,8 @@ private:
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":false,"
                     "\"jobs\":false,\"events\":false,\"metrics\":true,"
-                    "\"session_activity\":true,\"tls_monitoring\":true}}"};
+                    "\"session_activity\":true,\"tls_monitoring\":true,"
+                    "\"neighbor_monitoring\":true}}"};
     }
 
     bool gateway_authenticated(MHD_Connection* connection) const {
@@ -326,6 +328,22 @@ private:
                     ",\"last_success_at_unix_ms\":" + timestamp_json(metrics.last_success_at) +
                     ",\"size\":" + std::to_string(metrics.size) +
                     ",\"capacity\":" + std::to_string(metrics.capacity) + "}"};
+    }
+
+    Response neighbor_summary() const {
+        const auto metrics = monitor_.status().neighbor_metrics;
+        return {200, "application/json; charset=utf-8",
+                "{\"state\":" + json_string(metrics.state) +
+                    ",\"detail\":" + json_string(metrics.detail) +
+                    ",\"checked_at_unix_ms\":" + timestamp_json(metrics.checked_at) +
+                    ",\"last_success_at_unix_ms\":" + timestamp_json(metrics.last_success_at) +
+                    ",\"hosts_total\":" + std::to_string(metrics.hosts_total) +
+                    ",\"active_today\":" + std::to_string(metrics.active_today) +
+                    ",\"active_week\":" + std::to_string(metrics.active_week) +
+                    ",\"tagged_hosts\":" + std::to_string(metrics.tagged_hosts) +
+                    ",\"observations\":" + std::to_string(metrics.observations) +
+                    ",\"bytes_up\":" + std::to_string(metrics.bytes_up) +
+                    ",\"bytes_down\":" + std::to_string(metrics.bytes_down) + "}"};
     }
 
     Response session_activity() const {

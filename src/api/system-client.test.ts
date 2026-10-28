@@ -27,7 +27,7 @@ describe('SystemClient', () => {
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
       features: {
         config_read: false, config_write: false, jobs: false, events: false,
-        metrics: true, session_activity: true, tls_monitoring: true,
+        metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
       },
     }));
     const client = new SystemClient('/api/v1', '/', fetcher);
@@ -150,6 +150,31 @@ describe('SystemClient', () => {
       last_success_at_unix_ms: 1, size: 2, capacity: 1,
     }));
     await expect(client.tlsCacheSummary()).rejects.toThrow('Invalid TLS cache response');
+  });
+
+  it('loads and validates privacy-safe neighborhood aggregates', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 100,
+      last_success_at_unix_ms: 100, hosts_total: 8, active_today: 3,
+      active_week: 6, tagged_hosts: 4, observations: 20, bytes_up: 1000, bytes_down: 2000,
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.neighborSummary()).resolves.toMatchObject({
+      hostsTotal: 8, activeToday: 3, activeWeek: 6, observations: 20,
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/network/neighbors/summary', expect.anything(),
+    );
+  });
+
+  it('rejects inconsistent neighborhood aggregates', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', detail: 'Invalid', checked_at_unix_ms: 1,
+      last_success_at_unix_ms: 1, hosts_total: 1, active_today: 2,
+      active_week: 1, tagged_hosts: 0, observations: 0, bytes_up: 0, bytes_down: 0,
+    }));
+    await expect(client.neighborSummary()).rejects.toThrow('Invalid neighborhood response');
   });
 
   it('rejects inconsistent session activity totals', async () => {

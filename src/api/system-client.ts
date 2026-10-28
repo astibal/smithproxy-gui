@@ -28,6 +28,7 @@ export interface SystemCapabilities {
     metrics: boolean;
     sessionActivity: boolean;
     tlsMonitoring: boolean;
+    neighborMonitoring: boolean;
   };
 }
 
@@ -103,6 +104,20 @@ export interface TlsCacheSnapshot {
   capacity: number;
 }
 
+export interface NeighborSnapshot {
+  state: RuntimeMetricsState;
+  detail: string;
+  checkedAtUnixMs: number | null;
+  lastSuccessAtUnixMs: number | null;
+  hostsTotal: number;
+  activeToday: number;
+  activeWeek: number;
+  taggedHosts: number;
+  observations: number;
+  bytesUp: number;
+  bytesDown: number;
+}
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -164,7 +179,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof features.jobs !== 'boolean' || typeof features.events !== 'boolean' ||
       typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean' ||
-      typeof features.tls_monitoring !== 'boolean') {
+      typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
   }
   return {
@@ -180,6 +195,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       metrics: features.metrics,
       sessionActivity: features.session_activity,
       tlsMonitoring: features.tls_monitoring,
+      neighborMonitoring: features.neighbor_monitoring,
     },
   };
 }
@@ -339,6 +355,32 @@ function parseTlsCache(value: unknown): TlsCacheSnapshot {
   };
 }
 
+function parseNeighbors(value: unknown): NeighborSnapshot {
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
+      !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
+      !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !isNonNegativeInteger(value.hosts_total) || !isNonNegativeInteger(value.active_today) ||
+      !isNonNegativeInteger(value.active_week) || !isNonNegativeInteger(value.tagged_hosts) ||
+      !isNonNegativeInteger(value.observations) || !isNonNegativeInteger(value.bytes_up) ||
+      !isNonNegativeInteger(value.bytes_down) || value.active_today > value.active_week ||
+      value.active_week > value.hosts_total || value.tagged_hosts > value.hosts_total) {
+    throw new Error('Invalid neighborhood response.');
+  }
+  return {
+    state: value.state,
+    detail: value.detail,
+    checkedAtUnixMs: value.checked_at_unix_ms,
+    lastSuccessAtUnixMs: value.last_success_at_unix_ms,
+    hostsTotal: value.hosts_total,
+    activeToday: value.active_today,
+    activeWeek: value.active_week,
+    taggedHosts: value.tagged_hosts,
+    observations: value.observations,
+    bytesUp: value.bytes_up,
+    bytesDown: value.bytes_down,
+  };
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -379,6 +421,10 @@ export class SystemClient {
 
   async tlsCacheSummary(): Promise<TlsCacheSnapshot> {
     return parseTlsCache(await this.#request(joinedPath(this.#apiBase, '/tls/cache/summary')));
+  }
+
+  async neighborSummary(): Promise<NeighborSnapshot> {
+    return parseNeighbors(await this.#request(joinedPath(this.#apiBase, '/network/neighbors/summary')));
   }
 
   async #request(path: string): Promise<unknown> {

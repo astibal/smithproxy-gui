@@ -10,7 +10,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     smithproxy_state: state.smithproxy,
     features: {
       config_read: configRead, config_write: false, jobs: false, events: false,
-      metrics: true, session_activity: true, tls_monitoring: true,
+      metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
     },
   }}));
   await page.route('**/api/v1/status', async route => route.fulfill({json: {
@@ -66,6 +66,13 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     detail: state.smithproxy === 'ready' ? 'Current TLS cache metrics' : 'TLS cache metrics are stale',
     checked_at_unix_ms: Date.now(), last_success_at_unix_ms: Date.now() - 5000,
     size: 42, capacity: 1000,
+  }}));
+  await page.route('**/api/v1/network/neighbors/summary', async route => route.fulfill({json: {
+    state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+    detail: state.smithproxy === 'ready' ? 'Current neighborhood aggregates' : 'Neighborhood is stale',
+    checked_at_unix_ms: Date.now(), last_success_at_unix_ms: Date.now() - 5000,
+    hosts_total: 8, active_today: 3, active_week: 6, tagged_hosts: 4,
+    observations: 20, bytes_up: 1000, bytes_down: 2000,
   }}));
   if (configRead) {
     await page.route('**/api/v1/config/snapshot', async route => route.fulfill({json: {
@@ -210,8 +217,11 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Listener workload'})).toBeVisible();
+  const neighborhood = page.getByRole('region', {name: 'Neighborhood activity'});
+  await expect(neighborhood.getByText('8', {exact: true})).toBeVisible();
+  await expect(neighborhood.getByText(/hostnames, tags, labels, and per-endpoint timelines remain/i)).toBeVisible();
   await expect(page.getByRole('heading', {name: 'tcp'})).toBeVisible();
-  await expect(page.getByText('3', {exact: true})).toBeVisible();
+  await expect(page.getByLabel('Network listeners').getByText('3', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();

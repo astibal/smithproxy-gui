@@ -72,6 +72,7 @@ GET /api/v1/metrics/summary
 GET /api/v1/listeners
 GET /api/v1/sessions/activity
 GET /api/v1/tls/cache/summary
+GET /api/v1/network/neighbors/summary
 GET /api/v1/alerts
 GET /api/v1/logs
 GET /api/v1/events
@@ -85,6 +86,11 @@ and authorization design.
 
 `/tls/cache/summary` exposes cache occupancy, capacity, and sample freshness. It
 must not expose certificate subjects, SAN values, domain names, or cache keys.
+
+`/network/neighbors/summary` exposes bounded 30-day aggregate counts, activity
+windows, observations, and byte totals. Hostnames, tags, labels, and per-endpoint
+timelines are consumed only inside the GUI core and are never serialized to the
+browser response.
 
 `/events` používá SSE. Každá událost obsahuje typ, čas serveru, monotónní event ID,
 source revision a minimální payload. Po ztrátě kontinuity si klient vyžádá nový

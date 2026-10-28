@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "config_snapshot.hpp"
 #include "live_sessions.hpp"
+#include "neighbor_metrics.hpp"
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
 
@@ -34,6 +35,7 @@ struct SmithproxyStatus {
     RuntimeMetrics runtime_metrics;
     TlsCacheMetrics tls_cache_metrics;
     LiveSessions live_sessions;
+    NeighborMetrics neighbor_metrics;
     ConfigSnapshot config_snapshot;
 };
 
@@ -57,6 +59,7 @@ private:
     RuntimeMetrics fetch_runtime_metrics() const;
     TlsCacheMetrics fetch_tls_cache_metrics() const;
     LiveSessions fetch_live_sessions() const;
+    NeighborMetrics fetch_neighbor_metrics() const;
     ConfigSnapshot fetch_config_snapshot() const;
 
     std::optional<SmithproxyConfig> config_;
