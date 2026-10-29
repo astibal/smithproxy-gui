@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {DrawerStore} from './drawer-store';
+import {DrawerStore, MAXIMUM_DRAWER_DEPTH} from './drawer-store';
 
 describe('DrawerStore', () => {
   it('builds a nested drawer chain', () => {
@@ -28,5 +28,17 @@ describe('DrawerStore', () => {
     store.closeFrom(0);
 
     expect(store.entries).toEqual([]);
+  });
+
+  it('bounds the live chain at the same depth as persisted routes', () => {
+    const store = new DrawerStore();
+    for (let index = 0; index < MAXIMUM_DRAWER_DEPTH; index += 1) {
+      expect(store.open({kind: 'address', id: `address-${index}`, title: `Address ${index}`})).toBe(true);
+    }
+
+    expect(store.open({kind: 'address', id: 'address-overflow', title: 'Overflow'})).toBe(false);
+    expect(store.entries).toHaveLength(MAXIMUM_DRAWER_DEPTH);
+    expect(store.open({kind: 'address', id: 'address-2', title: 'Address 2'})).toBe(true);
+    expect(store.entries).toHaveLength(3);
   });
 });

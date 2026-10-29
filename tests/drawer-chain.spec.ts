@@ -613,6 +613,12 @@ test('restores drawer routes and manages focus across the chain', async ({page})
   await page.getByRole('button', {name: /office office-net/i}).click();
   await expect(page.locator('#policy-name-policy-office')).toBeFocused();
   await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-office');
+  const workspaceBox = await page.locator('.workspace').boundingBox();
+  const policyBox = await page.locator('.drawer').first().boundingBox();
+  expect(workspaceBox).not.toBeNull();
+  expect(policyBox).not.toBeNull();
+  expect(policyBox!.width / workspaceBox!.width).toBeGreaterThanOrEqual(.79);
+  expect(policyBox!.width / workspaceBox!.width).toBeLessThanOrEqual(.81);
 
   const reference = page.getByRole('button', {name: 'office-net', exact: true});
   await reference.click();
@@ -620,6 +626,12 @@ test('restores drawer routes and manages focus across the chain', async ({page})
   await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe(
     'policy:policy-office,address:address-office-net',
   );
+  const addressBox = await page.locator('.drawer').nth(1).boundingBox();
+  expect(addressBox).not.toBeNull();
+  const drawerLeft = await page.locator('.drawer').evaluateAll(elements =>
+    elements.map(element => Number.parseFloat(getComputedStyle(element).left)));
+  expect(drawerLeft[1] - drawerLeft[0]).toBeGreaterThanOrEqual(51);
+  expect(drawerLeft[1] - drawerLeft[0]).toBeLessThanOrEqual(53);
 
   const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});
   await addressEditor.getByRole('button', {name: 'Enter focus mode'}).click();

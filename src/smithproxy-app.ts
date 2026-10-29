@@ -23,7 +23,7 @@ import {
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {classifyFreshness, freshnessLabel, type FreshnessState} from './monitoring/freshness';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
-import {DrawerStore, type DrawerEntry} from './state/drawer-store';
+import {DrawerStore, MAXIMUM_DRAWER_DEPTH, type DrawerEntry} from './state/drawer-store';
 import {
   connectingSystemStatus,
   displayState,
@@ -119,6 +119,7 @@ export class SmithproxyApp extends LitElement {
   @state() private discardDraftArmed = false;
   @state() private draftSaving = false;
   @state() private draftError: string | undefined;
+  @state() private drawerError: string | undefined;
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
   @state() private searchQuery = '';
@@ -815,25 +816,13 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openPolicy(policy: PolicySummary, origin?: HTMLElement): void {
-    this.drawerStore.open({kind: 'policy', id: policy.id, title: policy.name});
-    this.drawerOrigins = [
-      ...this.drawerOrigins.slice(0, this.drawerStore.entries.length - 1),
-      ...(origin ? [origin] : []),
-    ];
-    this.focusMode = false;
-    this.syncDrawers(true);
+    this.openObjectDrawer({kind: 'policy', id: policy.id, title: policy.name}, origin);
   }
 
   private openAddress(id: string, origin?: HTMLElement): void {
     const address = this.snapshot?.addresses.find(item => item.id === id);
     if (!address) return;
-    this.drawerStore.open({kind: 'address', id: address.id, title: address.name});
-    this.drawerOrigins = [
-      ...this.drawerOrigins.slice(0, this.drawerStore.entries.length - 1),
-      ...(origin ? [origin] : []),
-    ];
-    this.focusMode = false;
-    this.syncDrawers(true);
+    this.openObjectDrawer({kind: 'address', id: address.id, title: address.name}, origin);
   }
 
   private openPort(id: string, origin?: HTMLElement): void {
@@ -888,7 +877,11 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openObjectDrawer(entry: DrawerEntry, origin?: HTMLElement): void {
-    this.drawerStore.open(entry);
+    if (!this.drawerStore.open(entry)) {
+      this.drawerError = `Editor chain is limited to ${MAXIMUM_DRAWER_DEPTH} levels. Close an earlier editor to continue.`;
+      return;
+    }
+    this.drawerError = undefined;
     this.drawerOrigins = [
       ...this.drawerOrigins.slice(0, this.drawerStore.entries.length - 1),
       ...(origin ? [origin] : []),
@@ -902,6 +895,7 @@ export class SmithproxyApp extends LitElement {
     const returnFocus = this.drawerOrigins[index];
     this.drawerStore.closeFrom(index);
     this.drawerOrigins = this.drawerOrigins.slice(0, index);
+    this.drawerError = undefined;
     this.focusMode = false;
     this.syncDrawers(false);
     if (this.drawers.length === 0 && this.configRefreshDeferred && this.draftChangeCount === 0) {
@@ -945,7 +939,10 @@ export class SmithproxyApp extends LitElement {
     for (const entry of route) {
       const candidate = this.drawerCandidate(entry);
       if (!candidate) { valid = false; break; }
-      this.drawerStore.open({kind: entry.kind, id: candidate.id, title: candidate.name});
+      if (!this.drawerStore.open({kind: entry.kind, id: candidate.id, title: candidate.name})) {
+        valid = false;
+        break;
+      }
     }
     if (!valid || (hasRouteParameter && route.length === 0)) {
       this.drawerStore.clear();
@@ -3971,7 +3968,7 @@ export class SmithproxyApp extends LitElement {
           ${this.renderAugmentOrigins(entry)}
         </div>
         <footer class="drawer-foot">
-          <span class="validation">${this.draftError ?? (readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}</span>
+          <span class="validation">${this.drawerError ?? this.draftError ?? (readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}</span>
           <button class="secondary" type="button" @click=${() => this.closeDrawer(index)}>Cancel</button>
           <button class="primary" type="button" ?disabled=${readOnly || this.draftSaving}
             @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>

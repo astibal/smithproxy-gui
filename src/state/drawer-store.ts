@@ -7,6 +7,9 @@ export interface DrawerEntry {
   id: string;
   title: string;
 }
+
+export const MAXIMUM_DRAWER_DEPTH = 6;
+
 export class DrawerStore {
   #entries: DrawerEntry[] = [];
 
@@ -14,13 +17,15 @@ export class DrawerStore {
     return this.#entries;
   }
 
-  open(entry: DrawerEntry): void {
+  open(entry: DrawerEntry): boolean {
     const existing = this.#entries.findIndex(item => item.kind === entry.kind && item.id === entry.id);
     if (existing >= 0) {
       this.#entries = this.#entries.slice(0, existing + 1);
-      return;
+      return true;
     }
+    if (this.#entries.length >= MAXIMUM_DRAWER_DEPTH) return false;
     this.#entries = [...this.#entries, entry];
+    return true;
   }
 
   closeFrom(index: number): void {

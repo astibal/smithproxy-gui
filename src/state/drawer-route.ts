@@ -1,11 +1,10 @@
-import type {DrawerEntry, DrawerKind} from './drawer-store';
+import {MAXIMUM_DRAWER_DEPTH, type DrawerEntry, type DrawerKind} from './drawer-store';
 
 export interface DrawerRouteEntry {
   kind: DrawerKind;
   id: string;
 }
 
-const maximumDepth = 6;
 const safeIdentifier = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const drawerKinds = new Set<DrawerKind>([
   'policy', 'address', 'port', 'protocol', 'profile', 'settings', 'captures', 'authority',
@@ -25,7 +24,7 @@ export function parseDrawerRoute(search: string): ReadonlyArray<DrawerRouteEntry
     const id = segment.slice(separator + 1);
     if (!drawerKinds.has(kind as DrawerKind) || !safeIdentifier.test(id)) return [];
     const identity = `${kind}:${id}`;
-    if (identities.has(identity) || result.length >= maximumDepth) return [];
+    if (identities.has(identity) || result.length >= MAXIMUM_DRAWER_DEPTH) return [];
     identities.add(identity);
     result.push({kind: kind as DrawerKind, id});
   }
