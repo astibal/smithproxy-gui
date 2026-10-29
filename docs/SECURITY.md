@@ -176,6 +176,12 @@ fingerprinted static assets are immutable. Production builds do not publish
 JavaScript source maps. HSTS remains the responsibility of the Saslik TLS
 terminator because the GUI core itself serves internal HTTP.
 
+Standalone mode additionally accepts API requests only when the HTTP `Host`
+authority is a canonical loopback literal or `localhost`, with an optional valid
+port. This closes DNS-rebinding access to local monitoring while keeping the
+unauthenticated health probe host-agnostic. Gateway mode accepts the public
+Saslik authority because the trusted proxy secret authenticates that boundary.
+
 ## Config a secrets
 
 - secrets jsou write-only/redigované;

@@ -433,7 +433,7 @@ nereflektuje.
 
 Aktuální stabilní kódy pokrývají `auth.required`, `auth.csrf_failed`,
 `request.body_too_large`, `request.method_not_allowed`, `request.not_found`,
-`request.invalid_path`, `events.invalid_cursor`, `draft.version_conflict`,
+`request.invalid_path`, `request.invalid_host`, `events.invalid_cursor`, `draft.version_conflict`,
 `draft.change_rejected` a `draft.invalid_request`. Neznámá bezpečně zpracovaná
 chyba používá `request.failed`. `fields` a `details` zůstávají prázdné, dokud
 konkrétní endpoint nemá schválené strukturované detaily.

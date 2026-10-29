@@ -374,7 +374,18 @@ def main() -> int:
         assert headers["Cache-Control"] == "no-store"
         health_request_id = headers["X-Request-ID"]
         assert re.fullmatch(r"[0-9a-f]+-[1-9][0-9]*", health_request_id)
+        assert request(port, "/healthz", headers={"Host": "rebind.attacker.invalid"})[0] == 200
 
+        for host in (f"localhost:{port}", f"LOCALHOST.:{port}", f"127.0.0.2:{port}", f"[::1]:{port}"):
+            assert request(
+                port, "/ws001/smithproxy-gui/api/v1/status", headers={"Host": host})[0] == 200
+        for host in (
+            "rebind.attacker.invalid", "localhost.attacker.invalid", "127.0.0.1.attacker.invalid",
+            "localhost:0", "localhost:65536", "[::1]suffix",
+        ):
+            assert_error_response(request(
+                port, "/ws001/smithproxy-gui/api/v1/status", headers={"Host": host}),
+                421, "request.invalid_host")
         status, headers, body = request(port, "/ws001/smithproxy-gui/api/v1/capabilities")
         capabilities = json.loads(body)
         assert status == 200
@@ -441,6 +452,10 @@ def main() -> int:
         assert status == 200
         assert json.loads(body) == {
             "source": "gui-core", "actor_available": False, "entries": []}
+        assert_error_response(request(
+            port, "/ws001/smithproxy-gui/api/v1/config/draft/clear", "POST",
+            headers={"Host": "rebind.attacker.invalid", "Content-Type": "application/json"},
+            body=json.dumps({"expected_version": 0})), 421, "request.invalid_host")
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/jobs")
         assert status == 200
         jobs = json.loads(body)
@@ -540,6 +555,9 @@ def main() -> int:
             assert isinstance(snapshot["smithproxy"]["latency_ms"], int)
             assert len(snapshot["smithproxy"]["history"]) >= 1
             assert snapshot["smithproxy"]["availability_window"]["successful"] >= 1
+            assert request(configured_port, "/api/v1/status", headers={
+                **gateway_headers, "Host": "saslik.example.test",
+            })[0] == 200
             status, _, body = request(configured_port, "/api/v1/status", headers={
                 "X-Smithproxy-GUI-Gateway": previous_gateway_secret,
             })

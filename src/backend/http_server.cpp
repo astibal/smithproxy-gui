@@ -13,8 +13,11 @@
 #include <microhttpd.h>
 #include <nlohmann/json.hpp>
 
+#include <arpa/inet.h>
+
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -69,6 +72,7 @@ std::string error_code(const std::string_view message) {
     if (message == "same-origin CSRF check failed") return "auth.csrf_failed";
     if (message == "request body too large") return "request.body_too_large";
     if (message == "method not allowed") return "request.method_not_allowed";
+    if (message == "invalid request host") return "request.invalid_host";
     if (message == "not found" || message == "API endpoint not found") return "request.not_found";
     if (message == "invalid path") return "request.invalid_path";
     if (message == "invalid event cursor") return "events.invalid_cursor";
@@ -254,6 +258,43 @@ bool constant_time_equal(const std::string_view left, const std::string_view rig
     return difference == 0U;
 }
 
+bool valid_authority_port(const std::string_view suffix) {
+    if (suffix.empty()) return true;
+    if (!suffix.starts_with(':') || suffix.size() == 1U) return false;
+    unsigned port{};
+    const auto value = suffix.substr(1U);
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), port);
+    return error == std::errc{} && end == value.data() + value.size() && port > 0U && port <= 65535U;
+}
+
+bool loopback_authority(const std::string_view authority) {
+    if (authority.empty() || authority.size() > 255U ||
+        authority.find_first_of(" \t\r\n/@?#\\") != std::string_view::npos) {
+        return false;
+    }
+    if (authority.starts_with('[')) {
+        const auto closing = authority.find(']');
+        return closing != std::string_view::npos && authority.substr(0U, closing + 1U) == "[::1]" &&
+               valid_authority_port(authority.substr(closing + 1U));
+    }
+    const auto separator = authority.find(':');
+    if (separator != std::string_view::npos && authority.find(':', separator + 1U) != std::string_view::npos) {
+        return false;
+    }
+    const auto host = authority.substr(0U, separator);
+    const auto port = separator == std::string_view::npos ? std::string_view{} : authority.substr(separator);
+    if (!valid_authority_port(port)) return false;
+    std::string normalized(host);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](const unsigned char character) {
+        return character >= 'A' && character <= 'Z' ? static_cast<char>(character + ('a' - 'A')) :
+                                                      static_cast<char>(character);
+    });
+    if (normalized == "localhost" || normalized == "localhost.") return true;
+    in_addr parsed{};
+    return ::inet_pton(AF_INET, normalized.c_str(), &parsed) == 1 &&
+           (ntohl(parsed.s_addr) & 0xff000000U) == 0x7f000000U;
+}
+
 bool sensitive_draft_path(const std::string_view path) {
     constexpr std::array sensitive_paths{
         "settings.webhook.url", "settings.syslog_server", "settings.write_payload_dir",
@@ -412,6 +453,9 @@ private:
         const auto relative = path_below_base(url, config_.base_path);
         if (!relative) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};
+        }
+        if (relative->starts_with("/api/") && !request_host_allowed(connection)) {
+            return {421, "application/json; charset=utf-8", "{\"error\":\"invalid request host\"}"};
         }
         if (relative->starts_with("/api/") && !management_authenticated(connection)) {
             return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
@@ -674,6 +718,9 @@ private:
         const auto relative = path_below_base(url, config_.base_path);
         if (!relative) return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
         if (*relative == "/healthz") return health();
+        if (relative->starts_with("/api/") && !request_host_allowed(connection)) {
+            return {421, "application/json; charset=utf-8", "{\"error\":\"invalid request host\"}"};
+        }
         const bool public_api_endpoint = *relative == "/api/v1/capabilities" ||
                                          *relative == "/api/v1/auth/session";
         if (relative->starts_with("/api/") && !public_api_endpoint &&
@@ -766,6 +813,13 @@ private:
 
     bool management_authenticated(MHD_Connection* connection) const {
         return !config_.gateway_secret || gateway_authenticated(connection);
+    }
+
+    bool request_host_allowed(MHD_Connection* connection) const {
+        if (config_.gateway_secret) return true;
+        const auto* host = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_HOST);
+        return host != nullptr && loopback_authority(host);
     }
 
     Response auth_session(MHD_Connection* connection) const {

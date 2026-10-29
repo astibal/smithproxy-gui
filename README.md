@@ -105,6 +105,11 @@ During rotation, the optional previous secret is accepted alongside the current
 secret. It is rejected when the current secret is absent or identical and should
 be removed after the ingress has switched to the new value.
 
+Without gateway mode, every management API request must carry a canonical
+loopback `Host` authority. This keeps local standalone monitoring inaccessible
+through DNS rebinding while leaving the bounded orchestration health probe
+host-agnostic.
+
 The C++ backend can now retrieve a bounded, validated runtime configuration
 snapshot through the authenticated Smithproxy API. When Smithproxy exposes its
 canonical revision endpoint, the core brackets the multi-section read and binds
