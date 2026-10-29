@@ -82,7 +82,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "mode", "engines_enabled", "kb_enabled"],
-      "notes": "All active fields emitted by the current detection-profile saver are typed and editable."
+      "notes": "All active fields emitted by the current detection-profile saver are typed and editable. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "captures",
@@ -105,7 +105,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["name", "write_payload", "write_format", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http", "rules_session_filter", "content_rules"],
-      "notes": "Content controls and nested rule action metadata are typed. Session filters and rule match/replacement expressions remain server-side and use write-only rotation. Structural rule add, remove, and reorder semantics are specified in the transaction proposal but remain unavailable until the reviewed upstream capability exists."
+      "notes": "Content controls and nested rule action metadata are typed. Session filters and rule match/replacement expressions remain server-side and use write-only rotation. Stable unreferenced profiles support confirmed structural deletion. Structural rule add, remove, and reorder semantics are specified in the transaction proposal but remain unavailable until the reviewed upstream capability exists."
     },
     {
       "name": "tls_ca",
@@ -133,7 +133,7 @@
         "sni_filter_bypass", "sni_filter_use_dns_cache", "sni_filter_use_dns_domain_tree",
         "redirect_warning_ports", "sslkeylog", "alerts"
       ],
-      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed. SNI bypass expressions support write-only replace or clear and never cross the browser boundary."
+      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed. SNI bypass expressions support write-only replace or clear and never cross the browser boundary. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "ssh_profiles",
@@ -145,7 +145,7 @@
         "name", "host_key", "hostkey_policy", "shell", "exec", "subsystem",
         "pty", "environment", "local_forward", "remote_forward", "x11", "agent"
       ],
-      "notes": "All active SSH profile fields are typed and editable; host-key paths are write-only and remain redacted."
+      "notes": "All active SSH profile fields are typed and editable; host-key paths are write-only and remain redacted. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "alg_dns_profiles",
@@ -154,7 +154,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "match_request_id", "randomize_id", "cached_responses"],
-      "notes": "The current DNS ALG profile schema is represented by the typed editor."
+      "notes": "The current DNS ALG profile schema is represented by the typed editor. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "routing",
@@ -163,7 +163,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "dnat_address", "dnat_port", "dnat_lb_method", "rewrite_sni", "rewrite_sni_to"],
-      "notes": "All active fields emitted by the current routing-profile saver are typed and editable."
+      "notes": "All active fields emitted by the current routing-profile saver are typed and editable. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "policy",
@@ -203,7 +203,7 @@
       "edit": "typed",
       "sensitivity": "code-bearing",
       "tracked_fields": ["name", "type", "script-file"],
-      "notes": "All active script-profile fields are typed and editable; executable paths are write-only and remain redacted."
+      "notes": "All active script-profile fields are typed and editable; executable paths are write-only and remain redacted. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "auth_profiles",
@@ -212,7 +212,7 @@
       "edit": "partial",
       "sensitivity": "identity-bearing",
       "tracked_fields": ["name", "authenticate", "resolve", "identity_count"],
-      "notes": "Authentication posture is typed; identity mappings remain redacted."
+      "notes": "Authentication posture is typed; identity mappings remain redacted. Stable unreferenced profiles support confirmed structural deletion."
     }
   ]
 }

@@ -210,6 +210,8 @@ one optimistic move operation, while restoring the original position removes tha
 operation. Existing policies and unreferenced reusable objects can be placed into the
 same draft as confirmed delete operations; active references and conflicting pending
 field edits block the delete locally before the authoritative Smithproxy validation.
+Stable routing, TLS, detection, content, SSH, DNS, script, and authentication
+profiles use the same confirmed deletion path and cannot be deleted while referenced.
 Current legacy deployments keep the controls disabled because their snapshot IDs
 are not stable.
 

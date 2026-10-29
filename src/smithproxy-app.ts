@@ -1627,7 +1627,9 @@ export class SmithproxyApp extends LitElement {
         const kind = operation.collection === 'policy' ? 'policy'
           : operation.collection === 'address_objects' ? 'address'
             : operation.collection === 'port_objects' ? 'port'
-              : operation.collection === 'proto_objects' ? 'protocol' : undefined;
+              : operation.collection === 'proto_objects' ? 'protocol'
+                : operation.collection === 'routing' || operation.collection.endsWith('_profiles')
+                  ? 'profile' : undefined;
         if (kind) objects.add(`${kind}:${operation.entityId}`);
       }
       if (operation.op === 'move' && operation.collection === 'policy') {
@@ -2005,6 +2007,21 @@ export class SmithproxyApp extends LitElement {
       return protocol
         ? {collection: 'proto_objects', entityId: protocol.id,
           label: 'protocol object', usageCount: protocol.usedBy.length}
+        : undefined;
+    }
+    if (entry.kind === 'profile') {
+      const profile = this.snapshot.profiles.find(item => item.id === entry.id);
+      if (!profile) return undefined;
+      const collection: DraftDeleteOperation['collection'] | undefined = profile.routing ? 'routing'
+        : profile.tls ? 'tls_profiles'
+          : profile.content ? 'content_profiles'
+            : profile.ssh ? 'ssh_profiles'
+              : profile.script ? 'script_profiles'
+                : profile.authentication ? 'auth_profiles'
+                  : profile.detection ? 'detection_profiles'
+                    : profile.dns ? 'alg_dns_profiles' : undefined;
+      return collection
+        ? {collection, entityId: profile.id, label: `${profile.type} profile`, usageCount: profile.usedBy.length}
         : undefined;
     }
     return undefined;

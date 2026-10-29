@@ -99,6 +99,7 @@ type MockState = {
   commitReady?: boolean;
   structuralDraftsReady?: boolean;
   secondPolicy?: boolean;
+  unusedProfile?: boolean;
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   commitRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   validationOperationDelta?: number;
@@ -703,7 +704,11 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           id: 'authentication-0', name: 'legacy-auth', type: 'authentication', routing: null, tls: null,
           detection: null, content: null, ssh: null, dns: null, script: null,
           authentication: {authenticate: true, resolve: true, identity_count: 2, deprecated: true},
-        },
+        }, ...(state.unusedProfile ? [{
+          id: 'detection-1', name: 'unused-detection', type: 'detection', routing: null, tls: null,
+          detection: {mode: 0, engines_enabled: false, knowledge_base_enabled: false},
+          content: null, ssh: null, dns: null, script: null, authentication: null,
+        }] : []),
       ],
       settings: {
         accept_tproxy: true, accept_redirect: true, accept_socks: false,
@@ -1785,6 +1790,44 @@ test('moves a stable policy and removes the operation when order is restored', a
   expect(state.structuralRemovalRequests![0]).toMatchObject({expectedVersion: 1, csrf: '1'});
   expect(state.structuralRemovalRequests![0]!.localId)
     .toBe(state.structuralMutationRequests![0]!.operation.local_id);
+});
+
+test('deletes an unused stable profile and blocks referenced profiles', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    unusedProfile: true,
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await profiles.getByRole('button', {name: /unused-detection detection/i}).click();
+
+  const unusedEditor = page.getByRole('dialog', {name: 'Edit unused-detection'});
+  await unusedEditor.getByRole('button', {name: 'Delete detection profile'}).click();
+  await expect(unusedEditor.getByText('Confirm deletion of this detection profile.')).toBeVisible();
+  await unusedEditor.getByRole('button', {name: 'Confirm delete detection profile'}).click();
+  await expect(unusedEditor).toBeHidden();
+  await expect(page.getByText('Draft: 1 change')).toBeVisible();
+  await expect(profiles.getByRole('button', {name: /unused-detection detection/i})).toContainText('Pending');
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {op: 'delete', collection: 'detection_profiles', entity_id: 'detection-1'},
+    csrf: '1',
+  });
+  expect(state.structuralMutationRequests![0]!.operation.local_id)
+    .toMatch(/^delete-profile-[0-9a-f-]{36}$/u);
+
+  await profiles.getByRole('button', {name: /detect detection/i}).click();
+  const referencedEditor = page.getByRole('dialog', {name: 'Edit detect'});
+  const deleteButton = referencedEditor.getByRole('button', {name: 'Delete detection profile'});
+  await expect(deleteButton).toBeDisabled();
+  await expect(deleteButton).toHaveAttribute('title', 'This object is referenced by 1 configuration entry.');
 });
 
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {
