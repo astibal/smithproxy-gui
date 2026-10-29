@@ -1641,6 +1641,110 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
   await expectNoWcagViolations(page);
 });
 
+test('creates complete typed routing detection DNS and authentication profiles', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await page.getByRole('button', {name: 'New profile'}).click();
+  let editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Name').fill('branch-route');
+  await editor.getByLabel('Destination addresses').fill('backend-a, backend-b');
+  await editor.getByLabel('Destination ports').fill('https, 8443');
+  await editor.getByLabel('Load balancing').selectOption('sticky-l4');
+  await editor.getByLabel('Rewrite SNI match').fill('public.example');
+  await editor.getByLabel('Rewrite SNI target').fill('private.example');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor.getByLabel('Profile type')).toBeDisabled();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'New profile'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Name').fill('branch-detect');
+  await editor.getByLabel('Profile type').selectOption('detection');
+  await expect(editor.getByLabel('Name')).toHaveValue('branch-detect');
+  await editor.getByLabel('Detection mode').selectOption('2');
+  await editor.getByLabel('Detection engines').selectOption('false');
+  await editor.getByLabel('Knowledge base').selectOption('true');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'New profile'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Profile type').selectOption('dns');
+  await editor.getByLabel('Name').fill('branch-dns');
+  await editor.getByLabel('Match request ID').selectOption('false');
+  await editor.getByLabel('Randomize response ID').selectOption('true');
+  await editor.getByLabel('Cached responses').selectOption('false');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'New profile'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Profile type').selectOption('authentication');
+  await editor.getByLabel('Name').fill('branch-auth');
+  await editor.getByLabel('Authenticate').selectOption('true');
+  await editor.getByLabel('Resolve identities').selectOption('false');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.locator('.privacy-note')).toContainText('Identity mappings remain managed');
+
+  expect(state.structuralMutationRequests).toHaveLength(4);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0, csrf: '1', operation: {
+      op: 'create', collection: 'routing', position: {last: true},
+      fields: {
+        name: 'branch-route', dnat_address: ['backend-a', 'backend-b'], dnat_port: ['https', '8443'],
+        dnat_lb_method: 'sticky-l4', rewrite_sni: 'public.example', rewrite_sni_to: 'private.example',
+      },
+    },
+  });
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 1, csrf: '1', operation: {
+      op: 'create', collection: 'detection_profiles',
+      fields: {name: 'branch-detect', mode: 2, engines_enabled: false, kb_enabled: true},
+    },
+  });
+  expect(state.structuralMutationRequests![2]).toMatchObject({
+    expectedVersion: 2, csrf: '1', operation: {
+      op: 'create', collection: 'alg_dns_profiles',
+      fields: {name: 'branch-dns', match_request_id: false, randomize_id: true, cached_responses: false},
+    },
+  });
+  expect(state.structuralMutationRequests![3]).toMatchObject({
+    expectedVersion: 3, csrf: '1', operation: {
+      op: 'create', collection: 'auth_profiles',
+      fields: {name: 'branch-auth', authenticate: true, resolve: false},
+    },
+  });
+  for (const request of state.structuralMutationRequests!) {
+    expect(request.operation.local_id).toMatch(/^create-profile-[0-9a-f-]{36}$/u);
+    expect(request.operation.client_id).toBe(request.operation.local_id);
+  }
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 4'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  const routeRow = table.getByRole('row').filter({hasText: 'routing · create'});
+  await expect(routeRow).toContainText('branch-route');
+  await expect(table).toContainText('detection_profiles · create');
+  await expect(table).toContainText('alg_dns_profiles · create');
+  await expect(table).toContainText('auth_profiles · create');
+  await routeRow.getByRole('button', {name: 'Edit'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(editor.getByLabel('Profile type')).toHaveValue('routing');
+  await expect(editor.getByLabel('Destination addresses')).toHaveValue('backend-a, backend-b');
+  await expect(editor.getByLabel('Rewrite SNI target')).toHaveValue('private.example');
+  await expectNoWcagViolations(page);
+});
+
 test('creates an ordered policy and opens referenced objects from its drawer', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
@@ -1908,16 +2012,6 @@ test('reorders and deletes stable nested content rules', async ({page}) => {
     },
     csrf: '1',
   });
-
-  await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
-  await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
-  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
-  const detectionEditor = page.getByRole('dialog', {name: 'Edit http/request'});
-  await detectionEditor.getByRole('button', {name: /1\. R · regex/i}).click();
-  const onlyFlowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
-  const deleteOnlyFlow = onlyFlowEditor.getByRole('button', {name: 'Delete signature flow step'});
-  await expect(deleteOnlyFlow).toBeDisabled();
-  await expect(deleteOnlyFlow).toHaveAttribute('title', 'A signature must retain at least one flow step.');
 });
 
 test('creates and safely reopens a nested content rule', async ({page}) => {
@@ -2050,6 +2144,16 @@ test('reorders and deletes stable signature flow steps', async ({page}) => {
     },
     csrf: '1',
   });
+
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
+  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const detectionEditor = page.getByRole('dialog', {name: 'Edit http/request'});
+  await detectionEditor.getByRole('button', {name: /1\. R · regex/i}).click();
+  const onlyFlowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
+  const deleteOnlyFlow = onlyFlowEditor.getByRole('button', {name: 'Delete signature flow step'});
+  await expect(deleteOnlyFlow).toBeDisabled();
+  await expect(deleteOnlyFlow).toHaveAttribute('title', 'A signature must retain at least one flow step.');
 });
 
 test('creates and safely reopens a signature flow step', async ({page}) => {

@@ -145,6 +145,19 @@ const captureBooleanFields = [
   ['options.calculate_checksums', 'checksums'],
 ] as const;
 
+type SimpleProfileCreateType = 'routing' | 'detection' | 'dns' | 'authentication';
+
+const simpleProfileCollections: Readonly<Record<SimpleProfileCreateType, DraftCreateOperation['collection']>> = {
+  routing: 'routing',
+  detection: 'detection_profiles',
+  dns: 'alg_dns_profiles',
+  authentication: 'auth_profiles',
+};
+
+const simpleProfileTypes = new Set<SimpleProfileCreateType>(
+  Object.keys(simpleProfileCollections) as SimpleProfileCreateType[],
+);
+
 const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
   state: 'starting',
   detail: 'Waiting for the first runtime metrics sample.',
@@ -326,6 +339,7 @@ export class SmithproxyApp extends LitElement {
   private readonly referencePreviewValues = new Map<string, string>();
   private readonly contentRuleCreateParents = new Map<string, string>();
   private readonly signatureFlowCreateParents = new Map<string, string>();
+  private readonly profileCreateTypes = new Map<string, SimpleProfileCreateType>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -1106,6 +1120,7 @@ export class SmithproxyApp extends LitElement {
     this.drawerInitialChanges.clear();
     this.contentRuleCreateParents.clear();
     this.signatureFlowCreateParents.clear();
+    this.profileCreateTypes.clear();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -1627,6 +1642,9 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && operation.collection === 'proto_objects') {
         objects.add(`protocol-create:${operation.localId}`);
       }
+      if (operation.op === 'create' && Object.values(simpleProfileCollections).includes(operation.collection)) {
+        objects.add(`profile-create:${operation.localId}`);
+      }
       if (operation.op === 'create' && operation.collection === 'content_profiles.content_rules') {
         objects.add(`content-rule-create:${operation.localId}`);
       }
@@ -1947,17 +1965,20 @@ export class SmithproxyApp extends LitElement {
     if (operation?.op !== 'create' || ![
       'address_objects', 'port_objects', 'proto_objects', 'policy', 'content_profiles.content_rules',
       'starttls_signatures.flow', 'detection_signatures.flow',
+      ...Object.values(simpleProfileCollections),
     ].includes(operation.collection)) return;
     const kind = operation.collection === 'policy' ? 'policy-create'
       : operation.collection === 'address_objects' ? 'address-create'
         : operation.collection === 'port_objects' ? 'port-create'
           : operation.collection === 'proto_objects' ? 'protocol-create'
+            : Object.values(simpleProfileCollections).includes(operation.collection) ? 'profile-create'
             : operation.collection === 'content_profiles.content_rules'
               ? 'content-rule-create' : 'signature-flow-create';
     const fallback = operation.collection === 'policy' ? 'New policy'
       : operation.collection === 'address_objects' ? 'New address object'
         : operation.collection === 'port_objects' ? 'New port object'
           : operation.collection === 'proto_objects' ? 'New protocol object'
+            : Object.values(simpleProfileCollections).includes(operation.collection) ? 'New profile'
             : operation.collection === 'content_profiles.content_rules'
               ? 'New content rule' : 'New signature flow step';
     this.openObjectDrawer({
@@ -2596,6 +2617,13 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({kind: 'protocol-create', id: localId, title: 'New protocol object'}, origin);
   }
 
+  private openNewProfile(origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable) return;
+    const localId = `create-profile-${crypto.randomUUID()}`;
+    this.profileCreateTypes.set(localId, 'routing');
+    this.openObjectDrawer({kind: 'profile-create', id: localId, title: 'New profile'}, origin);
+  }
+
   private openNewPolicy(origin?: HTMLElement): void {
     if (!this.structuralDraftsAvailable) return;
     const localId = `create-policy-${crypto.randomUUID()}`;
@@ -2814,6 +2842,7 @@ export class SmithproxyApp extends LitElement {
       this.clearReferencePreviews(entry);
       if (entry.kind === 'content-rule-create') this.contentRuleCreateParents.delete(entry.id);
       if (entry.kind === 'signature-flow-create') this.signatureFlowCreateParents.delete(entry.id);
+      if (entry.kind === 'profile-create') this.profileCreateTypes.delete(entry.id);
     }
     this.dirtyDrawerKeys = remainingDirty;
     this.pendingCloseIndex = undefined;
@@ -2932,6 +2961,19 @@ export class SmithproxyApp extends LitElement {
       return operation?.op === 'create'
         ? {id: operation.localId, name: String(operation.fields['name'] ?? fallback)}
         : undefined;
+    }
+    if (entry.kind === 'profile-create') {
+      const operation = this.workspaceDraft?.structuralOperations.find(item =>
+        item.op === 'create' && Object.values(simpleProfileCollections).includes(item.collection) &&
+        item.localId === entry.id);
+      if (operation?.op !== 'create') {
+        return this.profileCreateTypes.has(entry.id) ? {id: entry.id, name: 'New profile'} : undefined;
+      }
+      const type = (Object.entries(simpleProfileCollections) as Array<[
+        SimpleProfileCreateType, DraftCreateOperation['collection']
+      ]>).find(([, collection]) => collection === operation.collection)?.[0];
+      if (type) this.profileCreateTypes.set(entry.id, type);
+      return {id: operation.localId, name: String(operation.fields['name'] ?? 'New profile')};
     }
     if (entry.kind === 'port') return this.snapshot.ports.find(item => item.id === entry.id);
     if (entry.kind === 'protocol') return this.snapshot.protocols.find(item => item.id === entry.id);
@@ -3366,6 +3408,24 @@ export class SmithproxyApp extends LitElement {
     return operation?.op === 'create' ? operation : undefined;
   }
 
+  private pendingSimpleProfileCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'create' && Object.values(simpleProfileCollections).includes(item.collection) &&
+      item.localId === entry.id);
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private simpleProfileCreateType(entry: DrawerEntry): SimpleProfileCreateType {
+    const operation = this.pendingSimpleProfileCreate(entry);
+    if (operation) {
+      const type = (Object.entries(simpleProfileCollections) as Array<[
+        SimpleProfileCreateType, DraftCreateOperation['collection']
+      ]>).find(([, collection]) => collection === operation.collection)?.[0];
+      if (type) return type;
+    }
+    return this.profileCreateTypes.get(entry.id) ?? 'routing';
+  }
+
   private async saveSimpleObjectCreate(entry: DrawerEntry): Promise<void> {
     if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting ||
         (entry.kind !== 'port-create' && entry.kind !== 'protocol-create')) return;
@@ -3450,6 +3510,117 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private async saveSimpleProfileCreate(entry: DrawerEntry): Promise<void> {
+    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    const element = <T extends HTMLInputElement | HTMLSelectElement>(field: string) =>
+      this.renderRoot.querySelector<T>(`#profile-create-${field}-${entry.id}`);
+    const typeInput = element<HTMLSelectElement>('type');
+    const nameInput = element<HTMLInputElement>('name');
+    if (!typeInput || !nameInput || !simpleProfileTypes.has(typeInput.value as SimpleProfileCreateType)) return;
+    const type = typeInput.value as SimpleProfileCreateType;
+    const name = nameInput.value.trim();
+    const printable = (value: string, maximum: number, empty = false) =>
+      (empty || value.length > 0) && value.length <= maximum && !/[\u0000-\u001f\u007f]/u.test(value);
+    if (!printable(name, 128)) {
+      this.drawerError = 'A printable profile name from 1 to 128 characters is required.';
+      return;
+    }
+    const collection = simpleProfileCollections[type];
+    const sameProfileType = (profile: ProfileObject): boolean => type === 'routing' ? profile.routing !== null
+      : type === 'detection' ? profile.detection !== null
+        : type === 'dns' ? profile.dns !== null : profile.authentication !== null;
+    const duplicateLive = this.snapshot?.profiles.some(profile =>
+      sameProfileType(profile) && this.profileDisplayName(profile) === name);
+    const duplicateDraft = this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'create' && operation.collection === collection &&
+      operation.localId !== entry.id && operation.fields['name'] === name);
+    if (duplicateLive || duplicateDraft) {
+      this.drawerError = `A ${type} profile with this name already exists.`;
+      return;
+    }
+
+    let fields: DraftCreateOperation['fields'];
+    if (type === 'routing') {
+      const addresses = element<HTMLInputElement>('addresses');
+      const ports = element<HTMLInputElement>('ports');
+      const method = element<HTMLSelectElement>('method');
+      const rewriteSni = element<HTMLInputElement>('rewrite-sni');
+      const rewriteSniTo = element<HTMLInputElement>('rewrite-sni-to');
+      if (!addresses || !ports || !method || !rewriteSni || !rewriteSniTo) return;
+      const list = (input: HTMLInputElement) => input.value.split(',').map(value => value.trim()).filter(Boolean);
+      const addressValues = list(addresses);
+      const portValues = list(ports);
+      const validList = (values: ReadonlyArray<string>) => values.length <= 256 &&
+        values.every(value => printable(value, 128)) && new Set(values).size === values.length;
+      if (!validList(addressValues) || !validList(portValues) ||
+          !['round-robin', 'sticky-l3', 'sticky-l4'].includes(method.value) ||
+          !printable(rewriteSni.value.trim(), 1024, true) ||
+          !printable(rewriteSniTo.value.trim(), 1024, true)) {
+        this.drawerError = 'Routing lists must contain unique bounded values and all routing fields must be valid.';
+        return;
+      }
+      fields = {
+        name, dnat_address: addressValues, dnat_port: portValues, dnat_lb_method: method.value,
+        rewrite_sni: rewriteSni.value.trim(), rewrite_sni_to: rewriteSniTo.value.trim(),
+      };
+    } else if (type === 'detection') {
+      const mode = element<HTMLSelectElement>('mode');
+      const engines = element<HTMLSelectElement>('engines');
+      const knowledgeBase = element<HTMLSelectElement>('knowledge-base');
+      if (!mode || !engines || !knowledgeBase || !['0', '1', '2'].includes(mode.value) ||
+          !['true', 'false'].includes(engines.value) || !['true', 'false'].includes(knowledgeBase.value)) return;
+      fields = {name, mode: Number(mode.value), engines_enabled: engines.value === 'true',
+        kb_enabled: knowledgeBase.value === 'true'};
+    } else if (type === 'dns') {
+      const match = element<HTMLSelectElement>('match-request');
+      const randomize = element<HTMLSelectElement>('randomize');
+      const cached = element<HTMLSelectElement>('cached');
+      if (!match || !randomize || !cached ||
+          [match.value, randomize.value, cached.value].some(value => !['true', 'false'].includes(value))) return;
+      fields = {name, match_request_id: match.value === 'true', randomize_id: randomize.value === 'true',
+        cached_responses: cached.value === 'true'};
+    } else {
+      const authenticate = element<HTMLSelectElement>('authenticate');
+      const resolve = element<HTMLSelectElement>('resolve');
+      if (!authenticate || !resolve ||
+          [authenticate.value, resolve.value].some(value => !['true', 'false'].includes(value))) return;
+      fields = {name, authenticate: authenticate.value === 'true', resolve: resolve.value === 'true'};
+    }
+
+    const existing = this.pendingSimpleProfileCreate(entry);
+    const unchanged = existing?.collection === collection &&
+      Object.keys(existing.fields).length === Object.keys(fields).length &&
+      Object.entries(fields).every(([field, value]) =>
+        existing.fields[field] !== undefined && this.configValuesEqual(existing.fields[field]!, value));
+    if (unchanged) {
+      this.drawerError = undefined;
+      this.markDrawerSaved(entry);
+      return;
+    }
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create', localId: entry.id, collection, clientId: entry.id,
+        parentId: null, position: {kind: 'last', reference: null}, fields,
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.profileCreateTypes.set(entry.id, type);
+      this.applyDraft(draft);
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Profile could not be added to the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private async saveToDraft(entry: DrawerEntry): Promise<void> {
     if (entry.kind === 'policy-create') {
       await this.savePolicyCreate(entry);
@@ -3461,6 +3632,10 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'port-create' || entry.kind === 'protocol-create') {
       await this.saveSimpleObjectCreate(entry);
+      return;
+    }
+    if (entry.kind === 'profile-create') {
+      await this.saveSimpleProfileCreate(entry);
       return;
     }
     if (entry.kind === 'content-rule-create') {
@@ -4811,6 +4986,7 @@ export class SmithproxyApp extends LitElement {
                     'address_objects', 'port_objects', 'proto_objects', 'policy',
                     'content_profiles.content_rules',
                     'starttls_signatures.flow', 'detection_signatures.flow',
+                    ...Object.values(simpleProfileCollections),
                   ].includes(operation.collection)) ||
                     (operation.op === 'move' && (operation.collection === 'policy' ||
                       operation.collection === 'content_profiles.content_rules' ||
@@ -5299,6 +5475,11 @@ export class SmithproxyApp extends LitElement {
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>
                 New protocol
+              </button>
+              <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                aria-describedby="new-object-blocker"
+                @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>
+                New profile
               </button>
             </div>
             <small id="new-object-blocker">${this.structuralDraftsAvailable
@@ -6974,6 +7155,99 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderSimpleProfileCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingSimpleProfileCreate(entry);
+    const type = this.simpleProfileCreateType(entry);
+    const field = (name: string, fallback: DraftScalar): DraftScalar => operation?.fields[name] ?? fallback;
+    const stringList = (name: string): ReadonlyArray<string> => {
+      const value = field(name, []);
+      return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
+    };
+    const booleanField = (name: string, fallback: boolean): boolean => {
+      const value = field(name, fallback);
+      return typeof value === 'boolean' ? value : fallback;
+    };
+    const readOnly = !this.structuralDraftsAvailable;
+    const booleanSelect = (id: string, label: string, value: boolean) => html`
+      <label for="profile-create-${id}-${entry.id}">${label}</label>
+      <select id="profile-create-${id}-${entry.id}" .value=${String(value)} ?disabled=${readOnly}>
+        <option value="true">Enabled</option><option value="false">Disabled</option>
+      </select>`;
+    return html`
+      <div class="form-grid wide-form-grid">
+        <label for="profile-create-type-${entry.id}">Profile type</label>
+        <select id="profile-create-type-${entry.id}" .value=${type} ?disabled=${readOnly || operation !== undefined}
+          @change=${(event: Event) => {
+            const value = (event.currentTarget as HTMLSelectElement).value as SimpleProfileCreateType;
+            if (simpleProfileTypes.has(value)) {
+              const name = this.renderRoot.querySelector<HTMLInputElement>(
+                `#profile-create-name-${entry.id}`,
+              )?.value ?? '';
+              this.profileCreateTypes.set(entry.id, value);
+              this.requestUpdate();
+              void this.updateComplete.then(() => {
+                const input = this.renderRoot.querySelector<HTMLInputElement>(
+                  `#profile-create-name-${entry.id}`,
+                );
+                if (input) input.value = name;
+              });
+            }
+          }}>
+          <option value="routing">Routing</option>
+          <option value="detection">Detection</option>
+          <option value="dns">DNS ALG</option>
+          <option value="authentication">Authentication</option>
+        </select>
+        <label for="profile-create-name-${entry.id}">Name</label>
+        <input id="profile-create-name-${entry.id}" .value=${String(field('name', ''))}
+          maxlength="128" required autocomplete="off" .readOnly=${readOnly} />
+        ${type === 'routing' ? html`
+          <label for="profile-create-addresses-${entry.id}">Destination addresses</label>
+          <input id="profile-create-addresses-${entry.id}"
+            .value=${stringList('dnat_address').join(', ')}
+            placeholder="backend-a, backend-b" autocomplete="off" .readOnly=${readOnly} />
+          <label for="profile-create-ports-${entry.id}">Destination ports</label>
+          <input id="profile-create-ports-${entry.id}"
+            .value=${stringList('dnat_port').join(', ')}
+            placeholder="https, 8443" autocomplete="off" .readOnly=${readOnly} />
+          <label for="profile-create-method-${entry.id}">Load balancing</label>
+          <select id="profile-create-method-${entry.id}" .value=${String(field('dnat_lb_method', 'round-robin'))}
+            ?disabled=${readOnly}>
+            <option value="round-robin">Round robin</option><option value="sticky-l3">Sticky layer 3</option>
+            <option value="sticky-l4">Sticky layer 4</option>
+          </select>
+          <label for="profile-create-rewrite-sni-${entry.id}">Rewrite SNI match</label>
+          <input id="profile-create-rewrite-sni-${entry.id}" .value=${String(field('rewrite_sni', ''))}
+            maxlength="1024" autocomplete="off" .readOnly=${readOnly} />
+          <label for="profile-create-rewrite-sni-to-${entry.id}">Rewrite SNI target</label>
+          <input id="profile-create-rewrite-sni-to-${entry.id}" .value=${String(field('rewrite_sni_to', ''))}
+            maxlength="1024" autocomplete="off" .readOnly=${readOnly} />
+        ` : type === 'detection' ? html`
+          <label for="profile-create-mode-${entry.id}">Detection mode</label>
+          <select id="profile-create-mode-${entry.id}" .value=${String(field('mode', 0))} ?disabled=${readOnly}>
+            <option value="0">0 · disabled</option><option value="1">1 · observe</option>
+            <option value="2">2 · enforce</option>
+          </select>
+          ${booleanSelect('engines', 'Detection engines', booleanField('engines_enabled', true))}
+          ${booleanSelect('knowledge-base', 'Knowledge base', booleanField('kb_enabled', true))}
+        ` : type === 'dns' ? html`
+          ${booleanSelect('match-request', 'Match request ID', booleanField('match_request_id', true))}
+          ${booleanSelect('randomize', 'Randomize response ID', booleanField('randomize_id', true))}
+          ${booleanSelect('cached', 'Cached responses', booleanField('cached_responses', true))}
+        ` : html`
+          ${booleanSelect('authenticate', 'Authenticate', booleanField('authenticate', true))}
+          ${booleanSelect('resolve', 'Resolve identities', booleanField('resolve', true))}
+        `}
+      </div>
+      <div class="impact">
+        The complete typed profile is retained in the workspace draft until Smithproxy validates and commits it.
+      </div>
+      ${type === 'authentication' ? html`<div class="privacy-note section">
+        Identity mappings remain managed by their dedicated API surface and are never inferred by this editor.
+      </div>` : nothing}
+    `;
+  }
+
   private renderPortEditor(entry: DrawerEntry) {
     const port = this.snapshot?.ports.find(item => item.id === entry.id);
     if (!port) return nothing;
@@ -8235,6 +8509,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'port-create') return this.renderPortCreateEditor(entry);
     if (entry.kind === 'protocol') return this.renderProtocolEditor(entry);
     if (entry.kind === 'protocol-create') return this.renderProtocolCreateEditor(entry);
+    if (entry.kind === 'profile-create') return this.renderSimpleProfileCreateEditor(entry);
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);
@@ -8251,6 +8526,7 @@ export class SmithproxyApp extends LitElement {
     const editLabel = entry.kind === 'address-create' ? 'Create address object'
       : entry.kind === 'port-create' ? 'Create port object'
         : entry.kind === 'protocol-create' ? 'Create protocol object'
+          : entry.kind === 'profile-create' ? 'Create profile'
           : entry.kind === 'policy-create' ? 'Create policy'
             : entry.kind === 'content-rule-create' ? 'Create content rule'
               : entry.kind === 'signature-flow-create' ? 'Create signature flow step' : `Edit ${entry.title}`;
@@ -8271,7 +8547,7 @@ export class SmithproxyApp extends LitElement {
     );
     const draftable = [
       'address-create', 'port-create', 'protocol-create', 'policy-create', 'content-rule-create',
-      'signature-flow-create',
+      'signature-flow-create', 'profile-create',
     ].includes(entry.kind)
       ? this.structuralDraftsAvailable
       : this.snapshot?.source !== 'live' ||
@@ -8297,7 +8573,8 @@ export class SmithproxyApp extends LitElement {
             ? 'Create address object' : entry.kind === 'port-create'
               ? 'Create port object' : entry.kind === 'protocol-create'
                 ? 'Create protocol object' : entry.kind === 'policy-create'
-                  ? 'Create policy' : entry.kind === 'content-rule-create'
+                  ? 'Create policy' : entry.kind === 'profile-create'
+                    ? 'Create profile' : entry.kind === 'content-rule-create'
                     ? 'Create content rule' : entry.kind === 'signature-flow-create'
                       ? 'Create signature flow step' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
           ${active ? html`

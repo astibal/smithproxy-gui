@@ -82,7 +82,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "mode", "engines_enabled", "kb_enabled"],
-      "notes": "All active fields emitted by the current detection-profile saver are typed and editable. Stable unreferenced profiles support confirmed structural deletion."
+      "notes": "All active fields emitted by the current detection-profile saver are typed, editable, and structurally creatable as a complete payload. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "captures",
@@ -154,7 +154,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "match_request_id", "randomize_id", "cached_responses"],
-      "notes": "The current DNS ALG profile schema is represented by the typed editor. Stable unreferenced profiles support confirmed structural deletion."
+      "notes": "The current DNS ALG profile schema is represented by typed edit and complete structural create drawers. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "routing",
@@ -163,7 +163,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "dnat_address", "dnat_port", "dnat_lb_method", "rewrite_sni", "rewrite_sni_to"],
-      "notes": "All active fields emitted by the current routing-profile saver are typed and editable. Stable unreferenced profiles support confirmed structural deletion."
+      "notes": "All active fields emitted by the current routing-profile saver are typed, editable, and structurally creatable with bounded unique destination lists. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "policy",
@@ -212,7 +212,7 @@
       "edit": "partial",
       "sensitivity": "identity-bearing",
       "tracked_fields": ["name", "authenticate", "resolve", "identity_count"],
-      "notes": "Authentication posture is typed; identity mappings remain redacted. Stable unreferenced profiles support confirmed structural deletion."
+      "notes": "Authentication posture is typed and structurally creatable as a complete non-secret payload; identity mappings remain redacted and outside this editor. Stable unreferenced profiles support confirmed structural deletion."
     }
   ]
 }
