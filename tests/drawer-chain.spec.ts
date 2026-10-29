@@ -1,7 +1,12 @@
 import {expect, test, type Page} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-type MockState = {smithproxy: 'ready' | 'unreachable'; configFetches?: number};
+type MockState = {
+  smithproxy: 'ready' | 'unreachable';
+  configFetches?: number;
+  conflictNextDraftWrite?: boolean;
+  draftMutationVersions?: number[];
+};
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
   let draft = {id: 'workspace-draft', base_revision: null, version: 0, changes: [] as Array<{path: string; value: unknown}>};
@@ -121,6 +126,17 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       expected_version: number;
       changes: Array<{path: string; value: unknown}>;
     };
+    state.draftMutationVersions?.push(body.expected_version);
+    if (state.conflictNextDraftWrite) {
+      state.conflictNextDraftWrite = false;
+      draft = {
+        ...draft,
+        version: draft.version + 1,
+        changes: [{path: 'settings.policy_fail_open', value: true}],
+      };
+      await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
+      return;
+    }
     if (body.expected_version !== draft.version) {
       await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
       return;
@@ -589,6 +605,38 @@ test('refreshes live configuration only outside an active edit transaction', asy
     .getByRole('button', {name: 'Cancel'}).click();
   await expect.poll(() => state.configFetches).toBe(3);
   await expect(page.locator('.statusbar')).not.toContainText('refresh paused');
+});
+
+test('recovers from a concurrent draft writer without losing either change set', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    conflictNextDraftWrite: true,
+    draftMutationVersions: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await editor.getByLabel('Name').fill('Concurrent policy edit');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect(editor.getByRole('status')).toContainText('HTTP 409');
+  await expect(page.getByText('Draft: 1 changes')).toBeVisible();
+  expect(state.draftMutationVersions).toEqual([0]);
+
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByRole('status')).toHaveText('Saved to draft');
+  expect(state.draftMutationVersions).toEqual([0, 1]);
+  await expect(page.getByText('Draft: 19 changes')).toBeVisible();
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 19'}).click();
+  const changes = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(changes).toContainText('settings.policy_fail_open');
+  await expect(changes).toContainText('policy.[0].name');
+  await expect(changes).toContainText('Concurrent policy edit');
 });
 
 test('opens a policy and its referenced address object', async ({page}) => {

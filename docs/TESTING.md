@@ -38,6 +38,10 @@ Axe automaticky kontroluje WCAG A/AA pravidla na dashboardu, policy listu,
 prvním i vnořeném editoru a mobilním layoutu. Nález se opravuje v UI; test
 neobsahuje výjimky ani vypnutá pravidla.
 
+Browser matrix také simuluje souběžného zapisujícího správce. Po `409` konfliktu
+musí GUI načíst novou verzi sdíleného draftu, zachovat cizí změny a další pokus
+odeslat s aktualizovanou optimistic-concurrency verzí.
+
 Unit coverage gate měří importovanou API, config, monitoring a state logiku přes
 V8. Aktuální nepodkročitelné globální prahy jsou 83 % statements, 82 % branches,
 94 % functions a 88 % lines. Prahy jsou baseline proti regresi, nikoliv tvrzení,
