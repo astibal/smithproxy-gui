@@ -7,6 +7,7 @@ import {
   type DraftPreflight,
   type DraftScalar,
   type DraftSnapshot,
+  type DraftValidation,
 } from './api/draft-client';
 import {FakeConfigClient} from './api/fake-client';
 import type {
@@ -220,6 +221,9 @@ export class SmithproxyApp extends LitElement {
   @state() private draftError: string | undefined;
   @state() private draftPreflight: DraftPreflight | undefined;
   @state() private draftPreflightError: string | undefined;
+  @state() private draftValidation: DraftValidation | undefined;
+  @state() private draftValidationError: string | undefined;
+  @state() private draftValidating = false;
   @state() private drawerError: string | undefined;
   @state() private dirtyDrawerKeys = new Set<string>();
   @state() private pendingCloseIndex: number | undefined;
@@ -441,6 +445,7 @@ export class SmithproxyApp extends LitElement {
     .draft-value { overflow-wrap: anywhere; }
     .preflight { padding: 15px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-surface); }
     .preflight h3 { margin: 0; font-size: 15px; }
+    .preflight-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .preflight-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
     .preflight-check { padding: 10px 11px; border: 1px solid var(--app-border); background: var(--app-canvas); }
     .preflight-check small { display: block; color: var(--app-muted); }
@@ -575,6 +580,7 @@ export class SmithproxyApp extends LitElement {
       .audit-row .event-time, .audit-request { display: none; }
       .draft-row { grid-template-columns: 1fr; gap: 5px; }
       .preflight-grid { grid-template-columns: 1fr; }
+      .preflight-heading { align-items: stretch; flex-direction: column; }
       .event-source { display: none; }
       .probe-history { gap: 2px; }
     }
@@ -1052,6 +1058,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private applyDraft(snapshot: DraftSnapshot): void {
+    const previousVersion = this.draftVersion;
     this.workspaceDraft = snapshot;
     this.draftVersion = snapshot.version;
     this.draftChangeCount = snapshot.changes.length;
@@ -1060,6 +1067,13 @@ export class SmithproxyApp extends LitElement {
         preflight.changeCount !== snapshot.changes.length) {
       this.draftPreflight = undefined;
     }
+    const validation = this.draftValidation;
+    if (!validation || validation.draftVersion !== snapshot.version ||
+        validation.baseRevision !== snapshot.baseRevision ||
+        validation.validatedOperations !== snapshot.changes.length) {
+      this.draftValidation = undefined;
+    }
+    if (previousVersion !== snapshot.version) this.draftValidationError = undefined;
     if (snapshot.changes.length === 0) this.discardDraftArmed = false;
     const objects = new Set<string>();
     for (const change of snapshot.changes) {
@@ -1175,6 +1189,33 @@ export class SmithproxyApp extends LitElement {
     } catch (error) {
       this.draftPreflight = undefined;
       this.draftPreflightError = error instanceof Error ? error.message : 'Draft preflight is unavailable.';
+    }
+  }
+
+  private async validateDraft(): Promise<void> {
+    const preflight = this.draftPreflight;
+    if (!this.draftClient || !preflight?.validationAvailable || this.draftChangeCount === 0 ||
+        this.draftValidating || !preflight.baseRevision) return;
+    const expectedVersion = this.draftVersion;
+    const expectedChanges = this.draftChangeCount;
+    const expectedRevision = preflight.baseRevision;
+    this.draftValidating = true;
+    this.draftValidation = undefined;
+    this.draftValidationError = undefined;
+    try {
+      const validation = await this.draftClient.validate(expectedVersion);
+      if (this.draftVersion !== expectedVersion || validation.draftVersion !== expectedVersion ||
+          validation.baseRevision !== expectedRevision ||
+          validation.validatedOperations !== expectedChanges) {
+        throw new Error('Smithproxy validation does not match the current workspace draft.');
+      }
+      this.draftValidation = validation;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Smithproxy validation is unavailable.';
+      await this.loadDraft();
+      this.draftValidationError = message;
+    } finally {
+      this.draftValidating = false;
     }
   }
 
@@ -2474,7 +2515,7 @@ export class SmithproxyApp extends LitElement {
             <p>Version ${this.draftVersion} · ${changes.length} pending changes</p>
           </div>
           <button class="secondary danger-button" type="button"
-            ?disabled=${changes.length === 0 || this.draftSaving}
+            ?disabled=${changes.length === 0 || this.draftSaving || this.draftValidating}
             @click=${() => this.discardDraft()}>
             ${this.draftSaving
               ? 'Discarding…'
@@ -2486,14 +2527,28 @@ export class SmithproxyApp extends LitElement {
         ${this.draftError ? html`<div class="error" role="alert">${this.draftError}</div>` : nothing}
         ${changes.length > 0 ? html`
           <section class="preflight" aria-label="Draft preflight">
-            <h3>Validation and impact preflight</h3>
+            <div class="preflight-heading">
+              <h3>Validation and impact preflight</h3>
+              <button class="primary" type="button"
+                ?disabled=${!this.draftPreflight?.validationAvailable || this.draftValidating}
+                @click=${() => this.validateDraft()}>
+                ${this.draftValidating ? 'Validating…' : 'Validate with Smithproxy'}
+              </button>
+            </div>
             ${this.draftPreflight ? html`
               <div class="preflight-grid">
                 <div class="preflight-check">
                   <small>GUI schema validation</small><strong class="runtime-state success">Valid</strong>
                 </div>
                 <div class="preflight-check">
-                  <small>Smithproxy validation</small><strong class="runtime-state warning">Unavailable</strong>
+                  <small>Smithproxy validation</small>
+                  ${this.draftValidation ? html`
+                    <strong class="runtime-state success">Validated</strong>
+                  ` : this.draftPreflight.validationAvailable ? html`
+                    <strong class="runtime-state warning">Ready</strong>
+                  ` : html`
+                    <strong class="runtime-state warning">Unavailable</strong>
+                  `}
                 </div>
                 <div class="preflight-check">
                   <small>Atomic commit</small><strong class="runtime-state warning">Blocked</strong>
@@ -2510,6 +2565,15 @@ export class SmithproxyApp extends LitElement {
               <ul class="preflight-blockers">
                 ${this.draftPreflight.blockers.map(blocker => html`<li>${blocker.message}</li>`)}
               </ul>
+              ${this.draftValidation ? html`
+                <p class="metric-note" role="status">
+                  Smithproxy validated ${this.draftValidation.validatedOperations} operations ·
+                  ${this.draftValidation.warningCount} warnings ·
+                  restart ${this.draftValidation.restart.replaceAll('-', ' ')}.
+                </p>
+              ` : this.draftValidationError ? html`
+                <div class="metrics-message" role="alert">${this.draftValidationError}</div>
+              ` : nothing}
               <p class="metric-note">
                 ${this.draftPreflight.sensitiveChangeCount} of ${this.draftPreflight.changeCount}
                 changes contain write-only values. Their values remain redacted.

@@ -852,6 +852,7 @@ def main() -> int:
             assert empty_preflight["sensitive_change_count"] == 0
             assert empty_preflight["schema_validation"] == "valid"
             assert empty_preflight["upstream_validation"] == "unavailable"
+            assert empty_preflight["validation_available"] is False
             assert empty_preflight["commit_available"] is False
             assert empty_preflight["sections"] == []
             assert [item["code"] for item in empty_preflight["blockers"]] == [

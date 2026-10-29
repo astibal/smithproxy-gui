@@ -687,6 +687,7 @@ private:
             });
         }
         nlohmann::json blockers = nlohmann::json::array();
+        const bool validation_available = transaction.state == "ready" && draft.base_revision.has_value();
         if (draft.changes.empty()) {
             blockers.push_back({
                 {"code", "draft.empty"},
@@ -710,8 +711,8 @@ private:
             });
         } else if (transaction.state == "ready") {
             blockers.push_back({
-                {"code", "gui.transaction_transport_unavailable"},
-                {"message", "The GUI core transaction transport is not enabled yet."},
+                {"code", "gui.commit_transport_unavailable"},
+                {"message", "The GUI core atomic commit transport is not enabled yet."},
             });
         } else {
             blockers.push_back({
@@ -728,6 +729,7 @@ private:
             {"sensitive_change_count", sensitive_changes},
             {"schema_validation", "valid"},
             {"upstream_validation", "unavailable"},
+            {"validation_available", validation_available},
             {"commit_available", false},
             {"sections", std::move(section_list)},
             {"blockers", std::move(blockers)},

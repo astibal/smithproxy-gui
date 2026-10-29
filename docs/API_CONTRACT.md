@@ -37,7 +37,8 @@ The internal transaction adapter already builds the reviewed `validate` and
 to the canonical base revision and a core-generated idempotency UUID and rejects
 the encoded body when the negotiated or hard 1 MiB limit is exceeded. Upstream
 responses are reduced to fixed outcome states and aggregate metadata before any
-future browser-facing endpoint can consume them.
+browser-facing endpoint can consume them. The explicit validation endpoint uses
+this adapter; commit has no browser-facing endpoint yet.
 
 A validation success must echo the canonical base revision as both `revision`
 and `previous_revision`. A commit success must echo that base as
@@ -161,12 +162,18 @@ of its otherwise valid members.
 current workspace draft. It includes the matching draft version, total and
 write-only change counts, and bounded per-section counts. It reports the local
 schema result independently from upstream Smithproxy validation and commit
-availability. Until upstream validation and the commit transport are enabled,
-the response says `upstream_validation: "unavailable"` and
-`commit_available: false`. Exactly one stable availability blocker distinguishes
-an unadvertised endpoint, incompatible contract, unreviewed schema set, missing
-canonical base revision, or not-yet-enabled GUI transport. The endpoint never
-returns draft values, normalized diffs, paths, or secret material.
+availability. `validation_available` becomes true only when the reviewed
+transaction capability and canonical base revision are both present;
+`commit_available` remains false until the separate atomic commit path is
+complete. Exactly one stable availability blocker distinguishes an unadvertised
+endpoint, incompatible contract, unreviewed schema set, missing canonical base
+revision, or the not-yet-enabled commit transport. The endpoint never returns
+draft values, normalized diffs, paths, or secret material.
+
+The review UI sends only the current draft version when the operator explicitly
+requests Smithproxy validation. It accepts success only when the response
+matches the current version, canonical base revision, and complete operation
+count. Any draft mutation invalidates the displayed result.
 
 Write-only paths accept explicit `unchanged`, `replace`, or `clear` intent in
 the frontend. The core retains a replacement only inside the server draft.

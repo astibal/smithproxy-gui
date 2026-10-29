@@ -75,7 +75,8 @@ describe('DraftClient', () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: 7,
       base_revision: null, change_count: 3, sensitive_change_count: 1,
-      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      schema_validation: 'valid', upstream_validation: 'unavailable',
+      validation_available: false, commit_available: false,
       sections: [
         {name: 'policy', change_count: 2, sensitive_change_count: 0},
         {name: 'settings', change_count: 1, sensitive_change_count: 1},
@@ -88,7 +89,8 @@ describe('DraftClient', () => {
     const client = new DraftClient('/api/v1', fetcher);
     await expect(client.preflight()).resolves.toMatchObject({
       draftVersion: 7, changeCount: 3, sensitiveChangeCount: 1,
-      schemaValidation: 'valid', upstreamValidation: 'unavailable', commitAvailable: false,
+      schemaValidation: 'valid', upstreamValidation: 'unavailable',
+      validationAvailable: false, commitAvailable: false,
       sections: [{name: 'policy', changeCount: 2}, {name: 'settings', changeCount: 1}],
     });
     expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/preflight', expect.objectContaining({
@@ -128,12 +130,13 @@ describe('DraftClient', () => {
     ['upstream.transaction_unavailable', null],
     ['upstream.transaction_incompatible', null],
     ['draft.base_revision_unavailable', null],
-    ['gui.transaction_transport_unavailable', `sha256:${'1'.repeat(64)}`],
+    ['gui.commit_transport_unavailable', `sha256:${'1'.repeat(64)}`],
   ])('accepts the stable %s preflight blocker', async (code, baseRevision) => {
     const client = new DraftClient('/api/v1', async () => response({
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: 1,
       base_revision: baseRevision, change_count: 1, sensitive_change_count: 0,
-      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      schema_validation: 'valid', upstream_validation: 'unavailable',
+      validation_available: code === 'gui.commit_transport_unavailable', commit_available: false,
       sections: [{name: 'policy', change_count: 1, sensitive_change_count: 0}],
       blockers: [{code, message: 'Fixed core diagnostic.'}],
     }));
@@ -142,13 +145,14 @@ describe('DraftClient', () => {
     });
   });
 
-  it('rejects a transport blocker without a canonical base revision', async () => {
+  it('rejects an available validation transport without a canonical base revision', async () => {
     const client = new DraftClient('/api/v1', async () => response({
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: 1,
       base_revision: null, change_count: 1, sensitive_change_count: 0,
-      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      schema_validation: 'valid', upstream_validation: 'unavailable',
+      validation_available: true, commit_available: false,
       sections: [{name: 'policy', change_count: 1, sensitive_change_count: 0}],
-      blockers: [{code: 'gui.transaction_transport_unavailable', message: 'Blocked.'}],
+      blockers: [{code: 'gui.commit_transport_unavailable', message: 'Blocked.'}],
     }));
     await expect(client.preflight()).rejects.toThrow('Inconsistent draft preflight');
   });
@@ -157,7 +161,8 @@ describe('DraftClient', () => {
     const client = new DraftClient('/api/v1', async () => response({
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: 1,
       base_revision: null, change_count: 2, sensitive_change_count: 0,
-      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      schema_validation: 'valid', upstream_validation: 'unavailable',
+      validation_available: false, commit_available: false,
       sections: [{name: 'policy', change_count: 1, sensitive_change_count: 0}],
       blockers: [{code: 'upstream.transaction_unavailable', message: 'Blocked.'}],
     }));

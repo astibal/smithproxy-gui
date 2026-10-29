@@ -112,8 +112,9 @@ writes remain disabled while the atomic upstream commit contract is being
 completed. The server-side draft boundary accepts only pinned typed schema paths
 and rejects an entire batch when any path, type, enum, range, or collection is
 invalid. The draft review includes a value-free server preflight with affected
-sections and write-only counts, while clearly keeping upstream validation and
-atomic commit blocked until Smithproxy advertises the reviewed transaction API.
+sections and write-only counts. It exposes an explicit Smithproxy validation
+action only after the reviewed transaction capability and canonical draft
+revision are available, while keeping atomic commit independently blocked.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls.
@@ -129,8 +130,10 @@ is enabled yet. Draft preflight reports the exact fixed blocker category instead
 of collapsing missing advertisement, schema review, compatibility, revision,
 and transport readiness into one generic error.
 The CSRF-protected validation endpoint is present as well and sends no draft
-values from the browser; it remains fail-closed until the reviewed capability
-and canonical revision are available.
+values from the browser. The review UI binds a successful result to the exact
+draft version, base revision, and operation count and invalidates it on the next
+draft change. Validation remains fail-closed until the reviewed capability and
+canonical revision are available.
 
 Control-plane health and listener monitoring use the production C++ backend. A
 bounded five-minute runtime history visualizes active sessions and aggregate

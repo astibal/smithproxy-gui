@@ -82,8 +82,11 @@ rebasovat ani přepsat.
 Aktuální foundation draft poskytuje serverový preflight bez hodnot: ověřenou
 verzi draftu, počet změn, počet write-only změn a počty podle config sekcí.
 Lokální schema validace je zobrazena odděleně od Smithproxy doménové validace.
-Dokud upstream neposkytne schválené transaction API, preflight explicitně blokuje
-commit; GUI nesmí lokální výsledek prezentovat jako validaci runtime aplikace.
+Po zpřístupnění schváleného transaction API a kanonické base revision nabídne
+GUI explicitní Smithproxy validaci. Výsledek platí jen pro přesnou verzi draftu,
+revizi a počet operací. Commit zůstává samostatně blokovaný, dokud není hotová
+celá atomická cesta; GUI nesmí lokální výsledek prezentovat jako validaci runtime
+aplikace.
 
 ## Validace
 

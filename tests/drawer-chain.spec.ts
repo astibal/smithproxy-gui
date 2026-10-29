@@ -57,6 +57,10 @@ type MockState = {
   configFetches?: number;
   conflictNextDraftWrite?: boolean;
   draftMutationVersions?: number[];
+  validationReady?: boolean;
+  validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
+  validationOperationDelta?: number;
+  initialDraftChanges?: Array<{path: string; value: unknown}>;
   valueOrigins?: Array<{
     path: string;
     persistent_value: boolean | number | string;
@@ -68,13 +72,19 @@ type MockState = {
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
   const now = (): number => state.now ?? Date.now();
-  let draft = {id: 'workspace-draft', base_revision: null, version: 0, changes: [] as Array<{path: string; value: unknown}>};
+  const baseRevision = state.validationReady ? `sha256:${'1'.repeat(64)}` : null;
+  let draft = {
+    id: 'workspace-draft',
+    base_revision: baseRevision,
+    version: state.initialDraftChanges?.length ? 1 : 0,
+    changes: state.initialDraftChanges ?? [] as Array<{path: string; value: unknown}>,
+  };
   await page.route('**/api/v1/capabilities', async route => route.fulfill({json: {
     service: 'smithproxy-gui',
     api_version: 'v1',
     base_path: '/',
     smithproxy_state: state.smithproxy,
-    config_transaction_state: configRead ? 'review-required' : 'unavailable',
+    config_transaction_state: state.validationReady ? 'ready' : configRead ? 'review-required' : 'unavailable',
     features: {
       config_read: configRead, config_write: false, drafts: configRead,
       draft_preflight: configRead, jobs: false, events: true, alerts: true, audit: true,
@@ -211,15 +221,37 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     await route.fulfill({json: {
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: draft.version,
       base_revision: draft.base_revision, change_count: draft.changes.length, sensitive_change_count: 0,
-      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      schema_validation: 'valid', upstream_validation: 'unavailable',
+      validation_available: Boolean(state.validationReady), commit_available: false,
       sections: [...sectionCounts].sort(([left], [right]) => left.localeCompare(right))
         .map(([name, count]) => ({name, change_count: count, sensitive_change_count: 0})),
       blockers: [
         ...(draft.changes.length === 0 ? [{code: 'draft.empty', message: 'The workspace draft has no pending changes.'}] : []),
-        ...(configRead
+        ...(state.validationReady
+          ? [{code: 'gui.commit_transport_unavailable', message: 'The GUI core atomic commit transport is not enabled yet.'}]
+          : configRead
           ? [{code: 'upstream.schema_review_required', message: 'Smithproxy transaction schemas are not reviewed by this GUI core.'}]
           : [{code: 'upstream.transaction_unavailable', message: 'Smithproxy does not advertise the reviewed atomic transaction API.'}]),
       ],
+    }});
+  });
+  await page.route('**/api/v1/config/draft/validate', async route => {
+    const request = route.request();
+    const body = request.postDataJSON() as {expected_version: number};
+    state.validationRequests?.push({
+      expectedVersion: body.expected_version,
+      keys: Object.keys(body).sort(),
+      csrf: await request.headerValue('X-Smithproxy-GUI-CSRF'),
+    });
+    if (body.expected_version !== draft.version || !state.validationReady || !draft.base_revision) {
+      await route.fulfill({status: 409, json: {error: 'validation unavailable'}});
+      return;
+    }
+    await route.fulfill({json: {
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: draft.version,
+      base_revision: draft.base_revision, upstream_validation: 'valid',
+      validated_operations: draft.changes.length + (state.validationOperationDelta ?? 0),
+      warning_count: 1, restart: 'required',
     }});
   });
   await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
@@ -708,6 +740,53 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await page.getByRole('button', {name: 'Confirm discard 102 changes'}).click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
+});
+
+test('validates the immutable workspace draft through the Smithproxy transaction', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    validationRequests: [],
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+
+  const preflight = page.getByRole('region', {name: 'Draft preflight'});
+  await expect(preflight.getByText('Ready', {exact: true})).toBeVisible();
+  await preflight.getByRole('button', {name: 'Validate with Smithproxy'}).click();
+  await expect(preflight.getByText('Validated', {exact: true})).toBeVisible();
+  await expect(preflight.getByRole('status')).toContainText(
+    'Smithproxy validated 1 operations · 1 warnings · restart required.',
+  );
+  await expect(preflight).toContainText('The GUI core atomic commit transport is not enabled yet.');
+  expect(state.validationRequests).toEqual([{
+    expectedVersion: 1,
+    keys: ['expected_version'],
+    csrf: '1',
+  }]);
+  await expectNoWcagViolations(page);
+});
+
+test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    validationOperationDelta: 1,
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+
+  const preflight = page.getByRole('region', {name: 'Draft preflight'});
+  await preflight.getByRole('button', {name: 'Validate with Smithproxy'}).click();
+  await expect(preflight.getByRole('alert')).toHaveText(
+    'Smithproxy validation does not match the current workspace draft.',
+  );
+  await expect(preflight.getByText('Validated', {exact: true})).toHaveCount(0);
+  await expect(preflight.getByText('Ready', {exact: true})).toBeVisible();
 });
 
 test('refreshes live configuration only outside an active edit transaction', async ({page}) => {

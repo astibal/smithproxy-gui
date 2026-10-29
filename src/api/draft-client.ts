@@ -33,7 +33,7 @@ export interface DraftPreflightBlocker {
     | 'upstream.transaction_incompatible'
     | 'upstream.schema_review_required'
     | 'draft.base_revision_unavailable'
-    | 'gui.transaction_transport_unavailable';
+    | 'gui.commit_transport_unavailable';
   message: string;
 }
 
@@ -46,6 +46,7 @@ export interface DraftPreflight {
   sensitiveChangeCount: number;
   schemaValidation: 'valid';
   upstreamValidation: 'unavailable';
+  validationAvailable: boolean;
   commitAvailable: false;
   sections: ReadonlyArray<DraftPreflightSection>;
   blockers: ReadonlyArray<DraftPreflightBlocker>;
@@ -162,7 +163,7 @@ const availabilityBlockerCodes = new Set<DraftPreflightBlocker['code']>([
   'upstream.transaction_incompatible',
   'upstream.schema_review_required',
   'draft.base_revision_unavailable',
-  'gui.transaction_transport_unavailable',
+  'gui.commit_transport_unavailable',
 ]);
 
 function parsePreflight(value: unknown): DraftPreflight {
@@ -174,6 +175,7 @@ function parsePreflight(value: unknown): DraftPreflight {
       Number(value.sensitive_change_count) < 0 ||
       Number(value.sensitive_change_count) > Number(value.change_count) ||
       value.schema_validation !== 'valid' || value.upstream_validation !== 'unavailable' ||
+      typeof value.validation_available !== 'boolean' ||
       value.commit_available !== false || !Array.isArray(value.sections) || value.sections.length > 18 ||
       !Array.isArray(value.blockers) || value.blockers.length === 0 || value.blockers.length > 2) {
     throw new Error('Invalid draft preflight response.');
@@ -215,14 +217,16 @@ function parsePreflight(value: unknown): DraftPreflight {
       (Number(value.change_count) === 0) !== blockerCodes.has('draft.empty') ||
       availabilityBlockers.length !== 1 ||
       (blockerCodes.has('draft.base_revision_unavailable') && value.base_revision !== null) ||
-      (blockerCodes.has('gui.transaction_transport_unavailable') && value.base_revision === null)) {
+      (value.validation_available !== blockerCodes.has('gui.commit_transport_unavailable')) ||
+      (value.validation_available && value.base_revision === null)) {
     throw new Error('Inconsistent draft preflight response.');
   }
   return {
     source: 'gui-core', draftId: 'workspace-draft', draftVersion: Number(value.draft_version),
     baseRevision: value.base_revision, changeCount: Number(value.change_count),
     sensitiveChangeCount: Number(value.sensitive_change_count), schemaValidation: 'valid',
-    upstreamValidation: 'unavailable', commitAvailable: false, sections, blockers,
+    upstreamValidation: 'unavailable', validationAvailable: value.validation_available,
+    commitAvailable: false, sections, blockers,
   };
 }
 

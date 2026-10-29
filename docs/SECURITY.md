@@ -84,8 +84,8 @@ and rechecks operation and encoded-request limits. Idempotency keys are UUIDv4
 values generated inside the GUI core directly from the operating-system CSPRNG.
 The response parser discards upstream messages and warning contents; it retains
 only a fixed terminal state, validated revisions, operation and warning counts,
-and a bounded restart enum. This adapter is not yet connected to a browser
-commit endpoint.
+and a bounded restart enum. The adapter is connected only to the explicit
+browser validation endpoint; no browser commit endpoint exists yet.
 
 The explicit draft-validation endpoint accepts only an optimistic draft version;
 it obtains every value from the server-side snapshot after gateway and CSRF
@@ -93,6 +93,11 @@ checks. It uses a 10-second upstream deadline, a 1 MiB response ceiling, strict
 TLS verification, disabled redirects and proxies, and value-free audit metadata.
 It remains fail-closed until capability review and canonical revision binding are
 both available.
+
+The browser treats validation as a versioned, ephemeral result rather than an
+authorization token. It requires an exact match on draft version, base revision,
+and operation count, and discards the result whenever the draft version changes.
+Commit must repeat authoritative validation inside the upstream transaction.
 
 Draft preflight serializes only bounded aggregate counts and stable blocker
 codes. It does not return paths, values, diffs, or validation payloads and uses
