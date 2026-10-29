@@ -670,6 +670,7 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
 ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     ConfigSnapshot snapshot;
     snapshot.state = "unavailable";
+    snapshot.observation_started_at = std::chrono::steady_clock::now();
     snapshot.checked_at = std::chrono::system_clock::now();
 
     struct RevisionResponse {
@@ -867,6 +868,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
             std::make_move_iterator(profiles.profiles->end()));
     }
     parsed.snapshot->checked_at = snapshot.checked_at;
+    parsed.snapshot->observation_started_at = snapshot.observation_started_at;
     parsed.snapshot->revision = initial_revision.revision;
     return std::move(*parsed.snapshot);
 }

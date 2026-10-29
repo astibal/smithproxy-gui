@@ -134,7 +134,9 @@ idempotency UUID. A move-only commit coordinator retains that key across an
 uncertain retry, rejects local mutations while an attempt is in flight, and
 releases its gate through RAII. Draft finalization atomically verifies the draft
 version, clears changes, and advances the canonical base revision only after a
-bound success response. Draft preflight reports the exact fixed blocker category
+bound success response. A local monotonic observation barrier prevents a
+configuration fetch started before that success from later restoring the stale
+base revision. Draft preflight reports the exact fixed blocker category
 instead of collapsing missing advertisement, schema review, compatibility,
 revision, and transport readiness into one generic error.
 The CSRF-protected validation endpoint is present as well and sends no draft

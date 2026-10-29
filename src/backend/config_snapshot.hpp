@@ -340,6 +340,8 @@ struct ConfigSnapshot {
     std::string state{"unconfigured"};
     std::string detail{"Smithproxy configuration is not configured"};
     std::optional<std::string> revision;
+    // Local monotonic time prevents a late pre-commit fetch from rebinding the draft.
+    std::chrono::steady_clock::time_point observation_started_at{};
     std::chrono::system_clock::time_point checked_at{};
     std::chrono::system_clock::time_point last_success_at{};
     std::vector<ConfigPolicy> policies;

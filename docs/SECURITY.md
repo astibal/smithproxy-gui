@@ -97,6 +97,10 @@ commit mode does not generate a fresh key implicitly. The coordinator retains
 and reuses one validated UUID for every uncertain retry of the same draft
 version and base revision. Its move-only RAII lease keeps at most one attempt in
 flight and rejects local draft mutations until the attempt terminates.
+Successful finalization also establishes a GUI-local monotonic revision barrier.
+Configuration observations started before that point cannot overwrite the
+committed base revision even if their requests complete later. The barrier is
+process-local metadata and cannot be supplied by either untrusted peer.
 
 The explicit draft-validation endpoint accepts only an optimistic draft version;
 it obtains every value from the server-side snapshot after gateway and CSRF

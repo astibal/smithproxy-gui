@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -39,7 +40,9 @@ public:
     explicit DraftStore(std::string id, std::optional<std::string> base_revision = std::nullopt);
 
     [[nodiscard]] DraftSnapshot snapshot() const;
-    bool bind_base_revision(const std::string& revision);
+    bool bind_base_revision(
+        const std::string& revision,
+        std::chrono::steady_clock::time_point observation_started_at);
     DraftMutationResult upsert(std::uint64_t expected_version, DraftChange change);
     DraftMutationResult upsert_many(std::uint64_t expected_version, std::vector<DraftChange> changes);
     DraftMutationResult remove(std::uint64_t expected_version, const std::string& path);
@@ -53,6 +56,7 @@ private:
 
     mutable std::mutex mutex_;
     DraftSnapshot draft_;
+    std::chrono::steady_clock::time_point minimum_revision_observation_{};
 };
 
 } // namespace smithproxy::gui

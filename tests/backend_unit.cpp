@@ -81,18 +81,25 @@ int main() {
 
     const std::string canonical_revision_a = "sha256:" + std::string(64U, 'a');
     const std::string canonical_revision_b = "sha256:" + std::string(64U, 'b');
+    const auto revision_observation = std::chrono::steady_clock::now();
     DraftStore revision_draft{"revision-draft"};
-    assert(!revision_draft.bind_base_revision("revision-7"));
-    assert(revision_draft.bind_base_revision(canonical_revision_a));
+    assert(!revision_draft.bind_base_revision("revision-7", revision_observation));
+    assert(!revision_draft.bind_base_revision(
+        canonical_revision_a, std::chrono::steady_clock::time_point{}));
+    assert(revision_draft.bind_base_revision(canonical_revision_a, revision_observation));
     assert(revision_draft.snapshot().version == 1U);
-    assert(revision_draft.bind_base_revision(canonical_revision_a));
+    assert(!revision_draft.bind_base_revision(canonical_revision_a, revision_observation));
+    assert(revision_draft.bind_base_revision(
+        canonical_revision_a, revision_observation + std::chrono::milliseconds(1)));
     assert(revision_draft.snapshot().version == 1U);
     assert(revision_draft.upsert(1U, {"policy.[0].action", std::string("accept")}) ==
            DraftMutationResult::Applied);
-    assert(!revision_draft.bind_base_revision(canonical_revision_b));
+    assert(!revision_draft.bind_base_revision(
+        canonical_revision_b, revision_observation + std::chrono::milliseconds(2)));
     assert(revision_draft.snapshot().base_revision == canonical_revision_a);
     assert(revision_draft.clear(2U) == DraftMutationResult::Applied);
-    assert(revision_draft.bind_base_revision(canonical_revision_b));
+    assert(revision_draft.bind_base_revision(
+        canonical_revision_b, revision_observation + std::chrono::milliseconds(3)));
     assert(revision_draft.snapshot().version == 4U);
     assert(revision_draft.snapshot().base_revision == canonical_revision_b);
 
@@ -111,6 +118,8 @@ int main() {
     assert(commit_draft.snapshot().version == 2U);
     assert(commit_draft.snapshot().base_revision == canonical_revision_b);
     assert(commit_draft.snapshot().changes.empty());
+    assert(!commit_draft.bind_base_revision(canonical_revision_a, revision_observation));
+    assert(commit_draft.snapshot().base_revision == canonical_revision_b);
     assert(commit_draft.complete_commit(2U, canonical_revision_a) ==
            DraftMutationResult::Missing);
 

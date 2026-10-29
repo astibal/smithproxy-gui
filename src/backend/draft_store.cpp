@@ -43,10 +43,21 @@ DraftSnapshot DraftStore::snapshot() const {
     return draft_;
 }
 
-bool DraftStore::bind_base_revision(const std::string& revision) {
+bool DraftStore::bind_base_revision(
+    const std::string& revision,
+    const std::chrono::steady_clock::time_point observation_started_at) {
     if (!is_canonical_revision(revision)) return false;
     std::scoped_lock lock(mutex_);
-    if (!draft_.changes.empty()) return draft_.base_revision == revision;
+    if (observation_started_at == std::chrono::steady_clock::time_point{} ||
+        observation_started_at <= minimum_revision_observation_) {
+        return false;
+    }
+    if (!draft_.changes.empty()) {
+        if (draft_.base_revision != revision) return false;
+        minimum_revision_observation_ = observation_started_at;
+        return true;
+    }
+    minimum_revision_observation_ = observation_started_at;
     if (draft_.base_revision == revision) return true;
     draft_.base_revision = revision;
     ++draft_.version;
@@ -133,6 +144,7 @@ DraftMutationResult DraftStore::complete_commit(
     }
     draft_.changes.clear();
     draft_.base_revision = committed_revision;
+    minimum_revision_observation_ = std::chrono::steady_clock::now();
     ++draft_.version;
     return DraftMutationResult::Applied;
 }

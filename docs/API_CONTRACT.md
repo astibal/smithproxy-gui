@@ -44,6 +44,11 @@ The move-only coordinator lease rejects a second commit and local draft
 mutations while an attempt is in flight and releases the gate on every exit;
 commit still has no browser-facing endpoint.
 
+Every configuration snapshot carries a GUI-local monotonic observation start.
+After a successful commit, the draft rejects revision binding from observations
+started before the commit completed. This ordering value is never accepted from
+the browser or Smithproxy and is not serialized outside the GUI core.
+
 A validation success must echo the canonical base revision as both `revision`
 and `previous_revision`. A commit success must echo that base as
 `previous_revision` and return a different canonical `revision`; the GUI core

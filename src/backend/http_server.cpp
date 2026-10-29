@@ -637,7 +637,8 @@ private:
     void bind_empty_draft_revision() {
         const auto snapshot = monitor_.status().config_snapshot;
         if (snapshot.state == "ready" && snapshot.revision) {
-            draft_.bind_base_revision(*snapshot.revision);
+            draft_.bind_base_revision(
+                *snapshot.revision, snapshot.observation_started_at);
         }
     }
 

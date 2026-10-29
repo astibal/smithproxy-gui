@@ -278,7 +278,10 @@ transport never silently substitutes a new key. Its move-only RAII lease rejects
 parallel commits and local mutations while an attempt is in flight. Draft
 finalization checks the version again and advances its base revision under one
 lock, so a concurrent local edit is never erased by a delayed response. The
-commit button remains unavailable until Smithproxy advertises this capability.
+GUI additionally records a local monotonic barrier at successful finalization;
+a configuration read started before that barrier cannot restore the old base
+revision when it completes. The commit button remains unavailable until
+Smithproxy advertises this capability.
 Structural controls additionally remain unavailable until the capability reports
 the matching operation version, stable entity IDs, and the relevant collection
 schema. A generic `config_write` boolean is not sufficient evidence.
