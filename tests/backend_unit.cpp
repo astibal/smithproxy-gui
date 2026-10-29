@@ -208,6 +208,7 @@ int main() {
     different_config.state = "unavailable";
     monotonic_jobs.reconcile(different_config);
     assert(monotonic_jobs.find(*monotonic_job_id)->progress_percent == 75U);
+    assert(monotonic_jobs.find(*monotonic_job_id)->phase == "waiting-for-revision");
 
     JobStore expiring_jobs{std::chrono::milliseconds{0}};
     const auto expired_job_id = expiring_jobs.create_config_refresh(canonical_revision_a);

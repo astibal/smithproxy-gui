@@ -1458,6 +1458,24 @@ test('surfaces active backend work in the status bar and System view', async ({p
   await expect(jobsCard).not.toContainText('sha256:');
 });
 
+test('rejects unreviewed backend job text before rendering it', async ({page}) => {
+  const now = Date.now();
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    now,
+    backendJobs: [{
+      id: 'job-01234567-89ab-4def-8123-456789abcdef', type: 'config-refresh',
+      state: 'failed', phase: 'timed-out', progress_percent: 100,
+      cancelable: false, created_at_unix_ms: now - 30_000, updated_at_unix_ms: now,
+      deadline_at_unix_ms: now, owner: null, result: 'private upstream failure',
+    }],
+  });
+  await page.goto('/');
+
+  await expect(page.locator('.statusbar')).toContainText('Jobs: Unavailable', {timeout: 10_000});
+  await expect(page.getByText('private upstream failure')).toHaveCount(0);
+});
+
 test('filters structured job failures without exposing job identifiers', async ({page}) => {
   const now = Date.now();
   await mockSystemApi(page, {

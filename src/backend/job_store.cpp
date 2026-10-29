@@ -91,7 +91,10 @@ void JobStore::reconcile(const ConfigSnapshot& config) {
             phase = "waiting-for-control-plane";
             progress = 25U;
         }
-        if (state == "running") progress = std::max(progress, job.record.progress_percent);
+        if (state == "running" && progress < job.record.progress_percent) {
+            progress = job.record.progress_percent;
+            phase = job.record.phase;
+        }
         if (job.record.state == state && job.record.phase == phase &&
             job.record.progress_percent == progress && job.record.result == result) {
             continue;

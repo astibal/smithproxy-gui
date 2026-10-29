@@ -170,7 +170,10 @@ changes with redacted terminal job results, support `Last-Event-ID` replay, and
 issue an explicit snapshot reset when a client falls behind. Every event carries
 a reviewed category and code whose severity and fixed message are validated as
 one tuple in the browser; the Logs view can filter control-plane and backend-job
-events without parsing text. The periodic
+events without parsing text. Configuration-refresh jobs follow the same rule:
+the browser accepts only the current fixed lifecycle tuples and rejects unknown
+phases, arbitrary result text, contradictory progress, and future-dated list
+entries. The periodic
 snapshot remains a recovery path for older deployments and interrupted streams. The root
 web component supports integration into Saslik Tools:
 

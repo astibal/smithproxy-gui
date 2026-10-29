@@ -369,11 +369,18 @@ Terminální stav vstupuje také do jednotného operational event ringu. Posledn
 neúspěšný `config-refresh` aktivuje strukturovaný warning; warning se uzavře až
 novějším úspěšným refreshem, nikoli pouhým zahájením retry.
 
+Aktuální `config-refresh` používá uzavřený stavový automat. Browser přijme pouze
+reviewované kombinace state/phase/progress/result a pevné výsledky
+`Configuration snapshot synchronized` nebo
+`Configuration refresh deadline exceeded`. Volný upstream text, neznámou fázi,
+budoucí timestamp a předčasně inzerovaný lifecycle stav odmítne celý snapshot.
+Průběh ani fáze běžící úlohy při dočasném zhoršení monitoru neregresují.
+
 `POST /api/v1/jobs/{job-id}/cancel` zůstává rezervovanou budoucí capability.
 `config-refresh` bezpečné zrušení nepodporuje a proto vždy vrací
 `cancelable: false`; neimplementovaný endpoint není inzerován v API surface.
 
-Stavy minimálně:
+Budoucí obecný job kontrakt počítá minimálně se stavy:
 
 ```text
 queued → running → succeeded

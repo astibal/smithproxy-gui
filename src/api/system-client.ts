@@ -680,20 +680,28 @@ function parseJobRecord(value: unknown): JobRecord {
   if (!isObject(value) || typeof value.id !== 'string' ||
       !/^job-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value.id) ||
       value.type !== 'config-refresh' ||
-      !['queued', 'running', 'succeeded', 'failed', 'cancelling', 'cancelled'].includes(String(value.state)) ||
+      !['running', 'succeeded', 'failed'].includes(String(value.state)) ||
       typeof value.phase !== 'string' || value.phase.length < 1 || value.phase.length > 64 ||
       !/^[a-z][a-z0-9-]*$/u.test(value.phase) || !isNonNegativeInteger(value.progress_percent) ||
       value.progress_percent > 100 || typeof value.cancelable !== 'boolean' ||
       !isNonNegativeInteger(value.created_at_unix_ms) || !isNonNegativeInteger(value.updated_at_unix_ms) ||
       !isNonNegativeInteger(value.deadline_at_unix_ms) || value.updated_at_unix_ms < value.created_at_unix_ms ||
       value.deadline_at_unix_ms < value.created_at_unix_ms || value.owner !== null ||
-      !(value.result === null || (typeof value.result === 'string' && value.result.length >= 1 &&
-        value.result.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(value.result)))) {
+      !(value.result === null || typeof value.result === 'string')) {
     throw new Error('Invalid backend job entry.');
   }
-  const terminal = ['succeeded', 'failed', 'cancelled'].includes(String(value.state));
-  if (terminal !== (value.progress_percent === 100) || terminal !== (value.result !== null) ||
-      (value.state === 'running' && value.cancelable)) {
+  const validLifecycle =
+    (value.state === 'running' && value.phase === 'refreshing' &&
+      (value.progress_percent === 10 || value.progress_percent === 50) && value.result === null) ||
+    (value.state === 'running' && value.phase === 'waiting-for-control-plane' &&
+      value.progress_percent === 25 && value.result === null) ||
+    (value.state === 'running' && value.phase === 'waiting-for-revision' &&
+      value.progress_percent === 75 && value.result === null) ||
+    (value.state === 'succeeded' && value.phase === 'synchronized' &&
+      value.progress_percent === 100 && value.result === 'Configuration snapshot synchronized') ||
+    (value.state === 'failed' && value.phase === 'timed-out' &&
+      value.progress_percent === 100 && value.result === 'Configuration refresh deadline exceeded');
+  if (!validLifecycle || value.cancelable) {
     throw new Error('Inconsistent backend job state.');
   }
   return {
@@ -723,7 +731,7 @@ function parseJobs(value: unknown): JobSnapshot {
   const jobs = value.jobs.map(item => {
     const job = parseJobRecord(item);
     if (ids.has(job.id) || job.createdAtUnixMs < previousCreatedAt ||
-        job.createdAtUnixMs > generatedAtUnixMs) {
+        job.createdAtUnixMs > generatedAtUnixMs || job.updatedAtUnixMs > generatedAtUnixMs) {
       throw new Error('Inconsistent backend job history.');
     }
     ids.add(job.id);

@@ -423,6 +423,42 @@ describe('SystemClient', () => {
     await expect(client.jobs()).rejects.toThrow('Inconsistent backend job state');
   });
 
+  it('rejects unreviewed backend job phases and result text', async () => {
+    const job = {
+      id: 'job-01234567-89ab-4def-8123-456789abcdef', type: 'config-refresh',
+      state: 'failed', phase: 'timed-out', progress_percent: 100,
+      cancelable: false, created_at_unix_ms: 100, updated_at_unix_ms: 150,
+      deadline_at_unix_ms: 140, owner: null,
+      result: 'Configuration refresh deadline exceeded',
+    };
+    const response = (override: Record<string, unknown>) => jsonResponse({
+      source: 'gui-core', generated_at_unix_ms: 200, owner_available: false,
+      jobs: [{...job, ...override}],
+    });
+    const phaseClient = new SystemClient('/api/v1', '/', async () => response({phase: 'retrying'}));
+    const resultClient = new SystemClient('/api/v1', '/', async () => response({result: 'private failure'}));
+    const futureClient = new SystemClient('/api/v1', '/', async () => response({
+      state: 'cancelled', phase: 'cancelled', result: 'Cancelled',
+    }));
+
+    await expect(phaseClient.jobs()).rejects.toThrow('Inconsistent backend job state');
+    await expect(resultClient.jobs()).rejects.toThrow('Inconsistent backend job state');
+    await expect(futureClient.jobs()).rejects.toThrow('Invalid backend job entry');
+  });
+
+  it('rejects backend job updates from the future of their snapshot', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', generated_at_unix_ms: 149, owner_available: false,
+      jobs: [{
+        id: 'job-01234567-89ab-4def-8123-456789abcdef', type: 'config-refresh',
+        state: 'running', phase: 'waiting-for-revision', progress_percent: 75,
+        cancelable: false, created_at_unix_ms: 100, updated_at_unix_ms: 150,
+        deadline_at_unix_ms: 300, owner: null, result: null,
+      }],
+    }));
+    await expect(client.jobs()).rejects.toThrow('Inconsistent backend job history');
+  });
+
   it('subscribes to workspace-scoped operational event streams', () => {
     const listeners = new Map<string, (event: MessageEvent<string>) => void>();
     const close = vi.fn();
