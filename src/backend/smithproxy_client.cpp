@@ -177,6 +177,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 latest.consecutive_failures = 0U;
                 auto metrics = std::move(*sampled_metrics);
                 metrics.last_success_at = previous_metrics.last_success_at;
+                metrics.history = std::move(previous_metrics.history);
                 if (metrics.state == "ready") {
                     metrics.last_success_at = metrics.checked_at;
                 } else {
@@ -187,6 +188,9 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                     metrics.bytes_down = previous_metrics.bytes_down;
                     metrics.listeners = std::move(previous_metrics.listeners);
                 }
+                metrics.history.push_back({metrics.state, metrics.checked_at, metrics.sessions_active,
+                                           metrics.bytes_up, metrics.bytes_down});
+                if (metrics.history.size() > 60U) metrics.history.erase(metrics.history.begin());
                 latest.runtime_metrics = std::move(metrics);
 
                 auto tls_cache = std::move(*sampled_tls_cache);
@@ -255,6 +259,11 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 previous_metrics.state = "unavailable";
                 previous_metrics.detail = "Smithproxy runtime metrics are unavailable while the API probe is not ready";
                 previous_metrics.checked_at = latest.checked_at;
+                previous_metrics.history.push_back({
+                    previous_metrics.state, previous_metrics.checked_at,
+                    previous_metrics.sessions_active, previous_metrics.bytes_up, previous_metrics.bytes_down,
+                });
+                if (previous_metrics.history.size() > 60U) previous_metrics.history.erase(previous_metrics.history.begin());
                 latest.runtime_metrics = std::move(previous_metrics);
                 previous_tls_cache.state = "unavailable";
                 previous_tls_cache.detail = "Smithproxy TLS cache is unavailable while the API probe is not ready";

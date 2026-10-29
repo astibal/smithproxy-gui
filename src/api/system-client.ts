@@ -75,6 +75,15 @@ export interface RuntimeMetricsSnapshot {
   lastSuccessAtUnixMs: number | null;
   totals: Omit<ListenerMetrics, 'name'>;
   listeners: ReadonlyArray<ListenerMetrics>;
+  history: ReadonlyArray<RuntimeMetricsSample>;
+}
+
+export interface RuntimeMetricsSample {
+  state: RuntimeMetricsState;
+  checkedAtUnixMs: number;
+  sessionsActive: number;
+  bytesUp: number;
+  bytesDown: number;
 }
 
 export interface SessionActivityBucket {
@@ -290,7 +299,7 @@ function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
   if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) || !Array.isArray(value.listeners) ||
-      value.listeners.length > 32) {
+      value.listeners.length > 32 || !Array.isArray(value.history) || value.history.length > 60) {
     throw new Error('Invalid runtime metrics response.');
   }
   const names = new Set<string>();
@@ -302,6 +311,23 @@ function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
     names.add(item.name);
     return {name: item.name, ...parseMetricsCounters(item)};
   });
+  let previousTimestamp = -1;
+  const history = value.history.map((item): RuntimeMetricsSample => {
+    if (!isObject(item) || !isRuntimeMetricsState(item.state) ||
+        !isNonNegativeInteger(item.checked_at_unix_ms) ||
+        item.checked_at_unix_ms <= previousTimestamp || !isNonNegativeInteger(item.sessions_active) ||
+        !isNonNegativeInteger(item.bytes_up) || !isNonNegativeInteger(item.bytes_down)) {
+      throw new Error('Invalid runtime metrics history.');
+    }
+    previousTimestamp = item.checked_at_unix_ms;
+    return {
+      state: item.state,
+      checkedAtUnixMs: item.checked_at_unix_ms,
+      sessionsActive: item.sessions_active,
+      bytesUp: item.bytes_up,
+      bytesDown: item.bytes_down,
+    };
+  });
   return {
     state: value.state,
     detail: value.detail,
@@ -309,6 +335,7 @@ function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
     lastSuccessAtUnixMs: value.last_success_at_unix_ms,
     totals: parseMetricsCounters(value.totals),
     listeners,
+    history,
   };
 }
 

@@ -88,12 +88,13 @@ client-supplied header. Missing or invalid handoff authentication returns HTTP
 The C++ backend can now retrieve a bounded, validated runtime configuration
 snapshot through the authenticated Smithproxy API. Frontend activation remains
 capability-gated until the trusted gateway handoff is configured. Configuration
-writes remain disabled while the versioned draft and commit contract is being
-completed. Profile and routing inventories expose names, categories, and policy
-usage only; profile values remain server-side until their typed redaction rules
-and editors are implemented. Control-plane health and listener monitoring use
-the production C++ backend. Live session monitoring is aggregated by transport
-inside the GUI core;
+writes remain disabled while the atomic upstream commit contract is being
+completed. Policies, objects, system settings, profiles, certificate authorities,
+and protocol signatures have typed draft editors. Sensitive paths, credentials,
+filters, and matcher expressions use write-only controls. Control-plane health
+and listener monitoring use the production C++ backend. A bounded five-minute
+runtime history visualizes active sessions and aggregate throughput. Live session
+monitoring is aggregated by transport inside the GUI core;
 endpoint addresses, ports, session identifiers, and policy names are never sent
 to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The
@@ -110,8 +111,8 @@ integration into Saslik Tools:
 </smithproxy-gui>
 ```
 
-Configuration drafts, authentication adapters, and the remaining monitoring
-surfaces are delivered as independently tested vertical slices.
+Configuration coverage and the remaining monitoring surfaces are delivered as
+independently tested vertical slices.
 
 The proposed atomic Smithproxy write contract is documented in
 [`docs/SMITHPROXY_WRITE_API_PROPOSAL.md`](docs/SMITHPROXY_WRITE_API_PROPOSAL.md).

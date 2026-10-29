@@ -18,6 +18,14 @@ struct ListenerMetrics {
     std::uint64_t bytes_down{};
 };
 
+struct RuntimeMetricsSample {
+    std::string state;
+    std::chrono::system_clock::time_point checked_at{};
+    std::uint64_t sessions_active{};
+    std::uint64_t bytes_up{};
+    std::uint64_t bytes_down{};
+};
+
 struct RuntimeMetrics {
     std::string state{"unconfigured"};
     std::string detail{"Smithproxy runtime metrics are not configured"};
@@ -29,6 +37,7 @@ struct RuntimeMetrics {
     std::uint64_t bytes_up{};
     std::uint64_t bytes_down{};
     std::vector<ListenerMetrics> listeners;
+    std::vector<RuntimeMetricsSample> history;
 };
 
 struct ListenerMetricsParseResult {

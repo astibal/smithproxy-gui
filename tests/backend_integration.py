@@ -320,6 +320,7 @@ def main() -> int:
         assert status == 200
         assert metrics["state"] == "unconfigured"
         assert metrics["listeners"] == []
+        assert metrics["history"] == []
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/sessions/activity")
         activity = json.loads(body)
         assert status == 200
@@ -411,6 +412,8 @@ def main() -> int:
                 "bytes_up": 1536, "bytes_down": 2304,
             }
             assert [item["name"] for item in metrics["listeners"]] == ["tcp", "tls"]
+            assert metrics["history"][-1]["state"] == "ready"
+            assert metrics["history"][-1]["sessions_active"] == 4
             metrics_last_success = metrics["last_success_at_unix_ms"]
             status, _, body = request(configured_port, "/api/v1/tls/cache/summary")
             tls_cache = json.loads(body)
@@ -708,6 +711,8 @@ def main() -> int:
             assert stale_metrics["state"] == "unavailable"
             assert stale_metrics["last_success_at_unix_ms"] == metrics_last_success
             assert stale_metrics["totals"]["sessions_active"] == 4
+            assert stale_metrics["history"][-1]["state"] == "unavailable"
+            assert len(stale_metrics["history"]) <= 60
             status, _, body = request(configured_port, "/api/v1/tls/cache/summary")
             stale_tls_cache = json.loads(body)
             assert status == 200

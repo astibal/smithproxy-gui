@@ -811,6 +811,17 @@ private:
 
     Response metrics_summary() const {
         const auto metrics = monitor_.status().runtime_metrics;
+        std::string history = "[";
+        for (std::size_t index = 0; index < metrics.history.size(); ++index) {
+            if (index != 0U) history += ',';
+            const auto& sample = metrics.history[index];
+            history += "{\"state\":" + json_string(sample.state) +
+                       ",\"checked_at_unix_ms\":" + timestamp_json(sample.checked_at) +
+                       ",\"sessions_active\":" + std::to_string(sample.sessions_active) +
+                       ",\"bytes_up\":" + std::to_string(sample.bytes_up) +
+                       ",\"bytes_down\":" + std::to_string(sample.bytes_down) + "}";
+        }
+        history += ']';
         std::string listeners = "[";
         for (std::size_t index = 0; index < metrics.listeners.size(); ++index) {
             if (index != 0U) listeners += ',';
@@ -833,7 +844,7 @@ private:
                     ",\"sessions_active\":" + std::to_string(metrics.sessions_active) +
                     ",\"bytes_up\":" + std::to_string(metrics.bytes_up) +
                     ",\"bytes_down\":" + std::to_string(metrics.bytes_down) +
-                    "},\"listeners\":" + listeners + "}"};
+                    "},\"listeners\":" + listeners + ",\"history\":" + history + "}"};
     }
 
     Response tls_cache_summary() const {

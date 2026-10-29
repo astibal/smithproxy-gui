@@ -45,6 +45,14 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     checked_at_unix_ms: Date.now(),
     last_success_at_unix_ms: Date.now() - 5000,
     totals: {workers: 3, sessions_total: 19, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
+    history: [
+      {state: 'ready', checked_at_unix_ms: Date.now() - 10000, sessions_active: 2,
+       bytes_up: 1000, bytes_down: 1400},
+      {state: 'ready', checked_at_unix_ms: Date.now() - 5000, sessions_active: 3,
+       bytes_up: 1200, bytes_down: 1800},
+      {state: state.smithproxy === 'ready' ? 'ready' : 'unavailable', checked_at_unix_ms: Date.now(),
+       sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
+    ],
     listeners: [
       {name: 'tcp', workers: 2, sessions_total: 12, sessions_active: 3, bytes_up: 1024, bytes_down: 2048},
       {name: 'tls', workers: 1, sessions_total: 7, sessions_active: 1, bytes_up: 512, bytes_down: 256},
@@ -573,6 +581,10 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(activity.getByRole('heading', {name: 'Live session activity'})).toBeVisible();
   await expect(activity.getByText(/no endpoints, session ids, or policy names/i)).toBeVisible();
   await expect(activity.getByText('3.84 kB/s')).toBeVisible();
+  const runtimeHistory = page.getByRole('region', {name: 'Runtime history'});
+  await expect(runtimeHistory.getByRole('img', {name: /Active session trend. Peak 4 sessions/i})).toBeVisible();
+  await expect(runtimeHistory.getByRole('img', {name: /Aggregate throughput trend/i})).toBeVisible();
+  await expect(runtimeHistory.getByText(/no endpoints, session identifiers, or policy names/i)).toBeVisible();
 
   state.smithproxy = 'unreachable';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));

@@ -167,6 +167,11 @@ addresses, ports, session identifiers, and matched policy names do not cross the
 browser boundary. A future detailed session surface requires an explicit privacy
 and authorization design.
 
+`/metrics/summary` includes at most 60 ordered runtime samples. Each sample
+contains only state, timestamp, active-session count, and cumulative upstream
+and downstream byte counters. The frontend derives short-window throughput from
+counter deltas and treats counter resets or unavailable samples as chart gaps.
+
 `/tls/cache/summary` exposes cache occupancy, capacity, and sample freshness. It
 must not expose certificate subjects, SAN values, domain names, or cache keys.
 

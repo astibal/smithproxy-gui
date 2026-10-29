@@ -77,6 +77,10 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
       totals: {workers: 3, sessions_total: 19, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
+      history: [
+        {state: 'ready', checked_at_unix_ms: 90, sessions_active: 2, bytes_up: 1000, bytes_down: 1500},
+        {state: 'ready', checked_at_unix_ms: 100, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
+      ],
       listeners: [
         {name: 'tcp', workers: 2, sessions_total: 12, sessions_active: 3, bytes_up: 1024, bytes_down: 2048},
         {name: 'tls', workers: 1, sessions_total: 7, sessions_active: 1, bytes_up: 512, bytes_down: 256},
@@ -87,6 +91,7 @@ describe('SystemClient', () => {
     await expect(client.metricsSummary()).resolves.toMatchObject({
       state: 'ready', totals: {sessionsActive: 4, bytesDown: 2304},
       listeners: [{name: 'tcp', sessionsTotal: 12}, {name: 'tls', sessionsTotal: 7}],
+      history: [{sessionsActive: 2}, {sessionsActive: 4}],
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/metrics/summary', expect.anything(),
@@ -97,6 +102,7 @@ describe('SystemClient', () => {
     const response = {
       state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
       totals: {workers: 2, sessions_total: 2, sessions_active: 1, bytes_up: 0, bytes_down: 0},
+      history: [],
       listeners: [
         {name: 'tcp', workers: 1, sessions_total: 1, sessions_active: 1, bytes_up: 0, bytes_down: 0},
         {name: 'tcp', workers: 1, sessions_total: 1, sessions_active: 0, bytes_up: 0, bytes_down: 0},
@@ -107,6 +113,19 @@ describe('SystemClient', () => {
     response.listeners[1]!.name = 'tls';
     response.listeners[1]!.bytes_up = Number.MAX_SAFE_INTEGER + 1;
     await expect(client.metricsSummary()).rejects.toThrow('Invalid Smithproxy runtime counters');
+  });
+
+  it('rejects unordered runtime history', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
+      totals: {workers: 1, sessions_total: 1, sessions_active: 1, bytes_up: 1, bytes_down: 1},
+      listeners: [],
+      history: [
+        {state: 'ready', checked_at_unix_ms: 100, sessions_active: 1, bytes_up: 1, bytes_down: 1},
+        {state: 'ready', checked_at_unix_ms: 99, sessions_active: 1, bytes_up: 1, bytes_down: 1},
+      ],
+    }));
+    await expect(client.metricsSummary()).rejects.toThrow('Invalid runtime metrics history');
   });
 
   it('loads and validates privacy-preserving session activity', async () => {

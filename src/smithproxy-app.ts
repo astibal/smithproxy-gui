@@ -40,6 +40,7 @@ const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
   lastSuccessAtUnixMs: null,
   totals: {workers: 0, sessionsTotal: 0, sessionsActive: 0, bytesUp: 0, bytesDown: 0},
   listeners: [],
+  history: [],
 };
 
 const initialSessionActivity: SessionActivitySnapshot = {
@@ -215,6 +216,16 @@ export class SmithproxyApp extends LitElement {
     .probe.ready { background: var(--app-success); }
     .probe.starting, .probe.unreachable, .probe.unconfigured { background: var(--app-warning); }
     .probe.unauthorized, .probe.error { background: var(--app-danger); }
+    .trend-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 14px; margin-top: 16px; }
+    .trend-chart { min-width: 0; padding: 13px; border: 1px solid var(--app-border); background: var(--app-canvas); }
+    .trend-chart header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .trend-chart header strong { font-size: 13px; }
+    .trend-chart header span { color: var(--app-muted); font-size: 12px; }
+    .trend-bars { display: grid; grid-template-columns: repeat(60, minmax(2px, 1fr)); align-items: end; gap: 2px; height: 100px; margin-top: 12px; }
+    .trend-bar { height: max(2px, var(--bar-height)); background: var(--app-brand); opacity: .88; }
+    .trend-bar.traffic { background: var(--app-success); }
+    .trend-bar.unavailable { height: 100%; background: repeating-linear-gradient(135deg, var(--app-danger) 0 2px, transparent 2px 5px); opacity: .65; }
+    .trend-bar.empty { height: 2px; background: var(--app-border); opacity: .55; }
     .scope-note { padding: 12px 14px; border-left: 3px solid var(--app-brand); background: var(--app-raised); color: var(--app-muted); }
     .runtime-summary { display: grid; gap: 12px; }
     .runtime-heading { display: flex; gap: 16px; align-items: end; justify-content: space-between; }
@@ -351,6 +362,7 @@ export class SmithproxyApp extends LitElement {
       .row { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
       .row > :nth-child(3), .row > :nth-child(5) { display: none; }
       .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+      .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
       .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .35fr) minmax(220px, 1fr); max-width: 920px; }
     }
@@ -2118,6 +2130,68 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderRuntimeHistory() {
+    const history = this.runtimeMetrics.history;
+    const emptySlots = Math.max(0, 60 - history.length);
+    const sessionPeak = Math.max(0, ...history.map(sample => sample.sessionsActive));
+    const rates = history.map((sample, index) => {
+      const previous = index > 0 ? history[index - 1] : undefined;
+      if (!previous || sample.state !== 'ready' || previous.state !== 'ready') return null;
+      const elapsed = (sample.checkedAtUnixMs - previous.checkedAtUnixMs) / 1000;
+      const currentBytes = sample.bytesUp + sample.bytesDown;
+      const previousBytes = previous.bytesUp + previous.bytesDown;
+      return elapsed > 0 && currentBytes >= previousBytes ? (currentBytes - previousBytes) / elapsed : null;
+    });
+    const validRates = rates.flatMap(rate => rate === null ? [] : [rate]);
+    const throughputPeak = Math.max(0, ...validRates);
+    const latestRate = validRates.at(-1) ?? 0;
+    const readySamples = history.filter(sample => sample.state === 'ready').length;
+    const sessionHeight = (value: number) => sessionPeak === 0 ? 0 : value / sessionPeak * 100;
+    const trafficHeight = (value: number) => throughputPeak === 0 ? 0 : value / throughputPeak * 100;
+    return html`
+      <section class="monitor-panel" aria-label="Runtime history">
+        <div class="runtime-heading">
+          <div><h3>Five-minute runtime history</h3><p>Sixty bounded aggregate samples at the control-plane interval</p></div>
+          <span class="runtime-state ${readySamples === history.length && history.length > 0 ? 'success' : 'warning'}">
+            ${readySamples}/${history.length} ready
+          </span>
+        </div>
+        <div class="trend-grid">
+          <div class="trend-chart" role="img"
+            aria-label="Active session trend. Peak ${sessionPeak} sessions across ${history.length} samples.">
+            <header><strong>Active sessions</strong><span>peak ${sessionPeak.toLocaleString()}</span></header>
+            <div class="trend-bars">
+              ${Array.from({length: emptySlots}, () => html`<span class="trend-bar empty" aria-hidden="true"></span>`)}
+              ${history.map(sample => html`<span
+                class="trend-bar ${sample.state === 'ready' ? '' : 'unavailable'}"
+                style=${`--bar-height:${sessionHeight(sample.sessionsActive).toFixed(2)}%`}
+                title="${sample.sessionsActive} sessions · ${displayState(sample.state)} · ${this.timeLabel(sample.checkedAtUnixMs)}"
+                aria-hidden="true"></span>`)}
+            </div>
+          </div>
+          <div class="trend-chart" role="img"
+            aria-label="Aggregate throughput trend. Peak ${this.formatBytes(throughputPeak)} per second.">
+            <header><strong>Processed throughput</strong><span>${this.formatBytes(latestRate)}/s now</span></header>
+            <div class="trend-bars">
+              ${Array.from({length: emptySlots}, () => html`<span class="trend-bar empty" aria-hidden="true"></span>`)}
+              ${history.map((sample, index) => {
+                const rate = rates[index] ?? null;
+                const unavailable = sample.state !== 'ready';
+                return html`<span class="trend-bar traffic ${unavailable ? 'unavailable' : rate === null ? 'empty' : ''}"
+                  style=${`--bar-height:${trafficHeight(rate ?? 0).toFixed(2)}%`}
+                  title="${rate === null ? 'No rate' : `${this.formatBytes(rate)}/s`} · ${displayState(sample.state)} · ${this.timeLabel(sample.checkedAtUnixMs)}"
+                  aria-hidden="true"></span>`;
+              })}
+            </div>
+          </div>
+        </div>
+        <div class="privacy-note">
+          History contains aggregate counters only; it carries no endpoints, session identifiers, or policy names.
+        </div>
+      </section>
+    `;
+  }
+
   private renderTlsCache() {
     const cache = this.tlsCache;
     const utilization = cache.capacity === 0 ? 0 : Math.min(100, cache.size / cache.capacity * 100);
@@ -2218,6 +2292,7 @@ export class SmithproxyApp extends LitElement {
         ${this.renderOperationalHealth()}
         ${this.renderProbeAnalysis()}
         ${this.renderRuntimeSummary()}
+        ${this.renderRuntimeHistory()}
         ${this.renderTlsCache()}
         ${this.renderSessionActivity()}
         ${metrics.state === 'ready' ? nothing : html`
