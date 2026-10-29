@@ -216,7 +216,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         .map(([name, count]) => ({name, change_count: count, sensitive_change_count: 0})),
       blockers: [
         ...(draft.changes.length === 0 ? [{code: 'draft.empty', message: 'The workspace draft has no pending changes.'}] : []),
-        {code: 'upstream.transaction_unavailable', message: 'Smithproxy does not advertise the reviewed atomic transaction API.'},
+        ...(configRead
+          ? [{code: 'upstream.schema_review_required', message: 'Smithproxy transaction schemas are not reviewed by this GUI core.'}]
+          : [{code: 'upstream.transaction_unavailable', message: 'Smithproxy does not advertise the reviewed atomic transaction API.'}]),
       ],
     }});
   });
@@ -672,7 +674,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(preflight.getByText('Atomic commit')).toBeVisible();
   await expect(preflight.getByText('Blocked', {exact: true})).toBeVisible();
   await expect(preflight.getByLabel('Affected configuration sections')).toContainText('policy');
-  await expect(preflight).toContainText('Smithproxy does not advertise the reviewed atomic transaction API.');
+  await expect(preflight).toContainText('Smithproxy transaction schemas are not reviewed by this GUI core.');
   await expectNoWcagViolations(page);
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('address_objects.[0].value');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.0/24');

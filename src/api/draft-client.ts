@@ -27,7 +27,13 @@ export interface DraftPreflightSection {
 }
 
 export interface DraftPreflightBlocker {
-  code: 'draft.empty' | 'upstream.transaction_unavailable';
+  code:
+    | 'draft.empty'
+    | 'upstream.transaction_unavailable'
+    | 'upstream.transaction_incompatible'
+    | 'upstream.schema_review_required'
+    | 'draft.base_revision_unavailable'
+    | 'gui.transaction_transport_unavailable';
   message: string;
 }
 
@@ -61,6 +67,10 @@ function normalizedPath(value: string): string {
     throw new Error('API base cannot contain relative path segments.');
   }
   return segments.length === 0 ? '/' : `/${segments.join('/')}`;
+}
+
+function isCanonicalRevision(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && /^sha256:[0-9a-f]{64}$/u.test(value));
 }
 
 function scalar(value: unknown): DraftScalar {
@@ -112,7 +122,7 @@ async function boundedJson(response: Response): Promise<unknown> {
 
 function parseDraft(value: unknown): DraftSnapshot {
   if (!isObject(value) || value.id !== 'workspace-draft' ||
-      !(value.base_revision === null || typeof value.base_revision === 'string') ||
+      !isCanonicalRevision(value.base_revision) ||
       typeof value.version !== 'number' || !Number.isSafeInteger(value.version) || value.version < 0 ||
       !Array.isArray(value.changes) || value.changes.length > 4096) {
     throw new Error('Invalid draft response.');
@@ -136,10 +146,18 @@ const draftSectionNames = new Set<DraftSectionName>([
   'detection_signatures', 'script_profiles', 'auth_profiles',
 ]);
 
+const availabilityBlockerCodes = new Set<DraftPreflightBlocker['code']>([
+  'upstream.transaction_unavailable',
+  'upstream.transaction_incompatible',
+  'upstream.schema_review_required',
+  'draft.base_revision_unavailable',
+  'gui.transaction_transport_unavailable',
+]);
+
 function parsePreflight(value: unknown): DraftPreflight {
   if (!isObject(value) || value.source !== 'gui-core' || value.draft_id !== 'workspace-draft' ||
       !Number.isSafeInteger(value.draft_version) || Number(value.draft_version) < 0 ||
-      !(value.base_revision === null || typeof value.base_revision === 'string') ||
+      !isCanonicalRevision(value.base_revision) ||
       !Number.isSafeInteger(value.change_count) || Number(value.change_count) < 0 ||
       Number(value.change_count) > 4096 || !Number.isSafeInteger(value.sensitive_change_count) ||
       Number(value.sensitive_change_count) < 0 ||
@@ -171,17 +189,22 @@ function parsePreflight(value: unknown): DraftPreflight {
   });
   const blockerCodes = new Set<string>();
   const blockers = value.blockers.map((item): DraftPreflightBlocker => {
-    if (!isObject(item) || (item.code !== 'draft.empty' && item.code !== 'upstream.transaction_unavailable') ||
+    if (!isObject(item) || typeof item.code !== 'string' || (item.code !== 'draft.empty' &&
+        !availabilityBlockerCodes.has(item.code as DraftPreflightBlocker['code'])) ||
         blockerCodes.has(item.code) || typeof item.message !== 'string' || item.message.length === 0 ||
         item.message.length > 256 || /[\u0000-\u001f\u007f]/u.test(item.message)) {
       throw new Error('Invalid draft preflight blocker.');
     }
     blockerCodes.add(item.code);
-    return {code: item.code, message: item.message};
+    return {code: item.code as DraftPreflightBlocker['code'], message: item.message};
   });
+  const availabilityBlockers = [...blockerCodes].filter(code =>
+    availabilityBlockerCodes.has(code as DraftPreflightBlocker['code']));
   if (sectionChanges !== Number(value.change_count) || sectionSensitive !== Number(value.sensitive_change_count) ||
       (Number(value.change_count) === 0) !== blockerCodes.has('draft.empty') ||
-      !blockerCodes.has('upstream.transaction_unavailable')) {
+      availabilityBlockers.length !== 1 ||
+      (blockerCodes.has('draft.base_revision_unavailable') && value.base_revision !== null) ||
+      (blockerCodes.has('gui.transaction_transport_unavailable') && value.base_revision === null)) {
     throw new Error('Inconsistent draft preflight response.');
   }
   return {

@@ -151,10 +151,12 @@ of its otherwise valid members.
 current workspace draft. It includes the matching draft version, total and
 write-only change counts, and bounded per-section counts. It reports the local
 schema result independently from upstream Smithproxy validation and commit
-availability. Until the reviewed transaction API is advertised, the response
-must say `upstream_validation: "unavailable"`, `commit_available: false`, and
-include the stable `upstream.transaction_unavailable` blocker. The endpoint
-never returns draft values, normalized diffs, paths, or secret material.
+availability. Until upstream validation and the commit transport are enabled,
+the response says `upstream_validation: "unavailable"` and
+`commit_available: false`. Exactly one stable availability blocker distinguishes
+an unadvertised endpoint, incompatible contract, unreviewed schema set, missing
+canonical base revision, or not-yet-enabled GUI transport. The endpoint never
+returns draft values, normalized diffs, paths, or secret material.
 
 Write-only paths accept explicit `unchanged`, `replace`, or `clear` intent in
 the frontend. The core retains a replacement only inside the server draft.

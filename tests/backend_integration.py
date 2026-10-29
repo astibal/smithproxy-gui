@@ -855,7 +855,7 @@ def main() -> int:
             assert empty_preflight["commit_available"] is False
             assert empty_preflight["sections"] == []
             assert [item["code"] for item in empty_preflight["blockers"]] == [
-                "draft.empty", "upstream.transaction_unavailable"]
+                "draft.empty", "upstream.schema_review_required"]
             draft_change = json.dumps({
                 "expected_version": 0, "path": "policy.[0].action", "value": "accept"})
             csrf_failure = request(
@@ -1026,7 +1026,7 @@ def main() -> int:
             assert {section["name"] for section in preflight["sections"]} >= {
                 "policy", "settings", "captures", "tls_profiles", "content_profiles"}
             assert [item["code"] for item in preflight["blockers"]] == [
-                "upstream.transaction_unavailable"]
+                "upstream.schema_review_required"]
             assert b"new-private-password" not in preflight_body
             assert b"secret content replacement" not in preflight_body
             status, _, audit_body = request(

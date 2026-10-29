@@ -615,6 +615,7 @@ private:
 
     Response draft_preflight() const {
         const auto draft = draft_.snapshot();
+        const auto transaction = monitor_.status().transaction_capabilities;
         std::map<std::string, std::pair<std::size_t, std::size_t>> sections;
         std::size_t sensitive_changes{};
         for (const auto& change : draft.changes) {
@@ -642,10 +643,32 @@ private:
                 {"message", "The workspace draft has no pending changes."},
             });
         }
-        blockers.push_back({
-            {"code", "upstream.transaction_unavailable"},
-            {"message", "Smithproxy does not advertise the reviewed atomic transaction API."},
-        });
+        if (transaction.state == "review-required") {
+            blockers.push_back({
+                {"code", "upstream.schema_review_required"},
+                {"message", "Smithproxy transaction schemas are not reviewed by this GUI core."},
+            });
+        } else if (transaction.state == "incompatible") {
+            blockers.push_back({
+                {"code", "upstream.transaction_incompatible"},
+                {"message", "Smithproxy advertised an incompatible atomic transaction contract."},
+            });
+        } else if (transaction.state == "ready" && !draft.base_revision) {
+            blockers.push_back({
+                {"code", "draft.base_revision_unavailable"},
+                {"message", "The workspace draft has no canonical Smithproxy base revision."},
+            });
+        } else if (transaction.state == "ready") {
+            blockers.push_back({
+                {"code", "gui.transaction_transport_unavailable"},
+                {"message", "The GUI core transaction transport is not enabled yet."},
+            });
+        } else {
+            blockers.push_back({
+                {"code", "upstream.transaction_unavailable"},
+                {"message", "Smithproxy does not advertise the reviewed atomic transaction API."},
+            });
+        }
         return {200, "application/json; charset=utf-8", nlohmann::json{
             {"source", "gui-core"},
             {"draft_id", draft.id},

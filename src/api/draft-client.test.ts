@@ -81,8 +81,8 @@ describe('DraftClient', () => {
         {name: 'settings', change_count: 1, sensitive_change_count: 1},
       ],
       blockers: [{
-        code: 'upstream.transaction_unavailable',
-        message: 'Smithproxy does not advertise the reviewed atomic transaction API.',
+        code: 'upstream.schema_review_required',
+        message: 'Smithproxy transaction schemas are not reviewed by this GUI core.',
       }],
     }));
     const client = new DraftClient('/api/v1', fetcher);
@@ -94,6 +94,35 @@ describe('DraftClient', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/preflight', expect.objectContaining({
       method: 'GET', credentials: 'same-origin', redirect: 'error',
     }));
+  });
+
+  it.each([
+    ['upstream.transaction_unavailable', null],
+    ['upstream.transaction_incompatible', null],
+    ['draft.base_revision_unavailable', null],
+    ['gui.transaction_transport_unavailable', `sha256:${'1'.repeat(64)}`],
+  ])('accepts the stable %s preflight blocker', async (code, baseRevision) => {
+    const client = new DraftClient('/api/v1', async () => response({
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: 1,
+      base_revision: baseRevision, change_count: 1, sensitive_change_count: 0,
+      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      sections: [{name: 'policy', change_count: 1, sensitive_change_count: 0}],
+      blockers: [{code, message: 'Fixed core diagnostic.'}],
+    }));
+    await expect(client.preflight()).resolves.toMatchObject({
+      blockers: [{code}], baseRevision,
+    });
+  });
+
+  it('rejects a transport blocker without a canonical base revision', async () => {
+    const client = new DraftClient('/api/v1', async () => response({
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: 1,
+      base_revision: null, change_count: 1, sensitive_change_count: 0,
+      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      sections: [{name: 'policy', change_count: 1, sensitive_change_count: 0}],
+      blockers: [{code: 'gui.transaction_transport_unavailable', message: 'Blocked.'}],
+    }));
+    await expect(client.preflight()).rejects.toThrow('Inconsistent draft preflight');
   });
 
   it('rejects inconsistent or unbounded preflight summaries', async () => {
@@ -120,6 +149,11 @@ describe('DraftClient', () => {
       changes: [{path: '../unsafe', value: true}],
     }));
     await expect(malformed.load()).rejects.toThrow('Invalid draft change');
+
+    const malformedRevision = new DraftClient('/api/v1', async () => response({
+      id: 'workspace-draft', base_revision: 'revision-7', version: 0, changes: [],
+    }));
+    await expect(malformedRevision.load()).rejects.toThrow('Invalid draft response');
 
     const conflict = new DraftClient('/api/v1', async () => response({}, 409));
     await expect(conflict.upsert(2, 'settings.enabled', true)).rejects.toThrow('HTTP 409');

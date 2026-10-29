@@ -125,7 +125,9 @@ fixed `review-required` diagnostic state but cannot enable configuration writes.
 The internal transaction envelope and response parser are also implemented:
 they bind typed changes to a canonical revision and OS-generated idempotency
 UUID while discarding free-form upstream response text. No browser commit path
-is enabled yet.
+is enabled yet. Draft preflight reports the exact fixed blocker category instead
+of collapsing missing advertisement, schema review, compatibility, revision,
+and transport readiness into one generic error.
 
 Control-plane health and listener monitoring use the production C++ backend. A
 bounded five-minute runtime history visualizes active sessions and aggregate

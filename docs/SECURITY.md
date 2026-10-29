@@ -92,6 +92,10 @@ codes. It does not return paths, values, diffs, or validation payloads and uses
 the same trusted-gateway authentication as the draft itself. The browser rejects
 a preflight whose version/counts do not match its current draft, preventing a
 stale summary from authorizing or visually blessing a newer change set.
+The preflight returns exactly one fixed transaction-availability blocker, so an
+operator can distinguish missing advertisement, incompatible versions,
+unreviewed schema hashes, missing revision binding, and a disabled transport
+without receiving any free-form upstream detail.
 
 ## Oprávnění
 
