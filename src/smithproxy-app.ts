@@ -3525,6 +3525,103 @@ export class SmithproxyApp extends LitElement {
     return values.some(value => String(value).toLocaleLowerCase().includes(query));
   }
 
+  private profileSearchValues(item: ProfileObject, prefix: string | undefined): ReadonlyArray<string | number> {
+    const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
+      prefix ? this.presentedValue(`${prefix}${field}`, fallback) : fallback;
+    const strings = (field: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
+      prefix ? this.presentedListValue(`${prefix}${field}`, fallback, 'string') : fallback;
+    const numbers = (field: string, fallback: ReadonlyArray<number>): ReadonlyArray<number> =>
+      prefix ? this.presentedListValue(`${prefix}${field}`, fallback, 'number') : fallback;
+    const booleanNumber = (field: string, fallback: boolean): number => Number(scalar(field, fallback));
+    const values: Array<string | number> = [scalar('name', item.name), item.type];
+
+    if (item.routing) values.push(
+      ...strings('dnat_address', item.routing.destinationAddresses),
+      ...strings('dnat_port', item.routing.destinationPorts),
+      scalar('dnat_lb_method', item.routing.loadBalancingMethod),
+      scalar('rewrite_sni', item.routing.rewriteSni),
+      scalar('rewrite_sni_to', item.routing.rewriteSniTo),
+      'destination address', 'destination port', 'load balancing', 'rewrite sni',
+    );
+    if (item.tls) values.push(
+      booleanNumber('inspect', item.tls.inspect), booleanNumber('use_pfs', item.tls.usePfs),
+      booleanNumber('left_use_pfs', item.tls.leftUsePfs),
+      booleanNumber('right_use_pfs', item.tls.rightUsePfs),
+      booleanNumber('left_disable_reuse', item.tls.leftDisableReuse),
+      booleanNumber('right_disable_reuse', item.tls.rightDisableReuse),
+      booleanNumber('allow_untrusted_issuers', item.tls.allowUntrustedIssuers),
+      booleanNumber('allow_invalid_certs', item.tls.allowInvalidCertificates),
+      booleanNumber('allow_self_signed', item.tls.allowSelfSigned),
+      booleanNumber('ct_enable', item.tls.certificateTransparency),
+      scalar('ocsp_mode', item.tls.ocspMode),
+      booleanNumber('ocsp_stapling', item.tls.ocspStapling),
+      scalar('ocsp_stapling_mode', item.tls.ocspStaplingMode),
+      booleanNumber('alpn_block', item.tls.blockAlpn),
+      booleanNumber('sni_based_cert', item.tls.sniBasedCertificates),
+      booleanNumber('ip_based_cert', item.tls.ipBasedCertificates),
+      booleanNumber('only_custom_certs', item.tls.onlyCustomCertificates),
+      booleanNumber('no_fallback_bypass', item.tls.noFallbackBypass),
+      booleanNumber('sni_filter_use_dns_cache', item.tls.sniFilterUsesDnsCache),
+      booleanNumber('sni_filter_use_dns_domain_tree', item.tls.sniFilterUsesDnsDomainTree),
+      ...numbers('redirect_warning_ports', item.tls.redirectWarningPorts),
+      booleanNumber('failed_certcheck_replacement', item.tls.failedCertificateReplacement),
+      booleanNumber('failed_certcheck_override', item.tls.failedCertificateOverride),
+      scalar('failed_certcheck_override_timeout', item.tls.failedCertificateOverrideTimeout),
+      scalar('failed_certcheck_override_timeout_type', item.tls.failedCertificateOverrideTimeoutType),
+      booleanNumber('sslkeylog', item.tls.sslKeyLog),
+      scalar('client_hello_timeout', item.tls.clientHelloTimeoutMs),
+      scalar('handshake_timeout', item.tls.handshakeTimeoutMs),
+      item.tls.sniBypassEntries, scalar('client_cert_action', item.tls.clientCertificateAction),
+      scalar('alerts', item.tls.alerts),
+      'inspection', 'pfs', 'certificate', 'ocsp', 'alpn', 'sni', 'alerts',
+    );
+    if (item.detection) values.push(
+      scalar('mode', item.detection.mode),
+      booleanNumber('engines_enabled', item.detection.enginesEnabled),
+      booleanNumber('kb_enabled', item.detection.knowledgeBaseEnabled),
+      'detection phase', 'l7 engines', 'knowledge base',
+    );
+    if (item.content) values.push(
+      booleanNumber('write_payload', item.content.writePayload),
+      scalar('write_format', item.content.writeFormat),
+      booleanNumber('webhook_enable', item.content.webhookEnabled),
+      booleanNumber('webhook_lock_traffic', item.content.webhookLocksTraffic),
+      booleanNumber('ja4_tls_ch', item.content.ja4TlsClientHello),
+      booleanNumber('ja4_tls_ch_ignore_sni', item.content.ja4TlsClientHelloIgnoresSni),
+      booleanNumber('ja4_tls_sh', item.content.ja4TlsServerHello),
+      booleanNumber('ja4_http', item.content.ja4Http),
+      item.content.ruleCount, Number(item.content.sessionFilterConfigured),
+      'payload capture', 'capture format', 'webhook', 'ja4', 'content rules',
+    );
+    if (item.ssh) values.push(
+      scalar('hostkey_policy', item.ssh.hostKeyPolicy), Number(item.ssh.hostKeyConfigured),
+      booleanNumber('shell', item.ssh.shell), booleanNumber('exec', item.ssh.exec),
+      booleanNumber('subsystem', item.ssh.subsystem), booleanNumber('pty', item.ssh.pty),
+      booleanNumber('environment', item.ssh.environment),
+      booleanNumber('local_forward', item.ssh.localForward),
+      booleanNumber('remote_forward', item.ssh.remoteForward),
+      booleanNumber('x11', item.ssh.x11), booleanNumber('agent', item.ssh.agent),
+      'host key', 'forwarding',
+    );
+    if (item.dns) values.push(
+      booleanNumber('match_request_id', item.dns.matchRequestId),
+      booleanNumber('randomize_id', item.dns.randomizeId),
+      booleanNumber('cached_responses', item.dns.cachedResponses),
+      'request id', 'randomize', 'cached responses',
+    );
+    if (item.script) {
+      const type = scalar('type', item.script.runtime === 'python' ? '0' : item.script.runtime === 'go' ? '1' : '-1');
+      values.push(type === '0' ? 'python' : type === '1' ? 'go' : 'unknown',
+        Number(item.script.modulePathConfigured), 'runtime', 'module path');
+    }
+    if (item.authentication) values.push(
+      booleanNumber('authenticate', item.authentication.authenticate),
+      booleanNumber('resolve', item.authentication.resolve),
+      item.authentication.identityCount, 'authenticate', 'resolve identities', 'identity mappings',
+    );
+    return values;
+  }
+
   private renderSearchResults() {
     const query = this.searchQuery.trim().toLocaleLowerCase();
     if (!query || !this.snapshot) return html`<div class="empty-state"><h2>Search</h2><p>Enter a configuration name, type, value, or field.</p></div>`;
@@ -3575,25 +3672,7 @@ export class SmithproxyApp extends LitElement {
     const profiles = this.snapshot.profiles.map(item => {
       const prefix = profilePrefixes.get(item.id);
       const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
-      const details: Array<string | number> = [name, item.type];
-      if (item.routing) details.push(
-        ...item.routing.destinationAddresses, ...item.routing.destinationPorts,
-        item.routing.loadBalancingMethod, item.routing.rewriteSni, item.routing.rewriteSniTo,
-      );
-      if (item.tls) details.push(
-        item.tls.clientCertificateAction, item.tls.alerts, item.tls.clientHelloTimeoutMs,
-        item.tls.handshakeTimeoutMs, ...item.tls.redirectWarningPorts,
-      );
-      if (item.detection) details.push(
-        item.detection.mode, Number(item.detection.enginesEnabled), Number(item.detection.knowledgeBaseEnabled),
-      );
-      if (item.content) details.push(
-        item.content.writeFormat, item.content.ruleCount, Number(item.content.writePayload),
-        Number(item.content.webhookEnabled),
-      );
-      if (item.ssh) details.push(item.ssh.hostKeyPolicy);
-      if (item.script) details.push(item.script.runtime);
-      if (item.authentication) details.push(item.authentication.identityCount);
+      const details = this.profileSearchValues(item, prefix);
       return {item, name, matches: this.searchMatches(details, query)};
     }).filter(item => item.matches);
     const authorities = (this.snapshot.securityAssets?.certificateAuthorities ?? []).map((item, index) => {

@@ -2659,6 +2659,12 @@ test('searches the complete readable configuration without unsafe markup', async
     initialDraftChanges: [
       {path: 'tls_ca.[0].name', value: 'branch-ca'},
       {path: 'detection_signatures.[0].engine', value: 'pending-http-engine'},
+      {path: 'routing.[0].rewrite_sni', value: 'pending-sni.example'},
+      {path: 'routing.[0].rewrite_sni_to', value: 'target-sni.example'},
+      {path: 'tls_profiles.[0].client_cert_action', value: 'empty_client_cert'},
+      {path: 'content_profiles.[0].write_format', value: 'smcap'},
+      {path: 'ssh_profiles.[0].hostkey_policy', value: 'accept-new'},
+      {path: 'script_profiles.[0].type', value: '1'},
     ],
   }, true);
   await page.goto('/');
@@ -2672,6 +2678,19 @@ test('searches the complete readable configuration without unsafe markup', async
   await results.getByRole('button').click();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
   await page.keyboard.press('Escape');
+
+  for (const [query, profileName] of [
+    ['pending-sni.example', 'main'],
+    ['empty_client_cert', 'inspect'],
+    ['smcap', 'capture'],
+    ['accept-new', 'default-ssh'],
+    ['go', 'audit'],
+  ] as const) {
+    await search.fill(query);
+    const profileResult = results.getByRole('button').filter({hasText: 'Profile'});
+    await expect(profileResult).toHaveCount(1);
+    await expect(profileResult).toContainText(profileName);
+  }
 
   await search.fill('default-ssh');
   await expect(page.getByText('2 matches for “default-ssh”')).toBeVisible();
