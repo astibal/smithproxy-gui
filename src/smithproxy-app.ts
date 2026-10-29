@@ -20,6 +20,7 @@ import {
   type TlsCacheSnapshot,
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
+import {classifyFreshness, freshnessLabel, type FreshnessState} from './monitoring/freshness';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
 import {DrawerStore, type DrawerEntry} from './state/drawer-store';
 import {
@@ -2195,14 +2196,26 @@ export class SmithproxyApp extends LitElement {
     return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
   }
 
+  private freshnessTone(state: FreshnessState): 'success' | 'warning' | 'danger' {
+    if (state === 'fresh') return 'success';
+    if (state === 'stale') return 'danger';
+    return 'warning';
+  }
+
   private renderOperationalHealth() {
     const items = [
-      {name: 'Control plane', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs},
-      {name: 'Listener metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs},
-      {name: 'Session activity', state: this.sessionActivity.state, checked: this.sessionActivity.checkedAtUnixMs},
-      {name: 'TLS cache', state: this.tlsCache.state, checked: this.tlsCache.checkedAtUnixMs},
-      {name: 'Neighborhood', state: this.neighbors.state, checked: this.neighbors.checkedAtUnixMs},
-      {name: 'Configuration', state: this.snapshot?.state ?? 'starting', checked: this.snapshot?.checkedAtUnixMs ?? null},
+      {name: 'Control plane', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs,
+        lastSuccess: this.systemStatus.lastSuccessAtUnixMs, intervalMs: 5_000},
+      {name: 'Listener metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs,
+        lastSuccess: this.runtimeMetrics.lastSuccessAtUnixMs, intervalMs: 5_000},
+      {name: 'Session activity', state: this.sessionActivity.state, checked: this.sessionActivity.checkedAtUnixMs,
+        lastSuccess: this.sessionActivity.lastSuccessAtUnixMs, intervalMs: 10_000},
+      {name: 'TLS cache', state: this.tlsCache.state, checked: this.tlsCache.checkedAtUnixMs,
+        lastSuccess: this.tlsCache.lastSuccessAtUnixMs, intervalMs: 5_000},
+      {name: 'Neighborhood', state: this.neighbors.state, checked: this.neighbors.checkedAtUnixMs,
+        lastSuccess: this.neighbors.lastSuccessAtUnixMs, intervalMs: 30_000},
+      {name: 'Configuration', state: this.snapshot?.state ?? 'starting', checked: this.snapshot?.checkedAtUnixMs ?? null,
+        lastSuccess: this.snapshot?.lastSuccessAtUnixMs ?? null, intervalMs: 30_000},
     ];
     return html`
       <section class="runtime-summary" aria-label="Operational health matrix">
@@ -2211,11 +2224,15 @@ export class SmithproxyApp extends LitElement {
         </div>
         <div class="card-grid">
           ${items.map(item => {
-            const tone = item.state === 'ready' ? 'success' :
+            const freshness = classifyFreshness(item.lastSuccess, item.intervalMs);
+            const stateTone = item.state === 'ready' ? this.freshnessTone(freshness.state) :
               ['unreachable', 'unauthorized', 'error', 'unavailable'].includes(item.state) ? 'danger' : 'warning';
             return html`<article class="domain-card">
-              <header><div><h3>${item.name}</h3><p>${this.sampleAgeLabel(item.checked)}</p></div>
-                <span class="runtime-state ${tone}">● ${displayState(item.state)}</span>
+              <header><div><h3>${item.name}</h3>
+                <p>Last success: ${this.sampleAgeLabel(item.lastSuccess)} · checked ${this.sampleAgeLabel(item.checked)}</p></div>
+                <span class="runtime-state ${stateTone}">
+                  ● ${displayState(item.state)} · ${freshnessLabel(freshness.state)}
+                </span>
               </header>
             </article>`;
           })}
