@@ -326,13 +326,20 @@ describe('SystemClient', () => {
         id: 'audit-3', occurred_at_unix_ms: 100, request_id: 'abc123-9',
         operation: 'config.draft.upsert', outcome: 'succeeded', authentication: 'gateway', actor: null,
         target_count: 2, targets: ['policy.[0].action', 'settings.enabled'], targets_truncated: false,
+      }, {
+        id: 'audit-4', occurred_at_unix_ms: 101, request_id: 'abc123-10',
+        operation: 'config.draft.validate', outcome: 'rejected', authentication: 'gateway', actor: null,
+        target_count: 0, targets: [], targets_truncated: false,
       }],
     }));
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
 
     await expect(client.recentAudit()).resolves.toMatchObject({
       actorAvailable: false,
-      entries: [{id: 'audit-3', requestId: 'abc123-9', targetCount: 2}],
+      entries: [
+        {id: 'audit-3', requestId: 'abc123-9', targetCount: 2},
+        {id: 'audit-4', operation: 'config.draft.validate', targetCount: 0},
+      ],
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/audit/recent', expect.anything(),

@@ -870,6 +870,18 @@ def main() -> int:
                 "X-Smithproxy-GUI-CSRF": "1",
                 "Content-Type": "application/json",
             }
+            assert request(
+                configured_port, "/api/v1/config/draft/validate", "POST",
+                body=json.dumps({"expected_version": 0}))[0] == 401
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/validate", "POST",
+                headers={**mutation_headers, "Origin": "https://attacker.invalid"},
+                body=json.dumps({"expected_version": 0}),
+            ), 403, "auth.csrf_failed")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/validate", "POST",
+                headers=mutation_headers, body=json.dumps({"expected_version": 0}),
+            ), 422, "config.validation_rejected")
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers={key: value for key, value in mutation_headers.items() if key != "Origin"},
@@ -1037,6 +1049,19 @@ def main() -> int:
             assert latest_audit["target_count"] == len(json.loads(batch_change)["changes"])
             assert b"new-private-password" not in audit_body
             assert b"secret content replacement" not in audit_body
+            validation_result = request(
+                configured_port, "/api/v1/config/draft/validate", "POST",
+                headers=mutation_headers, body=json.dumps({"expected_version": 2}))
+            assert_error_response(validation_result, 503, "config.validation_unavailable")
+            status, _, validation_audit_body = request(
+                configured_port, "/api/v1/audit/recent", headers=gateway_headers)
+            assert status == 200
+            validation_audit = json.loads(validation_audit_body)["entries"][-1]
+            assert validation_audit["operation"] == "config.draft.validate"
+            assert validation_audit["outcome"] == "rejected"
+            assert validation_audit["target_count"] == 0
+            assert b"new-private-password" not in validation_audit_body
+            assert b"secret content replacement" not in validation_audit_body
             expected_redactions = {
                 "settings.certs_ca_key_password": "[redacted:replace]",
                 "settings.http_api.keys": "[redacted:replace:2]",

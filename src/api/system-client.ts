@@ -202,7 +202,7 @@ export interface AuditEntry {
   id: string;
   occurredAtUnixMs: number;
   requestId: string;
-  operation: 'config.draft.upsert' | 'config.draft.clear' | 'api.mutation';
+  operation: 'config.draft.upsert' | 'config.draft.clear' | 'config.draft.validate' | 'api.mutation';
   outcome: AuditOutcome;
   authentication: AuditAuthentication;
   targetCount: number;
@@ -603,7 +603,8 @@ function parseAudit(value: unknown): AuditSnapshot {
     if (!isObject(item) || typeof item.id !== 'string' || !/^audit-[1-9][0-9]{0,19}$/u.test(item.id) ||
         ids.has(item.id) || !isNonNegativeInteger(item.occurred_at_unix_ms) ||
         typeof item.request_id !== 'string' || !/^[0-9a-f]{1,32}-[1-9][0-9]{0,19}$/u.test(item.request_id) ||
-        !['config.draft.upsert', 'config.draft.clear', 'api.mutation'].includes(String(item.operation)) ||
+        !['config.draft.upsert', 'config.draft.clear', 'config.draft.validate', 'api.mutation']
+          .includes(String(item.operation)) ||
         !['succeeded', 'conflict', 'rejected'].includes(String(item.outcome)) ||
         !['gateway', 'disabled', 'none'].includes(String(item.authentication)) || item.actor !== null ||
         !isNonNegativeInteger(item.target_count) || item.target_count > 4096 ||

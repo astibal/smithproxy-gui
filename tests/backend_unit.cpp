@@ -8,6 +8,7 @@
 #include "operational_alerts.hpp"
 #include "path.hpp"
 #include "runtime_metrics.hpp"
+#include "smithproxy_client.hpp"
 #include "tls_metrics.hpp"
 #include "transaction_capabilities.hpp"
 #include "transaction_envelope.hpp"
@@ -292,6 +293,15 @@ int main() {
     assert(parse_transaction_response(
         200L, validation_success_document.dump(), TransactionMode::Validate,
         *transaction_draft.base_revision, 2U).state == "succeeded");
+
+    SmithproxyMonitor unconfigured_monitor{std::nullopt, true};
+    assert(unconfigured_monitor.validate_transaction(transaction_draft).state == "unavailable");
+    SmithproxyMonitor undiscovered_monitor{SmithproxyConfig{
+        .api_url = "https://127.0.0.1:1",
+        .api_key = "not-sent-before-capability-readiness",
+        .ca_cert = "/nonexistent",
+    }, true};
+    assert(undiscovered_monitor.validate_transaction(transaction_draft).state == "unavailable");
 
     const auto metrics = parse_listener_metrics(R"({"listeners":[
         {"name":"tcp","workers":2,"sessions_total":12,"sessions_active":3,

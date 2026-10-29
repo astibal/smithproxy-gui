@@ -51,6 +51,17 @@ export interface DraftPreflight {
   blockers: ReadonlyArray<DraftPreflightBlocker>;
 }
 
+export interface DraftValidation {
+  source: 'gui-core';
+  draftId: 'workspace-draft';
+  draftVersion: number;
+  baseRevision: string;
+  upstreamValidation: 'valid';
+  validatedOperations: number;
+  warningCount: number;
+  restart: 'not-required' | 'required' | 'scheduled';
+}
+
 type JsonObject = Record<string, unknown>;
 const MAX_DRAFT_RESPONSE_BYTES = 8 * 1024 * 1024;
 
@@ -215,6 +226,29 @@ function parsePreflight(value: unknown): DraftPreflight {
   };
 }
 
+function parseValidation(value: unknown): DraftValidation {
+  if (!isObject(value) || value.source !== 'gui-core' || value.draft_id !== 'workspace-draft' ||
+      !Number.isSafeInteger(value.draft_version) || Number(value.draft_version) < 0 ||
+      !isCanonicalRevision(value.base_revision) || value.base_revision === null ||
+      value.upstream_validation !== 'valid' || !Number.isSafeInteger(value.validated_operations) ||
+      Number(value.validated_operations) <= 0 || Number(value.validated_operations) > 4096 ||
+      !Number.isSafeInteger(value.warning_count) || Number(value.warning_count) < 0 ||
+      Number(value.warning_count) > 64 ||
+      (value.restart !== 'not-required' && value.restart !== 'required' && value.restart !== 'scheduled')) {
+    throw new Error('Invalid draft validation response.');
+  }
+  return {
+    source: 'gui-core',
+    draftId: 'workspace-draft',
+    draftVersion: Number(value.draft_version),
+    baseRevision: value.base_revision,
+    upstreamValidation: 'valid',
+    validatedOperations: Number(value.validated_operations),
+    warningCount: Number(value.warning_count),
+    restart: value.restart,
+  };
+}
+
 export class DraftClient {
   readonly #endpoint: string;
   readonly #fetch: typeof fetch;
@@ -233,6 +267,17 @@ export class DraftClient {
 
   async preflight(): Promise<DraftPreflight> {
     return parsePreflight(await this.#request(`${this.#endpoint}/preflight`, {method: 'GET'}));
+  }
+
+  async validate(expectedVersion: number): Promise<DraftValidation> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+      throw new Error('Invalid draft version.');
+    }
+    return parseValidation(await this.#request(`${this.#endpoint}/validate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({expected_version: expectedVersion}),
+    }));
   }
 
   async upsert(expectedVersion: number, path: string, value: DraftScalar): Promise<DraftSnapshot> {

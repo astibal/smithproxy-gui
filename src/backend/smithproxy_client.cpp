@@ -31,6 +31,8 @@ struct ResponseBuffer {
     bool exceeded{};
 };
 
+constexpr std::size_t transaction_response_limit = 1024U * 1024U;
+
 std::size_t collect_body(char* data, const std::size_t size, const std::size_t count, void* context) {
     auto& response = *static_cast<ResponseBuffer*>(context);
     if (count != 0U && size > std::numeric_limits<std::size_t>::max() / count) {
@@ -74,6 +76,17 @@ SmithproxyStatus probe_result(const std::string& state, std::string detail,
     return result;
 }
 
+TransactionResponse transaction_failure(std::string state) {
+    return {
+        .state = std::move(state),
+        .revision = std::nullopt,
+        .previous_revision = std::nullopt,
+        .validated_operations = 0U,
+        .warning_count = 0U,
+        .restart = "unknown",
+    };
+}
+
 } // namespace
 
 SmithproxyMonitor::SmithproxyMonitor(std::optional<SmithproxyConfig> config, const bool config_enabled)
@@ -115,6 +128,65 @@ void SmithproxyMonitor::stop() {
 SmithproxyStatus SmithproxyMonitor::status() const {
     std::scoped_lock lock(mutex_);
     return status_;
+}
+
+TransactionResponse SmithproxyMonitor::validate_transaction(const DraftSnapshot& draft) const {
+    if (!config_ || !config_enabled_) return transaction_failure("unavailable");
+    if (!draft.base_revision) return transaction_failure("unavailable");
+    const auto capabilities = status().transaction_capabilities;
+    const auto idempotency_key = generate_transaction_idempotency_key();
+    if (!idempotency_key) return transaction_failure("unavailable");
+    const auto envelope = build_transaction_envelope(
+        draft, TransactionMode::Validate, *idempotency_key, capabilities);
+    if (!envelope.body) {
+        return transaction_failure(
+            envelope.error_code == "transaction.request_too_large" ||
+                    envelope.error_code == "transaction.invalid_draft"
+            ? "rejected"
+            : "unavailable");
+    }
+
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if (!curl) return transaction_failure("unavailable");
+    curl_slist* raw_headers = nullptr;
+    for (const auto& header : {
+             "X-API-Key: " + config_->api_key,
+             std::string{"Content-Type: application/json"},
+             std::string{"Accept: application/json"},
+             std::string{"Expect:"},
+         }) {
+        auto* updated = curl_slist_append(raw_headers, header.c_str());
+        if (!updated) {
+            curl_slist_free_all(raw_headers);
+            return transaction_failure("unavailable");
+        }
+        raw_headers = updated;
+    }
+    std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
+
+    const std::string endpoint = config_->api_url + "/api/config/v2/transaction";
+    ResponseBuffer response{
+        .limit = transaction_response_limit,
+        .body = {},
+        .exceeded = false,
+    };
+    configure_request(curl.get(), *config_, endpoint, headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
+    curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, envelope.body->data());
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                     static_cast<curl_off_t>(envelope.body->size()));
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto result = curl_easy_perform(curl.get());
+    if (response.exceeded) return transaction_failure("invalid-response");
+    if (result != CURLE_OK) return transaction_failure("unavailable");
+
+    long status_code{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    return parse_transaction_response(
+        status_code, response.body, TransactionMode::Validate, *draft.base_revision,
+        draft.changes.size());
 }
 
 void SmithproxyMonitor::run(const std::stop_token stop_token) {

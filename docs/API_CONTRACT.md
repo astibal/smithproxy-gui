@@ -124,7 +124,10 @@ pojmenované objekty a seřazené kolekce.
 The GUI core currently exposes one workspace-scoped foundation draft at
 `GET /api/v1/config/draft` and accepts typed atomic batches at
 `POST /api/v1/config/draft/changes`. The complete draft can be discarded with
-`POST /api/v1/config/draft/clear`. A batch carries one expected version and a
+`POST /api/v1/config/draft/clear`. An explicit
+`POST /api/v1/config/draft/validate` sends the current immutable draft snapshot
+through the reviewed upstream transaction transport when that capability and a
+canonical base revision are available. A batch carries one expected version and a
 bounded `changes` array; it is rejected without partial application when any
 path or value is invalid. Supported foundation values are booleans, finite
 numbers, strings, and bounded homogeneous string or integer arrays. Every
@@ -138,6 +141,13 @@ stale writers receive HTTP 409. The browser also rejects draft responses above
 8 MiB before JSON parsing, leaving room for worst-case JSON escaping of the
 bounded raw draft. This store is not yet a commit path and cannot mutate
 Smithproxy configuration.
+
+Validation accepts only `expected_version`; draft values are loaded inside the
+GUI core and are never echoed by the browser. The mutation requires the same
+gateway and CSRF boundary as draft writes. Its successful response contains only
+the bound revision, validated operation count, warning count, and restart enum.
+Upstream authorization failures, messages, paths, warnings, and values are not
+forwarded. Every attempt receives a value-free management audit entry.
 
 The GUI core applies an authoritative schema allowlist before storing a batch.
 Every path must map to an editor field in the pinned configuration inventory;

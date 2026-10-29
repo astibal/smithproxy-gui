@@ -128,6 +128,9 @@ UUID while discarding free-form upstream response text. No browser commit path
 is enabled yet. Draft preflight reports the exact fixed blocker category instead
 of collapsing missing advertisement, schema review, compatibility, revision,
 and transport readiness into one generic error.
+The CSRF-protected validation endpoint is present as well and sends no draft
+values from the browser; it remains fail-closed until the reviewed capability
+and canonical revision are available.
 
 Control-plane health and listener monitoring use the production C++ backend. A
 bounded five-minute runtime history visualizes active sessions and aggregate

@@ -87,6 +87,13 @@ only a fixed terminal state, validated revisions, operation and warning counts,
 and a bounded restart enum. This adapter is not yet connected to a browser
 commit endpoint.
 
+The explicit draft-validation endpoint accepts only an optimistic draft version;
+it obtains every value from the server-side snapshot after gateway and CSRF
+checks. It uses a 10-second upstream deadline, a 1 MiB response ceiling, strict
+TLS verification, disabled redirects and proxies, and value-free audit metadata.
+It remains fail-closed until capability review and canonical revision binding are
+both available.
+
 Draft preflight serializes only bounded aggregate counts and stable blocker
 codes. It does not return paths, values, diffs, or validation payloads and uses
 the same trusted-gateway authentication as the draft itself. The browser rejects

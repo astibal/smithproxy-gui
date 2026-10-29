@@ -96,6 +96,34 @@ describe('DraftClient', () => {
     }));
   });
 
+  it('requests and validates upstream draft validation without sending draft values', async () => {
+    const revision = `sha256:${'1'.repeat(64)}`;
+    const fetcher = vi.fn().mockResolvedValue(response({
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: 7,
+      base_revision: revision, upstream_validation: 'valid', validated_operations: 3,
+      warning_count: 1, restart: 'not-required',
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+    await expect(client.validate(7)).resolves.toEqual({
+      source: 'gui-core', draftId: 'workspace-draft', draftVersion: 7,
+      baseRevision: revision, upstreamValidation: 'valid', validatedOperations: 3,
+      warningCount: 1, restart: 'not-required',
+    });
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/validate', expect.objectContaining({
+      method: 'POST', body: '{"expected_version":7}',
+      headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+    }));
+  });
+
+  it('rejects malformed upstream validation metadata', async () => {
+    const client = new DraftClient('/api/v1', async () => response({
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: 1,
+      base_revision: `sha256:${'1'.repeat(64)}`, upstream_validation: 'valid',
+      validated_operations: 1, warning_count: 0, restart: 'unknown',
+    }));
+    await expect(client.validate(1)).rejects.toThrow('Invalid draft validation response');
+  });
+
   it.each([
     ['upstream.transaction_unavailable', null],
     ['upstream.transaction_incompatible', null],

@@ -78,6 +78,10 @@ std::string error_code(const std::string_view message) {
     if (message == "invalid path") return "request.invalid_path";
     if (message == "invalid event cursor") return "events.invalid_cursor";
     if (message == "draft version conflict") return "draft.version_conflict";
+    if (message == "transaction revision conflict") return "config.revision_conflict";
+    if (message == "transaction validation unavailable") return "config.validation_unavailable";
+    if (message == "transaction validation rejected") return "config.validation_rejected";
+    if (message == "transaction validation failed") return "config.validation_failed";
     if (message == "draft change rejected") return "draft.change_rejected";
     if (message.starts_with("invalid draft")) return "draft.invalid_request";
     return "request.failed";
@@ -105,6 +109,7 @@ MutationAuditMetadata mutation_audit_metadata(
     MutationAuditMetadata metadata;
     if (relative == "/api/v1/config/draft/changes") metadata.operation = "config.draft.upsert";
     else if (relative == "/api/v1/config/draft/clear") metadata.operation = "config.draft.clear";
+    else if (relative == "/api/v1/config/draft/validate") metadata.operation = "config.draft.validate";
     else return metadata;
 
     const auto document = nlohmann::json::parse(body, nullptr, false);
@@ -377,7 +382,8 @@ private:
             return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
         }
         if (*relative != "/api/v1/config/draft/changes" &&
-            *relative != "/api/v1/config/draft/clear") {
+            *relative != "/api/v1/config/draft/clear" &&
+            *relative != "/api/v1/config/draft/validate") {
             return relative->starts_with("/api/")
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
                 : Response{405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
@@ -389,6 +395,50 @@ private:
             return {403, "application/json; charset=utf-8", "{\"error\":\"same-origin CSRF check failed\"}"};
         }
         const auto document = nlohmann::json::parse(body, nullptr, false);
+        if (*relative == "/api/v1/config/draft/validate") {
+            if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
+                !document.contains("expected_version") ||
+                !document["expected_version"].is_number_unsigned()) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid draft validation request\"}"};
+            }
+            const auto draft = draft_.snapshot();
+            if (document["expected_version"].get<std::uint64_t>() != draft.version) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"draft version conflict\"}"};
+            }
+            if (draft.changes.empty()) {
+                return {422, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction validation rejected\"}"};
+            }
+            const auto validation = monitor_.validate_transaction(draft);
+            if (validation.state == "conflict") {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction revision conflict\"}"};
+            }
+            if (validation.state == "rejected") {
+                return {422, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction validation rejected\"}"};
+            }
+            if (validation.state == "unavailable") {
+                return {503, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction validation unavailable\"}"};
+            }
+            if (validation.state != "succeeded") {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction validation failed\"}"};
+            }
+            return {200, "application/json; charset=utf-8", nlohmann::json{
+                {"source", "gui-core"},
+                {"draft_id", draft.id},
+                {"draft_version", draft.version},
+                {"base_revision", *draft.base_revision},
+                {"upstream_validation", "valid"},
+                {"validated_operations", validation.validated_operations},
+                {"warning_count", validation.warning_count},
+                {"restart", validation.restart},
+            }.dump()};
+        }
         if (*relative == "/api/v1/config/draft/clear") {
             if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
                 !document.contains("expected_version") ||

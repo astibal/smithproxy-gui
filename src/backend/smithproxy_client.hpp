@@ -7,6 +7,7 @@
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
 #include "transaction_capabilities.hpp"
+#include "transaction_envelope.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -53,6 +54,7 @@ public:
     void start();
     void stop();
     [[nodiscard]] SmithproxyStatus status() const;
+    [[nodiscard]] TransactionResponse validate_transaction(const DraftSnapshot& draft) const;
     [[nodiscard]] bool configured() const noexcept { return config_.has_value(); }
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 
