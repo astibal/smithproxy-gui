@@ -211,7 +211,7 @@
       "edit": "partial",
       "sensitivity": "identity-bearing",
       "tracked_fields": ["name", "authenticate", "resolve", "identity_count"],
-      "notes": "Authentication posture is typed and structurally creatable as a complete non-secret payload; identity mappings remain redacted and outside this editor. Stable unreferenced profiles support confirmed structural deletion."
+      "notes": "Authentication posture is typed and structurally creatable. Existing identity mappings remain redacted, while complete replacements and clearing use a nested write-only editor with typed detection, content, TLS, and DNS profile bindings. Accepted values are cleared from browser state and draft responses expose only the redacted operation and item count. Stable unreferenced profiles support confirmed structural deletion."
     }
   ]
 }
