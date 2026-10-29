@@ -117,6 +117,40 @@ describe('DraftClient', () => {
     }));
   });
 
+  it('commits only an optimistic draft version and validates the commit receipt', async () => {
+    const previousRevision = `sha256:${'1'.repeat(64)}`;
+    const revision = `sha256:${'2'.repeat(64)}`;
+    const fetcher = vi.fn().mockResolvedValue(response({
+      source: 'gui-core', draft_id: 'workspace-draft', committed_draft_version: 7,
+      draft_version: 8, previous_revision: previousRevision, revision,
+      committed_operations: 3, warning_count: 1, restart: 'required',
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+    await expect(client.commit(7)).resolves.toEqual({
+      source: 'gui-core', draftId: 'workspace-draft', committedDraftVersion: 7,
+      draftVersion: 8, previousRevision, revision, committedOperations: 3,
+      warningCount: 1, restart: 'required',
+    });
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/commit', expect.objectContaining({
+      method: 'POST', body: '{"expected_version":7}',
+      headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+    }));
+  });
+
+  it('accepts a commit-ready preflight without blockers', async () => {
+    const client = new DraftClient('/api/v1', async () => response({
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: 3,
+      base_revision: `sha256:${'1'.repeat(64)}`, change_count: 1, sensitive_change_count: 0,
+      schema_validation: 'valid', upstream_validation: 'unavailable',
+      validation_available: true, commit_available: true,
+      sections: [{name: 'policy', change_count: 1, sensitive_change_count: 0}],
+      blockers: [],
+    }));
+    await expect(client.preflight()).resolves.toMatchObject({
+      validationAvailable: true, commitAvailable: true, blockers: [],
+    });
+  });
+
   it('rejects malformed upstream validation metadata', async () => {
     const client = new DraftClient('/api/v1', async () => response({
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: 1,
@@ -124,6 +158,16 @@ describe('DraftClient', () => {
       validated_operations: 1, warning_count: 0, restart: 'unknown',
     }));
     await expect(client.validate(1)).rejects.toThrow('Invalid draft validation response');
+  });
+
+  it('rejects an unbound or internally inconsistent commit receipt', async () => {
+    const revision = `sha256:${'2'.repeat(64)}`;
+    const client = new DraftClient('/api/v1', async () => response({
+      source: 'gui-core', draft_id: 'workspace-draft', committed_draft_version: 7,
+      draft_version: 9, previous_revision: revision, revision,
+      committed_operations: 1, warning_count: 0, restart: 'not-required',
+    }));
+    await expect(client.commit(7)).rejects.toThrow('Invalid draft commit response');
   });
 
   it.each([

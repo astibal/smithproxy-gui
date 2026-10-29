@@ -888,8 +888,16 @@ def main() -> int:
             assert request(
                 configured_port, "/api/v1/config/draft/validate", "POST",
                 body=json.dumps({"expected_version": 1}))[0] == 401
+            assert request(
+                configured_port, "/api/v1/config/draft/commit", "POST",
+                body=json.dumps({"expected_version": 1}))[0] == 401
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/validate", "POST",
+                headers={**mutation_headers, "Origin": "https://attacker.invalid"},
+                body=json.dumps({"expected_version": 1}),
+            ), 403, "auth.csrf_failed")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/commit", "POST",
                 headers={**mutation_headers, "Origin": "https://attacker.invalid"},
                 body=json.dumps({"expected_version": 1}),
             ), 403, "auth.csrf_failed")
@@ -1077,6 +1085,19 @@ def main() -> int:
             assert validation_audit["target_count"] == 0
             assert b"new-private-password" not in validation_audit_body
             assert b"secret content replacement" not in validation_audit_body
+            commit_result = request(
+                configured_port, "/api/v1/config/draft/commit", "POST",
+                headers=mutation_headers, body=json.dumps({"expected_version": 3}))
+            assert_error_response(commit_result, 503, "config.commit_unavailable")
+            status, _, commit_audit_body = request(
+                configured_port, "/api/v1/audit/recent", headers=gateway_headers)
+            assert status == 200
+            commit_audit = json.loads(commit_audit_body)["entries"][-1]
+            assert commit_audit["operation"] == "config.draft.commit"
+            assert commit_audit["outcome"] == "rejected"
+            assert commit_audit["target_count"] == 0
+            assert b"new-private-password" not in commit_audit_body
+            assert b"secret content replacement" not in commit_audit_body
             expected_redactions = {
                 "settings.certs_ca_key_password": "[redacted:replace]",
                 "settings.http_api.keys": "[redacted:replace:2]",

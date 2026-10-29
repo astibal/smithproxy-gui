@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -58,6 +59,7 @@ public:
     [[nodiscard]] TransactionResponse validate_transaction(const DraftSnapshot& draft) const;
     [[nodiscard]] TransactionResponse commit_transaction(
         const DraftSnapshot& draft, std::string_view idempotency_key) const;
+    [[nodiscard]] bool note_config_committed(std::string_view committed_revision);
     [[nodiscard]] bool configured() const noexcept { return config_.has_value(); }
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 
@@ -78,6 +80,10 @@ private:
     bool config_enabled_{};
     mutable std::mutex mutex_;
     SmithproxyStatus status_;
+    std::atomic_bool config_refresh_requested_{};
+    std::chrono::steady_clock::time_point minimum_config_observation_{};
+    mutable std::mutex wakeup_mutex_;
+    std::condition_variable_any wakeup_;
     std::jthread worker_;
 };
 

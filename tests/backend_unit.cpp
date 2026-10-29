@@ -398,6 +398,7 @@ int main() {
     assert(unconfigured_monitor.validate_transaction(transaction_draft).state == "unavailable");
     assert(unconfigured_monitor.commit_transaction(transaction_draft, idempotency_key).state ==
            "unavailable");
+    assert(!unconfigured_monitor.note_config_committed(canonical_revision_b));
     SmithproxyMonitor undiscovered_monitor{SmithproxyConfig{
         .api_url = "https://127.0.0.1:1",
         .api_key = "not-sent-before-capability-readiness",
@@ -406,6 +407,10 @@ int main() {
     assert(undiscovered_monitor.validate_transaction(transaction_draft).state == "unavailable");
     assert(undiscovered_monitor.commit_transaction(transaction_draft, idempotency_key).state ==
            "unavailable");
+    assert(!undiscovered_monitor.note_config_committed("revision-8"));
+    assert(undiscovered_monitor.note_config_committed(canonical_revision_b));
+    assert(undiscovered_monitor.status().config_snapshot.state == "starting");
+    assert(undiscovered_monitor.status().config_snapshot.revision == std::nullopt);
 
     const auto metrics = parse_listener_metrics(R"({"listeners":[
         {"name":"tcp","workers":2,"sessions_total":12,"sessions_active":3,

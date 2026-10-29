@@ -4,6 +4,7 @@ import {ApiConfigClient} from './api/config-client';
 import {
   DraftClient,
   type DraftChange,
+  type DraftCommit,
   type DraftPreflight,
   type DraftScalar,
   type DraftSnapshot,
@@ -224,6 +225,10 @@ export class SmithproxyApp extends LitElement {
   @state() private draftValidation: DraftValidation | undefined;
   @state() private draftValidationError: string | undefined;
   @state() private draftValidating = false;
+  @state() private draftCommitting = false;
+  @state() private draftCommitArmed = false;
+  @state() private draftCommitError: string | undefined;
+  @state() private draftCommitResult: DraftCommit | undefined;
   @state() private drawerError: string | undefined;
   @state() private dirtyDrawerKeys = new Set<string>();
   @state() private pendingCloseIndex: number | undefined;
@@ -446,6 +451,7 @@ export class SmithproxyApp extends LitElement {
     .preflight { padding: 15px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-surface); }
     .preflight h3 { margin: 0; font-size: 15px; }
     .preflight-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .preflight-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
     .preflight-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
     .preflight-check { padding: 10px 11px; border: 1px solid var(--app-border); background: var(--app-canvas); }
     .preflight-check small { display: block; color: var(--app-muted); }
@@ -581,6 +587,8 @@ export class SmithproxyApp extends LitElement {
       .draft-row { grid-template-columns: 1fr; gap: 5px; }
       .preflight-grid { grid-template-columns: 1fr; }
       .preflight-heading { align-items: stretch; flex-direction: column; }
+      .preflight-actions { justify-content: stretch; }
+      .preflight-actions button { flex: 1; }
       .event-source { display: none; }
       .probe-history { gap: 2px; }
     }
@@ -900,7 +908,8 @@ export class SmithproxyApp extends LitElement {
     if (!this.configReadAvailable || !this.configClient || this.configRefreshInFlight) return;
     const now = Date.now();
     if (!force && now < this.nextConfigRefreshAt) return;
-    if (this.draftChangeCount > 0 || this.drawers.length > 0 || this.draftSaving) {
+    if (this.draftChangeCount > 0 || this.drawers.length > 0 || this.draftSaving ||
+        this.draftCommitting) {
       this.configRefreshDeferred = true;
       return;
     }
@@ -1073,7 +1082,12 @@ export class SmithproxyApp extends LitElement {
         validation.validatedOperations !== snapshot.changes.length) {
       this.draftValidation = undefined;
     }
-    if (previousVersion !== snapshot.version) this.draftValidationError = undefined;
+    if (previousVersion !== snapshot.version) {
+      this.draftValidationError = undefined;
+      this.draftCommitArmed = false;
+      this.draftCommitError = undefined;
+      this.draftCommitResult = undefined;
+    }
     if (snapshot.changes.length === 0) this.discardDraftArmed = false;
     const objects = new Set<string>();
     for (const change of snapshot.changes) {
@@ -1195,7 +1209,8 @@ export class SmithproxyApp extends LitElement {
   private async validateDraft(): Promise<void> {
     const preflight = this.draftPreflight;
     if (!this.draftClient || !preflight?.validationAvailable || this.draftChangeCount === 0 ||
-        this.draftValidating || !preflight.baseRevision) return;
+        this.draftValidating || this.draftSaving || this.draftCommitting ||
+        !preflight.baseRevision) return;
     const expectedVersion = this.draftVersion;
     const expectedChanges = this.draftChangeCount;
     const expectedRevision = preflight.baseRevision;
@@ -1219,8 +1234,59 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private async commitDraft(): Promise<void> {
+    const preflight = this.draftPreflight;
+    const validation = this.draftValidation;
+    const validationMatches = validation &&
+      validation.draftVersion === this.draftVersion &&
+      validation.baseRevision === preflight?.baseRevision &&
+      validation.validatedOperations === this.draftChangeCount;
+    if (!this.configWriteAvailable || !this.draftClient || !preflight?.commitAvailable ||
+        !validationMatches || this.draftChangeCount === 0 || this.draftCommitting ||
+        this.draftSaving || this.draftValidating) return;
+    if (!this.draftCommitArmed) {
+      this.draftCommitArmed = true;
+      this.draftCommitError = undefined;
+      return;
+    }
+
+    const expectedVersion = this.draftVersion;
+    const expectedRevision = preflight.baseRevision;
+    const expectedOperations = this.draftChangeCount;
+    this.draftCommitting = true;
+    this.draftCommitArmed = false;
+    this.draftCommitError = undefined;
+    this.draftCommitResult = undefined;
+    try {
+      const result = await this.draftClient.commit(expectedVersion);
+      if (result.committedDraftVersion !== expectedVersion ||
+          result.previousRevision !== expectedRevision ||
+          result.committedOperations !== expectedOperations) {
+        throw new Error('Smithproxy commit does not match the validated workspace draft.');
+      }
+      const current = await this.draftClient.load();
+      if (current.version !== result.draftVersion || current.baseRevision !== result.revision ||
+          current.changes.length !== 0) {
+        throw new Error('Committed draft finalization could not be verified.');
+      }
+      this.applyDraft(current);
+      this.draftCommitResult = result;
+      this.draftValidation = undefined;
+      await this.loadDraftPreflight();
+      this.configRefreshDeferred = true;
+      this.nextConfigRefreshAt = 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Atomic commit could not be confirmed.';
+      await this.loadDraft();
+      this.draftCommitError = message;
+    } finally {
+      this.draftCommitting = false;
+    }
+  }
+
   private async discardDraft(): Promise<void> {
-    if (!this.draftAvailable || !this.draftClient || this.draftChangeCount === 0) return;
+    if (!this.draftAvailable || !this.draftClient || this.draftChangeCount === 0 ||
+        this.draftCommitting) return;
     if (!this.discardDraftArmed) {
       this.discardDraftArmed = true;
       return;
@@ -1571,7 +1637,7 @@ export class SmithproxyApp extends LitElement {
       this.markDrawerSaved(entry);
       return;
     }
-    if (!this.draftAvailable || !this.draftClient) return;
+    if (!this.draftAvailable || !this.draftClient || this.draftCommitting) return;
     const proposedChanges = this.draftChanges(entry);
     if (!proposedChanges) return;
     const changes = this.writableDraftChanges(proposedChanges);
@@ -2507,6 +2573,10 @@ export class SmithproxyApp extends LitElement {
 
   private renderDraftReview() {
     const changes = this.workspaceDraft?.changes ?? [];
+    const commitReady = this.draftPreflight?.commitAvailable && this.draftValidation &&
+      this.draftValidation.draftVersion === this.draftVersion &&
+      this.draftValidation.baseRevision === this.draftPreflight.baseRevision &&
+      this.draftValidation.validatedOperations === changes.length;
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -2515,7 +2585,8 @@ export class SmithproxyApp extends LitElement {
             <p>Version ${this.draftVersion} · ${changes.length} pending changes</p>
           </div>
           <button class="secondary danger-button" type="button"
-            ?disabled=${changes.length === 0 || this.draftSaving || this.draftValidating}
+            ?disabled=${changes.length === 0 || this.draftSaving || this.draftValidating ||
+              this.draftCommitting}
             @click=${() => this.discardDraft()}>
             ${this.draftSaving
               ? 'Discarding…'
@@ -2529,11 +2600,24 @@ export class SmithproxyApp extends LitElement {
           <section class="preflight" aria-label="Draft preflight">
             <div class="preflight-heading">
               <h3>Validation and impact preflight</h3>
-              <button class="primary" type="button"
-                ?disabled=${!this.draftPreflight?.validationAvailable || this.draftValidating}
-                @click=${() => this.validateDraft()}>
-                ${this.draftValidating ? 'Validating…' : 'Validate with Smithproxy'}
-              </button>
+              <div class="preflight-actions">
+                <button class="secondary" type="button"
+                  ?disabled=${!this.draftPreflight?.validationAvailable || this.draftValidating ||
+                    this.draftCommitting}
+                  @click=${() => this.validateDraft()}>
+                  ${this.draftValidating ? 'Validating…' : 'Validate with Smithproxy'}
+                </button>
+                <button class="primary" type="button"
+                  ?disabled=${!commitReady || this.draftCommitting || this.draftSaving ||
+                    this.draftValidating}
+                  @click=${() => this.commitDraft()}>
+                  ${this.draftCommitting
+                    ? 'Committing…'
+                    : this.draftCommitArmed
+                      ? `Confirm atomic commit · ${changes.length}`
+                      : 'Commit configuration'}
+                </button>
+              </div>
             </div>
             ${this.draftPreflight ? html`
               <div class="preflight-grid">
@@ -2551,7 +2635,11 @@ export class SmithproxyApp extends LitElement {
                   `}
                 </div>
                 <div class="preflight-check">
-                  <small>Atomic commit</small><strong class="runtime-state warning">Blocked</strong>
+                  <small>Atomic commit</small>
+                  <strong class="runtime-state ${commitReady ? 'success' : 'warning'}">
+                    ${commitReady ? 'Ready' : this.draftPreflight.commitAvailable
+                      ? 'Validation required' : 'Blocked'}
+                  </strong>
                 </div>
               </div>
               <div class="preflight-sections" aria-label="Affected configuration sections">
@@ -2562,9 +2650,11 @@ export class SmithproxyApp extends LitElement {
                   </span>
                 `)}
               </div>
-              <ul class="preflight-blockers">
-                ${this.draftPreflight.blockers.map(blocker => html`<li>${blocker.message}</li>`)}
-              </ul>
+              ${this.draftPreflight.blockers.length > 0 ? html`
+                <ul class="preflight-blockers">
+                  ${this.draftPreflight.blockers.map(blocker => html`<li>${blocker.message}</li>`)}
+                </ul>
+              ` : nothing}
               ${this.draftValidation ? html`
                 <p class="metric-note" role="status">
                   Smithproxy validated ${this.draftValidation.validatedOperations} operations ·
@@ -2586,6 +2676,15 @@ export class SmithproxyApp extends LitElement {
               <div class="metrics-message" role="status">Loading secure preflight…</div>
             `}
           </section>
+        ` : nothing}
+        ${this.draftCommitResult ? html`
+          <div class="metrics-message" role="status">
+            Atomic commit completed: ${this.draftCommitResult.committedOperations} operations ·
+            ${this.draftCommitResult.warningCount} warnings · restart
+            ${this.draftCommitResult.restart.replaceAll('-', ' ')}. Configuration refresh is pending.
+          </div>
+        ` : this.draftCommitError ? html`
+          <div class="error" role="alert">${this.draftCommitError}</div>
         ` : nothing}
         ${changes.length === 0 ? html`
           <div class="empty-state">
@@ -4867,7 +4966,8 @@ export class SmithproxyApp extends LitElement {
               ${this.drawerError ?? this.draftError ?? (dirty ? 'Unsaved changes' : readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}
             </span>
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>
-            <button class="primary" type="button" ?disabled=${readOnly || this.draftSaving}
+            <button class="primary" type="button"
+              ?disabled=${readOnly || this.draftSaving || this.draftCommitting}
               @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
           `}
         </footer>

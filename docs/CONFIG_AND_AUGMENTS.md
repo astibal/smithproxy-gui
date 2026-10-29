@@ -89,9 +89,11 @@ verzi draftu, počet změn, počet write-only změn a počty podle config sekcí
 Lokální schema validace je zobrazena odděleně od Smithproxy doménové validace.
 Po zpřístupnění schváleného transaction API a kanonické base revision nabídne
 GUI explicitní Smithproxy validaci. Výsledek platí jen pro přesnou verzi draftu,
-revizi a počet operací. Commit zůstává samostatně blokovaný, dokud není hotová
-celá atomická cesta; GUI nesmí lokální výsledek prezentovat jako validaci runtime
-aplikace.
+revizi a počet operací. Commit je dostupný jen nad přesně reviewnutým upstream
+kontraktem, po navázané validaci a druhém explicitním potvrzení operátora. GUI
+nesmí lokální výsledek prezentovat jako validaci runtime aplikace. Po úspěchu se
+draft atomicky uzavře a monitoring vynutí nové čtení configu; apply/reload job je
+nadále samostatný stav.
 
 ## Validace
 

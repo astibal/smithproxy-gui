@@ -91,16 +91,19 @@ and rechecks operation and encoded-request limits. Idempotency keys are UUIDv4
 values generated inside the GUI core directly from the operating-system CSPRNG.
 The response parser discards upstream messages and warning contents; it retains
 only a fixed terminal state, validated revisions, operation and warning counts,
-and a bounded restart enum. The adapter is connected only to the explicit
-browser validation endpoint; no browser commit endpoint exists yet. Its internal
-commit mode does not generate a fresh key implicitly. The coordinator retains
-and reuses one validated UUID for every uncertain retry of the same draft
+and a bounded restart enum. The adapter serves both explicit browser validation
+and the capability-gated atomic commit endpoint. Commit mode does not generate a
+fresh key implicitly. The coordinator retains and reuses one validated UUID for
+every uncertain retry of the same draft
 version and base revision. Its move-only RAII lease keeps at most one attempt in
 flight and rejects local draft mutations until the attempt terminates.
 Successful finalization also establishes a GUI-local monotonic revision barrier.
 Configuration observations started before that point cannot overwrite the
 committed base revision even if their requests complete later. The barrier is
 process-local metadata and cannot be supplied by either untrusted peer.
+The monitor marks its configuration snapshot as refreshing after finalization,
+wakes an immediate read, and rejects any sampled read whose local monotonic start
+predates the commit barrier.
 
 The explicit draft-validation endpoint accepts only an optimistic draft version;
 it obtains every value from the server-side snapshot after gateway and CSRF
@@ -113,6 +116,8 @@ The browser treats validation as a versioned, ephemeral result rather than an
 authorization token. It requires an exact match on draft version, base revision,
 and operation count, and discards the result whenever the draft version changes.
 Commit must repeat authoritative validation inside the upstream transaction.
+The browser sends only `expected_version`, requires an exact bound validation,
+and requires a second operator action before issuing commit.
 
 After a successful commit response, draft finalization compares the optimistic
 version again under the draft lock and requires a different canonical revision.

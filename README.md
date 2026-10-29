@@ -111,13 +111,14 @@ canonical revision endpoint, the core brackets the multi-section read and binds
 an empty workspace draft only to an unchanged lowercase SHA-256 revision.
 Frontend activation remains
 capability-gated until the trusted gateway handoff is configured. Configuration
-writes remain disabled while the atomic upstream commit contract is being
-completed. The server-side draft boundary accepts only pinned typed schema paths
-and rejects an entire batch when any path, type, enum, range, or collection is
-invalid. The draft review includes a value-free server preflight with affected
-sections and write-only counts. It exposes an explicit Smithproxy validation
-action only after the reviewed transaction capability and canonical draft
-revision are available, while keeping atomic commit independently blocked.
+writes remain fail-closed until Smithproxy advertises the exact reviewed atomic
+transaction contract. The server-side draft boundary accepts only pinned typed
+schema paths and rejects an entire batch when any path, type, enum, range, or
+collection is invalid. The draft review includes a value-free server preflight
+with affected sections and write-only counts. It exposes an explicit Smithproxy
+validation action only after the reviewed transaction capability and canonical draft
+revision are available. Atomic commit additionally requires a matching bound
+validation and explicit operator confirmation.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls.
@@ -128,17 +129,19 @@ collection identities, and schema hashes. Unreviewed schemas are visible as a
 fixed `review-required` diagnostic state but cannot enable configuration writes.
 The internal transaction envelope and response parser are also implemented:
 they bind typed changes to a canonical revision and OS-generated idempotency
-UUID while discarding free-form upstream response text. No browser commit path
-is enabled yet. The internal commit transport now requires a caller-owned stable
-idempotency UUID. A move-only commit coordinator retains that key across an
-uncertain retry, rejects local mutations while an attempt is in flight, and
-releases its gate through RAII. Draft finalization atomically verifies the draft
-version, clears changes, and advances the canonical base revision only after a
-bound success response. A local monotonic observation barrier prevents a
-configuration fetch started before that success from later restoring the stale
-base revision. Draft preflight reports the exact fixed blocker category
-instead of collapsing missing advertisement, schema review, compatibility,
-revision, and transport readiness into one generic error.
+UUID while discarding free-form upstream response text. No browser draft values
+or upstream credential cross the same-origin commit boundary: the endpoint
+accepts only the expected draft version. The internal commit transport requires
+a caller-owned stable idempotency UUID. A move-only commit coordinator retains
+that key across an uncertain retry, rejects local mutations while an attempt is
+in flight, and releases its gate through RAII. Draft finalization atomically
+verifies the draft version, clears changes, and advances the canonical base
+revision only after a bound success response. A local monotonic observation
+barrier prevents a configuration fetch started before that success from later restoring the stale
+base revision. It also requests an immediate monitored configuration refresh.
+Draft preflight reports fixed blocker categories instead of collapsing missing
+advertisement, schema review, compatibility, revision, and transport readiness
+into one generic error.
 The CSRF-protected validation endpoint is present as well and sends no draft
 values from the browser. The review UI binds a successful result to the exact
 draft version, base revision, and operation count and invalidates it on the next

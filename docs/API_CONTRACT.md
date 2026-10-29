@@ -155,8 +155,9 @@ Requests are limited to 64 KiB, the accumulated draft payload is limited to
 1 MiB, paths and values are bounded, and an expected draft version is mandatory;
 stale writers receive HTTP 409. The browser also rejects draft responses above
 8 MiB before JSON parsing, leaving room for worst-case JSON escaping of the
-bounded raw draft. This store is not yet a commit path and cannot mutate
-Smithproxy configuration.
+bounded raw draft. This store cannot mutate Smithproxy configuration by itself;
+mutation is possible only through the separate capability-gated atomic commit
+endpoint.
 
 When the draft is empty, the core binds it to the latest verified configuration
 revision. Changing that binding increments the draft version, so a browser that
@@ -192,16 +193,24 @@ write-only change counts, and bounded per-section counts. It reports the local
 schema result independently from upstream Smithproxy validation and commit
 availability. `validation_available` becomes true only when the reviewed
 transaction capability and canonical base revision are both present;
-`commit_available` remains false until the separate atomic commit path is
-complete. Exactly one stable availability blocker distinguishes an unadvertised
-endpoint, incompatible contract, unreviewed schema set, missing canonical base
-revision, or the not-yet-enabled commit transport. The endpoint never returns
-draft values, normalized diffs, paths, or secret material.
+`commit_available` additionally requires a non-empty draft and the enabled
+atomic commit transport. Stable blockers distinguish an empty draft,
+unadvertised endpoint, incompatible contract, unreviewed schema set, or missing
+canonical base revision. A ready non-empty draft has no blockers. The endpoint
+never returns draft values, normalized diffs, paths, or secret material.
 
 The review UI sends only the current draft version when the operator explicitly
 requests Smithproxy validation. It accepts success only when the response
 matches the current version, canonical base revision, and complete operation
 count. Any draft mutation invalidates the displayed result.
+
+`POST /api/v1/config/draft/commit` accepts only `expected_version` under the
+trusted-gateway and same-origin CSRF boundary. The browser enables it only for a
+validation bound to the same draft version, base revision, and operation count,
+then requires a second explicit confirmation. The GUI core repeats authoritative
+validation inside the upstream atomic transaction. Its response contains only
+the previous and committed canonical revisions, committed operation count,
+warning count, restart enum, and finalized draft version.
 
 Write-only paths accept explicit `unchanged`, `replace`, or `clear` intent in
 the frontend. The core retains a replacement only inside the server draft.

@@ -1,6 +1,7 @@
 #include "http_server.hpp"
 
 #include "audit_store.hpp"
+#include "commit_coordinator.hpp"
 #include "draft_store.hpp"
 #include "json.hpp"
 #include "operational_alerts.hpp"
@@ -82,6 +83,13 @@ std::string error_code(const std::string_view message) {
     if (message == "transaction validation unavailable") return "config.validation_unavailable";
     if (message == "transaction validation rejected") return "config.validation_rejected";
     if (message == "transaction validation failed") return "config.validation_failed";
+    if (message == "transaction commit in progress") return "config.commit_in_progress";
+    if (message == "transaction commit unavailable") return "config.commit_unavailable";
+    if (message == "transaction commit rejected") return "config.commit_rejected";
+    if (message == "transaction commit failed") return "config.commit_failed";
+    if (message == "transaction commit authorization failed") {
+        return "config.commit_authorization_failed";
+    }
     if (message == "draft change rejected") return "draft.change_rejected";
     if (message.starts_with("invalid draft")) return "draft.invalid_request";
     return "request.failed";
@@ -110,6 +118,7 @@ MutationAuditMetadata mutation_audit_metadata(
     if (relative == "/api/v1/config/draft/changes") metadata.operation = "config.draft.upsert";
     else if (relative == "/api/v1/config/draft/clear") metadata.operation = "config.draft.clear";
     else if (relative == "/api/v1/config/draft/validate") metadata.operation = "config.draft.validate";
+    else if (relative == "/api/v1/config/draft/commit") metadata.operation = "config.draft.commit";
     else return metadata;
 
     const auto document = nlohmann::json::parse(body, nullptr, false);
@@ -282,7 +291,8 @@ class GuiController final : public lmh::Controller {
 public:
     GuiController(const AppConfig& config, SmithproxyMonitor& monitor)
         : config_(config), monitor_(monitor), started_at_(std::chrono::steady_clock::now()),
-          request_id_prefix_(request_id_prefix()), draft_("workspace-draft") {}
+          request_id_prefix_(request_id_prefix()), draft_("workspace-draft"),
+          commit_coordinator_(draft_) {}
 
     bool validPath(const char*, const char*) override { return true; }
     lmh::ConnectionState* create_state() override {
@@ -322,27 +332,38 @@ public:
             response = {413, "application/json; charset=utf-8", "{\"error\":\"request body too large\"}"};
         } else if (std::string_view(method) == "POST") {
             response = route_mutation(connection, url, state.request_data);
-            record_mutation_audit(connection, url, state.request_data, response.status, state.request_id);
+            record_mutation_audit(
+                connection, url, state.request_data, response, state.request_id);
         } else if (std::string_view(method) != "GET" && !head) {
             response = {405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
         } else {
             response = route(connection, url);
         }
         if (state.body_too_large && std::string_view(method) == "POST") {
-            record_mutation_audit(connection, url, state.request_data, response.status, state.request_id);
+            record_mutation_audit(
+                connection, url, state.request_data, response, state.request_id);
         }
         return send(connection, state, std::move(response), head);
     }
 
 private:
     void record_mutation_audit(MHD_Connection* connection, const std::string_view url,
-                               const std::string_view body, const unsigned status,
+                               const std::string_view body, const Response& response,
                                const std::string& request_id) {
         const auto relative = path_below_base(url, config_.base_path);
         if (!relative || !relative->starts_with("/api/")) return;
         auto metadata = mutation_audit_metadata(*relative, body);
-        const auto outcome = status >= 200U && status < 300U ? "succeeded" :
-                             status == 409U ? "conflict" : "rejected";
+        if (metadata.operation == "config.draft.commit" &&
+            response.status >= 200U && response.status < 300U) {
+            const auto receipt = nlohmann::json::parse(response.body, nullptr, false);
+            if (receipt.is_object() && receipt.contains("committed_operations") &&
+                receipt["committed_operations"].is_number_unsigned()) {
+                const auto count = receipt["committed_operations"].get<std::uint64_t>();
+                if (count <= 4096U) metadata.target_count = static_cast<std::size_t>(count);
+            }
+        }
+        const auto outcome = response.status >= 200U && response.status < 300U ? "succeeded" :
+                             response.status == 409U ? "conflict" : "rejected";
         const auto authentication = !config_.gateway_secret ? "disabled" :
                                     gateway_authenticated(connection) ? "gateway" : "none";
         audit_.record(request_id, std::move(metadata.operation), outcome, authentication,
@@ -383,7 +404,8 @@ private:
         }
         if (*relative != "/api/v1/config/draft/changes" &&
             *relative != "/api/v1/config/draft/clear" &&
-            *relative != "/api/v1/config/draft/validate") {
+            *relative != "/api/v1/config/draft/validate" &&
+            *relative != "/api/v1/config/draft/commit") {
             return relative->starts_with("/api/")
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
                 : Response{405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
@@ -396,6 +418,91 @@ private:
         }
         bind_empty_draft_revision();
         const auto document = nlohmann::json::parse(body, nullptr, false);
+        if (*relative == "/api/v1/config/draft/commit") {
+            if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
+                !document.contains("expected_version") ||
+                !document["expected_version"].is_number_unsigned()) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid draft commit request\"}"};
+            }
+            if (monitor_.status().transaction_capabilities.state != "ready") {
+                return {503, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit unavailable\"}"};
+            }
+            auto lease = commit_coordinator_.begin(
+                document["expected_version"].get<std::uint64_t>());
+            switch (lease.result()) {
+                case CommitPreparationResult::Busy:
+                    return {409, "application/json; charset=utf-8",
+                            "{\"error\":\"transaction commit in progress\"}"};
+                case CommitPreparationResult::VersionConflict:
+                    return {409, "application/json; charset=utf-8",
+                            "{\"error\":\"draft version conflict\"}"};
+                case CommitPreparationResult::Empty:
+                case CommitPreparationResult::InvalidDraft:
+                    return {422, "application/json; charset=utf-8",
+                            "{\"error\":\"transaction commit rejected\"}"};
+                case CommitPreparationResult::EntropyUnavailable:
+                    return {503, "application/json; charset=utf-8",
+                            "{\"error\":\"transaction commit unavailable\"}"};
+                case CommitPreparationResult::Ready:
+                    break;
+            }
+            const auto committed_draft = lease.draft();
+            const auto transaction = monitor_.commit_transaction(
+                committed_draft, lease.idempotency_key());
+            if (transaction.state == "conflict") {
+                lease.release(false);
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction revision conflict\"}"};
+            }
+            if (transaction.state == "rejected") {
+                lease.release(false);
+                return {422, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit rejected\"}"};
+            }
+            if (transaction.state == "authorization-failed") {
+                lease.release(false);
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit authorization failed\"}"};
+            }
+            if (transaction.state == "failed") {
+                lease.release(false);
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit failed\"}"};
+            }
+            if (transaction.state == "unavailable") {
+                return {503, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit unavailable\"}"};
+            }
+            if (transaction.state != "succeeded" || !transaction.revision ||
+                !transaction.previous_revision) {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit failed\"}"};
+            }
+            const auto finalized = lease.complete_success(*transaction.revision);
+            if (finalized == DraftMutationResult::VersionConflict) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"draft version conflict\"}"};
+            }
+            if (finalized != DraftMutationResult::Applied) {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit failed\"}"};
+            }
+            (void)monitor_.note_config_committed(*transaction.revision);
+            const auto current = draft_.snapshot();
+            return {200, "application/json; charset=utf-8", nlohmann::json{
+                {"source", "gui-core"},
+                {"draft_id", committed_draft.id},
+                {"committed_draft_version", committed_draft.version},
+                {"draft_version", current.version},
+                {"previous_revision", *transaction.previous_revision},
+                {"revision", *transaction.revision},
+                {"committed_operations", transaction.validated_operations},
+                {"warning_count", transaction.warning_count},
+                {"restart", transaction.restart},
+            }.dump()};
+        }
         if (*relative == "/api/v1/config/draft/validate") {
             if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
                 !document.contains("expected_version") ||
@@ -447,7 +554,13 @@ private:
                 return {400, "application/json; charset=utf-8",
                         "{\"error\":\"invalid draft clear request\"}"};
             }
-            const auto result = draft_.clear(document["expected_version"].get<std::uint64_t>());
+            const auto result = commit_coordinator_.mutate([&] {
+                return draft_.clear(document["expected_version"].get<std::uint64_t>());
+            });
+            if (result == DraftMutationResult::Busy) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit in progress\"}"};
+            }
             if (result == DraftMutationResult::VersionConflict) {
                 return {409, "application/json; charset=utf-8",
                         "{\"error\":\"draft version conflict\"}"};
@@ -522,8 +635,14 @@ private:
             return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};
         }
 
-        const auto result = draft_.upsert_many(
-            document["expected_version"].get<std::uint64_t>(), std::move(changes));
+        const auto result = commit_coordinator_.mutate([&] {
+            return draft_.upsert_many(
+                document["expected_version"].get<std::uint64_t>(), std::move(changes));
+        });
+        if (result == DraftMutationResult::Busy) {
+            return {409, "application/json; charset=utf-8",
+                    "{\"error\":\"transaction commit in progress\"}"};
+        }
         if (result == DraftMutationResult::VersionConflict) {
             return {409, "application/json; charset=utf-8", "{\"error\":\"draft version conflict\"}"};
         }
@@ -594,13 +713,14 @@ private:
         const auto transaction_state = config_read
             ? status.transaction_capabilities.state
             : std::string{"unavailable"};
+        const bool config_write = config_read && transaction_state == "ready";
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
                     ",\"config_transaction_state\":" + json_string(transaction_state) +
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
-                    ",\"config_write\":false,"
-                    "\"drafts\":" + (config_read ? "true" : "false") +
+                    ",\"config_write\":" + (config_write ? "true" : "false") +
+                    ",\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"draft_preflight\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":false,\"events\":" + (monitoring ? "true" : "false") +
                     ",\"alerts\":" + (monitoring ? "true" : "false") +
@@ -699,6 +819,7 @@ private:
         }
         nlohmann::json blockers = nlohmann::json::array();
         const bool validation_available = transaction.state == "ready" && draft.base_revision.has_value();
+        const bool commit_available = validation_available && !draft.changes.empty();
         if (draft.changes.empty()) {
             blockers.push_back({
                 {"code", "draft.empty"},
@@ -720,12 +841,7 @@ private:
                 {"code", "draft.base_revision_unavailable"},
                 {"message", "The workspace draft has no canonical Smithproxy base revision."},
             });
-        } else if (transaction.state == "ready") {
-            blockers.push_back({
-                {"code", "gui.commit_transport_unavailable"},
-                {"message", "The GUI core atomic commit transport is not enabled yet."},
-            });
-        } else {
+        } else if (transaction.state != "ready") {
             blockers.push_back({
                 {"code", "upstream.transaction_unavailable"},
                 {"message", "Smithproxy does not advertise the reviewed atomic transaction API."},
@@ -741,7 +857,7 @@ private:
             {"schema_validation", "valid"},
             {"upstream_validation", "unavailable"},
             {"validation_available", validation_available},
-            {"commit_available", false},
+            {"commit_available", commit_available},
             {"sections", std::move(section_list)},
             {"blockers", std::move(blockers)},
         }.dump()};
@@ -1490,6 +1606,7 @@ private:
     const std::string request_id_prefix_;
     std::atomic<std::uint64_t> request_sequence_{};
     DraftStore draft_;
+    CommitCoordinator commit_coordinator_;
     AuditStore audit_;
 };
 

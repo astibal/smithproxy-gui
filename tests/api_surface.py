@@ -104,6 +104,7 @@ def main() -> None:
         "/api/v1/config/draft/preflight",
         "/api/v1/config/draft/changes",
         "/api/v1/config/draft/validate",
+        "/api/v1/config/draft/commit",
         "/api/v1/config/draft/clear",
     }, "trusted-gateway endpoint boundary drifted")
     require(all(item["authentication"] == "management" for item in endpoints
@@ -129,6 +130,7 @@ def main() -> None:
         "/api/v1/config/draft/preflight": "draft_preflight",
         "/api/v1/config/draft/changes": "drafts",
         "/api/v1/config/draft/validate": "draft_preflight",
+        "/api/v1/config/draft/commit": "config_write",
         "/api/v1/config/draft/clear": "drafts",
     }, "endpoint capability mapping drifted")
 

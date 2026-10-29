@@ -1,5 +1,7 @@
 #include "smithproxy_client.hpp"
 
+#include "revision.hpp"
+
 #include <curl/curl.h>
 
 #include <array>
@@ -122,6 +124,7 @@ void SmithproxyMonitor::start() {
 void SmithproxyMonitor::stop() {
     if (!worker_.joinable()) return;
     worker_.request_stop();
+    wakeup_.notify_all();
     worker_.join();
 }
 
@@ -139,6 +142,24 @@ TransactionResponse SmithproxyMonitor::validate_transaction(const DraftSnapshot&
 TransactionResponse SmithproxyMonitor::commit_transaction(
     const DraftSnapshot& draft, const std::string_view idempotency_key) const {
     return execute_transaction(draft, TransactionMode::Commit, idempotency_key);
+}
+
+bool SmithproxyMonitor::note_config_committed(const std::string_view committed_revision) {
+    if (!config_ || !config_enabled_ || !is_canonical_revision(committed_revision)) return false;
+    {
+        std::scoped_lock lock(mutex_);
+        minimum_config_observation_ = std::chrono::steady_clock::now();
+        status_.config_snapshot.state = "starting";
+        status_.config_snapshot.detail =
+            "Refreshing configuration after an atomic commit";
+        status_.config_snapshot.checked_at = std::chrono::system_clock::now();
+    }
+    {
+        std::scoped_lock lock(wakeup_mutex_);
+        config_refresh_requested_.store(true, std::memory_order_release);
+    }
+    wakeup_.notify_all();
+    return true;
 }
 
 TransactionResponse SmithproxyMonitor::execute_transaction(
@@ -201,8 +222,6 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
 }
 
 void SmithproxyMonitor::run(const std::stop_token stop_token) {
-    std::mutex wait_mutex;
-    std::condition_variable_any wakeup;
     auto next_session_sample = std::chrono::steady_clock::time_point{};
     auto next_neighbor_sample = std::chrono::steady_clock::time_point{};
     auto next_config_sample = std::chrono::steady_clock::time_point{};
@@ -214,11 +233,15 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
         std::optional<NeighborMetrics> sampled_neighbors;
         std::optional<ConfigSnapshot> sampled_config;
         std::optional<TransactionCapabilities> sampled_transaction_capabilities;
+        const bool refresh_requested =
+            config_refresh_requested_.exchange(false, std::memory_order_acq_rel);
+        if (refresh_requested) next_config_sample = std::chrono::steady_clock::time_point{};
         if (latest.state == "ready") {
             const auto now = std::chrono::steady_clock::now();
             const bool sample_sessions = now >= next_session_sample;
             const bool sample_neighbors = now >= next_neighbor_sample;
-            const bool sample_config = config_enabled_ && now >= next_config_sample;
+            const bool sample_config = config_enabled_ &&
+                                       (refresh_requested || now >= next_config_sample);
             auto metrics_future = std::async(
                 std::launch::async, [this] { return fetch_runtime_metrics(); });
             auto tls_cache_future = std::async(
@@ -332,20 +355,24 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 }
                 if (sampled_config) {
                     auto config = std::move(*sampled_config);
-                    config.last_success_at = previous_config.last_success_at;
-                    if (config.state == "ready") {
-                        config.last_success_at = config.checked_at;
+                    if (config.observation_started_at <= minimum_config_observation_) {
+                        latest.config_snapshot = std::move(previous_config);
                     } else {
-                        config.policies = std::move(previous_config.policies);
-                        config.addresses = std::move(previous_config.addresses);
-                        config.ports = std::move(previous_config.ports);
-                        config.protocols = std::move(previous_config.protocols);
-                        config.profiles = std::move(previous_config.profiles);
-                        config.settings = std::move(previous_config.settings);
-                        config.captures = std::move(previous_config.captures);
-                        config.security_assets = std::move(previous_config.security_assets);
+                        config.last_success_at = previous_config.last_success_at;
+                        if (config.state == "ready") {
+                            config.last_success_at = config.checked_at;
+                        } else {
+                            config.policies = std::move(previous_config.policies);
+                            config.addresses = std::move(previous_config.addresses);
+                            config.ports = std::move(previous_config.ports);
+                            config.protocols = std::move(previous_config.protocols);
+                            config.profiles = std::move(previous_config.profiles);
+                            config.settings = std::move(previous_config.settings);
+                            config.captures = std::move(previous_config.captures);
+                            config.security_assets = std::move(previous_config.security_assets);
+                        }
+                        latest.config_snapshot = std::move(config);
                     }
-                    latest.config_snapshot = std::move(config);
                 } else {
                     latest.config_snapshot = std::move(previous_config);
                 }
@@ -396,8 +423,10 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             if (latest.history.size() > 60U) latest.history.erase(latest.history.begin());
             status_ = std::move(latest);
         }
-        std::unique_lock lock(wait_mutex);
-        wakeup.wait_for(lock, stop_token, std::chrono::seconds(5), [] { return false; });
+        std::unique_lock lock(wakeup_mutex_);
+        wakeup_.wait_for(lock, stop_token, std::chrono::seconds(5), [this] {
+            return config_refresh_requested_.load(std::memory_order_acquire);
+        });
     }
 }
 

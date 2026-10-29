@@ -48,7 +48,7 @@ export interface DraftPreflight {
   schemaValidation: 'valid';
   upstreamValidation: 'unavailable';
   validationAvailable: boolean;
-  commitAvailable: false;
+  commitAvailable: boolean;
   sections: ReadonlyArray<DraftPreflightSection>;
   blockers: ReadonlyArray<DraftPreflightBlocker>;
 }
@@ -60,6 +60,18 @@ export interface DraftValidation {
   baseRevision: string;
   upstreamValidation: 'valid';
   validatedOperations: number;
+  warningCount: number;
+  restart: 'not-required' | 'required' | 'scheduled';
+}
+
+export interface DraftCommit {
+  source: 'gui-core';
+  draftId: 'workspace-draft';
+  committedDraftVersion: number;
+  draftVersion: number;
+  previousRevision: string;
+  revision: string;
+  committedOperations: number;
   warningCount: number;
   restart: 'not-required' | 'required' | 'scheduled';
 }
@@ -173,8 +185,8 @@ function parsePreflight(value: unknown): DraftPreflight {
       Number(value.sensitive_change_count) > Number(value.change_count) ||
       value.schema_validation !== 'valid' || value.upstream_validation !== 'unavailable' ||
       typeof value.validation_available !== 'boolean' ||
-      value.commit_available !== false || !Array.isArray(value.sections) || value.sections.length > 18 ||
-      !Array.isArray(value.blockers) || value.blockers.length === 0 || value.blockers.length > 2) {
+      typeof value.commit_available !== 'boolean' || !Array.isArray(value.sections) ||
+      value.sections.length > 18 || !Array.isArray(value.blockers) || value.blockers.length > 2) {
     throw new Error('Invalid draft preflight response.');
   }
   const sectionNames = new Set<string>();
@@ -209,13 +221,20 @@ function parsePreflight(value: unknown): DraftPreflight {
     return {code: item.code as DraftPreflightBlocker['code'], message: item.message};
   });
   const availabilityBlockers = [...blockerCodes].filter(code =>
-    availabilityBlockerCodes.has(code as DraftPreflightBlocker['code']));
+    availabilityBlockerCodes.has(code as DraftPreflightBlocker['code']) &&
+    code !== 'gui.commit_transport_unavailable');
+  const commitTransportUnavailable = blockerCodes.has('gui.commit_transport_unavailable');
+  const expectedValidationAvailable = availabilityBlockers.length === 0 && value.base_revision !== null;
+  const expectedCommitAvailable = expectedValidationAvailable && Number(value.change_count) > 0 &&
+    !commitTransportUnavailable;
   if (sectionChanges !== Number(value.change_count) || sectionSensitive !== Number(value.sensitive_change_count) ||
       (Number(value.change_count) === 0) !== blockerCodes.has('draft.empty') ||
-      availabilityBlockers.length !== 1 ||
+      availabilityBlockers.length > 1 ||
       (blockerCodes.has('draft.base_revision_unavailable') && value.base_revision !== null) ||
-      (value.validation_available !== blockerCodes.has('gui.commit_transport_unavailable')) ||
-      (value.validation_available && value.base_revision === null)) {
+      value.validation_available !== expectedValidationAvailable ||
+      value.commit_available !== expectedCommitAvailable ||
+      (commitTransportUnavailable && (!expectedValidationAvailable || Number(value.change_count) === 0)) ||
+      (!expectedValidationAvailable && availabilityBlockers.length !== 1)) {
     throw new Error('Inconsistent draft preflight response.');
   }
   return {
@@ -223,7 +242,7 @@ function parsePreflight(value: unknown): DraftPreflight {
     baseRevision: value.base_revision, changeCount: Number(value.change_count),
     sensitiveChangeCount: Number(value.sensitive_change_count), schemaValidation: 'valid',
     upstreamValidation: 'unavailable', validationAvailable: value.validation_available,
-    commitAvailable: false, sections, blockers,
+    commitAvailable: value.commit_available, sections, blockers,
   };
 }
 
@@ -245,6 +264,34 @@ function parseValidation(value: unknown): DraftValidation {
     baseRevision: value.base_revision,
     upstreamValidation: 'valid',
     validatedOperations: Number(value.validated_operations),
+    warningCount: Number(value.warning_count),
+    restart: value.restart,
+  };
+}
+
+function parseCommit(value: unknown): DraftCommit {
+  if (!isObject(value) || value.source !== 'gui-core' || value.draft_id !== 'workspace-draft' ||
+      !Number.isSafeInteger(value.committed_draft_version) || Number(value.committed_draft_version) < 0 ||
+      !Number.isSafeInteger(value.draft_version) ||
+      Number(value.draft_version) !== Number(value.committed_draft_version) + 1 ||
+      !isCanonicalRevisionOrNull(value.previous_revision) || value.previous_revision === null ||
+      !isCanonicalRevisionOrNull(value.revision) || value.revision === null ||
+      value.revision === value.previous_revision ||
+      !Number.isSafeInteger(value.committed_operations) || Number(value.committed_operations) <= 0 ||
+      Number(value.committed_operations) > 4096 ||
+      !Number.isSafeInteger(value.warning_count) || Number(value.warning_count) < 0 ||
+      Number(value.warning_count) > 64 ||
+      (value.restart !== 'not-required' && value.restart !== 'required' && value.restart !== 'scheduled')) {
+    throw new Error('Invalid draft commit response.');
+  }
+  return {
+    source: 'gui-core',
+    draftId: 'workspace-draft',
+    committedDraftVersion: Number(value.committed_draft_version),
+    draftVersion: Number(value.draft_version),
+    previousRevision: value.previous_revision,
+    revision: value.revision,
+    committedOperations: Number(value.committed_operations),
     warningCount: Number(value.warning_count),
     restart: value.restart,
   };
@@ -281,6 +328,17 @@ export class DraftClient {
     }));
   }
 
+  async commit(expectedVersion: number): Promise<DraftCommit> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+      throw new Error('Invalid draft version.');
+    }
+    return parseCommit(await this.#request(`${this.#endpoint}/commit`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({expected_version: expectedVersion}),
+    }, Math.max(this.#timeoutMs, 15_000)));
+  }
+
   async upsert(expectedVersion: number, path: string, value: DraftScalar): Promise<DraftSnapshot> {
     return this.upsertMany(expectedVersion, [{path, value}]);
   }
@@ -313,9 +371,9 @@ export class DraftClient {
     }));
   }
 
-  async #request(path: string, init: RequestInit): Promise<unknown> {
+  async #request(path: string, init: RequestInit, timeoutMs = this.#timeoutMs): Promise<unknown> {
     const controller = new AbortController();
-    const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
+    const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await this.#fetch(path, {
         ...init,
