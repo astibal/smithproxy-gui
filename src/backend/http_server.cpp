@@ -2,6 +2,8 @@
 
 #include "audit_store.hpp"
 #include "commit_coordinator.hpp"
+#include "draft_operation.hpp"
+#include "draft_operation_json.hpp"
 #include "draft_store.hpp"
 #include "job_store.hpp"
 #include "json.hpp"
@@ -23,12 +25,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <limits>
 #include <map>
 #include <memory>
 #include <random>
 #include <sstream>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace smithproxy::gui {
@@ -89,8 +91,11 @@ std::string error_code(const std::string_view message) {
     if (message == "transaction commit authorization failed") {
         return "config.commit_authorization_failed";
     }
+    if (message == "structural draft unavailable") return "config.structural_unavailable";
     if (message == "draft change rejected") return "draft.change_rejected";
-    if (message.starts_with("invalid draft")) return "draft.invalid_request";
+    if (message.starts_with("invalid draft") || message.starts_with("invalid structural draft")) {
+        return "draft.invalid_request";
+    }
     return "request.failed";
 }
 
@@ -119,6 +124,12 @@ MutationAuditMetadata mutation_audit_metadata(
         metadata.operation = "config.draft.remove";
     }
     else if (relative == "/api/v1/config/draft/clear") metadata.operation = "config.draft.clear";
+    else if (relative == "/api/v1/config/draft/operations") {
+        metadata.operation = "config.draft.operation.upsert";
+    }
+    else if (relative == "/api/v1/config/draft/operations/remove") {
+        metadata.operation = "config.draft.operation.remove";
+    }
     else if (relative == "/api/v1/config/draft/validate") metadata.operation = "config.draft.validate";
     else if (relative == "/api/v1/config/draft/commit") metadata.operation = "config.draft.commit";
     else return metadata;
@@ -141,7 +152,14 @@ MutationAuditMetadata mutation_audit_metadata(
         }
         metadata.targets.push_back(path);
     };
-    if (document.contains("path")) {
+    if (metadata.operation == "config.draft.operation.upsert" &&
+        document.contains("operation") && document["operation"].is_object() &&
+        document["operation"].contains("local_id")) {
+        append_target(document["operation"]["local_id"]);
+    } else if (metadata.operation == "config.draft.operation.remove" &&
+               document.contains("local_id")) {
+        append_target(document["local_id"]);
+    } else if (document.contains("path")) {
         append_target(document["path"]);
     } else if (document.contains("paths") && document["paths"].is_array()) {
         for (const auto& path : document["paths"]) append_target(path);
@@ -337,6 +355,51 @@ bool sensitive_draft_path(const std::string_view path) {
              path.starts_with("detection_signatures.[")) && path.ends_with("].signature"));
 }
 
+nlohmann::json draft_value_json(const std::string_view path, const DraftScalar& value) {
+    if (!sensitive_draft_path(path)) {
+        return std::visit([](const auto& item) { return nlohmann::json(item); }, value);
+    }
+    if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
+        return text->empty() ? "[redacted:clear]" : "[redacted:replace]";
+    }
+    if (const auto* items = std::get_if<std::vector<std::string>>(&value); items != nullptr) {
+        return items->empty() ? nlohmann::json("[redacted:clear]")
+                              : nlohmann::json("[redacted:replace:" +
+                                               std::to_string(items->size()) + "]");
+    }
+    return "[redacted:replace]";
+}
+
+nlohmann::json draft_position_json(const DraftPosition& position) {
+    switch (position.kind) {
+        case DraftPositionKind::First: return {{"first", true}};
+        case DraftPositionKind::Last: return {{"last", true}};
+        case DraftPositionKind::Before: return {{"before", *position.reference}};
+        case DraftPositionKind::After: return {{"after", *position.reference}};
+    }
+    return nlohmann::json::object();
+}
+
+bool structural_operation_supported(
+    const DraftStructuralOperation& operation, const TransactionCapabilities& capabilities) {
+    if (capabilities.state != "ready") return false;
+    const auto collection = draft_structural_collection(operation);
+    const auto found = std::find_if(
+        capabilities.collections.begin(), capabilities.collections.end(),
+        [collection](const auto& item) { return item.id == collection; });
+    if (found == capabilities.collections.end()) return false;
+    return std::visit([&](const auto& item) {
+        using Operation = std::decay_t<decltype(item)>;
+        if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+            return found->nested == item.parent_id.has_value();
+        } else if constexpr (std::is_same_v<Operation, DraftMoveOperation>) {
+            return found->ordered;
+        } else {
+            return true;
+        }
+    }, operation);
+}
+
 bool confined_to_root(const std::filesystem::path& root, const std::filesystem::path& candidate) {
     std::error_code error;
     const auto canonical_root = std::filesystem::weakly_canonical(root, error);
@@ -474,6 +537,8 @@ private:
         }
         if (*relative != "/api/v1/config/draft/changes" &&
             *relative != "/api/v1/config/draft/changes/remove" &&
+            *relative != "/api/v1/config/draft/operations" &&
+            *relative != "/api/v1/config/draft/operations/remove" &&
             *relative != "/api/v1/config/draft/clear" &&
             *relative != "/api/v1/config/draft/validate" &&
             *relative != "/api/v1/config/draft/commit") {
@@ -641,6 +706,85 @@ private:
             }
             return draft_snapshot();
         }
+        if (*relative == "/api/v1/config/draft/operations/remove") {
+            if (document.is_discarded() || !document.is_object() || document.size() != 2U ||
+                !document.contains("expected_version") ||
+                !document["expected_version"].is_number_unsigned() ||
+                !document.contains("local_id") || !document["local_id"].is_string()) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid structural draft remove request\"}"};
+            }
+            const auto local_id = document["local_id"].get<std::string>();
+            if (!valid_draft_structural_local_id(local_id)) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid structural draft remove request\"}"};
+            }
+            const auto result = commit_coordinator_.mutate([&] {
+                return draft_.remove_structural(
+                    document["expected_version"].get<std::uint64_t>(), local_id);
+            });
+            if (result == DraftMutationResult::Busy) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit in progress\"}"};
+            }
+            if (result == DraftMutationResult::VersionConflict) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"draft version conflict\"}"};
+            }
+            if (result == DraftMutationResult::Missing) {
+                return {404, "application/json; charset=utf-8",
+                        "{\"error\":\"draft change not found\"}"};
+            }
+            if (result != DraftMutationResult::Applied) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid structural draft remove request\"}"};
+            }
+            return draft_snapshot();
+        }
+        if (*relative == "/api/v1/config/draft/operations") {
+            if (document.is_discarded() || !document.is_object() || document.size() != 2U ||
+                !document.contains("expected_version") ||
+                !document["expected_version"].is_number_unsigned() ||
+                !document.contains("operation")) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid structural draft request\"}"};
+            }
+            auto operation = parse_draft_structural_operation(document["operation"]);
+            if (!operation) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid structural draft request\"}"};
+            }
+            const auto status = monitor_.status();
+            const auto& capabilities = status.transaction_capabilities;
+            const auto current_draft = draft_.snapshot();
+            if (capabilities.state != "ready" || !status.config_snapshot.stable_entity_ids ||
+                !status.config_snapshot.revision || !current_draft.base_revision ||
+                *status.config_snapshot.revision != *current_draft.base_revision) {
+                return {503, "application/json; charset=utf-8",
+                        "{\"error\":\"structural draft unavailable\"}"};
+            }
+            if (!structural_operation_supported(*operation, capabilities)) {
+                return {422, "application/json; charset=utf-8",
+                        "{\"error\":\"draft change rejected\"}"};
+            }
+            const auto result = commit_coordinator_.mutate([&] {
+                return draft_.upsert_structural(
+                    document["expected_version"].get<std::uint64_t>(), std::move(*operation));
+            });
+            if (result == DraftMutationResult::Busy) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit in progress\"}"};
+            }
+            if (result == DraftMutationResult::VersionConflict) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"draft version conflict\"}"};
+            }
+            if (result != DraftMutationResult::Applied) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"draft change rejected\"}"};
+            }
+            return draft_snapshot();
+        }
         if (*relative == "/api/v1/config/draft/changes/remove") {
             if (document.is_discarded() || !document.is_object() || document.size() != 2U ||
                 !document.contains("expected_version") ||
@@ -691,48 +835,11 @@ private:
             !document.contains("expected_version") || !document["expected_version"].is_number_unsigned()) {
             return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};
         }
-        const auto parse_value = [](const nlohmann::json& raw) -> std::optional<DraftScalar> {
-            if (raw.is_boolean()) return DraftScalar{raw.get<bool>()};
-            if (raw.is_number_unsigned()) {
-                const auto number = raw.get<std::uint64_t>();
-                if (number > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-                    return std::nullopt;
-                }
-                return DraftScalar{static_cast<std::int64_t>(number)};
-            }
-            if (raw.is_number_integer()) return DraftScalar{raw.get<std::int64_t>()};
-            if (raw.is_number_float()) return DraftScalar{raw.get<double>()};
-            if (raw.is_string()) return DraftScalar{raw.get<std::string>()};
-            if (raw.is_array()) {
-                if (raw.empty()) return DraftScalar{std::vector<std::string>{}};
-                if (raw.front().is_number_integer() || raw.front().is_number_unsigned()) {
-                    std::vector<std::int64_t> values;
-                    values.reserve(raw.size());
-                    for (const auto& item : raw) {
-                        if (!item.is_number_integer() && !item.is_number_unsigned()) return std::nullopt;
-                        if (item.is_number_unsigned() &&
-                            item.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-                            return std::nullopt;
-                        }
-                        values.push_back(item.get<std::int64_t>());
-                    }
-                    return DraftScalar{std::move(values)};
-                }
-                std::vector<std::string> values;
-                values.reserve(raw.size());
-                for (const auto& item : raw) {
-                    if (!item.is_string()) return std::nullopt;
-                    values.push_back(item.get<std::string>());
-                }
-                return DraftScalar{std::move(values)};
-            }
-            return std::nullopt;
-        };
         std::vector<DraftChange> changes;
         std::vector<std::string> remove_paths;
         if (document.size() == 3U && document.contains("path") && document["path"].is_string() &&
             document.contains("value")) {
-            auto value = parse_value(document["value"]);
+            auto value = parse_draft_scalar(document["value"]);
             if (!value) {
                 return {400, "application/json; charset=utf-8",
                         "{\"error\":\"invalid draft value\"}"};
@@ -749,7 +856,7 @@ private:
                     !item["path"].is_string() || !item.contains("value")) {
                     return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};
                 }
-                auto value = parse_value(item["value"]);
+                auto value = parse_draft_scalar(item["value"]);
                 if (!value) {
                     return {400, "application/json; charset=utf-8",
                             "{\"error\":\"invalid draft value\"}"};
@@ -927,25 +1034,44 @@ private:
             {"base_revision", draft.base_revision ? nlohmann::json(*draft.base_revision) : nlohmann::json(nullptr)},
             {"version", draft.version},
             {"changes", nlohmann::json::array()},
+            {"structural_operations", nlohmann::json::array()},
         };
         for (const auto& change : draft.changes) {
-            nlohmann::json value;
-            if (sensitive_draft_path(change.path)) {
-                if (const auto* text = std::get_if<std::string>(&change.value); text != nullptr) {
-                    value = text->empty() ? "[redacted:clear]" : "[redacted:replace]";
-                } else if (const auto* items = std::get_if<std::vector<std::string>>(&change.value);
-                           items != nullptr) {
-                    value = items->empty()
-                                ? nlohmann::json("[redacted:clear]")
-                                : nlohmann::json("[redacted:replace:" +
-                                                 std::to_string(items->size()) + "]");
+            document["changes"].push_back({
+                {"path", change.path}, {"value", draft_value_json(change.path, change.value)},
+            });
+        }
+        for (const auto& operation : draft.structural_operations) {
+            document["structural_operations"].push_back(std::visit([&](const auto& item) {
+                using Operation = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+                    nlohmann::json fields = nlohmann::json::object();
+                    for (const auto& [name, value] : item.fields) {
+                        const auto path = draft_structural_field_path(item.collection, name);
+                        fields[name] = path ? draft_value_json(*path, value)
+                                            : nlohmann::json("[redacted:replace]");
+                    }
+                    nlohmann::json result{
+                        {"local_id", item.local_id}, {"op", "create"},
+                        {"collection", item.collection}, {"client_id", item.client_id},
+                        {"position", draft_position_json(item.position)},
+                        {"fields", std::move(fields)},
+                    };
+                    if (item.parent_id) result["parent_id"] = *item.parent_id;
+                    return result;
+                } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+                    return nlohmann::json{
+                        {"local_id", item.local_id}, {"op", "delete"},
+                        {"collection", item.collection}, {"entity_id", item.entity_id},
+                    };
                 } else {
-                    value = "[redacted:replace]";
+                    return nlohmann::json{
+                        {"local_id", item.local_id}, {"op", "move"},
+                        {"collection", item.collection}, {"entity_id", item.entity_id},
+                        {"position", draft_position_json(item.position)},
+                    };
                 }
-            } else {
-                value = std::visit([](const auto& item) { return nlohmann::json(item); }, change.value);
-            }
-            document["changes"].push_back({{"path", change.path}, {"value", std::move(value)}});
+            }, operation));
         }
         return {200, "application/json; charset=utf-8", document.dump()};
     }
@@ -962,6 +1088,28 @@ private:
             auto& counts = sections[section];
             ++counts.first;
             if (sensitive_draft_path(change.path)) {
+                ++counts.second;
+                ++sensitive_changes;
+            }
+        }
+        for (const auto& operation : draft.structural_operations) {
+            const auto collection = draft_structural_collection(operation);
+            const auto separator = collection.find('.');
+            const auto section = std::string(collection.substr(0U, separator));
+            auto& counts = sections[section];
+            ++counts.first;
+            const auto sensitive = std::visit([](const auto& item) {
+                using Operation = std::decay_t<decltype(item)>;
+                if constexpr (!std::is_same_v<Operation, DraftCreateOperation>) {
+                    return false;
+                } else {
+                    return std::any_of(item.fields.begin(), item.fields.end(), [&](const auto& field) {
+                        const auto path = draft_structural_field_path(item.collection, field.first);
+                        return !path || sensitive_draft_path(*path);
+                    });
+                }
+            }, operation);
+            if (sensitive) {
                 ++counts.second;
                 ++sensitive_changes;
             }

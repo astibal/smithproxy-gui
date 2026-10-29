@@ -177,6 +177,17 @@ The GUI core currently exposes one workspace-scoped foundation draft at
 `POST /api/v1/config/draft/changes`. The complete draft can be discarded with
 `POST /api/v1/config/draft/clear`; one pending path or a bounded unique path
 group can be removed atomically with `POST /api/v1/config/draft/changes/remove`.
+Reviewed create, delete, and move operations use
+`POST /api/v1/config/draft/operations`; one operation is removed by its bounded
+client-local identifier through `POST /api/v1/config/draft/operations/remove`.
+The core accepts structural writes only while Smithproxy advertises the exact
+reviewed collection schema and compatible nesting and ordering semantics, and
+the current configuration snapshot carries opaque stable entity IDs bound to
+the draft base revision. IDs synthesized by the legacy multi-section reader are
+never accepted for structural operations. A capability loss blocks new structural writes but never
+blocks removing or discarding an already retained operation. Draft snapshots
+return structural operations with the same write-only redaction rules as scalar
+changes, and preflight counts each structural operation exactly once.
 An editor can atomically reconcile one bounded `changes` batch with a disjoint
 `remove_paths` array through `POST /api/v1/config/draft/changes`. This keeps a
 field restored to its persistent value from passing through a transient set

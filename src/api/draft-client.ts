@@ -9,11 +9,50 @@ export interface DraftChange {
   value: DraftScalar;
 }
 
+export type DraftPosition =
+  | {kind: 'first' | 'last'; reference: null}
+  | {kind: 'before' | 'after'; reference: string};
+
+interface DraftStructuralOperationBase {
+  localId: string;
+  collection: DraftStructuralCollection;
+}
+
+export type DraftStructuralCollection =
+  | 'policy' | 'address_objects' | 'port_objects' | 'proto_objects' | 'routing'
+  | 'tls_profiles' | 'content_profiles' | 'content_profiles.content_rules'
+  | 'ssh_profiles' | 'script_profiles' | 'auth_profiles' | 'detection_profiles'
+  | 'alg_dns_profiles' | 'tls_ca' | 'starttls_signatures' | 'starttls_signatures.flow'
+  | 'detection_signatures' | 'detection_signatures.flow';
+
+export interface DraftCreateOperation extends DraftStructuralOperationBase {
+  op: 'create';
+  clientId: string;
+  parentId: string | null;
+  position: DraftPosition;
+  fields: Readonly<Record<string, DraftScalar>>;
+}
+
+export interface DraftDeleteOperation extends DraftStructuralOperationBase {
+  op: 'delete';
+  entityId: string;
+}
+
+export interface DraftMoveOperation extends DraftStructuralOperationBase {
+  op: 'move';
+  entityId: string;
+  position: DraftPosition;
+}
+
+export type DraftStructuralOperation =
+  | DraftCreateOperation | DraftDeleteOperation | DraftMoveOperation;
+
 export interface DraftSnapshot {
   id: string;
   baseRevision: string | null;
   version: number;
   changes: ReadonlyArray<DraftChange>;
+  structuralOperations: ReadonlyArray<DraftStructuralOperation>;
 }
 
 export type DraftSectionName =
@@ -111,11 +150,119 @@ function scalar(value: unknown): DraftScalar {
   throw new Error('Invalid draft scalar.');
 }
 
+const structuralCollections = new Set<DraftStructuralCollection>([
+  'policy', 'address_objects', 'port_objects', 'proto_objects', 'routing',
+  'tls_profiles', 'content_profiles', 'content_profiles.content_rules',
+  'ssh_profiles', 'script_profiles', 'auth_profiles', 'detection_profiles',
+  'alg_dns_profiles', 'tls_ca', 'starttls_signatures', 'starttls_signatures.flow',
+  'detection_signatures', 'detection_signatures.flow',
+]);
+
+function localIdentifier(value: unknown): string {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(value)) {
+    throw new Error('Invalid structural draft identifier.');
+  }
+  return value;
+}
+
+function entityIdentifier(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 256 ||
+      !/^[A-Za-z0-9:._-]+$/u.test(value)) {
+    throw new Error('Invalid structural draft entity identifier.');
+  }
+  return value;
+}
+
+function structuralCollection(value: unknown): DraftStructuralCollection {
+  if (typeof value !== 'string' || !structuralCollections.has(value as DraftStructuralCollection)) {
+    throw new Error('Invalid structural draft collection.');
+  }
+  return value as DraftStructuralCollection;
+}
+
+function position(value: unknown): DraftPosition {
+  if (!isObject(value) || Object.keys(value).length !== 1) {
+    throw new Error('Invalid structural draft position.');
+  }
+  if (value.first === true) return {kind: 'first', reference: null};
+  if (value.last === true) return {kind: 'last', reference: null};
+  if (typeof value.before === 'string') {
+    return {kind: 'before', reference: entityIdentifier(value.before)};
+  }
+  if (typeof value.after === 'string') {
+    return {kind: 'after', reference: entityIdentifier(value.after)};
+  }
+  throw new Error('Invalid structural draft position.');
+}
+
+function structuralOperation(value: unknown): DraftStructuralOperation {
+  if (!isObject(value) || typeof value.op !== 'string') {
+    throw new Error('Invalid structural draft operation.');
+  }
+  const localId = localIdentifier(value.local_id);
+  const collection = structuralCollection(value.collection);
+  if (value.op === 'create') {
+    const allowed = new Set(['op', 'local_id', 'collection', 'client_id', 'parent_id', 'position', 'fields']);
+    if (Object.keys(value).some(key => !allowed.has(key)) ||
+        !isObject(value.fields) || Object.keys(value.fields).length === 0 ||
+        Object.keys(value.fields).length > 256 ||
+        !(value.parent_id === undefined || typeof value.parent_id === 'string')) {
+      throw new Error('Invalid structural create operation.');
+    }
+    const fields: Record<string, DraftScalar> = {};
+    for (const [name, raw] of Object.entries(value.fields)) {
+      if (!/^[a-z][a-z0-9_-]{0,95}$/u.test(name)) {
+        throw new Error('Invalid structural create field.');
+      }
+      fields[name] = scalar(raw);
+    }
+    return {
+      op: 'create', localId, collection, clientId: localIdentifier(value.client_id),
+      parentId: value.parent_id === undefined ? null : entityIdentifier(value.parent_id),
+      position: position(value.position), fields,
+    };
+  }
+  if (value.op === 'delete') {
+    if (Object.keys(value).length !== 4) throw new Error('Invalid structural delete operation.');
+    return {op: 'delete', localId, collection, entityId: entityIdentifier(value.entity_id)};
+  }
+  if (value.op === 'move') {
+    if (Object.keys(value).length !== 5) throw new Error('Invalid structural move operation.');
+    const parsedPosition = position(value.position);
+    const entityId = entityIdentifier(value.entity_id);
+    if (parsedPosition.reference === entityId) throw new Error('Invalid structural move operation.');
+    return {op: 'move', localId, collection, entityId, position: parsedPosition};
+  }
+  throw new Error('Invalid structural draft operation.');
+}
+
+function wirePosition(value: DraftPosition): Record<string, boolean | string> {
+  return value.reference === null ? {[value.kind]: true} : {[value.kind]: value.reference};
+}
+
+function wireStructuralOperation(value: DraftStructuralOperation): JsonObject {
+  if (value.op === 'create') {
+    return {
+      op: value.op, local_id: value.localId, collection: value.collection,
+      client_id: value.clientId, ...(value.parentId === null ? {} : {parent_id: value.parentId}),
+      position: wirePosition(value.position), fields: value.fields,
+    };
+  }
+  if (value.op === 'move') {
+    return {
+      op: value.op, local_id: value.localId, collection: value.collection,
+      entity_id: value.entityId, position: wirePosition(value.position),
+    };
+  }
+  return {op: value.op, local_id: value.localId, collection: value.collection, entity_id: value.entityId};
+}
+
 function parseDraft(value: unknown): DraftSnapshot {
   if (!isObject(value) || value.id !== 'workspace-draft' ||
       !isCanonicalRevisionOrNull(value.base_revision) ||
       typeof value.version !== 'number' || !Number.isSafeInteger(value.version) || value.version < 0 ||
-      !Array.isArray(value.changes) || value.changes.length > 4096) {
+      !Array.isArray(value.changes) || !Array.isArray(value.structural_operations) ||
+      value.changes.length + value.structural_operations.length > 4096) {
     throw new Error('Invalid draft response.');
   }
   const paths = new Set<string>();
@@ -127,7 +274,31 @@ function parseDraft(value: unknown): DraftSnapshot {
     paths.add(item.path);
     return {path: item.path, value: scalar(item.value)};
   });
-  return {id: value.id, baseRevision: value.base_revision, version: value.version, changes};
+  const localIds = new Set<string>();
+  const createIds = new Set<string>();
+  const structuralTargets = new Set<string>();
+  const structuralOperations = value.structural_operations.map(item => {
+    const parsed = structuralOperation(item);
+    if (localIds.has(parsed.localId)) throw new Error('Duplicate structural draft identifier.');
+    localIds.add(parsed.localId);
+    if (parsed.op === 'create') {
+      if (createIds.has(parsed.clientId)) throw new Error('Duplicate structural create identifier.');
+      createIds.add(parsed.clientId);
+    } else {
+      const target = `${parsed.collection}\0${parsed.entityId}`;
+      if (structuralTargets.has(target)) throw new Error('Duplicate structural draft target.');
+      structuralTargets.add(target);
+    }
+    return parsed;
+  });
+  return {
+    id: value.id, baseRevision: value.base_revision, version: value.version,
+    changes, structuralOperations,
+  };
+}
+
+export function draftOperationCount(value: DraftSnapshot): number {
+  return value.changes.length + value.structuralOperations.length;
 }
 
 const draftSectionNames = new Set<DraftSectionName>([
@@ -365,6 +536,36 @@ export class DraftClient {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
       body: JSON.stringify({expected_version: expectedVersion, changes: validated, remove_paths: removePaths}),
+    }));
+  }
+
+  async upsertOperation(
+    expectedVersion: number,
+    operation: DraftStructuralOperation,
+  ): Promise<DraftSnapshot> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+      throw new Error('Invalid draft version.');
+    }
+    const validated = structuralOperation(wireStructuralOperation(operation));
+    return parseDraft(await this.#request(`${this.#endpoint}/operations`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({
+        expected_version: expectedVersion,
+        operation: wireStructuralOperation(validated),
+      }),
+    }));
+  }
+
+  async removeOperation(expectedVersion: number, localId: string): Promise<DraftSnapshot> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+      throw new Error('Invalid draft version.');
+    }
+    const validatedId = localIdentifier(localId);
+    return parseDraft(await this.#request(`${this.#endpoint}/operations/remove`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({expected_version: expectedVersion, local_id: validatedId}),
     }));
   }
 

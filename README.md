@@ -192,6 +192,13 @@ values from the browser. The review UI binds a successful result to the exact
 draft version, base revision, and operation count and invalidates it on the next
 draft change. Validation remains fail-closed until the reviewed capability and
 canonical revision are available.
+The versioned workspace draft also models schema-validated create, delete, and
+move operations and exposes them through the same authenticated, CSRF-protected
+browser boundary. Structural writes remain disabled for the current legacy
+snapshot reader because its display IDs are index-derived; activation requires
+an exact reviewed collection schema and opaque stable entity IDs bound to the
+draft revision. The review surface already counts, displays, removes, validates,
+and commits scalar and structural operations as one transaction.
 
 Control-plane health and listener monitoring use the production C++ backend. A
 bounded five-minute runtime history visualizes active sessions and aggregate

@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "config_snapshot.hpp"
 #include "draft_operation.hpp"
+#include "draft_operation_json.hpp"
 #include "draft_store.hpp"
 #include "json.hpp"
 #include "job_store.hpp"
@@ -118,6 +119,42 @@ int main() {
             {"value", std::string("192.0.2.0/24")},
         },
     };
+    const auto parsed_create = parse_draft_structural_operation(nlohmann::json{
+        {"op", "create"}, {"local_id", "create-address-1"},
+        {"collection", "address_objects"}, {"client_id", "new-office-network"},
+        {"position", {{"last", true}}},
+        {"fields", {{"name", "office-net"}, {"type", "cidr"},
+                    {"value", "192.0.2.0/24"}}},
+    });
+    assert(parsed_create);
+    assert(std::get<DraftCreateOperation>(*parsed_create).fields == create_address.fields);
+    assert(!parse_draft_structural_operation(nlohmann::json{
+        {"op", "create"}, {"local_id", "create-address-1"},
+        {"collection", "address_objects"}, {"client_id", "new-office-network"},
+        {"position", {{"last", true}}}, {"fields", {{"name", "office-net"}}},
+        {"unexpected", true},
+    }));
+    assert(!parse_draft_structural_operation(nlohmann::json{
+        {"op", "create"}, {"local_id", "create-address-1"},
+        {"collection", "address_objects"}, {"client_id", "new-office-network"},
+        {"position", {{"last", true}}},
+        {"fields", {{"name", "office-net"}, {"type", "invalid"}}},
+    }));
+    assert(parse_draft_structural_operation(nlohmann::json{
+        {"op", "delete"}, {"local_id", "delete-address-1"},
+        {"collection", "address_objects"}, {"entity_id", "cfg:address:old"},
+    }));
+    assert(parse_draft_structural_operation(nlohmann::json{
+        {"op", "move"}, {"local_id", "move-policy-1"}, {"collection", "policy"},
+        {"entity_id", "cfg:policy:second"}, {"position", {{"before", "cfg:policy:first"}}},
+    }));
+    assert(!parse_draft_structural_operation(nlohmann::json{
+        {"op", "move"}, {"local_id", "move-policy-1"}, {"collection", "unknown"},
+        {"entity_id", "cfg:policy:second"}, {"position", {{"first", true}}},
+    }));
+    assert(draft_structural_field_path("content_profiles.content_rules", "match") ==
+           "content_profiles.[0].content_rules.[0].match");
+    assert(!draft_structural_field_path("settings", "log_level"));
     assert(structural_store.upsert_structural(0U, create_address) ==
            DraftMutationResult::Applied);
     assert(structural_store.snapshot().operation_count() == 1U);

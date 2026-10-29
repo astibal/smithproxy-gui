@@ -85,6 +85,11 @@ type MockState = {
     keys: string[];
     csrf: string | null;
   }>;
+  structuralRemovalRequests?: Array<{
+    expectedVersion: number;
+    localId: string;
+    csrf: string | null;
+  }>;
   validationReady?: boolean;
   commitReady?: boolean;
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
@@ -93,6 +98,12 @@ type MockState = {
   backendJobs?: unknown[];
   jobFailure?: boolean;
   initialDraftChanges?: Array<{path: string; value: unknown}>;
+  initialStructuralOperations?: Array<{
+    op: string;
+    local_id: string;
+    collection: string;
+    [key: string]: unknown;
+  }>;
   valueOrigins?: Array<{
     path: string;
     persistent_value: MockConfigValue;
@@ -115,8 +126,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   let draft = {
     id: 'workspace-draft',
     base_revision: baseRevision,
-    version: state.initialDraftChanges?.length ? 1 : 0,
+    version: state.initialDraftChanges?.length || state.initialStructuralOperations?.length ? 1 : 0,
     changes: state.initialDraftChanges ?? [] as Array<{path: string; value: unknown}>,
+    structural_operations: state.initialStructuralOperations ?? [],
   };
   await page.route('**/api/v1/capabilities', async route => {
     const capabilityPath = new URL(route.request().url()).pathname;
@@ -357,16 +369,21 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       const section = change.path.split('.', 1)[0];
       sectionCounts.set(section, (sectionCounts.get(section) ?? 0) + 1);
     }
+    for (const operation of draft.structural_operations) {
+      const section = operation.collection.split('.', 1)[0];
+      sectionCounts.set(section, (sectionCounts.get(section) ?? 0) + 1);
+    }
+    const operationCount = draft.changes.length + draft.structural_operations.length;
     await route.fulfill({json: {
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: draft.version,
-      base_revision: draft.base_revision, change_count: draft.changes.length, sensitive_change_count: 0,
+      base_revision: draft.base_revision, change_count: operationCount, sensitive_change_count: 0,
       schema_validation: 'valid', upstream_validation: 'unavailable',
       validation_available: Boolean(state.validationReady || state.commitReady),
-      commit_available: Boolean(state.commitReady) && draft.changes.length > 0,
+      commit_available: Boolean(state.commitReady) && operationCount > 0,
       sections: [...sectionCounts].sort(([left], [right]) => left.localeCompare(right))
         .map(([name, count]) => ({name, change_count: count, sensitive_change_count: 0})),
       blockers: [
-        ...(draft.changes.length === 0 ? [{code: 'draft.empty', message: 'The workspace draft has no pending changes.'}] : []),
+        ...(operationCount === 0 ? [{code: 'draft.empty', message: 'The workspace draft has no pending changes.'}] : []),
         ...(state.commitReady
           ? []
           : state.validationReady
@@ -393,7 +410,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     await route.fulfill({json: {
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: draft.version,
       base_revision: draft.base_revision, upstream_validation: 'valid',
-      validated_operations: draft.changes.length + (state.validationOperationDelta ?? 0),
+      validated_operations: draft.changes.length + draft.structural_operations.length +
+        (state.validationOperationDelta ?? 0),
       warning_count: 1, restart: 'required',
     }});
   });
@@ -405,16 +423,19 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       keys: Object.keys(body).sort(),
       csrf: await request.headerValue('X-Smithproxy-GUI-CSRF'),
     });
-    if (body.expected_version !== draft.version || !state.commitReady ||
-        !draft.base_revision || draft.changes.length === 0) {
+    if (body.expected_version !== draft.version || !state.commitReady || !draft.base_revision ||
+        draft.changes.length + draft.structural_operations.length === 0) {
       await route.fulfill({status: 409, json: {error: 'commit unavailable'}});
       return;
     }
     const previousRevision = draft.base_revision;
     const revision = `sha256:${'2'.repeat(64)}`;
     const committedVersion = draft.version;
-    const committedOperations = draft.changes.length;
-    draft = {...draft, base_revision: revision, version: committedVersion + 1, changes: []};
+    const committedOperations = draft.changes.length + draft.structural_operations.length;
+    draft = {
+      ...draft, base_revision: revision, version: committedVersion + 1,
+      changes: [], structural_operations: [],
+    };
     await route.fulfill({json: {
       source: 'gui-core', draft_id: 'workspace-draft',
       committed_draft_version: committedVersion, draft_version: draft.version,
@@ -436,7 +457,32 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
       return;
     }
-    draft = {...draft, version: draft.version + 1, changes: []};
+    draft = {...draft, version: draft.version + 1, changes: [], structural_operations: []};
+    await route.fulfill({json: draft});
+  });
+  await page.route('**/api/v1/config/draft/operations/remove', async route => {
+    const request = route.request();
+    const body = request.postDataJSON() as {expected_version: number; local_id: string};
+    state.structuralRemovalRequests?.push({
+      expectedVersion: body.expected_version,
+      localId: body.local_id,
+      csrf: await request.headerValue('X-Smithproxy-GUI-CSRF'),
+    });
+    if (body.expected_version !== draft.version) {
+      await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
+      return;
+    }
+    if (!draft.structural_operations.some(operation => operation.local_id === body.local_id)) {
+      await route.fulfill({status: 404, json: {error: 'draft change not found'}});
+      return;
+    }
+    draft = {
+      ...draft,
+      version: draft.version + 1,
+      structural_operations: draft.structural_operations.filter(
+        operation => operation.local_id !== body.local_id,
+      ),
+    };
     await route.fulfill({json: draft});
   });
   await page.route('**/api/v1/config/draft/changes/remove', async route => {
@@ -961,7 +1007,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('button', {name: 'Remove policy.[0].action from draft'})).toHaveCount(0);
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await page.getByRole('button', {name: 'Discard draft'}).click();
-  const confirmDiscard = page.getByRole('button', {name: /Confirm discard \d+ changes/u});
+  const confirmDiscard = page.getByRole('button', {name: /Confirm discard \d+ operations/u});
   await expect(confirmDiscard).toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await confirmDiscard.click();
@@ -1388,6 +1434,31 @@ test('requires bound validation and explicit confirmation before atomic commit',
     csrf: '1',
   }]);
   await expectNoWcagViolations(page);
+});
+
+test('reviews and removes a structural draft operation', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    structuralRemovalRequests: [],
+    initialStructuralOperations: [{
+      op: 'move', local_id: 'move-policy-1', collection: 'policy',
+      entity_id: 'cfg:policy:second', position: {before: 'cfg:policy:first'},
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+
+  await expect(page.getByText('Version 1 · 1 pending operations')).toBeVisible();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(table).toContainText('policy · move');
+  await expect(table).toContainText('cfg:policy:second');
+  await table.getByRole('button', {name: /Remove move operation move-policy-1/u}).click();
+
+  await expect(page.getByText('No pending changes')).toBeVisible();
+  expect(state.structuralRemovalRequests).toEqual([{
+    expectedVersion: 1, localId: 'move-policy-1', csrf: '1',
+  }]);
 });
 
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {

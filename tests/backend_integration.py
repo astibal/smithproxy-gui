@@ -929,7 +929,7 @@ def main() -> int:
             assert status == 200
             assert json.loads(body) == {
                 "id": "workspace-draft", "base_revision": FakeSmithproxy.config_revision,
-                "version": 1, "changes": []}
+                "version": 1, "changes": [], "structural_operations": []}
             assert request(configured_port, "/api/v1/config/draft/preflight")[0] == 401
             status, _, body = request(
                 configured_port, "/api/v1/config/draft/preflight", headers=gateway_headers)
@@ -960,6 +960,35 @@ def main() -> int:
                 "X-Smithproxy-GUI-CSRF": "1",
                 "Content-Type": "application/json",
             }
+            structural_operation = {
+                "expected_version": 1,
+                "operation": {
+                    "op": "create", "local_id": "create-address-1",
+                    "collection": "address_objects", "client_id": "new-office-network",
+                    "position": {"last": True},
+                    "fields": {
+                        "name": "office-net", "type": "cidr", "value": "192.0.2.0/24",
+                    },
+                },
+            }
+            assert request(
+                configured_port, "/api/v1/config/draft/operations", "POST",
+                body=json.dumps(structural_operation))[0] == 401
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/operations", "POST",
+                headers=mutation_headers, body=json.dumps(structural_operation),
+            ), 503, "config.structural_unavailable")
+            malformed_structural = json.loads(json.dumps(structural_operation))
+            malformed_structural["operation"]["unexpected"] = True
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/operations", "POST",
+                headers=mutation_headers, body=json.dumps(malformed_structural),
+            ), 400, "draft.invalid_request")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/operations/remove", "POST",
+                headers=mutation_headers,
+                body=json.dumps({"expected_version": 1, "local_id": "create-address-1"}),
+            ), 404, "draft.change_not_found")
             assert request(
                 configured_port, "/api/v1/config/draft/validate", "POST",
                 body=json.dumps({"expected_version": 1}))[0] == 401

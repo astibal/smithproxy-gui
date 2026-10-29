@@ -100,9 +100,19 @@ transaction adapter; a syntactically safe arbitrary libconfig path is not enough
 Transaction capability discovery is fail-closed. The core clamps upstream
 limits to 4,096 operations and 1 MiB, rejects unknown contract versions,
 missing or duplicate operations and collections, malformed schema hashes, and
-unreviewed collection revisions. Discovery never enables `config_write`; that
-flag remains false until the complete validate, commit, idempotency, rollback,
-and audit path is implemented and reviewed.
+unreviewed collection revisions. `config_write` becomes true only when the
+complete validate, commit, idempotency, rollback, and audit path is available
+under an exact reviewed capability.
+
+Structural drafts add a second fail-closed identity boundary. Create fields are
+validated through the pinned configuration schema, JSON objects reject unknown
+members, and delete or move operations use only opaque entity IDs. A ready
+transaction capability is insufficient by itself: the current snapshot must
+explicitly attest stable entity IDs and carry the same canonical revision as the
+workspace draft. The legacy multi-section reader synthesizes display IDs from
+indexes and therefore can never enable structural writes. Removing a retained
+structural operation remains available after capability loss so an operator can
+always recover or discard the draft.
 
 Canonical revision acquisition is also fail-closed. The core accepts only an
 exact `sha256:` prefix followed by 64 lowercase hexadecimal characters in a

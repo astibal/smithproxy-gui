@@ -8,10 +8,12 @@ function response(value: unknown, status = 200): Response {
 describe('DraftClient', () => {
   it('loads and updates a versioned workspace draft', async () => {
     const fetcher = vi.fn()
-      .mockResolvedValueOnce(response({id: 'workspace-draft', base_revision: null, version: 0, changes: []}))
+      .mockResolvedValueOnce(response({
+        id: 'workspace-draft', base_revision: null, version: 0, changes: [], structural_operations: [],
+      }))
       .mockResolvedValueOnce(response({
         id: 'workspace-draft', base_revision: null, version: 1,
-        changes: [{path: 'policy.[0].action', value: 'accept'}],
+        changes: [{path: 'policy.[0].action', value: 'accept'}], structural_operations: [],
       }));
     const client = new DraftClient('/ws001/smithproxy-gui/api/v1/', fetcher);
 
@@ -33,6 +35,124 @@ describe('DraftClient', () => {
     });
   });
 
+  it('loads, writes, and removes typed structural operations', async () => {
+    const snapshot = {
+      id: 'workspace-draft', base_revision: null, version: 2, changes: [],
+      structural_operations: [{
+        op: 'create', local_id: 'create-address-1', collection: 'address_objects',
+        client_id: 'new-office-network', position: {last: true},
+        fields: {name: 'office-net', type: 'cidr', value: '192.0.2.0/24'},
+      }],
+    };
+    const fetcher = vi.fn().mockImplementation(async () => response(snapshot));
+    const client = new DraftClient('/api/v1', fetcher);
+
+    await expect(client.load()).resolves.toMatchObject({
+      structuralOperations: [{
+        op: 'create', localId: 'create-address-1', collection: 'address_objects',
+        clientId: 'new-office-network', parentId: null,
+        position: {kind: 'last', reference: null},
+      }],
+    });
+    await client.upsertOperation(1, {
+      op: 'move', localId: 'move-policy-1', collection: 'policy',
+      entityId: 'cfg:policy:second',
+      position: {kind: 'before', reference: 'cfg:policy:first'},
+    });
+    expect(JSON.parse(String((fetcher.mock.calls.at(-1)?.[1] as RequestInit).body))).toEqual({
+      expected_version: 1,
+      operation: {
+        op: 'move', local_id: 'move-policy-1', collection: 'policy',
+        entity_id: 'cfg:policy:second', position: {before: 'cfg:policy:first'},
+      },
+    });
+    await client.removeOperation(2, 'create-address-1');
+    expect(fetcher).toHaveBeenLastCalledWith('/api/v1/config/draft/operations/remove',
+      expect.objectContaining({
+        method: 'POST', body: '{"expected_version":2,"local_id":"create-address-1"}',
+      }));
+    await expect(client.removeOperation(2, '../unsafe')).rejects.toThrow(
+      'Invalid structural draft identifier');
+  });
+
+  it('serializes create and delete operations without index paths', async () => {
+    const snapshot = {
+      id: 'workspace-draft', base_revision: null, version: 3,
+      changes: [], structural_operations: [],
+    };
+    const fetcher = vi.fn().mockImplementation(async () => response(snapshot));
+    const client = new DraftClient('/api/v1', fetcher);
+    await client.upsertOperation(1, {
+      op: 'create', localId: 'create-rule-1', collection: 'content_profiles.content_rules',
+      clientId: 'new-rule', parentId: 'cfg:content:parent',
+      position: {kind: 'after', reference: 'cfg:rule:previous'},
+      fields: {match: '[redacted:replace]', fill_length: true},
+    });
+    expect(JSON.parse(String((fetcher.mock.calls.at(-1)?.[1] as RequestInit).body))).toEqual({
+      expected_version: 1,
+      operation: {
+        op: 'create', local_id: 'create-rule-1', collection: 'content_profiles.content_rules',
+        client_id: 'new-rule', parent_id: 'cfg:content:parent',
+        position: {after: 'cfg:rule:previous'},
+        fields: {match: '[redacted:replace]', fill_length: true},
+      },
+    });
+    await client.upsertOperation(2, {
+      op: 'delete', localId: 'delete-address-1', collection: 'address_objects',
+      entityId: 'cfg:address:old',
+    });
+    expect(JSON.parse(String((fetcher.mock.calls.at(-1)?.[1] as RequestInit).body))).toEqual({
+      expected_version: 2,
+      operation: {
+        op: 'delete', local_id: 'delete-address-1', collection: 'address_objects',
+        entity_id: 'cfg:address:old',
+      },
+    });
+    await expect(client.upsertOperation(-1, {
+      op: 'delete', localId: 'delete-address-1', collection: 'address_objects',
+      entityId: 'cfg:address:old',
+    })).rejects.toThrow('Invalid draft version');
+    await expect(client.removeOperation(-1, 'delete-address-1')).rejects.toThrow('Invalid draft version');
+  });
+
+  it.each([
+    [{id: 'workspace-draft', base_revision: null, version: 0, changes: []}, 'Invalid draft response'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 0, changes: [],
+      structural_operations: [{
+        op: 'move', local_id: 'move-1', collection: 'unknown', entity_id: 'cfg:item:1',
+        position: {first: true},
+      }],
+    }, 'Invalid structural draft collection'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 0, changes: [],
+      structural_operations: [{
+        op: 'move', local_id: 'move-1', collection: 'policy', entity_id: 'cfg:policy:1',
+        position: {before: 'cfg:policy:1'},
+      }],
+    }, 'Invalid structural move operation'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 0, changes: [],
+      structural_operations: [
+        {op: 'delete', local_id: 'delete-1', collection: 'policy', entity_id: 'cfg:policy:1'},
+        {op: 'move', local_id: 'move-1', collection: 'policy', entity_id: 'cfg:policy:1',
+          position: {last: true}},
+      ],
+    }, 'Duplicate structural draft target'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 0, changes: [],
+      structural_operations: [
+        {op: 'create', local_id: 'create-1', collection: 'address_objects', client_id: 'new-address',
+          position: {last: true}, fields: {name: 'one'}},
+        {op: 'create', local_id: 'create-2', collection: 'address_objects', client_id: 'new-address',
+          position: {last: true}, fields: {name: 'two'}},
+      ],
+    }, 'Duplicate structural create identifier'],
+  ])('rejects malformed structural draft response %#', async (payload, message) => {
+    const client = new DraftClient('/api/v1', async () => response(payload));
+    await expect(client.load()).rejects.toThrow(message);
+  });
+
   it('validates and sends atomic batches including typed arrays', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       id: 'workspace-draft', base_revision: null, version: 1,
@@ -41,6 +161,7 @@ describe('DraftClient', () => {
         {path: 'policy.[0].dst', value: ['internet', 'backup']},
         {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, 44443]},
       ],
+      structural_operations: [],
     }));
     const client = new DraftClient('/api/v1', fetcher);
     await expect(client.upsertMany(0, [
@@ -62,6 +183,7 @@ describe('DraftClient', () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       id: 'workspace-draft', base_revision: null, version: 8,
       changes: [{path: 'policy.[0].name', value: 'office'}],
+      structural_operations: [],
     }));
     const client = new DraftClient('/api/v1', fetcher);
     await expect(client.reconcile(
@@ -85,7 +207,7 @@ describe('DraftClient', () => {
 
   it('clears a draft with optimistic concurrency headers', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
-      id: 'workspace-draft', base_revision: null, version: 4, changes: [],
+      id: 'workspace-draft', base_revision: null, version: 4, changes: [], structural_operations: [],
     }));
     const client = new DraftClient('/api/v1', fetcher);
     await expect(client.clear(3)).resolves.toMatchObject({version: 4, changes: []});
@@ -98,7 +220,7 @@ describe('DraftClient', () => {
 
   it('removes one path from a draft with optimistic concurrency headers', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
-      id: 'workspace-draft', base_revision: null, version: 4, changes: [],
+      id: 'workspace-draft', base_revision: null, version: 4, changes: [], structural_operations: [],
     }));
     const client = new DraftClient('/api/v1', fetcher);
     await expect(client.remove(3, 'policy.[0].action')).resolves.toMatchObject({version: 4, changes: []});
@@ -112,7 +234,7 @@ describe('DraftClient', () => {
 
   it('removes a bounded unique path group atomically', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
-      id: 'workspace-draft', base_revision: null, version: 5, changes: [],
+      id: 'workspace-draft', base_revision: null, version: 5, changes: [], structural_operations: [],
     }));
     const client = new DraftClient('/api/v1', fetcher);
     const paths = ['policy.[0].name', 'policy.[0].action'];
@@ -281,12 +403,13 @@ describe('DraftClient', () => {
   it('rejects malformed drafts and stale server responses', async () => {
     const malformed = new DraftClient('/api/v1', async () => response({
       id: 'workspace-draft', base_revision: null, version: 0,
-      changes: [{path: '../unsafe', value: true}],
+      changes: [{path: '../unsafe', value: true}], structural_operations: [],
     }));
     await expect(malformed.load()).rejects.toThrow('Invalid draft change');
 
     const malformedRevision = new DraftClient('/api/v1', async () => response({
-      id: 'workspace-draft', base_revision: 'revision-7', version: 0, changes: [],
+      id: 'workspace-draft', base_revision: 'revision-7', version: 0,
+      changes: [], structural_operations: [],
     }));
     await expect(malformedRevision.load()).rejects.toThrow('Invalid draft response');
 

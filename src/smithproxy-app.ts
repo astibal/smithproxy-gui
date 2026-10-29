@@ -3,6 +3,7 @@ import {customElement, property, state} from 'lit/decorators.js';
 import {ApiConfigClient} from './api/config-client';
 import {
   DraftClient,
+  draftOperationCount,
   type DraftChange,
   type DraftCommit,
   type DraftPreflight,
@@ -1481,16 +1482,17 @@ export class SmithproxyApp extends LitElement {
     const previousVersion = this.draftVersion;
     this.workspaceDraft = snapshot;
     this.draftVersion = snapshot.version;
-    this.draftChangeCount = snapshot.changes.length;
+    const operationCount = draftOperationCount(snapshot);
+    this.draftChangeCount = operationCount;
     const preflight = this.draftPreflight;
     if (!preflight || preflight.draftVersion !== snapshot.version ||
-        preflight.changeCount !== snapshot.changes.length) {
+        preflight.changeCount !== operationCount) {
       this.draftPreflight = undefined;
     }
     const validation = this.draftValidation;
     if (!validation || validation.draftVersion !== snapshot.version ||
         validation.baseRevision !== snapshot.baseRevision ||
-        validation.validatedOperations !== snapshot.changes.length) {
+        validation.validatedOperations !== operationCount) {
       this.draftValidation = undefined;
     }
     if (previousVersion !== snapshot.version) {
@@ -1500,7 +1502,7 @@ export class SmithproxyApp extends LitElement {
       this.draftCommitResult = undefined;
       this.draftRemovalArmedKey = undefined;
     }
-    if (snapshot.changes.length === 0) this.discardDraftArmed = false;
+    if (operationCount === 0) this.discardDraftArmed = false;
     const objects = new Set<string>();
     for (const change of snapshot.changes) {
       const policy = /^policy\.\[(\d+)\]\./u.exec(change.path);
@@ -1761,7 +1763,7 @@ export class SmithproxyApp extends LitElement {
       const current = await this.draftClient.load();
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       if (current.version !== result.draftVersion || current.baseRevision !== result.revision ||
-          current.changes.length !== 0) {
+          draftOperationCount(current) !== 0) {
         throw new Error('Committed draft finalization could not be verified.');
       }
       this.applyDraft(current);
@@ -1836,6 +1838,26 @@ export class SmithproxyApp extends LitElement {
     } catch (error) {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const message = error instanceof Error ? error.message : 'Draft change could not be removed.';
+      await this.loadDraft();
+      this.draftError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  private async removeDraftOperation(localId: string): Promise<void> {
+    if (!this.draftAvailable || !this.draftClient || this.draftSaving || this.draftCommitting) return;
+    this.draftSaving = true;
+    const accessEpoch = this.configurationAccessEpoch;
+    this.draftError = undefined;
+    try {
+      const draft = await this.draftClient.removeOperation(this.draftVersion, localId);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Structural draft operation could not be removed.';
       await this.loadDraft();
       this.draftError = message;
     } finally {
@@ -3466,30 +3488,32 @@ export class SmithproxyApp extends LitElement {
 
   private renderDraftReview() {
     const changes = this.workspaceDraft?.changes ?? [];
+    const structuralOperations = this.workspaceDraft?.structuralOperations ?? [];
+    const pendingCount = changes.length + structuralOperations.length;
     const commitReady = this.draftPreflight?.commitAvailable && this.draftValidation &&
       this.draftValidation.draftVersion === this.draftVersion &&
       this.draftValidation.baseRevision === this.draftPreflight.baseRevision &&
-      this.draftValidation.validatedOperations === changes.length;
+      this.draftValidation.validatedOperations === pendingCount;
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
           <div>
             <h2>Workspace draft</h2>
-            <p>Version ${this.draftVersion} · ${changes.length} pending changes</p>
+            <p>Version ${this.draftVersion} · ${pendingCount} pending operations</p>
           </div>
           <button class="secondary danger-button" type="button"
-            ?disabled=${changes.length === 0 || this.draftSaving || this.draftValidating ||
+            ?disabled=${pendingCount === 0 || this.draftSaving || this.draftValidating ||
               this.draftCommitting}
             @click=${() => this.discardDraft()}>
             ${this.draftSaving
               ? 'Discarding…'
               : this.discardDraftArmed
-                ? `Confirm discard ${changes.length} changes`
+                ? `Confirm discard ${pendingCount} operations`
                 : 'Discard draft'}
           </button>
         </div>
         ${this.draftError ? html`<div class="error" role="alert">${this.draftError}</div>` : nothing}
-        ${changes.length > 0 ? html`
+        ${pendingCount > 0 ? html`
           <section class="preflight" aria-label="Draft preflight">
             <div class="preflight-heading">
               <h3>Validation and impact preflight</h3>
@@ -3507,7 +3531,7 @@ export class SmithproxyApp extends LitElement {
                   ${this.draftCommitting
                     ? 'Committing…'
                     : this.draftCommitArmed
-                      ? `Confirm atomic commit · ${changes.length}`
+                      ? `Confirm atomic commit · ${pendingCount}`
                       : 'Commit configuration'}
                 </button>
               </div>
@@ -3582,7 +3606,7 @@ export class SmithproxyApp extends LitElement {
         ` : this.draftCommitError ? html`
           <div class="error" role="alert">${this.draftCommitError}</div>
         ` : nothing}
-        ${changes.length === 0 ? html`
+        ${pendingCount === 0 ? html`
           <div class="empty-state">
             <h2>No pending changes</h2>
             <p>Edits from policy and referenced-object drawers will appear here before validation and commit.</p>
@@ -3613,6 +3637,24 @@ export class SmithproxyApp extends LitElement {
                 </span>
               </div>`;
             })}
+            ${structuralOperations.map(operation => html`
+              <div class="draft-row" role="row">
+                <span class="draft-path" role="cell">
+                  ${operation.collection} · ${operation.op}
+                </span>
+                <span class="draft-value" role="cell">
+                  ${operation.op === 'create'
+                    ? `${operation.clientId} · ${Object.keys(operation.fields).length} fields`
+                    : operation.entityId}
+                </span>
+                <span class="draft-actions" role="cell">
+                  <button class="secondary" type="button"
+                    aria-label=${`Remove ${operation.op} operation ${operation.localId} from draft`}
+                    ?disabled=${this.draftSaving || this.draftValidating || this.draftCommitting}
+                    @click=${() => this.removeDraftOperation(operation.localId)}>Remove</button>
+                </span>
+              </div>
+            `)}
           </div>
           <div class="scope-note section">
             This is a pending management draft only. It has not changed persistent or runtime Smithproxy configuration.
