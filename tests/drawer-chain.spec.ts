@@ -1,6 +1,6 @@
 import {expect, test, type Page} from '@playwright/test';
 
-type MockState = {smithproxy: 'ready' | 'unreachable'};
+type MockState = {smithproxy: 'ready' | 'unreachable'; configFetches?: number};
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
   let draft = {id: 'workspace-draft', base_revision: null, version: 0, changes: [] as Array<{path: string; value: unknown}>};
@@ -135,7 +135,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     await route.fulfill({json: draft});
   });
   if (configRead) {
-    await page.route('**/api/v1/config/snapshot', async route => route.fulfill({json: {
+    await page.route('**/api/v1/config/snapshot', async route => {
+      state.configFetches = (state.configFetches ?? 0) + 1;
+      await route.fulfill({json: {
       state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: Date.now(),
       last_success_at_unix_ms: Date.now(), view: 'runtime', revision: null,
       policies: [{
@@ -329,7 +331,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       },
       augment_support: false,
       value_origins: [],
-    }}));
+      }});
+    });
   }
 }
 
@@ -543,6 +546,36 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await page.getByRole('button', {name: 'Confirm discard 102 changes'}).click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
+});
+
+test('refreshes live configuration only outside an active edit transaction', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', configFetches: 0};
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
+  await expect.poll(() => state.configFetches).toBe(1);
+
+  const advanceRefreshWindow = async () => page.evaluate(() => {
+    const advanced = Date.now() + 31_000;
+    Date.now = () => advanced;
+  });
+  await advanceRefreshWindow();
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect.poll(() => state.configFetches).toBe(2);
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
+  await advanceRefreshWindow();
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(page.locator('.statusbar')).toContainText('Config: Ready');
+  await expect(page.locator('.statusbar')).toContainText('refresh paused');
+  await expect.poll(() => state.configFetches).toBe(2);
+
+  await page.getByRole('dialog', {name: 'Edit Policy 1'})
+    .getByRole('button', {name: 'Cancel'}).click();
+  await expect.poll(() => state.configFetches).toBe(3);
+  await expect(page.locator('.statusbar')).not.toContainText('refresh paused');
 });
 
 test('opens a policy and its referenced address object', async ({page}) => {

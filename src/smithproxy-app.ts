@@ -110,6 +110,7 @@ export class SmithproxyApp extends LitElement {
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
   @state() private focusMode = false;
+  @state() private configReadAvailable = false;
   @state() private configWriteAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftVersion = 0;
@@ -119,16 +120,20 @@ export class SmithproxyApp extends LitElement {
   @state() private draftSaving = false;
   @state() private draftError: string | undefined;
   @state() private configError: string | undefined;
+  @state() private configRefreshDeferred = false;
   @state() private searchQuery = '';
 
   private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
   private runtime?: RuntimeConfig;
   private systemClient?: SystemClient;
+  private configClient?: ApiConfigClient;
   private draftClient?: DraftClient;
   private systemProbeTimer: number | undefined;
   private systemProbeInFlight = false;
   private systemProbePending = false;
+  private configRefreshInFlight = false;
+  private nextConfigRefreshAt = 0;
   private drawerHistoryDepth = 0;
   private drawerOrigins: HTMLElement[] = [];
   private pendingReturnFocus: HTMLElement | undefined;
@@ -423,6 +428,7 @@ export class SmithproxyApp extends LitElement {
     this.mode = this.runtime.mode;
     try {
       this.systemClient = new SystemClient(this.runtime.apiBase, this.runtime.basePath);
+      this.configClient = new ApiConfigClient(this.runtime.apiBase);
       this.draftClient = new DraftClient(this.runtime.apiBase);
       void this.probeSystem();
     } catch (error) {
@@ -531,6 +537,7 @@ export class SmithproxyApp extends LitElement {
       } catch (error) {
         this.alertsError = error instanceof Error ? error.message : 'Operational alerts are unavailable.';
       }
+      await this.refreshConfiguration();
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -570,20 +577,41 @@ export class SmithproxyApp extends LitElement {
     try {
       const capabilities = await this.systemClient.capabilities();
       this.apiVersion = capabilities.apiVersion;
+      this.configReadAvailable = capabilities.features.configRead;
+      if (!this.configReadAvailable) this.configRefreshDeferred = false;
       this.configWriteAvailable = capabilities.features.configWrite;
       this.draftAvailable = capabilities.features.drafts;
-      if (capabilities.features.configRead && this.runtime && this.snapshot?.source !== 'live') {
-        try {
-          this.snapshot = await new ApiConfigClient(this.runtime.apiBase).loadSnapshot();
-          this.configError = undefined;
-          this.restoreDrawerRoute();
-        } catch (error) {
-          this.configError = error instanceof Error ? error.message : 'Live configuration is unavailable.';
-        }
+      if (capabilities.features.configRead && this.snapshot?.source !== 'live') {
+        await this.refreshConfiguration(true);
+        this.restoreDrawerRoute();
       }
       if (this.draftAvailable) await this.loadDraft();
     } catch {
       this.apiVersion = 'unavailable';
+      this.configReadAvailable = false;
+      this.configRefreshDeferred = false;
+    }
+  }
+
+  private async refreshConfiguration(force = false): Promise<void> {
+    if (!this.configReadAvailable || !this.configClient || this.configRefreshInFlight) return;
+    const now = Date.now();
+    if (!force && now < this.nextConfigRefreshAt) return;
+    if (this.draftChangeCount > 0 || this.drawers.length > 0 || this.draftSaving) {
+      this.configRefreshDeferred = true;
+      return;
+    }
+
+    this.configRefreshInFlight = true;
+    this.nextConfigRefreshAt = now + 30_000;
+    try {
+      this.snapshot = await this.configClient.loadSnapshot();
+      this.configError = undefined;
+      this.configRefreshDeferred = false;
+    } catch (error) {
+      this.configError = error instanceof Error ? error.message : 'Live configuration is unavailable.';
+    } finally {
+      this.configRefreshInFlight = false;
     }
   }
 
@@ -726,6 +754,7 @@ export class SmithproxyApp extends LitElement {
     } finally {
       this.draftSaving = false;
       this.discardDraftArmed = false;
+      if (this.draftChangeCount === 0) void this.refreshConfiguration(true);
     }
   }
 
@@ -866,6 +895,9 @@ export class SmithproxyApp extends LitElement {
     this.drawerOrigins = this.drawerOrigins.slice(0, index);
     this.focusMode = false;
     this.syncDrawers(false);
+    if (this.drawers.length === 0 && this.configRefreshDeferred && this.draftChangeCount === 0) {
+      void this.refreshConfiguration(true);
+    }
     if (levels > 0 && this.drawerHistoryDepth >= levels) {
       this.drawerHistoryDepth -= levels;
       this.pendingReturnFocus = returnFocus;
@@ -3985,8 +4017,9 @@ export class SmithproxyApp extends LitElement {
           <span class=${this.draftChangeCount ? 'draft' : ''}>Draft: ${this.draftChangeCount} changes</span>
           <span title=${this.configError ?? this.snapshot?.detail ?? ''}>
             Config: ${this.snapshot?.source === 'live'
-              ? displayState(this.snapshot.state)
+              ? `${displayState(this.snapshot.state)}${this.configError ? ' · refresh failed' : ''}`
               : this.configError ? 'Preview · live unavailable' : this.snapshot ? 'Preview' : 'Loading'}
+            ${this.configRefreshDeferred ? ' · refresh paused' : ''}
           </span>
           <span>API: ${this.apiVersion}</span><span class="spacer"></span>
           <span>Revision ${this.snapshot?.revision ?? 'runtime'}</span>
