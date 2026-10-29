@@ -60,7 +60,9 @@ probíhajících requestů v system, config a draft klientech; samostatný brows
 scénář ověřuje odebrání draft capability při zachování read-only live configu.
 Capability contract testy odmítají nekanonický nebo cizí workspace mount,
 neznámou API verzi a nemožné závislosti transaction, draft a event příznaků ještě
-před prvním chráněným requestem.
+před prvním chráněným requestem. Browser testy zároveň rozlišují platný omezený
+kontrakt ve stavu `ready` od nekonzistentního grafu ve stavu `unavailable` a
+ověřují bezpečný obsah lokálního diagnostického exportu.
 
 Shared bounded-JSON testy dělí vícebajtové UTF-8 mezi chunky, překračují limit
 bez `Content-Length`, ověřují aktivní zrušení streamu a odmítají chybnou délku,

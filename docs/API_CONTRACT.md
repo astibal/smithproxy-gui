@@ -53,6 +53,11 @@ write requires read, drafts, preflight, and a ready transaction contract;
 preflight requires drafts; Smithproxy events require the event surface. An
 incoherent graph disables every protected frontend request.
 
+System diagnostika eviduje stav bootstrapu, čas posledního pokusu a posledního
+platného kontraktu a počet povolených surfaces. Platný kontrakt s nulovým nebo
+omezeným oprávněním zůstává `ready`; `unavailable` znamená chybu transportu nebo
+odmítnutý kontrakt. Obnova běží po 30 sekundách a při změně konektivity.
+
 The internal transaction adapter already builds the reviewed `validate` and
 `commit` envelopes from typed workspace-draft changes. It binds every request
 to the canonical base revision and a core-generated idempotency UUID and rejects

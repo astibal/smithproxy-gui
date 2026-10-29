@@ -2,6 +2,7 @@ export type RuntimeDiagnosticState = 'starting' | 'ready' | 'unavailable' | 'unc
 export type InterfaceDiagnosticState = RuntimeDiagnosticState | 'degraded' | 'not-advertised';
 export type GatewayDiagnosticState = 'verified' | 'rejected' | 'disabled' | 'unavailable' | 'discovering';
 export type EventStreamDiagnosticState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavailable';
+export type CapabilityBootstrapDiagnosticState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 
 interface TimedAggregateInput {
   state: RuntimeDiagnosticState;
@@ -25,6 +26,10 @@ export interface DiagnosticsReportInput {
   };
   gateway: {mode: 'gateway' | 'disabled' | 'unknown'; authenticated: boolean | null; state: GatewayDiagnosticState};
   capabilities: {
+    bootstrapState: CapabilityBootstrapDiagnosticState;
+    checkedAtUnixMs: number | null;
+    lastSuccessAtUnixMs: number | null;
+    enabledFeatureCount: number;
     configRead: boolean;
     configWrite: boolean;
     drafts: boolean;
@@ -121,6 +126,12 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
       state: input.gateway.state,
     },
     capabilities: {
+      bootstrapState: input.capabilities.bootstrapState,
+      checkedAtUnixMs: input.capabilities.checkedAtUnixMs === null
+        ? null : safeInteger(input.capabilities.checkedAtUnixMs),
+      lastSuccessAtUnixMs: input.capabilities.lastSuccessAtUnixMs === null
+        ? null : safeInteger(input.capabilities.lastSuccessAtUnixMs),
+      enabledFeatureCount: Math.min(13, requiredInteger(input.capabilities.enabledFeatureCount)),
       configRead: input.capabilities.configRead,
       configWrite: input.capabilities.configWrite,
       drafts: input.capabilities.drafts,

@@ -65,10 +65,15 @@ export function statusFromSnapshot(snapshot: SystemSnapshot): SystemStatus {
 }
 
 export function statusFromFailure(error: unknown): SystemStatus {
+  const supplied = error instanceof Error ? error.message : '';
+  const detail = supplied.length > 0 && supplied.length <= 256 &&
+    !/[\u0000-\u001f\u007f]/u.test(supplied)
+    ? supplied
+    : 'The Smithproxy GUI core is unavailable.';
   return {
     core: 'offline',
     smithproxy: 'unknown',
-    detail: error instanceof Error ? error.message : 'The Smithproxy GUI core is unavailable.',
+    detail,
     checkedAtUnixMs: null,
     lastSuccessAtUnixMs: null,
     latencyMs: null,

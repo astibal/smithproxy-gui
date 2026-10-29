@@ -119,7 +119,9 @@ read-only live snapshot while clearing draft and editor state.
 Capability bootstrap accepts only API contract `v1`, a canonical base path that
 exactly matches the application mount, and a coherent feature dependency graph.
 Contradictory transaction, draft, or event flags fail closed before any protected
-request is issued.
+request is issued. The System view distinguishes a valid restricted contract
+from bootstrap failure and shows the last check, last valid contract, enabled
+surface count, and refresh cadence without exposing capability payloads.
 
 All browser JSON clients enforce streaming byte limits even when a response omits
 `Content-Length`: 4 MiB for configuration and 8 MiB for draft and system data.
@@ -231,7 +233,8 @@ The GUI intentionally does not emulate a transaction by issuing multiple legacy
 configuration writes.
 
 The System view can download a local, versioned diagnostics report containing
-only allowlisted states, timestamps, capability flags, and aggregate counters.
+only allowlisted states, timestamps, capability flags, aggregate counters, and
+the bounded capability-bootstrap posture.
 It never includes configuration values, revisions, paths, event text, audit
 targets, listener names, protocol names, credentials, or tokens.
 

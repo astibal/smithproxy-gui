@@ -59,6 +59,7 @@ import {
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
 type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavailable';
+type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 type StatusTone = 'success' | 'warning' | 'danger';
 
@@ -234,6 +235,10 @@ export class SmithproxyApp extends LitElement {
   @state() private draftObjects = new Set<string>();
   @state() private systemStatus: SystemStatus = connectingSystemStatus;
   @state() private apiVersion = 'discovering';
+  @state() private capabilityBootstrapState: CapabilityBootstrapState = 'discovering';
+  @state() private capabilityCheckedAtUnixMs: number | null = null;
+  @state() private capabilityLastSuccessAtUnixMs: number | null = null;
+  @state() private capabilityError: string | undefined;
   @state() private transactionCapabilityState: TransactionCapabilityState = 'unknown';
   @state() private gatewaySession: GatewaySession | undefined;
   @state() private gatewaySessionError: string | undefined;
@@ -1107,6 +1112,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async refreshCapabilities(): Promise<void> {
+    this.capabilityBootstrapState = this.capabilityCheckedAtUnixMs === null ? 'discovering' : 'refreshing';
     this.nextCapabilityRefreshAt = Date.now() + 30_000;
     try {
       const systemClient = this.systemClient;
@@ -1180,6 +1186,11 @@ export class SmithproxyApp extends LitElement {
         void this.refreshConfiguration(true);
       }
       if (this.draftAvailable && configurationCapabilitiesChanged) void this.loadDraft();
+      const completedAt = Date.now();
+      this.capabilityBootstrapState = 'ready';
+      this.capabilityCheckedAtUnixMs = completedAt;
+      this.capabilityLastSuccessAtUnixMs = completedAt;
+      this.capabilityError = undefined;
     } catch (error) {
       const configurationWasAvailable = this.configReadAvailable || this.configWriteAvailable ||
         this.draftAvailable || this.draftPreflightAvailable;
@@ -1195,7 +1206,11 @@ export class SmithproxyApp extends LitElement {
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
       this.updateMonitoringCapabilities(undefined);
-      this.systemStatus = statusFromFailure(error);
+      const failure = statusFromFailure(error);
+      this.systemStatus = failure;
+      this.capabilityBootstrapState = 'unavailable';
+      this.capabilityCheckedAtUnixMs = Date.now();
+      this.capabilityError = failure.detail;
       this.draftPreflight = undefined;
       this.draftPreflightError = undefined;
     }
@@ -1234,6 +1249,16 @@ export class SmithproxyApp extends LitElement {
       ? 'not checked yet'
       : new Date(this.systemStatus.checkedAtUnixMs).toLocaleString();
     return `${this.systemStatus.detail} Last Smithproxy check: ${checked}.`;
+  }
+
+  private enabledCapabilityCount(): number {
+    return [
+      this.configReadAvailable, this.configWriteAvailable, this.draftAvailable,
+      this.draftPreflightAvailable, this.jobsAvailable, this.eventsAvailable,
+      this.alertsAvailable, this.auditAvailable, this.metricsAvailable,
+      this.sessionActivityAvailable, this.tlsMonitoringAvailable,
+      this.neighborMonitoringAvailable, this.interfaceMonitoringAvailable,
+    ].filter(Boolean).length;
   }
 
   private gatewayStatus(): {label: string; tone: 'success' | 'warning' | 'danger'; detail: string} {
@@ -1290,6 +1315,10 @@ export class SmithproxyApp extends LitElement {
         state: gatewayState,
       },
       capabilities: {
+        bootstrapState: this.capabilityBootstrapState,
+        checkedAtUnixMs: this.capabilityCheckedAtUnixMs,
+        lastSuccessAtUnixMs: this.capabilityLastSuccessAtUnixMs,
+        enabledFeatureCount: this.enabledCapabilityCount(),
         configRead: this.configReadAvailable,
         configWrite: this.configWriteAvailable,
         drafts: this.draftAvailable,
@@ -3965,6 +3994,9 @@ export class SmithproxyApp extends LitElement {
     const securityAssets = this.snapshot?.securityAssets;
     const workers = (value: number) => value === -1 ? 'Disabled' : String(value);
     const gateway = this.gatewayStatus();
+    const capabilityTone = this.capabilityBootstrapState === 'ready' ? 'success' :
+      this.capabilityBootstrapState === 'unavailable' ? 'danger' : 'warning';
+    const enabledCapabilityCount = this.enabledCapabilityCount();
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
@@ -3980,6 +4012,22 @@ export class SmithproxyApp extends LitElement {
               <dt>API version</dt><dd>${this.apiVersion}</dd>
               <dt>Base path</dt><dd>${this.runtime?.basePath ?? 'discovering'}</dd>
             </dl>
+          </article>
+          <article class="domain-card">
+            <header>
+              <div><h3>Capability bootstrap</h3><p>Browser trust and feature boundary</p></div>
+              <span class="runtime-state ${capabilityTone}" title=${this.capabilityError ?? ''}>
+                ● ${displayState(this.capabilityBootstrapState)}
+              </span>
+            </header>
+            <dl>
+              <dt>Last check</dt><dd>${this.timeLabel(this.capabilityCheckedAtUnixMs)}</dd>
+              <dt>Last valid contract</dt><dd>${this.timeLabel(this.capabilityLastSuccessAtUnixMs)}</dd>
+              <dt>API contract</dt><dd>${this.apiVersion}</dd>
+              <dt>Enabled surfaces</dt><dd>${enabledCapabilityCount} / 13</dd>
+              <dt>Refresh cadence</dt><dd>30 seconds · connectivity-triggered</dd>
+            </dl>
+            ${this.capabilityError ? html`<p role="status">${this.capabilityError}</p>` : nothing}
           </article>
           <article class="domain-card">
             <header><div><h3>Smithproxy API</h3><p>Server-side authenticated connection</p></div></header>

@@ -48,11 +48,13 @@ describe('system status mapping', () => {
   });
 
   it('uses a bounded fallback for non-error transport failures', () => {
-    expect(statusFromFailure('offline')).toMatchObject({
-      core: 'offline',
-      smithproxy: 'unknown',
-      detail: 'The Smithproxy GUI core is unavailable.',
-    });
+    for (const failure of ['offline', new Error('unsafe\nmessage'), new Error('x'.repeat(257))]) {
+      expect(statusFromFailure(failure)).toMatchObject({
+        core: 'offline',
+        smithproxy: 'unknown',
+        detail: 'The Smithproxy GUI core is unavailable.',
+      });
+    }
   });
 
   it('classifies every status tone without conflating unknown state with failure', () => {

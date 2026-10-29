@@ -217,7 +217,9 @@ Saslik authority because the trusted proxy secret authenticates that boundary.
 
 The System view creates the diagnostics report locally. Its versioned allowlist
 contains state enums, timestamps, capability flags, aggregate counters, and item
-counts only. It excludes configuration values and revisions, paths, workspace
+counts only. Capability bootstrap contributes only its fixed state, sanitized
+timestamps, and a count capped to the known feature vocabulary; its error text
+is never exported. The report excludes configuration values and revisions, paths, workspace
 and base-path identifiers, free-form upstream details, listener and protocol
 names, event and alert text, audit targets and request IDs, credentials, and
 tokens.

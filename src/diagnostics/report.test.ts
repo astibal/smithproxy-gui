@@ -13,6 +13,8 @@ function fixture(): DiagnosticsReportInput {
     },
     gateway: {mode: 'gateway', authenticated: true, state: 'verified'},
     capabilities: {
+      bootstrapState: 'ready', checkedAtUnixMs: 1_700_000_000_000,
+      lastSuccessAtUnixMs: 1_699_999_999_000, enabledFeatureCount: 12,
       configRead: true, configWrite: false, drafts: true, draftPreflight: true,
       jobs: true, eventsAvailable: true, alertsAvailable: true, auditAvailable: true, metrics: true,
       sessionActivity: true, tlsMonitoring: true, neighborMonitoring: true,
@@ -47,7 +49,8 @@ describe('diagnostics report', () => {
       application: {mode: 'embedded', apiVersion: 'v1'},
       runtime: {listenerCount: 2, sessionsActive: 4},
       interfaces: {generation: 42, interfaces: 3, addresses: 5},
-      capabilities: {jobs: true, metrics: true, interfaceMonitoring: true,
+      capabilities: {bootstrapState: 'ready', enabledFeatureCount: 12,
+        jobs: true, metrics: true, interfaceMonitoring: true,
         eventsAvailable: true, alertsAvailable: true, auditAvailable: true},
       operations: {
         eventCount: 4, activeAlertCount: 0, auditEntryCount: 2,
@@ -64,6 +67,9 @@ describe('diagnostics report', () => {
     input.runtime.sessionsActive = -1;
     input.controlPlane.latencyMs = Number.NaN;
     input.generatedAtUnixMs = Number.MAX_VALUE;
+    input.capabilities.checkedAtUnixMs = -1;
+    input.capabilities.lastSuccessAtUnixMs = Number.NaN;
+    input.capabilities.enabledFeatureCount = 99;
     input.interfaces.lastErrorCode = 'raw kernel error';
 
     const report = buildDiagnosticsReport(input);
@@ -71,6 +77,9 @@ describe('diagnostics report', () => {
     expect(report.runtime.sessionsActive).toBe(0);
     expect(report.controlPlane.latencyMs).toBeNull();
     expect(report.generatedAtUnixMs).toBe(0);
+    expect(report.capabilities.checkedAtUnixMs).toBeNull();
+    expect(report.capabilities.lastSuccessAtUnixMs).toBeNull();
+    expect(report.capabilities.enabledFeatureCount).toBe(13);
     expect(report.interfaces.lastErrorCode).toBeNull();
   });
 });

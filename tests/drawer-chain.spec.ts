@@ -1695,6 +1695,13 @@ test('rejects an incoherent privileged capability graph before protected request
   await expect(statusbar).toContainText('Core: Offline');
   await expect(statusbar).toContainText('Config: Preview');
   await expect(statusbar).toContainText('Events: Unavailable');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const capabilityCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Capability bootstrap'}),
+  });
+  await expect(capabilityCard).toContainText('Unavailable');
+  await expect(capabilityCard).toContainText('Enabled surfaces0 / 13');
+  await expect(capabilityCard).toContainText('Inconsistent privileged capabilities.');
   expect(protectedRequests).toEqual([]);
 });
 
@@ -1943,6 +1950,13 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();
+  const capabilityCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Capability bootstrap'}),
+  });
+  await expect(capabilityCard).toContainText('Ready');
+  await expect(capabilityCard).toContainText('API contractv1');
+  await expect(capabilityCard).toContainText('Enabled surfaces9 / 13');
+  await expect(capabilityCard).toContainText('30 seconds · connectivity-triggered');
   const jobsCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Backend jobs'}),
   });
@@ -1963,7 +1977,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
     application: {apiVersion: 'v1'},
     controlPlane: {core: 'online', smithproxy: 'ready'},
     runtime: {listenerCount: 2, sessionsActive: 4},
-    capabilities: {jobs: true},
+    capabilities: {bootstrapState: 'ready', enabledFeatureCount: 9, jobs: true},
     operations: {
       eventCount: 1, activeAlertCount: 0, auditEntryCount: 1,
       jobCount: 0, activeJobCount: 0, failedJobCount: 0,
