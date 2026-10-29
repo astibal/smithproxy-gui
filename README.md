@@ -148,6 +148,10 @@ with affected sections and write-only counts. It exposes an explicit Smithproxy
 validation action only after the reviewed transaction capability and canonical draft
 revision are available. Atomic commit additionally requires a matching bound
 validation and explicit operator confirmation.
+Editor saves include only fields changed since that editor opened. When a
+pending value is restored to its persistent origin, the GUI core atomically
+removes that path while applying any sibling updates under the same optimistic
+draft-version check.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls.

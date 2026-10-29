@@ -1228,14 +1228,32 @@ def main() -> int:
                 headers={**mutation_headers, "Origin": "https://attacker.invalid"},
                 body=remove_change,
             )[0] == 403
+            reconcile_change = json.dumps({
+                "expected_version": 3,
+                "changes": [{
+                    "path": "policy.[0].name", "value": "Office final",
+                }],
+                "remove_paths": ["policy.[0].action"],
+            })
             status, _, body = request(
-                configured_port, "/api/v1/config/draft/changes/remove", "POST",
-                headers=mutation_headers, body=remove_change)
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers, body=reconcile_change)
             assert status == 200
             removed_snapshot = json.loads(body)
             assert removed_snapshot["version"] == 4
+            assert any(change == {
+                "path": "policy.[0].name", "value": "Office final",
+            } for change in removed_snapshot["changes"])
             assert all(change["path"] != "policy.[0].action"
                        for change in removed_snapshot["changes"])
+            status, _, audit_body = request(
+                configured_port, "/api/v1/audit/recent", headers=gateway_headers)
+            assert status == 200
+            reconcile_audit = json.loads(audit_body)["entries"][-1]
+            assert reconcile_audit["operation"] == "config.draft.reconcile"
+            assert reconcile_audit["target_count"] == 2
+            assert reconcile_audit["targets"] == [
+                "policy.[0].name", "policy.[0].action"]
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/changes/remove", "POST",
                 headers=mutation_headers,

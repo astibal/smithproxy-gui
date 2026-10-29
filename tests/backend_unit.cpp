@@ -336,6 +336,31 @@ int main() {
     assert(schema_draft.upsert(1U, {"policy.[4096].name", std::string("outside")}) ==
            DraftMutationResult::InvalidPath);
 
+    DraftStore reconciled_draft{"reconciled"};
+    assert(reconciled_draft.upsert_many(0U, {
+        {"policy.[0].name", std::string("office")},
+        {"policy.[0].action", std::string("accept")},
+    }) == DraftMutationResult::Applied);
+    assert(reconciled_draft.reconcile(
+        1U,
+        {{"policy.[0].name", std::string("office-updated")}},
+        {"policy.[0].action"}) == DraftMutationResult::Applied);
+    const auto reconciled = reconciled_draft.snapshot();
+    assert(reconciled.version == 2U);
+    assert(reconciled.changes.size() == 1U);
+    assert(reconciled.changes.front().path == "policy.[0].name");
+    assert(std::get<std::string>(reconciled.changes.front().value) == "office-updated");
+    assert(reconciled_draft.reconcile(
+        2U,
+        {{"policy.[0].name", std::string("must-not-apply")}},
+        {"policy.[0].missing"}) == DraftMutationResult::Missing);
+    assert(std::get<std::string>(reconciled_draft.snapshot().changes.front().value) ==
+           "office-updated");
+    assert(reconciled_draft.reconcile(
+        2U,
+        {{"policy.[0].name", std::string("duplicate")}},
+        {"policy.[0].name"}) == DraftMutationResult::InvalidPath);
+
     DraftStore schema_coverage{"schema-coverage"};
     assert(schema_coverage.upsert_many(0U, {
         {"address_objects.[0].type", std::string("cidr")},

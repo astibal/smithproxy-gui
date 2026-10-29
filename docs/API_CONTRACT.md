@@ -177,6 +177,10 @@ The GUI core currently exposes one workspace-scoped foundation draft at
 `POST /api/v1/config/draft/changes`. The complete draft can be discarded with
 `POST /api/v1/config/draft/clear`; one pending path or a bounded unique path
 group can be removed atomically with `POST /api/v1/config/draft/changes/remove`.
+An editor can atomically reconcile one bounded `changes` batch with a disjoint
+`remove_paths` array through `POST /api/v1/config/draft/changes`. This keeps a
+field restored to its persistent value from passing through a transient set
+operation and applies one optimistic version check to the complete editor save.
 All removal operations require the current
 draft version, so one operator cannot silently erase a concurrent operator's
 work. An explicit

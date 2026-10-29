@@ -311,6 +311,7 @@ export class SmithproxyApp extends LitElement {
   private nextConfigRefreshAt = 0;
   private drawerHistoryDepth = 0;
   private drawerOrigins: HTMLElement[] = [];
+  private readonly drawerInitialChanges = new Map<string, ReadonlyMap<string, DraftScalar>>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -1076,6 +1077,7 @@ export class SmithproxyApp extends LitElement {
 
   private clearEditorChain(): void {
     this.drawerStore.clear();
+    this.drawerInitialChanges.clear();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -2065,10 +2067,27 @@ export class SmithproxyApp extends LitElement {
     ];
     this.focusMode = false;
     this.syncDrawers(true);
+    void this.updateComplete.then(() => this.captureDrawerInitialChanges(entry));
   }
 
   private drawerKey(entry: Pick<DrawerEntry, 'kind' | 'id'>): string {
     return `${entry.kind}:${entry.id}`;
+  }
+
+  private draftScalarsEqual(left: DraftScalar, right: DraftScalar): boolean {
+    if (!Array.isArray(left) || !Array.isArray(right)) return Object.is(left, right);
+    return left.length === right.length && left.every((item, index) => Object.is(item, right[index]));
+  }
+
+  private captureDrawerInitialChanges(entry: DrawerEntry): void {
+    if (!this.drawerStore.entries.some(item => this.drawerKey(item) === this.drawerKey(entry)) ||
+        this.dirtyDrawerKeys.has(this.drawerKey(entry))) return;
+    const changes = this.draftChanges(entry);
+    if (!changes) return;
+    this.drawerInitialChanges.set(
+      this.drawerKey(entry),
+      new Map(changes.map(change => [change.path, change.value])),
+    );
   }
 
   private markDrawerDirty(entry: DrawerEntry, event: Event): void {
@@ -2124,7 +2143,10 @@ export class SmithproxyApp extends LitElement {
   private closeDrawer(index: number): void {
     this.draftRemovalArmedKey = undefined;
     const remainingDirty = new Set(this.dirtyDrawerKeys);
-    for (const entry of this.drawerStore.entries.slice(index)) remainingDirty.delete(this.drawerKey(entry));
+    for (const entry of this.drawerStore.entries.slice(index)) {
+      remainingDirty.delete(this.drawerKey(entry));
+      this.drawerInitialChanges.delete(this.drawerKey(entry));
+    }
     this.dirtyDrawerKeys = remainingDirty;
     this.pendingCloseIndex = undefined;
     const levels = this.drawerStore.entries.length - index;
@@ -2170,6 +2192,7 @@ export class SmithproxyApp extends LitElement {
     const route = parseDrawerRoute(location.search);
     const hasRouteParameter = new URLSearchParams(location.search).has('edit');
     this.drawerStore.clear();
+    this.drawerInitialChanges.clear();
     this.drawerOrigins = [];
     let valid = true;
     for (const entry of route) {
@@ -2200,6 +2223,9 @@ export class SmithproxyApp extends LitElement {
     else if (this.drawers[0] && this.drawers[0].kind !== 'policy') this.activeSection = 'Objects';
     this.focusMode = false;
     void this.updateComplete.then(() => this.focusActiveDrawer());
+    void this.updateComplete.then(() => {
+      for (const entry of this.drawerStore.entries) this.captureDrawerInitialChanges(entry);
+    });
   }
 
   private drawerCandidate(entry: Pick<DrawerEntry, 'kind' | 'id'>) {
@@ -2254,12 +2280,37 @@ export class SmithproxyApp extends LitElement {
     const proposedChanges = this.draftChanges(entry);
     if (!proposedChanges) return;
     const changes = this.writableDraftChanges(proposedChanges);
-    if (!changes || changes.length === 0) return;
+    if (!changes) return;
+    const initial = this.drawerInitialChanges.get(this.drawerKey(entry));
+    const edited = initial
+      ? changes.filter(change => {
+        const initialValue = initial.get(change.path);
+        return initialValue === undefined || !this.draftScalarsEqual(initialValue, change.value);
+      })
+      : changes;
+    if (edited.length === 0) {
+      this.markDrawerSaved(entry);
+      return;
+    }
+    const pendingPaths = new Set((this.workspaceDraft?.changes ?? []).map(change => change.path));
+    const removePaths: string[] = [];
+    const upserts: DraftChange[] = [];
+    for (const change of edited) {
+      const persistent = this.valueOrigin(change.path)?.persistentValue;
+      if (pendingPaths.has(change.path) && persistent !== undefined &&
+          this.configValuesEqual(persistent, change.value)) {
+        removePaths.push(change.path);
+      } else {
+        upserts.push(change);
+      }
+    }
     this.draftSaving = true;
     const accessEpoch = this.configurationAccessEpoch;
     this.draftError = undefined;
     try {
-      const draft = await this.draftClient.upsertMany(this.draftVersion, changes);
+      const draft = removePaths.length > 0
+        ? await this.draftClient.reconcile(this.draftVersion, upserts, removePaths)
+        : await this.draftClient.upsertMany(this.draftVersion, upserts);
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.applyDraft(draft);
       await this.loadDraftPreflight();
@@ -2273,6 +2324,8 @@ export class SmithproxyApp extends LitElement {
           '[id*="-write-"][id$="-mode"], #settings-api-keys-mode',
         ).forEach(select => { select.value = 'unchanged'; });
       }
+      await this.updateComplete;
+      this.captureDrawerInitialChanges(entry);
     } catch (error) {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const message = error instanceof Error ? error.message : 'Draft change could not be saved.';

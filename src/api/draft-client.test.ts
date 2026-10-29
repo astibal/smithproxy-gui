@@ -58,6 +58,31 @@ describe('DraftClient', () => {
     ])).rejects.toThrow('Invalid draft scalar');
   });
 
+  it('atomically reconciles changed and reverted draft paths', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      id: 'workspace-draft', base_revision: null, version: 8,
+      changes: [{path: 'policy.[0].name', value: 'office'}],
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+    await expect(client.reconcile(
+      7,
+      [{path: 'policy.[0].name', value: 'office'}],
+      ['policy.[0].action'],
+    )).resolves.toMatchObject({version: 8});
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/changes', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        expected_version: 7,
+        changes: [{path: 'policy.[0].name', value: 'office'}],
+        remove_paths: ['policy.[0].action'],
+      }),
+    }));
+    await expect(client.reconcile(8, [], [])).rejects.toThrow('Invalid draft reconciliation');
+    await expect(client.reconcile(8, [{path: 'policy.[0].name', value: 'duplicate'}], [
+      'policy.[0].name',
+    ])).rejects.toThrow('Invalid draft path');
+  });
+
   it('clears a draft with optimistic concurrency headers', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       id: 'workspace-draft', base_revision: null, version: 4, changes: [],

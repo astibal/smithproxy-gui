@@ -336,6 +336,38 @@ export class DraftClient {
     }));
   }
 
+  async reconcile(
+    expectedVersion: number,
+    changes: ReadonlyArray<DraftChange>,
+    removePaths: ReadonlyArray<string>,
+  ): Promise<DraftSnapshot> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid draft version.');
+    if (changes.length + removePaths.length === 0 || changes.length + removePaths.length > 4096) {
+      throw new Error('Invalid draft reconciliation.');
+    }
+    const paths = new Set<string>();
+    const validated = changes.map(change => {
+      if (change.path.length === 0 || change.path.length > 512 ||
+          !/^[A-Za-z0-9_.\[\]-]+$/u.test(change.path) || paths.has(change.path)) {
+        throw new Error('Invalid draft path.');
+      }
+      paths.add(change.path);
+      return {path: change.path, value: scalar(change.value)};
+    });
+    for (const path of removePaths) {
+      if (path.length === 0 || path.length > 512 ||
+          !/^[A-Za-z0-9_.\[\]-]+$/u.test(path) || paths.has(path)) {
+        throw new Error('Invalid draft path.');
+      }
+      paths.add(path);
+    }
+    return parseDraft(await this.#request(`${this.#endpoint}/changes`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({expected_version: expectedVersion, changes: validated, remove_paths: removePaths}),
+    }));
+  }
+
   async remove(expectedVersion: number, path: string): Promise<DraftSnapshot> {
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid draft version.');
     if (path.length === 0 || path.length > 512 || !/^[A-Za-z0-9_.\[\]-]+$/u.test(path)) {

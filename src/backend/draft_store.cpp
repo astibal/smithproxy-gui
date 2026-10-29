@@ -75,6 +75,18 @@ DraftMutationResult DraftStore::upsert_many(
     if (changes.empty() || changes.size() > maximum_changes) {
         return DraftMutationResult::CapacityExceeded;
     }
+    return reconcile(expected_version, std::move(changes), {});
+}
+
+DraftMutationResult DraftStore::reconcile(
+    const std::uint64_t expected_version,
+    std::vector<DraftChange> changes,
+    std::vector<std::string> remove_paths) {
+    if ((changes.empty() && remove_paths.empty()) ||
+        changes.size() > maximum_changes || remove_paths.size() > maximum_changes ||
+        changes.size() > maximum_changes - remove_paths.size()) {
+        return DraftMutationResult::CapacityExceeded;
+    }
     for (std::size_t index = 0; index < changes.size(); ++index) {
         if (!valid_path(changes[index].path)) return DraftMutationResult::InvalidPath;
         if (!valid_value(changes[index].value)) return DraftMutationResult::InvalidValue;
@@ -85,9 +97,30 @@ DraftMutationResult DraftStore::upsert_many(
             if (changes[previous].path == changes[index].path) return DraftMutationResult::InvalidPath;
         }
     }
+    for (std::size_t index = 0; index < remove_paths.size(); ++index) {
+        if (!valid_path(remove_paths[index])) return DraftMutationResult::InvalidPath;
+        if (std::find(remove_paths.begin(),
+                      remove_paths.begin() + static_cast<std::ptrdiff_t>(index),
+                      remove_paths[index]) != remove_paths.begin() + static_cast<std::ptrdiff_t>(index)) {
+            return DraftMutationResult::InvalidPath;
+        }
+        if (std::any_of(changes.begin(), changes.end(), [&](const DraftChange& change) {
+                return change.path == remove_paths[index];
+            })) {
+            return DraftMutationResult::InvalidPath;
+        }
+    }
     std::scoped_lock lock(mutex_);
     if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
     auto proposed = draft_.changes;
+    for (const auto& path : remove_paths) {
+        const auto found = std::find_if(proposed.begin(), proposed.end(),
+                                        [&](const DraftChange& item) { return item.path == path; });
+        if (found == proposed.end()) return DraftMutationResult::Missing;
+    }
+    std::erase_if(proposed, [&](const DraftChange& change) {
+        return std::find(remove_paths.begin(), remove_paths.end(), change.path) != remove_paths.end();
+    });
     for (auto& change : changes) {
         const auto found = std::find_if(proposed.begin(), proposed.end(),
                                         [&](const DraftChange& item) { return item.path == change.path; });
@@ -119,25 +152,7 @@ DraftMutationResult DraftStore::remove(const std::uint64_t expected_version, con
 DraftMutationResult DraftStore::remove_many(
     const std::uint64_t expected_version, std::vector<std::string> paths) {
     if (paths.empty() || paths.size() > maximum_changes) return DraftMutationResult::InvalidPath;
-    for (std::size_t index = 0; index < paths.size(); ++index) {
-        if (!valid_path(paths[index])) return DraftMutationResult::InvalidPath;
-        if (std::find(paths.begin(), paths.begin() + static_cast<std::ptrdiff_t>(index), paths[index]) !=
-            paths.begin() + static_cast<std::ptrdiff_t>(index)) {
-            return DraftMutationResult::InvalidPath;
-        }
-    }
-    std::scoped_lock lock(mutex_);
-    if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
-    for (const auto& path : paths) {
-        const auto found = std::find_if(draft_.changes.begin(), draft_.changes.end(),
-                                        [&](const DraftChange& item) { return item.path == path; });
-        if (found == draft_.changes.end()) return DraftMutationResult::Missing;
-    }
-    std::erase_if(draft_.changes, [&](const DraftChange& change) {
-        return std::find(paths.begin(), paths.end(), change.path) != paths.end();
-    });
-    ++draft_.version;
-    return DraftMutationResult::Applied;
+    return reconcile(expected_version, {}, std::move(paths));
 }
 
 DraftMutationResult DraftStore::clear(const std::uint64_t expected_version) {

@@ -125,6 +125,9 @@ MutationAuditMetadata mutation_audit_metadata(
 
     const auto document = nlohmann::json::parse(body, nullptr, false);
     if (!document.is_object() || metadata.operation == "config.draft.clear") return metadata;
+    if (metadata.operation == "config.draft.upsert" && document.contains("remove_paths")) {
+        metadata.operation = "config.draft.reconcile";
+    }
     const auto append_target = [&](const nlohmann::json& raw) {
         ++metadata.target_count;
         if (!raw.is_string()) {
@@ -149,6 +152,9 @@ MutationAuditMetadata mutation_audit_metadata(
                 ++metadata.target_count;
                 metadata.targets_truncated = true;
             }
+        }
+        if (document.contains("remove_paths") && document["remove_paths"].is_array()) {
+            for (const auto& path : document["remove_paths"]) append_target(path);
         }
     }
     return metadata;
@@ -723,6 +729,7 @@ private:
             return std::nullopt;
         };
         std::vector<DraftChange> changes;
+        std::vector<std::string> remove_paths;
         if (document.size() == 3U && document.contains("path") && document["path"].is_string() &&
             document.contains("value")) {
             auto value = parse_value(document["value"]);
@@ -731,8 +738,12 @@ private:
                         "{\"error\":\"invalid draft value\"}"};
             }
             changes.push_back({document["path"].get<std::string>(), std::move(*value)});
-        } else if (document.size() == 2U && document.contains("changes") &&
-                   document["changes"].is_array() && document["changes"].size() <= 4096U) {
+        } else if ((document.size() == 2U || document.size() == 3U) &&
+                   document.contains("changes") && document["changes"].is_array() &&
+                   document["changes"].size() <= 4096U &&
+                   (document.size() == 2U || (document.contains("remove_paths") &&
+                    document["remove_paths"].is_array() &&
+                    document["remove_paths"].size() <= 4096U))) {
             for (const auto& item : document["changes"]) {
                 if (!item.is_object() || item.size() != 2U || !item.contains("path") ||
                     !item["path"].is_string() || !item.contains("value")) {
@@ -745,13 +756,24 @@ private:
                 }
                 changes.push_back({item["path"].get<std::string>(), std::move(*value)});
             }
+            if (document.contains("remove_paths")) {
+                remove_paths.reserve(document["remove_paths"].size());
+                for (const auto& path : document["remove_paths"]) {
+                    if (!path.is_string()) {
+                        return {400, "application/json; charset=utf-8",
+                                "{\"error\":\"invalid draft change\"}"};
+                    }
+                    remove_paths.push_back(path.get<std::string>());
+                }
+            }
         } else {
             return {400, "application/json; charset=utf-8", "{\"error\":\"invalid draft change\"}"};
         }
 
         const auto result = commit_coordinator_.mutate([&] {
-            return draft_.upsert_many(
-                document["expected_version"].get<std::uint64_t>(), std::move(changes));
+            return draft_.reconcile(
+                document["expected_version"].get<std::uint64_t>(),
+                std::move(changes), std::move(remove_paths));
         });
         if (result == DraftMutationResult::Busy) {
             return {409, "application/json; charset=utf-8",
@@ -759,6 +781,10 @@ private:
         }
         if (result == DraftMutationResult::VersionConflict) {
             return {409, "application/json; charset=utf-8", "{\"error\":\"draft version conflict\"}"};
+        }
+        if (result == DraftMutationResult::Missing) {
+            return {404, "application/json; charset=utf-8",
+                    "{\"error\":\"draft change not found\"}"};
         }
         if (result != DraftMutationResult::Applied) {
             return {400, "application/json; charset=utf-8", "{\"error\":\"draft change rejected\"}"};
