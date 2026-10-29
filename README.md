@@ -216,7 +216,9 @@ review. A policy can be placed first, last, or immediately before an existing st
 policy and can open referenced objects in another nested drawer. Existing policies
 can also be reordered first, last, or before another stable policy. Reordering updates
 one optimistic move operation, while restoring the original position removes that
-operation. Existing policies and unreferenced reusable objects can be placed into the
+operation. The primary Policy list presents pending creates and moves in their effective
+draft order while retaining live config indexes for field edits. Existing policies and
+unreferenced reusable objects can be placed into the
 same draft as confirmed delete operations; active references and conflicting pending
 field edits block the delete locally before the authoritative Smithproxy validation.
 References introduced by pending policy or routing edits and structural creates are

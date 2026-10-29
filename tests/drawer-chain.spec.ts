@@ -1698,6 +1698,46 @@ test('shows and reopens structural creates from primary policy and object lists'
   await expect(editor.getByLabel('Name')).toHaveValue('pending-routing');
 });
 
+test('renders pending policy creates and moves in effective draft order', async ({page}) => {
+  const policyFields = (name: string) => ({
+    name, disabled: false, proto: 'tcp', src: ['office'], sport: [], dst: ['internet'], dport: [],
+    features: [], action: 'accept', nat: '', routing: '', tls_profile: '', ssh_profile: '',
+    detection_profile: '', content_profile: '', auth_profile: '', alg_dns_profile: '', script_profile: '',
+  });
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true, structuralDraftsReady: true,
+    secondPolicy: true,
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'ordered-first', client_id: 'ordered-first',
+      collection: 'policy', position: {first: true}, fields: policyFields('Pending first'),
+    }, {
+      op: 'create', local_id: 'ordered-before', client_id: 'ordered-before',
+      collection: 'policy', position: {before: 'policy-0'}, fields: policyFields('Pending before'),
+    }, {
+      op: 'move', local_id: 'ordered-move', collection: 'policy',
+      entity_id: 'policy-0', position: {last: true},
+    }],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const rows = page.getByRole('group', {name: 'Policies'}).getByRole('button');
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toContainText('Pending first');
+  await expect(rows.nth(1)).toContainText('Pending before');
+  await expect(rows.nth(2)).toContainText('Policy 2');
+  await expect(rows.nth(3)).toContainText('Policy 1');
+
+  await rows.nth(0).click();
+  let editor = page.getByRole('dialog', {name: 'Create policy'});
+  await expect(editor.getByLabel('Placement')).toHaveValue('first');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await rows.nth(3).click();
+  editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(editor.getByLabel('Draft order')).toHaveValue('last');
+});
+
 test('shows and reopens pending security rules and flow creates in context', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready', validationReady: true, commitReady: true, structuralDraftsReady: true,
@@ -2533,6 +2573,9 @@ test('moves a stable policy and removes the operation when order is restored', a
     .toMatch(/^move-policy-[0-9a-f-]{36}$/u);
 
   await editor.getByRole('button', {name: 'Cancel'}).click();
+  let policyRows = page.getByRole('group', {name: 'Policies'}).getByRole('button');
+  await expect(policyRows.nth(0)).toContainText('Policy 2');
+  await expect(policyRows.nth(1)).toContainText('Policy 1');
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   const moveRow = table.getByRole('row').filter({hasText: 'policy · move'});
@@ -2545,6 +2588,11 @@ test('moves a stable policy and removes the operation when order is restored', a
   await editor.getByRole('button', {name: 'Update draft order'}).click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(editor.getByLabel('Draft order')).toHaveValue('first');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  policyRows = page.getByRole('group', {name: 'Policies'}).getByRole('button');
+  await expect(policyRows.nth(0)).toContainText('Policy 1');
+  await expect(policyRows.nth(1)).toContainText('Policy 2');
   expect(state.structuralRemovalRequests).toHaveLength(1);
   expect(state.structuralRemovalRequests![0]).toMatchObject({expectedVersion: 1, csrf: '1'});
   expect(state.structuralRemovalRequests![0]!.localId)

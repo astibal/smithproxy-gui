@@ -5581,10 +5581,46 @@ export class SmithproxyApp extends LitElement {
 
   private renderPolicyList() {
     const overlayCounts = this.overlayCounts();
-    const pendingPolicies = (this.workspaceDraft?.structuralOperations ?? []).filter(
+    const structuralOperations = this.workspaceDraft?.structuralOperations ?? [];
+    const pendingPolicies = structuralOperations.filter(
       (operation): operation is DraftCreateOperation =>
         operation.op === 'create' && operation.collection === 'policy',
     );
+    type PolicyListRow =
+      | {kind: 'live'; id: string; policy: PolicySummary; configIndex: number}
+      | {kind: 'create'; id: string; operation: DraftCreateOperation};
+    const policyRows: PolicyListRow[] = (this.snapshot?.policies ?? []).map((policy, configIndex) => ({
+      kind: 'live', id: policy.id, policy, configIndex,
+    }));
+    policyRows.push(...pendingPolicies.map(operation => ({
+      kind: 'create' as const, id: operation.clientId, operation,
+    })));
+    const placeRow = (id: string, position: DraftCreateOperation['position']): void => {
+      const currentIndex = policyRows.findIndex(row => row.id === id);
+      if (currentIndex < 0) return;
+      const [row] = policyRows.splice(currentIndex, 1);
+      if (!row) return;
+      if (position.kind === 'first') {
+        policyRows.unshift(row);
+        return;
+      }
+      if (position.kind === 'last') {
+        policyRows.push(row);
+        return;
+      }
+      const referenceIndex = policyRows.findIndex(candidate => candidate.id === position.reference);
+      if (referenceIndex < 0) {
+        policyRows.push(row);
+        return;
+      }
+      policyRows.splice(position.kind === 'before' ? referenceIndex : referenceIndex + 1, 0, row);
+    };
+    pendingPolicies.forEach(operation => placeRow(operation.clientId, operation.position));
+    structuralOperations.forEach(operation => {
+      if (operation.op === 'move' && operation.collection === 'policy') {
+        placeRow(operation.entityId, operation.position);
+      }
+    });
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -5604,7 +5640,33 @@ export class SmithproxyApp extends LitElement {
           <div class="row heading" aria-hidden="true">
             <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
           </div>
-          ${this.snapshot?.policies.map((policy, index) => {
+          ${policyRows.map(row => {
+            if (row.kind === 'create') {
+              const {operation} = row;
+              const text = (field: string, fallback = '') => {
+                const value = operation.fields[field];
+                return typeof value === 'string' ? value : fallback;
+              };
+              const list = (field: string) => {
+                const value = operation.fields[field];
+                return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
+              };
+              const disabled = operation.fields['disabled'] === true;
+              return html`<button class="row" type="button"
+                @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                  operation.localId, event.currentTarget as HTMLElement,
+                )}>
+                <strong>${text('name', 'New policy')}</strong>
+                <span>${this.referenceNameSummary(list('src'))}</span>
+                <span>${this.referenceNameSummary(list('dst'))}</span>
+                <span class="action">${text('action', 'unknown')}</span>
+                <span class="row-meta">
+                  <span class="status ${disabled ? 'disabled' : ''}">${disabled ? 'Disabled' : 'Enabled'}</span>
+                  <span class="pending-badge" title="This policy is a pending structural create">Pending create</span>
+                </span>
+              </button>`;
+            }
+            const {policy, configIndex: index} = row;
             const base = `policy.[${index}]`;
             const name = this.presentedValue(`${base}.name`, policy.name);
             const sources = this.presentedListValue(
@@ -5625,30 +5687,6 @@ export class SmithproxyApp extends LitElement {
                 <span class="status ${enabled ? '' : 'disabled'}">${enabled ? 'Enabled' : 'Disabled'}</span>
                 ${this.renderPendingBadge('policy', policy.id)}
                 ${this.renderOverlayBadge(`policy.[${index}].`, overlayCounts)}
-              </span>
-            </button>`;
-          })}
-          ${pendingPolicies.map(operation => {
-            const text = (field: string, fallback = '') => {
-              const value = operation.fields[field];
-              return typeof value === 'string' ? value : fallback;
-            };
-            const list = (field: string) => {
-              const value = operation.fields[field];
-              return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
-            };
-            const disabled = operation.fields['disabled'] === true;
-            return html`<button class="row" type="button"
-              @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
-                operation.localId, event.currentTarget as HTMLElement,
-              )}>
-              <strong>${text('name', 'New policy')}</strong>
-              <span>${this.referenceNameSummary(list('src'))}</span>
-              <span>${this.referenceNameSummary(list('dst'))}</span>
-              <span class="action">${text('action', 'unknown')}</span>
-              <span class="row-meta">
-                <span class="status ${disabled ? 'disabled' : ''}">${disabled ? 'Disabled' : 'Enabled'}</span>
-                <span class="pending-badge" title="This policy is a pending structural create">Pending create</span>
               </span>
             </button>`;
           })}
