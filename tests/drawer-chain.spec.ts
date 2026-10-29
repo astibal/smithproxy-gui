@@ -1541,6 +1541,65 @@ test('creates and reopens an address object through a structural drawer', async 
   await expect(editor.getByLabel('Address', {exact: true})).toHaveValue('192.0.2.0/24');
 });
 
+test('creates an ordered policy and opens referenced objects from its drawer', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  const create = page.getByRole('button', {name: 'New policy'});
+  await expect(create).toBeEnabled();
+  await create.click();
+
+  let editor = page.getByRole('dialog', {name: 'Create policy'});
+  await editor.getByLabel('Sources').fill('office');
+  await editor.getByLabel('Destinations').fill('internet');
+  await editor.getByRole('button', {name: /office/i}).click();
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office'});
+  await expect(addressEditor).toBeVisible();
+  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(addressEditor).toBeHidden();
+
+  editor = page.getByRole('dialog', {name: 'Create policy'});
+  await editor.getByLabel('Name').fill('Policy 1');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Policy names must be unique.')).toBeVisible();
+  expect(state.structuralMutationRequests).toEqual([]);
+
+  await editor.getByLabel('Name').fill('branch-policy');
+  await editor.getByLabel('Placement').selectOption({label: 'Before Policy 1'});
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  const request = state.structuralMutationRequests![0]!;
+  expect(request.expectedVersion).toBe(0);
+  expect(request.csrf).toBe('1');
+  expect(request.operation).toMatchObject({
+    op: 'create', collection: 'policy', position: {before: 'policy-0'},
+    fields: {
+      name: 'branch-policy', disabled: false, proto: 'tcp', src: ['office'], dst: ['internet'],
+      action: 'accept', sport: [], dport: [], features: [],
+    },
+  });
+  expect(request.operation.local_id).toMatch(/^create-policy-[0-9a-f-]{36}$/u);
+  expect(request.operation.client_id).toBe(request.operation.local_id);
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(table).toContainText('policy · create');
+  await expect(table).toContainText('branch-policy');
+  await table.getByRole('button', {name: 'Edit'}).click();
+  editor = page.getByRole('dialog', {name: 'Create policy'});
+  await expect(editor.getByLabel('Name')).toHaveValue('branch-policy');
+  await expect(editor.getByLabel('Placement')).toHaveValue('before:policy-0');
+});
+
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
@@ -2656,7 +2715,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await expect(page.getByRole('button', {name: 'New policy'})).toBeDisabled();
-  await expect(page.getByText('Requires the reviewed structural transaction API.')).toBeVisible();
+  await expect(page.getByText('Requires reviewed structural transactions and stable entity IDs.')).toBeVisible();
 
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Operational events'})).toBeVisible();

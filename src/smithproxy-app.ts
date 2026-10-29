@@ -317,6 +317,7 @@ export class SmithproxyApp extends LitElement {
   private configRefreshInFlight = false;
   private nextConfigRefreshAt = 0;
   private drawerHistoryDepth = 0;
+  private drawerHistoryNavigationPending = false;
   private drawerOrigins: HTMLElement[] = [];
   private readonly drawerInitialChanges = new Map<string, ReadonlyMap<string, DraftScalar>>();
   private readonly referencePreviewValues = new Map<string, string>();
@@ -836,6 +837,13 @@ export class SmithproxyApp extends LitElement {
   };
 
   private readonly handlePopState = (): void => {
+    if (this.drawerHistoryNavigationPending) {
+      this.drawerHistoryNavigationPending = false;
+      const target = this.pendingReturnFocus;
+      this.pendingReturnFocus = undefined;
+      if (target?.isConnected) void this.updateComplete.then(() => target.focus());
+      return;
+    }
     if (this.drawers.some(entry => this.dirtyDrawerKeys.has(this.drawerKey(entry)))) {
       const hostState = typeof history.state === 'object' && history.state !== null ? history.state : {};
       history.pushState({...hostState, smithproxyGuiDrawer: true}, '', this.drawerUrl());
@@ -1601,6 +1609,9 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && operation.collection === 'address_objects') {
         objects.add(`address-create:${operation.localId}`);
       }
+      if (operation.op === 'create' && operation.collection === 'policy') {
+        objects.add(`policy-create:${operation.localId}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -1879,11 +1890,13 @@ export class SmithproxyApp extends LitElement {
 
   private openDraftStructuralOperation(localId: string, origin: HTMLElement): void {
     const operation = this.workspaceDraft?.structuralOperations.find(item => item.localId === localId);
-    if (operation?.op !== 'create' || operation.collection !== 'address_objects') return;
+    if (operation?.op !== 'create' ||
+        !['address_objects', 'policy'].includes(operation.collection)) return;
+    const policy = operation.collection === 'policy';
     this.openObjectDrawer({
-      kind: 'address-create',
+      kind: policy ? 'policy-create' : 'address-create',
       id: operation.localId,
-      title: String(operation.fields['name'] ?? 'New address object'),
+      title: String(operation.fields['name'] ?? (policy ? 'New policy' : 'New address object')),
     }, origin);
   }
 
@@ -2030,6 +2043,12 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({
       kind: 'address-create', id: localId, title: 'New address object',
     }, origin);
+  }
+
+  private openNewPolicy(origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable) return;
+    const localId = `create-policy-${crypto.randomUUID()}`;
+    this.openObjectDrawer({kind: 'policy-create', id: localId, title: 'New policy'}, origin);
   }
 
   private openPort(id: string, origin?: HTMLElement): void {
@@ -2235,6 +2254,7 @@ export class SmithproxyApp extends LitElement {
     if (levels > 0 && this.drawerHistoryDepth >= levels) {
       this.drawerHistoryDepth -= levels;
       this.pendingReturnFocus = returnFocus;
+      this.drawerHistoryNavigationPending = true;
       history.go(-levels);
     } else {
       this.replaceDrawerRoute();
@@ -2264,12 +2284,16 @@ export class SmithproxyApp extends LitElement {
     if (!this.snapshot) return;
     const route = parseDrawerRoute(location.search);
     const hasRouteParameter = new URLSearchParams(location.search).has('edit');
+    const openEntries = new Map(this.drawerStore.entries.map(entry => [
+      `${entry.kind}:${entry.id}`,
+      {id: entry.id, name: entry.title},
+    ]));
     this.drawerStore.clear();
     this.drawerInitialChanges.clear();
     this.drawerOrigins = [];
     let valid = true;
     for (const entry of route) {
-      const candidate = this.drawerCandidate(entry);
+      const candidate = this.drawerCandidate(entry) ?? openEntries.get(`${entry.kind}:${entry.id}`);
       if (!candidate) { valid = false; break; }
       if (!this.drawerStore.open({kind: entry.kind, id: candidate.id, title: candidate.name})) {
         valid = false;
@@ -2304,6 +2328,14 @@ export class SmithproxyApp extends LitElement {
   private drawerCandidate(entry: Pick<DrawerEntry, 'kind' | 'id'>) {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'policy') return this.snapshot.policies.find(item => item.id === entry.id);
+    if (entry.kind === 'policy-create') {
+      const operation = this.workspaceDraft?.structuralOperations.find(
+        item => item.op === 'create' && item.collection === 'policy' && item.localId === entry.id,
+      );
+      return operation?.op === 'create'
+        ? {id: operation.localId, name: String(operation.fields['name'] ?? 'New policy')}
+        : undefined;
+    }
     if (entry.kind === 'address') return this.snapshot.addresses.find(item => item.id === entry.id);
     if (entry.kind === 'address-create') {
       const operation = this.workspaceDraft?.structuralOperations.find(
@@ -2348,6 +2380,131 @@ export class SmithproxyApp extends LitElement {
       '.drawer-body textarea:not([disabled]), .drawer-body button:not([disabled])',
     );
     (target ?? active)?.focus();
+  }
+
+  private async savePolicyCreate(entry: DrawerEntry): Promise<void> {
+    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    const input = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
+      `#policy-create-${field}-${entry.id}`,
+    );
+    const name = input('name');
+    const enabled = input('enabled');
+    const sources = input('sources');
+    const destinations = input('destinations');
+    const action = input('action');
+    const protocol = input('protocol');
+    const sourcePorts = input('source-ports');
+    const destinationPorts = input('destination-ports');
+    const features = input('features');
+    const nat = input('nat');
+    const referenceNames = ['routing', 'tls', 'ssh', 'detection', 'content', 'auth', 'dns', 'script'] as const;
+    const references = new Map(referenceNames.map(field => [field, input(field)]));
+    const placement = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-create-placement-${entry.id}`);
+    if (!name || !enabled || !sources || !destinations || !action || !protocol || !sourcePorts ||
+        !destinationPorts || !features || !nat || !placement ||
+        [...references.values()].some(value => !value)) return;
+
+    const list = (field: HTMLInputElement) =>
+      field.value.split(',').map(value => value.trim()).filter(Boolean);
+    const sourceValues = list(sources);
+    const destinationValues = list(destinations);
+    const sourcePortValues = list(sourcePorts);
+    const destinationPortValues = list(destinationPorts);
+    const featureValues = list(features);
+    const normalizedName = name.value.trim();
+    const normalizedAction = action.value.trim();
+    const normalizedProtocol = protocol.value.trim();
+    const printable = (value: string, maximum: number, empty = false) =>
+      (empty || value.length > 0) && value.length <= maximum && !/[\u0000-\u001f\u007f]/u.test(value);
+    const validList = (values: ReadonlyArray<string>, empty = true) =>
+      (empty || values.length > 0) && values.length <= 256 &&
+      values.every(value => printable(value, 128)) && new Set(values).size === values.length;
+    const referenceValues = new Map([...references].map(([field, value]) => [field, value!.value.trim()]));
+    if (!printable(normalizedName, 128) || !printable(normalizedAction, 32) ||
+        !printable(normalizedProtocol, 128) || !validList(sourceValues, false) ||
+        !validList(destinationValues, false) ||
+        ![sourcePortValues, destinationPortValues, featureValues].every(values => validList(values)) ||
+        !printable(nat.value.trim(), 128, true) ||
+        [...referenceValues.values()].some(value => !printable(value, 128, true))) {
+      this.drawerError = 'Policy fields and unique bounded references are required.';
+      return;
+    }
+    const duplicateLive = this.snapshot?.policies.some((policy, index) =>
+      this.presentedValue(`policy.[${index}].name`, policy.name) === normalizedName);
+    const duplicateDraft = this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'create' && operation.collection === 'policy' &&
+      operation.localId !== entry.id && operation.fields['name'] === normalizedName);
+    if (duplicateLive || duplicateDraft) {
+      this.drawerError = 'Policy names must be unique.';
+      return;
+    }
+
+    let position: DraftCreateOperation['position'];
+    if (placement.value === 'first' || placement.value === 'last') {
+      position = {kind: placement.value, reference: null};
+    } else if (placement.value.startsWith('before:')) {
+      const reference = placement.value.slice('before:'.length);
+      if (!this.snapshot?.policies.some(policy => policy.id === reference)) {
+        this.drawerError = 'The selected policy placement is no longer available.';
+        return;
+      }
+      position = {kind: 'before', reference};
+    } else {
+      this.drawerError = 'A valid policy placement is required.';
+      return;
+    }
+    const fields: DraftCreateOperation['fields'] = {
+      name: normalizedName,
+      disabled: !enabled.checked,
+      proto: normalizedProtocol,
+      src: sourceValues,
+      sport: sourcePortValues,
+      dst: destinationValues,
+      dport: destinationPortValues,
+      features: featureValues,
+      action: normalizedAction,
+      nat: nat.value.trim(),
+      routing: referenceValues.get('routing')!,
+      tls_profile: referenceValues.get('tls')!,
+      ssh_profile: referenceValues.get('ssh')!,
+      detection_profile: referenceValues.get('detection')!,
+      content_profile: referenceValues.get('content')!,
+      auth_profile: referenceValues.get('auth')!,
+      alg_dns_profile: referenceValues.get('dns')!,
+      script_profile: referenceValues.get('script')!,
+    };
+    const existing = this.pendingPolicyCreate(entry);
+    const sameFields = existing !== undefined && Object.keys(existing.fields).length === Object.keys(fields).length &&
+      Object.entries(fields).every(([field, value]) =>
+        existing.fields[field] !== undefined && this.configValuesEqual(existing.fields[field]!, value));
+    if (sameFields && existing!.position.kind === position.kind &&
+        existing!.position.reference === position.reference) {
+      this.drawerError = undefined;
+      this.markDrawerSaved(entry);
+      return;
+    }
+
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create', localId: entry.id, collection: 'policy', clientId: entry.id,
+        parentId: null, position, fields,
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Policy could not be added to the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
   }
 
   private async saveAddressCreate(entry: DrawerEntry): Promise<void> {
@@ -2409,6 +2566,10 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveToDraft(entry: DrawerEntry): Promise<void> {
+    if (entry.kind === 'policy-create') {
+      await this.savePolicyCreate(entry);
+      return;
+    }
     if (entry.kind === 'address-create') {
       await this.saveAddressCreate(entry);
       return;
@@ -3749,7 +3910,8 @@ export class SmithproxyApp extends LitElement {
                     : operation.entityId}
                 </span>
                 <span class="draft-actions" role="cell">
-                  ${operation.op === 'create' && operation.collection === 'address_objects' ? html`
+                  ${operation.op === 'create' &&
+                    ['address_objects', 'policy'].includes(operation.collection) ? html`
                     <button class="secondary" type="button"
                       ?disabled=${!this.structuralDraftsAvailable}
                       @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
@@ -3779,8 +3941,14 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Policies</h2><p>Traffic decisions and inspection behavior</p></div>
           <div class="structural-action">
-            <button class="primary" type="button" disabled aria-describedby="new-policy-blocker">New policy</button>
-            <small id="new-policy-blocker">Requires the reviewed structural transaction API.</small>
+            <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              aria-describedby="new-policy-blocker"
+              @click=${(event: MouseEvent) => this.openNewPolicy(event.currentTarget as HTMLElement)}>
+              New policy
+            </button>
+            <small id="new-policy-blocker">${this.structuralDraftsAvailable
+              ? 'Creates an ordered operation in the shared workspace draft.'
+              : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
         </div>
         <div class="table" role="group" aria-label="Policies">
@@ -5496,6 +5664,113 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private pendingPolicyCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(
+      item => item.op === 'create' && item.collection === 'policy' && item.localId === entry.id,
+    );
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private renderPolicyCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingPolicyCreate(entry);
+    const scalar = (name: string, fallback: DraftScalar): DraftScalar => operation?.fields[name] ?? fallback;
+    const text = (name: string, fallback = '') => String(scalar(name, fallback));
+    const list = (name: string, fallback: ReadonlyArray<string> = []) => {
+      const value = scalar(name, [...fallback]);
+      return Array.isArray(value) && value.every(item => typeof item === 'string')
+        ? value as ReadonlyArray<string> : fallback;
+    };
+    const readOnly = !this.structuralDraftsAvailable;
+    const placement = operation?.position.kind === 'before'
+      ? `before:${operation.position.reference ?? ''}`
+      : operation?.position.kind ?? 'last';
+    const referenceField = (id: string, label: string, type: string, field: string) => {
+      const inputId = `policy-create-${id}-${entry.id}`;
+      const value = text(field);
+      return html`<label for=${inputId}>${label}</label>
+        <div class="reference-edit"><input id=${inputId} .value=${value} data-reference-preview="true"
+          maxlength="128" .readOnly=${readOnly} />
+          ${this.renderProfileReference(entry, inputId, type, value)}</div>`;
+    };
+    const sources = list('src', ['any']);
+    const destinations = list('dst', ['any']);
+    const sourcePorts = list('sport');
+    const destinationPorts = list('dport');
+    return html`
+      <div class="form-grid wide-form-grid">
+        <label for="policy-create-name-${entry.id}">Name</label>
+        <input id="policy-create-name-${entry.id}" .value=${text('name')} maxlength="128" required
+          autocomplete="off" .readOnly=${readOnly} />
+        <label for="policy-create-placement-${entry.id}">Placement</label>
+        <select id="policy-create-placement-${entry.id}" ?disabled=${readOnly}>
+          <option value="first" ?selected=${placement === 'first'}>First policy</option>
+          ${this.snapshot?.policies.map(policy => html`
+            <option value=${`before:${policy.id}`} ?selected=${placement === `before:${policy.id}`}>
+              Before ${policy.name}
+            </option>
+          `)}
+          <option value="last" ?selected=${placement === 'last'}>Last policy</option>
+        </select>
+        <label>Enabled</label>
+        <label><input id="policy-create-enabled-${entry.id}" type="checkbox"
+          .checked=${Boolean(scalar('disabled', false)) === false} ?disabled=${readOnly} />
+          Accept traffic for evaluation</label>
+        <span></span><span></span>
+        <label for="policy-create-sources-${entry.id}">Sources</label>
+        <div class="reference-stack">
+          <input id="policy-create-sources-${entry.id}" .value=${sources.join(', ')}
+            data-reference-preview="true" .readOnly=${readOnly} />
+          ${this.renderAddressReferences(entry, `policy-create-sources-${entry.id}`, sources)}
+        </div>
+        <label for="policy-create-destinations-${entry.id}">Destinations</label>
+        <div class="reference-stack">
+          <input id="policy-create-destinations-${entry.id}" .value=${destinations.join(', ')}
+            data-reference-preview="true" .readOnly=${readOnly} />
+          ${this.renderAddressReferences(entry, `policy-create-destinations-${entry.id}`, destinations)}
+        </div>
+        <label for="policy-create-action-${entry.id}">Action</label>
+        <input id="policy-create-action-${entry.id}" .value=${text('action', 'accept')}
+          maxlength="32" required .readOnly=${readOnly} />
+        <label for="policy-create-protocol-${entry.id}">Protocol</label>
+        <div class="reference-edit">
+          <input id="policy-create-protocol-${entry.id}" .value=${text('proto', 'tcp')}
+            data-reference-preview="true" maxlength="128" required .readOnly=${readOnly} />
+          ${this.renderProtocolReference(entry, `policy-create-protocol-${entry.id}`, text('proto', 'tcp'))}
+        </div>
+        <label for="policy-create-source-ports-${entry.id}">Source ports</label>
+        <div class="reference-stack">
+          <input id="policy-create-source-ports-${entry.id}" .value=${sourcePorts.join(', ')}
+            data-reference-preview="true" .readOnly=${readOnly} />
+          ${this.renderPortReferences(entry, `policy-create-source-ports-${entry.id}`, sourcePorts)}
+        </div>
+        <label for="policy-create-destination-ports-${entry.id}">Destination ports</label>
+        <div class="reference-stack">
+          <input id="policy-create-destination-ports-${entry.id}" .value=${destinationPorts.join(', ')}
+            data-reference-preview="true" .readOnly=${readOnly} />
+          ${this.renderPortReferences(entry, `policy-create-destination-ports-${entry.id}`, destinationPorts)}
+        </div>
+        ${referenceField('tls', 'TLS profile', 'tls', 'tls_profile')}
+        ${referenceField('routing', 'Routing profile', 'routing', 'routing')}
+        ${referenceField('detection', 'Detection profile', 'detection', 'detection_profile')}
+        ${referenceField('content', 'Content profile', 'content', 'content_profile')}
+        ${referenceField('ssh', 'SSH profile', 'ssh', 'ssh_profile')}
+        ${referenceField('auth', 'Authentication profile', 'authentication', 'auth_profile')}
+        ${referenceField('dns', 'DNS ALG profile', 'dns', 'alg_dns_profile')}
+        ${referenceField('script', 'Script profile', 'script', 'script_profile')}
+        <label for="policy-create-features-${entry.id}">Features</label>
+        <input id="policy-create-features-${entry.id}" .value=${list('features').join(', ')}
+          .readOnly=${readOnly} />
+        <label for="policy-create-nat-${entry.id}">NAT</label>
+        <input id="policy-create-nat-${entry.id}" .value=${text('nat')} maxlength="128"
+          .readOnly=${readOnly} />
+      </div>
+      <div class="impact">
+        Policy order affects traffic decisions. This operation remains in the workspace draft until Smithproxy
+        validates and atomically commits it.
+      </div>
+    `;
+  }
+
   private renderPolicyEditor(entry: DrawerEntry) {
     const policy = this.snapshot?.policies.find(item => item.id === entry.id);
     if (!policy) return nothing;
@@ -6775,6 +7050,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderDrawerBody(entry: DrawerEntry) {
     if (entry.kind === 'policy') return this.renderPolicyEditor(entry);
+    if (entry.kind === 'policy-create') return this.renderPolicyCreateEditor(entry);
     if (entry.kind === 'address') return this.renderAddressEditor(entry);
     if (entry.kind === 'address-create') return this.renderAddressCreateEditor(entry);
     if (entry.kind === 'port') return this.renderPortEditor(entry);
@@ -6790,7 +7066,8 @@ export class SmithproxyApp extends LitElement {
 
   private renderDrawer(entry: DrawerEntry, index: number) {
     const saved = this.draftObjects.has(`${entry.kind}:${entry.id}`);
-    const editLabel = entry.kind === 'address-create' ? 'Create address object' : `Edit ${entry.title}`;
+    const editLabel = entry.kind === 'address-create' ? 'Create address object'
+      : entry.kind === 'policy-create' ? 'Create policy' : `Edit ${entry.title}`;
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
@@ -6806,7 +7083,7 @@ export class SmithproxyApp extends LitElement {
       profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns ||
       profile?.script || profile?.authentication,
     );
-    const draftable = entry.kind === 'address-create'
+    const draftable = entry.kind === 'address-create' || entry.kind === 'policy-create'
       ? this.structuralDraftsAvailable
       : this.snapshot?.source !== 'live' ||
         (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
@@ -6824,7 +7101,8 @@ export class SmithproxyApp extends LitElement {
         @change=${(event: Event) => this.markDrawerDirty(entry, event)}>
         <header class="drawer-head">
           <div class="drawer-title"><small>${entry.kind === 'address-create'
-            ? 'Create address object' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+            ? 'Create address object' : entry.kind === 'policy-create'
+              ? 'Create policy' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}
