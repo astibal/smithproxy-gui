@@ -85,9 +85,12 @@ Saslik theme runtime musí zůstat kompatibilní se striktní CSP. Import palet 
 omezen velikostí, schema validací a pouze hex barevnými hodnotami.
 
 Every response carries `nosniff`, `no-referrer`, same-origin framing and resource
-policy, a deny-by-default browser Permissions Policy, and a CSP that blocks
-objects, foreign connections, foreign frames, and base-URL rewriting. API
-responses use `no-store`; fingerprinted static assets are immutable.
+and opener policy, origin-agent isolation, a deny-by-default browser Permissions
+Policy, and a CSP that blocks objects, foreign connections, foreign frames, and
+base-URL rewriting. API responses and the HTML entry point use `no-store`;
+fingerprinted static assets are immutable. Production builds do not publish
+JavaScript source maps. HSTS remains the responsibility of the Saslik TLS
+terminator because the GUI core itself serves internal HTTP.
 
 ## Config a secrets
 

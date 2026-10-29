@@ -3,7 +3,7 @@ import {defineConfig} from 'vitest/config';
 export default defineConfig({
   base: './',
   build: {
-    sourcemap: true,
+    sourcemap: false,
     target: 'es2022',
   },
   server: {

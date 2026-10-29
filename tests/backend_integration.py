@@ -4,6 +4,7 @@ import http.client
 import http.server
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -316,7 +317,9 @@ def main() -> int:
         assert "frame-ancestors 'self'" in headers["Content-Security-Policy"]
         assert "form-action 'self'" in headers["Content-Security-Policy"]
         assert headers["X-Frame-Options"] == "SAMEORIGIN"
+        assert headers["Cross-Origin-Opener-Policy"] == "same-origin"
         assert headers["Cross-Origin-Resource-Policy"] == "same-origin"
+        assert headers["Origin-Agent-Cluster"] == "?1"
         assert headers["X-Permitted-Cross-Domain-Policies"] == "none"
         assert "camera=()" in headers["Permissions-Policy"]
         assert headers["Cache-Control"] == "no-store"
@@ -376,9 +379,16 @@ def main() -> int:
         assert json.loads(body) == {"mode": "disabled", "authenticated": False}
         assert request(port, "/ws001/smithproxy-gui/api/v1/config/snapshot")[0] == 401
 
-        status, _, body = request(port, "/ws001/smithproxy-gui/")
+        status, headers, body = request(port, "/ws001/smithproxy-gui/")
         assert status == 200
         assert b"smithproxy-gui" in body
+        assert headers["Cache-Control"] == "no-store"
+        asset_match = re.search(rb'(?:src|href)="\./(assets/[^"]+)"', body)
+        assert asset_match is not None
+        asset_path = "/ws001/smithproxy-gui/" + asset_match.group(1).decode("ascii")
+        status, headers, _ = request(port, asset_path)
+        assert status == 200
+        assert headers["Cache-Control"] == "public, max-age=31536000, immutable"
         assert request(port, "/ws001/smithproxy-gui/assets/%2e%2e/secret")[0] == 400
         assert request(port, "/outside")[0] == 404
         assert request(port, "/healthz", "POST")[0] == 405

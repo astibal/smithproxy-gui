@@ -1080,7 +1080,7 @@ private:
         content << input.rdbuf();
         const bool entrypoint = path->filename() == "index.html";
         return {200, mime_type(*path), content.str(),
-                entrypoint ? "no-cache" : "public, max-age=31536000, immutable"};
+                entrypoint ? "no-store" : "public, max-age=31536000, immutable"};
     }
 
     static int send(MHD_Connection* connection, RequestState& state, Response response, const bool head) {
@@ -1092,7 +1092,9 @@ private:
         MHD_add_response_header(output, "X-Content-Type-Options", "nosniff");
         MHD_add_response_header(output, "Referrer-Policy", "no-referrer");
         MHD_add_response_header(output, "X-Frame-Options", "SAMEORIGIN");
+        MHD_add_response_header(output, "Cross-Origin-Opener-Policy", "same-origin");
         MHD_add_response_header(output, "Cross-Origin-Resource-Policy", "same-origin");
+        MHD_add_response_header(output, "Origin-Agent-Cluster", "?1");
         MHD_add_response_header(output, "X-Permitted-Cross-Domain-Policies", "none");
         MHD_add_response_header(output, "Permissions-Policy",
                                 "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()");
