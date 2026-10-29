@@ -35,6 +35,10 @@ describe('drawer route', () => {
       {kind: 'signature', id: 'detection-signature-0'},
       {kind: 'signature-flow', id: 'detection-signature-0-flow-0'},
     ]);
+    expect(parseDrawerRoute('?edit=profile:content-0,content-rule:content-rule-0-0')).toEqual([
+      {kind: 'profile', id: 'content-0'},
+      {kind: 'content-rule', id: 'content-rule-0-0'},
+    ]);
   });
 
   it.each([

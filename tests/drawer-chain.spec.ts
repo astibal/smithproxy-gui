@@ -195,6 +195,12 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
             webhook_locks_traffic: false, ja4_tls_client_hello: true,
             ja4_tls_client_hello_ignores_sni: false, ja4_tls_server_hello: true,
             ja4_http: false, session_filter_configured: true, rule_count: 2,
+            rules: [
+              {id: 'content-rule-0-0', match_configured: true, replacement_configured: true,
+               replacement_has_value: false},
+              {id: 'content-rule-0-1', match_configured: true, replacement_configured: true,
+               replacement_has_value: true},
+            ],
           },
           ssh: null, dns: null, script: null, authentication: null,
         },
@@ -369,7 +375,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(contentEditor.getByText('Saved to draft')).toBeVisible();
   await expect(contentEditor.getByLabel('Session filter', {exact: true})).toHaveValue('unchanged');
   await expect(contentEditor.getByLabel('Session filter replacement')).toHaveValue('');
-  await expect(contentEditor.getByText('2 redacted rules · unchanged')).toBeVisible();
+  await expect(contentEditor.getByRole('group', {name: 'Content rules'}).getByRole('button')).toHaveCount(2);
   await expect(page.getByText('Draft: 49 changes')).toBeVisible();
   await contentEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'default-ssh', exact: true}).click();
@@ -634,7 +640,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /capture content Typed details/i}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
-  await expect(contentEditor.getByText('2 redacted rules')).toBeVisible();
+  await expect(contentEditor.getByRole('group', {name: 'Content rules'}).getByRole('button')).toHaveCount(2);
   await expect(contentEditor.getByText(/Current session filters and all content-rule payloads stay inside/i)).toBeVisible();
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /default-ssh ssh Typed details/i}).click();
@@ -813,6 +819,34 @@ test('edits nested signature flow metadata with write-only expressions', async (
   await expect(changes).toContainText('detection_signatures.[0].flow.[0].signature');
   await expect(changes).toContainText('Replaced · redacted');
   await expect(changes).not.toContainText('PRIVATE');
+});
+
+test('rotates nested content rules without exposing expressions', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await profiles.getByRole('button', {name: /capture content Typed details/i}).click();
+  const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  await contentEditor.getByRole('group', {name: 'Content rules'})
+    .getByRole('button', {name: /Rule 1/}).click();
+  const ruleEditor = page.getByRole('dialog', {name: 'Edit Content rule 1'});
+  await ruleEditor.getByLabel('Match expression').selectOption('replace');
+  await ruleEditor.getByLabel('Content match replacement').fill('PRIVATE-MATCH-[0-9]+');
+  await ruleEditor.getByLabel('Replacement expression').selectOption('clear');
+  await ruleEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(page.getByText('Draft: 2 changes')).toBeVisible();
+  await expect(ruleEditor.getByLabel('Content match replacement')).toHaveValue('');
+  await ruleEditor.getByRole('button', {name: 'Cancel'}).click();
+  await contentEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Review draft · 2'}).click();
+  const changes = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(changes).toContainText('content_profiles.[0].content_rules.[0].match');
+  await expect(changes).toContainText('content_profiles.[0].content_rules.[0].replace');
+  await expect(changes).toContainText('Replaced · redacted');
+  await expect(changes).toContainText('Cleared · redacted');
+  await expect(changes).not.toContainText('PRIVATE-MATCH');
 });
 
 test('searches policies and configuration objects without unsafe markup', async ({page}) => {

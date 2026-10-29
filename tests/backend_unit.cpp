@@ -231,6 +231,11 @@ int main() {
     assert(content_profiles.profiles->front().content);
     assert(content_profiles.profiles->front().content->session_filter_configured);
     assert(content_profiles.profiles->front().content->rule_count == 1U);
+    assert(content_profiles.profiles->front().content->rules.front().match_configured);
+    assert(content_profiles.profiles->front().content->rules.front().replacement_has_value);
+    assert(!parse_config_profiles(
+        R"({"success":{"content_profiles":{"bad":{"write_payload":"false","content_rules":[{"replace":"missing match"}]}}}})",
+        "content_profiles", "content").profiles);
     assert(!parse_config_profiles(
         R"({"success":{"content_profiles":{"bad":{"write_payload":"false","write_format":"raw"}}}})",
         "content_profiles", "content").profiles);

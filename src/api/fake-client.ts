@@ -142,6 +142,12 @@ const snapshot: ConfigSnapshot = {
         writePayload: false, writeFormat: 'pcap_single', webhookEnabled: false,
         webhookLocksTraffic: false, ja4TlsClientHello: true, ja4TlsClientHelloIgnoresSni: true,
         ja4TlsServerHello: false, ja4Http: true, sessionFilterConfigured: true, ruleCount: 2,
+        rules: [
+          {id: 'content-rule-0-0', matchConfigured: true, replacementConfigured: true,
+           replacementHasValue: false},
+          {id: 'content-rule-0-1', matchConfigured: true, replacementConfigured: true,
+           replacementHasValue: true},
+        ],
       },
       ssh: null,
       dns: null,

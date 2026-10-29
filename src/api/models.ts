@@ -86,6 +86,13 @@ export interface DetectionProfileDetails {
   knowledgeBaseEnabled: boolean;
 }
 
+export interface ContentRuleSummary {
+  id: string;
+  matchConfigured: true;
+  replacementConfigured: boolean;
+  replacementHasValue: boolean;
+}
+
 export interface ContentProfileDetails {
   writePayload: boolean;
   writeFormat: 'smcap' | 'pcap' | 'pcap_single';
@@ -97,6 +104,7 @@ export interface ContentProfileDetails {
   ja4Http: boolean;
   sessionFilterConfigured: boolean;
   ruleCount: number;
+  rules: ReadonlyArray<ContentRuleSummary>;
 }
 
 export interface SshProfileDetails {

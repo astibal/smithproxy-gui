@@ -49,7 +49,10 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         "port_objects": {"https": {"start": "443", "end": "443"}},
         "proto_objects": {"tcp": {"id": "6"}},
         "detection_profiles": {"default-detection": {"mode": "1"}},
-        "content_profiles": {"safe-content": {"write_payload": "false"}},
+        "content_profiles": {"safe-content": {
+            "write_payload": "false",
+            "content_rules": [{"match": "private-content-match", "replace": "private-content-replacement"}],
+        }},
         "tls_profiles": {"inspect": {}},
         "ssh_profiles": {"default-ssh": {"host_key": "/redacted/test-key"}},
         "alg_dns_profiles": {},
@@ -575,6 +578,8 @@ def main() -> int:
             assert b"/private/ca/default" not in config_body
             assert b"secret-starttls-regex" not in config_body
             assert b"secret-detection-regex" not in config_body
+            assert b"private-content-match" not in config_body
+            assert b"private-content-replacement" not in config_body
 
             status, _, body = request(configured_port, "/api/v1/auth/session")
             assert status == 200
@@ -643,10 +648,13 @@ def main() -> int:
                     {"path": "settings.certs_ca_key_password", "value": "new-private-password"},
                     {"path": "settings.http_api.keys", "value": ["new-api-key", "overlap-api-key"]},
                     {"path": "captures.local.dir", "value": "/new/private/captures"},
+                    {"path": "captures.remote.tun_dst", "value": ""},
                     {"path": "ssh_profiles.[0].host_key", "value": "/new/private/ssh-key"},
                     {"path": "script_profiles.[0].script-file", "value": "/new/private/audit.py"},
                     {"path": "tls_profiles.[0].sni_filter_bypass", "value": ["private.example"]},
                     {"path": "content_profiles.[0].rules_session_filter", "value": "secret session expression"},
+                    {"path": "content_profiles.[0].content_rules.[0].match", "value": "secret content match"},
+                    {"path": "content_profiles.[0].content_rules.[0].replace", "value": "secret content replacement"},
                     {"path": "tls_ca.[0].path", "value": "/new/private/ca/default"},
                     {"path": "detection_signatures.[0].flow.[0].signature", "value": "secret replacement regex"},
                 ],
@@ -659,14 +667,22 @@ def main() -> int:
             assert batch_snapshot["version"] == 2
             changes_by_path = {item["path"]: item["value"] for item in batch_snapshot["changes"]}
             assert changes_by_path["policy.[0].dst"] == ["internet", "backup"]
-            for sensitive_path in (
-                "settings.certs_ca_key_password", "settings.http_api.keys",
-                "captures.local.dir", "ssh_profiles.[0].host_key",
-                "script_profiles.[0].script-file", "tls_profiles.[0].sni_filter_bypass",
-                "content_profiles.[0].rules_session_filter", "tls_ca.[0].path",
-                "detection_signatures.[0].flow.[0].signature",
-            ):
-                assert changes_by_path[sensitive_path] == "[redacted]"
+            expected_redactions = {
+                "settings.certs_ca_key_password": "[redacted:replace]",
+                "settings.http_api.keys": "[redacted:replace:2]",
+                "captures.local.dir": "[redacted:replace]",
+                "captures.remote.tun_dst": "[redacted:clear]",
+                "ssh_profiles.[0].host_key": "[redacted:replace]",
+                "script_profiles.[0].script-file": "[redacted:replace]",
+                "tls_profiles.[0].sni_filter_bypass": "[redacted:replace:1]",
+                "content_profiles.[0].rules_session_filter": "[redacted:replace]",
+                "tls_ca.[0].path": "[redacted:replace]",
+                "content_profiles.[0].content_rules.[0].match": "[redacted:replace]",
+                "content_profiles.[0].content_rules.[0].replace": "[redacted:replace]",
+                "detection_signatures.[0].flow.[0].signature": "[redacted:replace]",
+            }
+            for sensitive_path, expected_redaction in expected_redactions.items():
+                assert changes_by_path[sensitive_path] == expected_redaction
             assert b"new-private-password" not in body
             assert b"new-api-key" not in body
             assert b"overlap-api-key" not in body
@@ -675,6 +691,8 @@ def main() -> int:
             assert b"/new/private/audit.py" not in body
             assert b"private.example" not in body
             assert b"secret session expression" not in body
+            assert b"secret content match" not in body
+            assert b"secret content replacement" not in body
             assert b"/new/private/ca/default" not in body
             assert b"secret replacement regex" not in body
             clear_change = json.dumps({"expected_version": 2})

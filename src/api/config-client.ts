@@ -232,6 +232,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       usedBy: [],
     };
   });
+  const contentRuleIds = new Set<string>();
   const profiles = boundedArray(value.profiles, 'profile collection', MAX_OBJECTS).map((item): MutableProfile => {
     if (!isObject(item)) throw new Error('Invalid profile.');
     const type = safeString(item.type, 'profile type', 32);
@@ -310,6 +311,24 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       if (!isObject(item.content)) throw new Error('Invalid content profile.');
       const writeFormat = safeString(item.content.write_format, 'content capture format', 16);
       if (!['smcap', 'pcap', 'pcap_single'].includes(writeFormat)) throw new Error('Invalid content capture format.');
+      const rules = boundedArray(item.content.rules, 'content rules', MAX_REFERENCES).map(rule => {
+        if (!isObject(rule)) throw new Error('Invalid content rule.');
+        const id = safeString(rule.id, 'content rule ID', 128);
+        const matchConfigured = safeBoolean(rule.match_configured, 'content rule match state');
+        const replacementConfigured = safeBoolean(
+          rule.replacement_configured, 'content rule replacement state',
+        );
+        const replacementHasValue = safeBoolean(
+          rule.replacement_has_value, 'content rule replacement value state',
+        );
+        if (contentRuleIds.has(id) || !matchConfigured || (replacementHasValue && !replacementConfigured)) {
+          throw new Error('Invalid content rule posture.');
+        }
+        contentRuleIds.add(id);
+        return {id, matchConfigured: true as const, replacementConfigured, replacementHasValue};
+      });
+      const ruleCount = safeInteger(item.content.rule_count, 'content rule count', MAX_REFERENCES);
+      if (ruleCount !== rules.length) throw new Error('Invalid content rule count.');
       content = {
         writePayload: safeBoolean(item.content.write_payload, 'content payload state'),
         writeFormat: writeFormat as 'smcap' | 'pcap' | 'pcap_single',
@@ -324,7 +343,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         sessionFilterConfigured: safeBoolean(
           item.content.session_filter_configured, 'content session-filter state',
         ),
-        ruleCount: safeInteger(item.content.rule_count, 'content rule count', MAX_REFERENCES),
+        ruleCount,
+        rules,
       };
     } else if (item.content !== null) {
       throw new Error('Invalid non-content profile details.');

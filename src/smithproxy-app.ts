@@ -633,7 +633,12 @@ export class SmithproxyApp extends LitElement {
       const content = /^content_profiles\.\[(\d+)\]\./u.exec(change.path);
       if (content) {
         const item = this.snapshot?.profiles.filter(profile => profile.content !== null)[Number(content[1])];
-        if (item) objects.add(`profile:${item.id}`);
+        if (item) {
+          objects.add(`profile:${item.id}`);
+          const rule = /^content_profiles\.\[\d+\]\.content_rules\.\[(\d+)\]\./u.exec(change.path);
+          const contentRule = rule ? item.content?.rules[Number(rule[1])] : undefined;
+          if (contentRule) objects.add(`content-rule:${contentRule.id}`);
+        }
       }
       const ssh = /^ssh_profiles\.\[(\d+)\]\./u.exec(change.path);
       if (ssh) {
@@ -704,6 +709,15 @@ export class SmithproxyApp extends LitElement {
   }
 
   private draftValueSummary(path: string, value: DraftScalar): string {
+    if (value === '[redacted:clear]') return 'Cleared · redacted';
+    if (value === '[redacted:replace]') return 'Replaced · redacted';
+    if (typeof value === 'string') {
+      const redactedCollection = /^\[redacted:replace:(\d+)]$/.exec(value);
+      if (redactedCollection) {
+        const count = Number(redactedCollection[1]);
+        return `Replaced · redacted · ${count} item${count === 1 ? '' : 's'}`;
+      }
+    }
     const sensitivePaths = new Set([
       'settings.webhook.url', 'settings.syslog_server', 'settings.write_payload_dir',
       'settings.log_file', 'settings.sslkeylog_file', 'settings.certs_path',
@@ -718,6 +732,8 @@ export class SmithproxyApp extends LitElement {
       (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
       (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
       (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
+      (path.startsWith('content_profiles.[') && path.includes('].content_rules.[') &&
+        (path.endsWith('].match') || path.endsWith('].replace'))) ||
       (path.startsWith('tls_ca.[') && path.endsWith('].path')) ||
       ((path.startsWith('starttls_signatures.[') || path.startsWith('detection_signatures.[')) &&
         path.endsWith('].signature'));
@@ -772,6 +788,14 @@ export class SmithproxyApp extends LitElement {
     const profile = this.snapshot?.profiles.find(item => item.id === id);
     if (!profile) return;
     this.openObjectDrawer({kind: 'profile', id: profile.id, title: profile.name}, origin);
+  }
+
+  private openContentRule(id: string, origin?: HTMLElement): void {
+    const profile = this.snapshot?.profiles.find(item => item.content?.rules.some(rule => rule.id === id));
+    const index = profile?.content?.rules.findIndex(rule => rule.id === id) ?? -1;
+    const rule = index < 0 ? undefined : profile?.content?.rules[index];
+    if (!rule) return;
+    this.openObjectDrawer({kind: 'content-rule', id: rule.id, title: `Content rule ${index + 1}`}, origin);
   }
 
   private openAuthority(id: string, origin?: HTMLElement): void {
@@ -901,6 +925,11 @@ export class SmithproxyApp extends LitElement {
         .find(item => item.id === entry.id);
       return step ? {id: step.id, name: `Flow ${step.side.toUpperCase()}`} : undefined;
     }
+    if (entry.kind === 'content-rule') {
+      const rule = this.snapshot.profiles.flatMap(item => item.content?.rules ?? [])
+        .find(item => item.id === entry.id);
+      return rule ? {id: rule.id, name: 'Content rule'} : undefined;
+    }
     return this.snapshot.profiles.find(item => item.id === entry.id);
   }
 
@@ -928,7 +957,7 @@ export class SmithproxyApp extends LitElement {
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
       if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile' ||
-          entry.kind === 'authority' || entry.kind === 'signature-flow') {
+          entry.kind === 'authority' || entry.kind === 'signature-flow' || entry.kind === 'content-rule') {
         this.renderRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
           '[id*="-write-"][id$="-value"], #settings-api-keys-value',
         ).forEach(input => { input.value = ''; });
@@ -949,6 +978,47 @@ export class SmithproxyApp extends LitElement {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'settings') return this.systemSettingsDraftChanges();
     if (entry.kind === 'captures') return this.captureSettingsDraftChanges();
+    if (entry.kind === 'content-rule') {
+      const profile = this.snapshot.profiles.find(item => item.content?.rules.some(rule => rule.id === entry.id));
+      const contentProfiles = this.snapshot.profiles.filter(item => item.content !== null);
+      const profileIndex = profile ? contentProfiles.findIndex(item => item.id === profile.id) : -1;
+      const ruleIndex = profile?.content?.rules.findIndex(rule => rule.id === entry.id) ?? -1;
+      const matchMode = this.renderRoot.querySelector<HTMLSelectElement>(
+        `#content-rule-write-match-${entry.id}-mode`,
+      );
+      const match = this.renderRoot.querySelector<HTMLTextAreaElement>(
+        `#content-rule-write-match-${entry.id}-value`,
+      );
+      const replacementMode = this.renderRoot.querySelector<HTMLSelectElement>(
+        `#content-rule-write-replacement-${entry.id}-mode`,
+      );
+      const replacement = this.renderRoot.querySelector<HTMLTextAreaElement>(
+        `#content-rule-write-replacement-${entry.id}-value`,
+      );
+      if (profileIndex < 0 || ruleIndex < 0 || !matchMode || !match || !replacementMode || !replacement ||
+          !['unchanged', 'replace'].includes(matchMode.value) ||
+          !['unchanged', 'replace', 'clear'].includes(replacementMode.value)) return undefined;
+      if (matchMode.value === 'unchanged' && replacementMode.value === 'unchanged') {
+        this.draftError = 'Choose a match or replacement change for this content rule.';
+        return undefined;
+      }
+      const validExpression = (value: string) =>
+        value.length > 0 && value.length <= 65536 && !value.includes('\0');
+      if ((matchMode.value === 'replace' && !validExpression(match.value)) ||
+          (replacementMode.value === 'replace' && !validExpression(replacement.value))) {
+        this.draftError = 'Content rule replacements must contain 1 to 65536 characters.';
+        return undefined;
+      }
+      const base = `content_profiles.[${profileIndex}].content_rules.[${ruleIndex}]`;
+      return [
+        ...(matchMode.value === 'replace' ? [{path: `${base}.match`, value: match.value}] : []),
+        ...(replacementMode.value === 'replace'
+          ? [{path: `${base}.replace`, value: replacement.value}]
+          : replacementMode.value === 'clear'
+            ? [{path: `${base}.replace`, value: ''}]
+            : []),
+      ];
+    }
     if (entry.kind === 'signature') {
       const signature = this.snapshot.securityAssets?.signatures.find(item => item.id === entry.id);
       if (!signature) return undefined;
@@ -2974,7 +3044,22 @@ export class SmithproxyApp extends LitElement {
               placeholder="New expression (write-only)" autocomplete="off"
               .readOnly=${mappedReadOnly}></textarea>
           </div>
-          <label>Content rules</label><span>${content.ruleCount} redacted rules · unchanged</span>
+          <label>Content rules</label>
+          <div class="reference-stack" role="group" aria-label="Content rules">
+            ${content.rules.length === 0 ? html`<span>No content rules configured.</span>` :
+              content.rules.map((rule, index) => html`
+                <button class="reference" type="button"
+                  @click=${(event: MouseEvent) => this.openContentRule(
+                    rule.id, event.currentTarget as HTMLElement,
+                  )}>
+                  <span><strong>Rule ${index + 1}</strong> · match configured ·
+                    ${rule.replacementConfigured
+                      ? rule.replacementHasValue ? 'replacement configured' : 'empty replacement'
+                      : 'no replacement'}</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              `)}
+          </div>
         ` : ssh ? html`
           <label for="ssh-write-host-key-${entry.id}-mode">Host key</label>
           <div class="write-only-control">
@@ -3290,6 +3375,44 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderContentRuleEditor(entry: DrawerEntry) {
+    const profile = this.snapshot?.profiles.find(item => item.content?.rules.some(rule => rule.id === entry.id));
+    const rule = profile?.content?.rules.find(item => item.id === entry.id);
+    if (!profile || !rule) return nothing;
+    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    return html`
+      <div class="form-grid wide-form-grid">
+        <label>Content profile</label><span>${profile.name}</span>
+        <label for="content-rule-write-match-${entry.id}-mode">Match expression</label>
+        <div class="write-only-control">
+          <select id="content-rule-write-match-${entry.id}-mode" ?disabled=${disabled}>
+            <option value="unchanged">${rule.matchConfigured ? 'Keep configured match' : 'Keep empty'}</option>
+            <option value="replace">Replace</option>
+          </select>
+          <textarea id="content-rule-write-match-${entry.id}-value" maxlength="65536"
+            aria-label="Content match replacement" autocomplete="off"
+            placeholder="New match expression (write-only)" .readOnly=${disabled}></textarea>
+        </div>
+        <label for="content-rule-write-replacement-${entry.id}-mode">Replacement expression</label>
+        <div class="write-only-control">
+          <select id="content-rule-write-replacement-${entry.id}-mode" ?disabled=${disabled}>
+            <option value="unchanged">${rule.replacementConfigured
+              ? rule.replacementHasValue ? 'Keep configured replacement' : 'Keep empty replacement'
+              : 'Keep absent replacement'}</option>
+            <option value="replace">Replace</option>
+            <option value="clear">Set empty replacement</option>
+          </select>
+          <textarea id="content-rule-write-replacement-${entry.id}-value" maxlength="65536"
+            aria-label="Content replacement replacement" autocomplete="off"
+            placeholder="New replacement expression (write-only)" .readOnly=${disabled}></textarea>
+        </div>
+      </div>
+      <div class="privacy-note section">
+        Current content expressions stay inside the GUI core. Draft review exposes only replacement intent.
+      </div>
+    `;
+  }
+
   private renderSignatureEditor(entry: DrawerEntry) {
     const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === entry.id);
     if (!signature) return nothing;
@@ -3389,6 +3512,14 @@ export class SmithproxyApp extends LitElement {
       const index = this.snapshot.securityAssets?.certificateAuthorities.findIndex(item => item.id === entry.id) ?? -1;
       return index < 0 ? undefined : `tls_ca.[${index}].`;
     }
+    if (entry.kind === 'content-rule') {
+      const profiles = this.snapshot.profiles.filter(item => item.content !== null);
+      const profileIndex = profiles.findIndex(item => item.content?.rules.some(rule => rule.id === entry.id));
+      const ruleIndex = profileIndex < 0 ? -1 : profiles[profileIndex]?.content?.rules
+        .findIndex(rule => rule.id === entry.id) ?? -1;
+      return profileIndex < 0 || ruleIndex < 0
+        ? undefined : `content_profiles.[${profileIndex}].content_rules.[${ruleIndex}].`;
+    }
     if (entry.kind === 'signature' || entry.kind === 'signature-flow') {
       const signature = entry.kind === 'signature'
         ? this.snapshot.securityAssets?.signatures.find(item => item.id === entry.id)
@@ -3469,6 +3600,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);
+    if (entry.kind === 'content-rule') return this.renderContentRuleEditor(entry);
     if (entry.kind === 'signature') return this.renderSignatureEditor(entry);
     if (entry.kind === 'signature-flow') return this.renderSignatureFlowEditor(entry);
     return this.renderProfileEditor(entry);
@@ -3483,6 +3615,7 @@ export class SmithproxyApp extends LitElement {
     const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = [
       'policy', 'address', 'port', 'protocol', 'settings', 'captures', 'authority',
       'signature', 'signature-flow',
+      'content-rule',
     ];
     const profile = entry.kind === 'profile'
       ? this.snapshot?.profiles.find(item => item.id === entry.id)

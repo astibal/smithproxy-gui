@@ -61,6 +61,13 @@ struct ConfigDetectionProfile {
     bool knowledge_base_enabled{};
 };
 
+struct ConfigContentRule {
+    std::string id;
+    bool match_configured{};
+    bool replacement_configured{};
+    bool replacement_has_value{};
+};
+
 struct ConfigContentProfile {
     bool write_payload{};
     std::string write_format;
@@ -72,6 +79,7 @@ struct ConfigContentProfile {
     bool ja4_http{};
     bool session_filter_configured{};
     std::uint64_t rule_count{};
+    std::vector<ConfigContentRule> rules;
 };
 
 struct ConfigSshProfile {

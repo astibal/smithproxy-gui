@@ -35,9 +35,9 @@ contain Smithproxy API credentials, gateway secrets, or filesystem data.
 
 The snapshot also includes typed, bounded views of detection, content, TLS,
 SSH, DNS, script, legacy authentication, and routing profiles. Filesystem paths,
-SNI bypass entries, content rules, session filters, and identity mappings are
-reduced to explicit configured flags or counts before crossing the browser
-boundary. Stable IDs and derived reverse references support nested drawers.
+SNI bypass entries, content-rule expressions, session filters, and identity
+mappings are reduced to explicit configured flags or counts before crossing the
+browser boundary. Stable IDs and derived reverse references support nested drawers.
 
 The system-settings posture covers listener admission and ports, fail-open
 behavior, worker pools, certificate-status cache TTLs, TLS autodetection, kernel
@@ -112,9 +112,10 @@ bounded raw draft. This store is not yet a commit path and cannot mutate
 Smithproxy configuration.
 
 Write-only paths accept explicit `unchanged`, `replace`, or `clear` intent in
-the frontend. The core retains a replacement only inside the server draft;
-every draft response substitutes `[redacted]`, and the review UI never renders
-the submitted path, credential, endpoint, or key value.
+the frontend. The core retains a replacement only inside the server draft.
+Every draft response substitutes an intent-only redaction marker that preserves
+clear or replace intent and a bounded collection count; the review UI never
+renders the submitted path, credential, endpoint, or key value.
 
 The policy editor atomically persists the name, enabled state, protocol, source
 and destination address and port collections, features, action, NAT mode, and
@@ -128,8 +129,8 @@ batches cover their names and all currently exposed typed mode/boolean fields.
 TLS profile batches cover the exposed validation, negotiation, timeout, client
 certificate, alert, and diagnostic controls. Redacted SNI bypass collections
 support write-only replacement and clearing. Content profile batches cover capture,
-webhook, JA4 controls, and write-only session-filter replacement while content
-rules remain unchanged. SSH profile batches cover the host-key policy and channel,
+webhook, JA4 controls, write-only session-filter replacement, and nested
+write-only content-rule match/replacement rotation. SSH profile batches cover the host-key policy and channel,
 forwarding, X11, agent actions, and write-only private host-key path rotation.
 Script profile batches cover the runtime and write-only module-path rotation.
 Certificate-authority batches cover names and write-only path rotation.

@@ -98,6 +98,9 @@ bool sensitive_draft_path(const std::string_view path) {
            (path.starts_with("script_profiles.[") && path.ends_with("].script-file")) ||
            (path.starts_with("tls_profiles.[") && path.ends_with("].sni_filter_bypass")) ||
            (path.starts_with("content_profiles.[") && path.ends_with("].rules_session_filter")) ||
+           (path.starts_with("content_profiles.[") &&
+            path.find("].content_rules.[") != std::string_view::npos &&
+            (path.ends_with("].match") || path.ends_with("].replace"))) ||
            (path.starts_with("tls_ca.[") && path.ends_with("].path")) ||
            ((path.starts_with("starttls_signatures.[") ||
              path.starts_with("detection_signatures.[")) && path.ends_with("].signature"));
@@ -360,12 +363,17 @@ private:
         for (const auto& change : draft.changes) {
             nlohmann::json value;
             if (sensitive_draft_path(change.path)) {
-                const bool cleared =
-                    (std::holds_alternative<std::string>(change.value) &&
-                     std::get<std::string>(change.value).empty()) ||
-                    (std::holds_alternative<std::vector<std::string>>(change.value) &&
-                     std::get<std::vector<std::string>>(change.value).empty());
-                value = cleared ? nlohmann::json("") : nlohmann::json("[redacted]");
+                if (const auto* text = std::get_if<std::string>(&change.value); text != nullptr) {
+                    value = text->empty() ? "[redacted:clear]" : "[redacted:replace]";
+                } else if (const auto* items = std::get_if<std::vector<std::string>>(&change.value);
+                           items != nullptr) {
+                    value = items->empty()
+                                ? nlohmann::json("[redacted:clear]")
+                                : nlohmann::json("[redacted:replace:" +
+                                                 std::to_string(items->size()) + "]");
+                } else {
+                    value = "[redacted:replace]";
+                }
             } else {
                 value = std::visit([](const auto& item) { return nlohmann::json(item); }, change.value);
             }
@@ -487,6 +495,18 @@ private:
                 profiles += "null";
             } else {
                 const auto& content = *profile.content;
+                std::string rules{"["};
+                for (std::size_t rule_index = 0; rule_index < content.rules.size(); ++rule_index) {
+                    if (rule_index != 0U) rules += ',';
+                    const auto& rule = content.rules[rule_index];
+                    rules += "{\"id\":" + json_string(rule.id) +
+                             ",\"match_configured\":" + (rule.match_configured ? "true" : "false") +
+                             ",\"replacement_configured\":" +
+                             (rule.replacement_configured ? "true" : "false") +
+                             ",\"replacement_has_value\":" +
+                             (rule.replacement_has_value ? "true" : "false") + "}";
+                }
+                rules += ']';
                 profiles += "{\"write_payload\":" + std::string(content.write_payload ? "true" : "false") +
                             ",\"write_format\":" + json_string(content.write_format) +
                             ",\"webhook_enabled\":" + (content.webhook_enabled ? "true" : "false") +
@@ -501,7 +521,8 @@ private:
                             ",\"ja4_http\":" + (content.ja4_http ? "true" : "false") +
                             ",\"session_filter_configured\":" +
                             (content.session_filter_configured ? "true" : "false") +
-                            ",\"rule_count\":" + std::to_string(content.rule_count) + "}";
+                            ",\"rule_count\":" + std::to_string(content.rule_count) +
+                            ",\"rules\":" + rules + "}";
             }
             profiles += ",\"ssh\":";
             if (!profile.ssh) {

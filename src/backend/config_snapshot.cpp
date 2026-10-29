@@ -93,16 +93,6 @@ std::optional<std::int64_t> optional_signed_decimal(
     return result;
 }
 
-std::optional<std::size_t> optional_object_array_size(const Json& object, const char* key) {
-    const auto value = object.find(key);
-    if (value == object.end()) return 0U;
-    if (!value->is_array() || value->size() > maximum_references) return std::nullopt;
-    for (const auto& item : *value) {
-        if (!item.is_object()) return std::nullopt;
-    }
-    return value->size();
-}
-
 std::optional<std::size_t> optional_named_object_size(const Json& object, const char* key) {
     const auto value = object.find(key);
     if (value == object.end()) return 0U;
@@ -395,17 +385,39 @@ ConfigProfileParseResult parse_config_profiles(
             const auto ja4_server = boolean_scalar(profile, "ja4_tls_sh", false);
             const auto ja4_http = boolean_scalar(profile, "ja4_http", false);
             const auto session_filter = bounded_string(profile, "rules_session_filter", maximum_rule_length, true);
-            const auto rule_count = optional_object_array_size(profile, "content_rules");
+            std::vector<ConfigContentRule> rules;
+            const auto configured_rules = profile.find("content_rules");
+            if (configured_rules != profile.end()) {
+                if (!configured_rules->is_array() || configured_rules->size() > maximum_references) {
+                    return {std::nullopt, "Smithproxy returned invalid content rules"};
+                }
+                rules.reserve(configured_rules->size());
+                std::size_t rule_index{};
+                for (const auto& rule : *configured_rules) {
+                    if (!rule.is_object()) {
+                        return {std::nullopt, "Smithproxy returned invalid content rule"};
+                    }
+                    const auto match = bounded_string(rule, "match", maximum_rule_length);
+                    const auto replacement = bounded_string(rule, "replace", maximum_rule_length, true);
+                    if (!match || match->empty() || match->find('\0') != std::string::npos ||
+                        !replacement || replacement->find('\0') != std::string::npos) {
+                        return {std::nullopt, "Smithproxy returned invalid content rule"};
+                    }
+                    const auto replacement_configured = rule.find("replace") != rule.end();
+                    rules.push_back({stable_id(("content-rule-" + std::to_string(index)).c_str(), rule_index++), true,
+                                     replacement_configured, !replacement->empty()});
+                }
+            }
             if (!write_payload || !write_format ||
                 (*write_format != "" && *write_format != "smcap" && *write_format != "pcap" &&
                  *write_format != "pcap_single") || !webhook || !webhook_lock || !ja4_client ||
-                !ja4_ignore_sni || !ja4_server || !ja4_http || !session_filter || !rule_count) {
+                !ja4_ignore_sni || !ja4_server || !ja4_http || !session_filter) {
                 return {std::nullopt, "Smithproxy returned an invalid content profile"};
             }
             content = ConfigContentProfile{
                 *write_payload, write_format->empty() ? "pcap_single" : *write_format,
                 *webhook, *webhook_lock, *ja4_client, *ja4_ignore_sni, *ja4_server, *ja4_http,
-                !session_filter->empty(), *rule_count,
+                !session_filter->empty(), rules.size(), std::move(rules),
             };
         } else if (type == "ssh") {
             const auto host_key = bounded_string(profile, "host_key", maximum_value_length);

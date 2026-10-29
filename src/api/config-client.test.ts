@@ -65,6 +65,12 @@ const liveSnapshot = {
         webhook_locks_traffic: true, ja4_tls_client_hello: true,
         ja4_tls_client_hello_ignores_sni: true, ja4_tls_server_hello: false,
         ja4_http: true, session_filter_configured: true, rule_count: 2,
+        rules: [
+          {id: 'content-rule-0-0', match_configured: true, replacement_configured: true,
+           replacement_has_value: false},
+          {id: 'content-rule-0-1', match_configured: true, replacement_configured: true,
+           replacement_has_value: true},
+        ],
       },
       ssh: null,
       dns: null,
@@ -222,6 +228,12 @@ describe('ApiConfigClient', () => {
     ]})).toThrow('Invalid port range');
     expect(() => parseConfigSnapshot({...liveSnapshot, state: {toString: () => 'ready'}}))
       .toThrow('Invalid configuration snapshot');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      profiles: liveSnapshot.profiles.map(profile => profile.type === 'content'
+        ? {...profile, content: {...profile.content, rule_count: 3}}
+        : profile),
+    })).toThrow('Invalid content rule count');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,
       security_assets: {
