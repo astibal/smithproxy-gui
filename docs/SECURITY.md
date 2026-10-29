@@ -94,6 +94,11 @@ ve frontendu není bezpečnostní kontrola.
 - immutable cache pro fingerprinted assets, `no-store` pro citlivá data;
 - dependency pinning, lockfile, SBOM a kontrola licencí.
 
+Frontend CI creates a deterministic CycloneDX inventory from the installed
+lockfile, rejects every license outside the reviewed allowlist, and publishes the
+inventory as a bounded build artifact. The exact allowlist and review rules are
+documented in `DEPENDENCY_POLICY.md`.
+
 Saslik theme runtime musí zůstat kompatibilní se striktní CSP. Import palet je
 omezen velikostí, schema validací a pouze hex barevnými hodnotami.
 

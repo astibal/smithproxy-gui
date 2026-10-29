@@ -11,6 +11,7 @@
     "dev": "vite",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "build": "tsc --noEmit && vite build",
+    "test:licenses": "node tests/dependency-licenses.mjs",
     "test:assets": "node tests/production-assets.mjs",
     "test": "pnpm test:unit",
     "test:unit": "vitest run",
