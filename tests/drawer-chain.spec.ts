@@ -465,6 +465,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await expect(editor.getByText('Validation ready')).toBeVisible();
+  await editor.getByRole('button', {name: 'internet', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
+  await page.keyboard.press('Escape');
   await editor.getByLabel('Name').fill('Office outbound');
   await editor.locator('#policy-enabled-policy-0').uncheck();
   await editor.getByLabel('Destinations').fill('internet, backup');
@@ -761,7 +764,7 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await expect(page.locator('#action-policy-office')).toHaveAttribute('readonly', '');
 
   await page.getByRole('button', {name: 'office-net', exact: true}).click();
-  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net', exact: true, includeHidden: true});
   await expect(addressEditor).toBeVisible();
   await expect(addressEditor.locator('#address-value-address-office-net')).toHaveValue('10.20.0.0/16');
   await expect(addressEditor.locator('#address-value-address-office-net')).toHaveAttribute('readonly', '');
@@ -791,6 +794,31 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+});
+
+test('walks reverse dependencies through nested editors', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button', {name: /office-net subnet/i}).click();
+
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net', includeHidden: true});
+  await addressEditor.getByRole('button', {name: /office policy/}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true});
+  await expect(policyEditor).toBeVisible();
+  await expect(addressEditor).toHaveAttribute('inert', '');
+
+  await policyEditor.getByRole('button', {name: 'inspect', exact: true}).click();
+  const tlsEditor = page.getByRole('dialog', {name: 'Edit inspect'});
+  await expect(tlsEditor).toBeVisible();
+  await expect(policyEditor).toHaveAttribute('inert', '');
+  await expect(tlsEditor.getByLabel('Inspection')).toHaveValue('true');
+
+  await page.keyboard.press('Escape');
+  await expect(policyEditor).not.toHaveAttribute('inert', '');
+  await page.keyboard.press('Escape');
+  await expect(addressEditor).not.toHaveAttribute('inert', '');
 });
 
 test('rejects tampering with augment-owned persistent values', async ({page}) => {

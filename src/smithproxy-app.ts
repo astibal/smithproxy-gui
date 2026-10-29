@@ -11,8 +11,10 @@ import {
 import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
+  ConfigReference,
   ConfigScalar,
   ConfigSnapshot,
+  ConfigUsage,
   PolicySummary,
   PortObject,
   ProfileObject,
@@ -481,7 +483,12 @@ export class SmithproxyApp extends LitElement {
     .section h3 { margin: 0 0 12px; font-size: 15px; }
     .impact { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--app-warning) 48%, var(--app-border)); border-radius: 3px; background: var(--app-warning-bg); color: var(--app-warning); }
     .usage { margin: 12px 0 0; padding: 0; list-style: none; }
-    .usage li { padding: 7px 0; border-bottom: 1px solid var(--app-border); }
+    .usage li { border-bottom: 1px solid var(--app-border); }
+    .usage li:last-child { border-bottom: 0; }
+    .usage-static, .usage-link { display: flex; width: 100%; gap: 12px; align-items: center; justify-content: space-between; padding: 9px 0; }
+    .usage-link { border: 0; background: transparent; color: var(--app-text); text-align: left; cursor: pointer; }
+    .usage-link:hover { color: var(--app-brand); }
+    .usage-kind { color: var(--app-muted); font-size: 12px; }
 
     .statusbar { grid-column: 1 / -1; display: flex; gap: 14px; align-items: center; overflow: hidden; padding: 0 12px; border-top: 1px solid var(--app-border); background: var(--app-raised); color: var(--app-muted); font-size: 12px; white-space: nowrap; }
     .system-state { color: var(--app-muted); }
@@ -1091,6 +1098,21 @@ export class SmithproxyApp extends LitElement {
     const profile = this.snapshot?.profiles.find(item => item.id === id);
     if (!profile) return;
     this.openObjectDrawer({kind: 'profile', id: profile.id, title: profile.name}, origin);
+  }
+
+  private openUsage(reference: ConfigUsage, origin?: HTMLElement): void {
+    if (reference.kind === 'policy') {
+      const policy = this.snapshot?.policies.find(item => item.id === reference.id);
+      if (policy) this.openPolicy(policy, origin);
+      return;
+    }
+    const profile = this.snapshot?.profiles.find(item => item.id === reference.id && item.routing !== null);
+    if (profile) this.openProfile(profile.id, origin);
+  }
+
+  private usageTargetAvailable(reference: ConfigUsage): boolean {
+    if (reference.kind === 'policy') return Boolean(this.snapshot?.policies.some(item => item.id === reference.id));
+    return Boolean(this.snapshot?.profiles.some(item => item.id === reference.id && item.routing !== null));
   }
 
   private openContentRule(id: string, origin?: HTMLElement): void {
@@ -3391,15 +3413,13 @@ export class SmithproxyApp extends LitElement {
         <label for="policy-sources-${entry.id}">Sources</label>
         <div class="reference-stack">
           <input id="policy-sources-${entry.id}" .value=${policy.sources.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
-          ${policy.sources.map(reference => reference.id ? html`
-          <button class="reference" type="button"
-            @click=${(event: MouseEvent) => this.openAddress(reference.id!, event.currentTarget as HTMLElement)}>
-            <span>${reference.name}</span><span aria-hidden="true">→</span>
-          </button>
-        ` : nothing)}</div>
+          ${this.renderAddressReferences(policy.sources)}</div>
         <label for="destination-${entry.id}">Destinations</label>
-        <input id="destination-${entry.id}"
-          .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
+        <div class="reference-stack">
+          <input id="destination-${entry.id}"
+            .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
+          ${this.renderAddressReferences(policy.destinations)}
+        </div>
         <label for="action-${entry.id}">Action</label>
         <input id="action-${entry.id}" .value=${this.persistentValue(`${policyBase}.action`, policy.action)}
           .readOnly=${this.originReadOnly(`${policyBase}.action`, liveReadOnly)} />
@@ -3433,6 +3453,15 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private renderAddressReferences(references: ReadonlyArray<ConfigReference>) {
+    return html`${references.map(reference => reference.id ? html`
+      <button class="reference" type="button"
+        @click=${(event: MouseEvent) => this.openAddress(reference.id!, event.currentTarget as HTMLElement)}>
+        <span>${reference.name}</span><span aria-hidden="true">→</span>
+      </button>
+    ` : nothing)}`;
   }
 
   private renderPortReferences(names: ReadonlyArray<string>) {
@@ -3490,19 +3519,7 @@ export class SmithproxyApp extends LitElement {
         <input id="address-value-${entry.id}" .value=${this.persistentValue(`${base}.value`, address.value)}
           .readOnly=${this.originReadOnly(`${base}.value`, readOnly)} />
       </div>
-      ${this.renderImpact(address)}
-    `;
-  }
-
-  private renderImpact(address: AddressObject) {
-    return html`
-      <div class="section">
-        <h3>Impact</h3>
-        <div class="impact">This shared object is used by ${address.usedBy.length} configuration entries.</div>
-        <ul class="usage">
-          ${address.usedBy.map(reference => html`<li><strong>${reference.name}</strong> · ${reference.kind}</li>`)}
-        </ul>
-      </div>
+      ${this.renderObjectUsage(address)}
     `;
   }
 
@@ -4481,13 +4498,20 @@ export class SmithproxyApp extends LitElement {
       </section>`;
   }
 
-  private renderObjectUsage(object: PortObject | ProtocolObject | ProfileObject) {
+  private renderObjectUsage(object: AddressObject | PortObject | ProtocolObject | ProfileObject) {
     return html`
       <div class="section">
         <h3>Impact</h3>
         <div class="impact">This shared object is used by ${object.usedBy.length} configuration entries.</div>
         <ul class="usage">
-          ${object.usedBy.map(reference => html`<li><strong>${reference.name}</strong> · ${reference.kind}</li>`)}
+          ${object.usedBy.map(reference => html`<li>${this.usageTargetAvailable(reference) ? html`
+            <button class="usage-link" type="button"
+              @click=${(event: MouseEvent) => this.openUsage(reference, event.currentTarget as HTMLElement)}>
+              <strong>${reference.name}</strong><span><span class="usage-kind">${reference.kind}</span> →</span>
+            </button>
+          ` : html`
+            <span class="usage-static"><strong>${reference.name}</strong><span class="usage-kind">${reference.kind}</span></span>
+          `}</li>`)}
         </ul>
       </div>
     `;
