@@ -2081,6 +2081,47 @@ test('removes pending create operations only after their draft dependents', asyn
   }]);
 });
 
+test('blocks removal of pending ordered anchors until position dependents are removed', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', structuralRemovalRequests: [],
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'ordered-anchor', client_id: 'ordered-anchor',
+      collection: 'policy', position: {last: true},
+      fields: {
+        name: 'pending-anchor', disabled: false, proto: 'tcp', src: ['office'], sport: [],
+        dst: ['internet'], dport: [], features: [], action: 'accept', nat: '', routing: '',
+        tls_profile: '', ssh_profile: '', detection_profile: '', content_profile: '',
+        auth_profile: '', alg_dns_profile: '', script_profile: '',
+      },
+    }, {
+      op: 'move', local_id: 'ordered-dependent', collection: 'policy',
+      entity_id: 'policy-0', position: {before: 'client:ordered-anchor'},
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 2'}).click();
+
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  const anchorRow = table.getByRole('row').filter({hasText: 'policy · create'});
+  const dependentRow = table.getByRole('row').filter({hasText: 'policy · move'});
+  const anchorRemove = anchorRow.getByRole('button', {name: /Remove create operation/u});
+  await expect(anchorRemove).toBeDisabled();
+  await expect(anchorRemove).toHaveAttribute(
+    'title', 'Remove dependent ordered operations before removing this create operation.',
+  );
+
+  await dependentRow.getByRole('button', {name: /Remove move operation/u}).click();
+  await expect(anchorRemove).toBeEnabled();
+  await anchorRemove.click();
+  await expect(page.getByText('No pending changes')).toBeVisible();
+  expect(state.structuralRemovalRequests).toEqual([{
+    expectedVersion: 1, localId: 'ordered-dependent', csrf: '1',
+  }, {
+    expectedVersion: 2, localId: 'ordered-anchor', csrf: '1',
+  }]);
+});
+
 test('creates and reopens an address object through a structural drawer', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',

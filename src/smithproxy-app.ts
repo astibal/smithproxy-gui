@@ -2243,6 +2243,38 @@ export class SmithproxyApp extends LitElement {
   private pendingCreateRemovalBlocker(localId: string): string | undefined {
     const operation = this.workspaceDraft?.structuralOperations.find(item => item.localId === localId);
     if (operation?.op !== 'create') return undefined;
+    const removedCreates = new Set<DraftCreateOperation>([operation]);
+    const signatureCollection = operation.collection === 'starttls_signatures' ||
+      operation.collection === 'detection_signatures';
+    const flowCollection = operation.collection === 'starttls_signatures.flow' ||
+      operation.collection === 'detection_signatures.flow';
+    const linkedParent = flowCollection
+      ? this.workspaceDraft?.structuralOperations.find(candidate => candidate.op === 'create' &&
+          (candidate.collection === 'starttls_signatures' ||
+            candidate.collection === 'detection_signatures') &&
+          candidate.clientId === operation.parentId)
+      : operation;
+    if ((signatureCollection || flowCollection) && linkedParent?.op === 'create') {
+      removedCreates.add(linkedParent);
+      this.workspaceDraft?.structuralOperations.forEach(candidate => {
+        if (candidate.op === 'create' && candidate.parentId === linkedParent.clientId &&
+            (candidate.collection === 'starttls_signatures.flow' ||
+              candidate.collection === 'detection_signatures.flow')) {
+          removedCreates.add(candidate);
+        }
+      });
+    }
+    const removedReferences = new Set(
+      [...removedCreates].map(candidate => `client:${candidate.clientId}`),
+    );
+    const removedLocalIds = new Set([...removedCreates].map(candidate => candidate.localId));
+    const orderedDependent = this.workspaceDraft?.structuralOperations.some(candidate =>
+      !removedLocalIds.has(candidate.localId) &&
+      (candidate.op === 'create' || candidate.op === 'move') &&
+      candidate.position.reference !== null && removedReferences.has(candidate.position.reference));
+    if (orderedDependent) {
+      return 'Remove dependent ordered operations before removing this create operation.';
+    }
     const name = operation.fields['name'];
     if (typeof name !== 'string') return undefined;
     const specifications = this.referenceSpecifications(operation.collection);

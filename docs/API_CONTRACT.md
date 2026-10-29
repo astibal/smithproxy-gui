@@ -204,7 +204,9 @@ field restored to its persistent value from passing through a transient set
 operation and applies one optimistic version check to the complete editor save.
 All removal operations require the current
 draft version, so one operator cannot silently erase a concurrent operator's
-work. An explicit
+work. Removing a structural create is rejected while a retained ordered operation
+uses its client ID as a position anchor; linked signature/flow cascades apply this
+check to the complete removed group. An explicit
 `POST /api/v1/config/draft/validate` sends the current immutable draft snapshot
 through the reviewed upstream transaction transport when that capability and a
 canonical base revision are available. A batch carries one expected version and a

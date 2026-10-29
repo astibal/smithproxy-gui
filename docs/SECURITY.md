@@ -89,6 +89,10 @@ responses to 8 MiB before parsing. Removing one draft path, an atomic bounded
 path group, or the complete draft uses the same authentication, CSRF, and
 optimistic-concurrency checks as an upsert. Group removal rejects duplicates or
 missing paths without partially changing the draft.
+Structural removal also rejects a create operation while any retained create or
+move position references its transaction-scoped client ID. Linked signature and
+flow removal checks every client ID removed by the cascade, so a direct API call
+cannot leave a dangling ordered reference.
 
 Draft responses preserve the write-only browser boundary as well as draft
 requests. The browser accepts sensitive scalar and structural fields only as

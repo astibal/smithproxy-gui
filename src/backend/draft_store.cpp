@@ -318,13 +318,39 @@ DraftMutationResult DraftStore::remove_structural(
         if (parent == draft_.structural_operations.end()) return std::nullopt;
         return std::get<DraftCreateOperation>(*parent).client_id;
     }();
-    if (linked_signature_parent) {
-        std::erase_if(draft_.structural_operations, [&](const auto& candidate) {
-            const auto* create = std::get_if<DraftCreateOperation>(&candidate);
-            return create != nullptr &&
-                   (create->client_id == *linked_signature_parent ||
-                    create->parent_id == linked_signature_parent);
+    const auto removed_by_request = [&](const DraftStructuralOperation& candidate) {
+        if (!linked_signature_parent) {
+            return draft_structural_local_id(candidate) == local_id;
+        }
+        const auto* create = std::get_if<DraftCreateOperation>(&candidate);
+        return create != nullptr &&
+               (create->client_id == *linked_signature_parent ||
+                create->parent_id == linked_signature_parent);
+    };
+    std::vector<std::string> removed_references;
+    for (const auto& candidate : draft_.structural_operations) {
+        if (!removed_by_request(candidate)) continue;
+        const auto* create = std::get_if<DraftCreateOperation>(&candidate);
+        if (create != nullptr) removed_references.push_back("client:" + create->client_id);
+    }
+    const auto has_ordered_dependent = std::any_of(
+        draft_.structural_operations.begin(), draft_.structural_operations.end(),
+        [&](const auto& candidate) {
+            if (removed_by_request(candidate)) return false;
+            const auto reference = std::visit([](const auto& item) -> std::optional<std::string> {
+                using Operation = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<Operation, DraftCreateOperation> ||
+                              std::is_same_v<Operation, DraftMoveOperation>) {
+                    return item.position.reference;
+                }
+                return std::nullopt;
+            }, candidate);
+            return reference && std::find(
+                removed_references.begin(), removed_references.end(), *reference) != removed_references.end();
         });
+    if (has_ordered_dependent) return DraftMutationResult::InvalidValue;
+    if (linked_signature_parent) {
+        std::erase_if(draft_.structural_operations, removed_by_request);
         ++draft_.version;
         return DraftMutationResult::Applied;
     }

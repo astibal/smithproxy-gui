@@ -177,6 +177,39 @@ int main() {
     assert(structural_store.clear(3U) == DraftMutationResult::Applied);
     assert(structural_store.snapshot().empty());
 
+    DraftStore ordered_removal_store{"ordered-removal-draft"};
+    auto ordered_anchor = create_address;
+    ordered_anchor.local_id = "ordered-anchor";
+    ordered_anchor.client_id = "ordered-anchor";
+    auto ordered_dependent = create_address;
+    ordered_dependent.local_id = "ordered-dependent";
+    ordered_dependent.client_id = "ordered-dependent";
+    ordered_dependent.position = {DraftPositionKind::Before, "client:ordered-anchor"};
+    std::get<std::string>(ordered_dependent.fields["name"]) = "dependent-office-network";
+    assert(ordered_removal_store.upsert_structural_many(
+               0U, {ordered_anchor, ordered_dependent}) == DraftMutationResult::Applied);
+    assert(ordered_removal_store.remove_structural(1U, "ordered-anchor") ==
+           DraftMutationResult::InvalidValue);
+    assert(ordered_removal_store.snapshot().version == 1U);
+    assert(ordered_removal_store.snapshot().structural_operations.size() == 2U);
+    assert(ordered_removal_store.remove_structural(1U, "ordered-dependent") ==
+           DraftMutationResult::Applied);
+    const DraftMoveOperation ordered_move{
+        .local_id = "ordered-move-dependent",
+        .collection = "address_objects",
+        .entity_id = "cfg:address:existing",
+        .position = {DraftPositionKind::Before, "client:ordered-anchor"},
+    };
+    assert(ordered_removal_store.upsert_structural(2U, ordered_move) ==
+           DraftMutationResult::Applied);
+    assert(ordered_removal_store.remove_structural(3U, "ordered-anchor") ==
+           DraftMutationResult::InvalidValue);
+    assert(ordered_removal_store.remove_structural(3U, "ordered-move-dependent") ==
+           DraftMutationResult::Applied);
+    assert(ordered_removal_store.remove_structural(4U, "ordered-anchor") ==
+           DraftMutationResult::Applied);
+    assert(ordered_removal_store.snapshot().empty());
+
     DraftStore signature_store{"signature-draft"};
     const DraftCreateOperation create_signature{
         .local_id = "create-signature-1",
