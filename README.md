@@ -122,6 +122,10 @@ The GUI core now discovers the proposed authenticated Smithproxy transaction
 capability and strictly validates its versions, operation set, bounded limits,
 collection identities, and schema hashes. Unreviewed schemas are visible as a
 fixed `review-required` diagnostic state but cannot enable configuration writes.
+The internal transaction envelope and response parser are also implemented:
+they bind typed changes to a canonical revision and OS-generated idempotency
+UUID while discarding free-form upstream response text. No browser commit path
+is enabled yet.
 
 Control-plane health and listener monitoring use the production C++ backend. A
 bounded five-minute runtime history visualizes active sessions and aggregate

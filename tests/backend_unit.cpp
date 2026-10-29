@@ -10,6 +10,9 @@
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
 #include "transaction_capabilities.hpp"
+#include "transaction_envelope.hpp"
+
+#include <nlohmann/json.hpp>
 
 #include <cassert>
 #include <chrono>
@@ -214,6 +217,81 @@ int main() {
         ]}})";
     assert(parse_transaction_capabilities(duplicate_collection_payload, reviewed_schemas).state ==
            "incompatible");
+
+    TransactionCapabilities ready_transaction{
+        .state = "ready",
+        .detail = "reviewed",
+        .checked_at = {},
+        .maximum_operations = 4U,
+        .maximum_request_bytes = 4096U,
+        .operations = {"create", "delete", "move", "set"},
+        .collections = {},
+    };
+    DraftSnapshot transaction_draft{
+        .id = "workspace-draft",
+        .base_revision = "sha256:" + std::string(64U, '1'),
+        .version = 3U,
+        .changes = {
+            {"policy.[0].action", std::string("reject")},
+            {"settings.accept_api", true},
+        },
+    };
+    constexpr std::string_view idempotency_key{"018f47a1-7b2c-7def-8123-123456789abc"};
+    const auto generated_idempotency_key = generate_transaction_idempotency_key();
+    assert(generated_idempotency_key);
+    assert(generated_idempotency_key->size() == 36U);
+    assert((*generated_idempotency_key)[14] == '4');
+    assert((*generated_idempotency_key)[19] == '8' || (*generated_idempotency_key)[19] == '9' ||
+           (*generated_idempotency_key)[19] == 'a' || (*generated_idempotency_key)[19] == 'b');
+    const auto validation_envelope = build_transaction_envelope(
+        transaction_draft, TransactionMode::Validate, idempotency_key, ready_transaction);
+    assert(validation_envelope.body);
+    const auto validation_document = nlohmann::json::parse(*validation_envelope.body);
+    assert(validation_document["mode"] == "validate");
+    assert(validation_document["base_revision"] == *transaction_draft.base_revision);
+    assert(validation_document["idempotency_key"] == idempotency_key);
+    assert(validation_document["operations"].size() == 2U);
+    assert(validation_document["operations"][0] == nlohmann::json({
+        {"op", "set"}, {"path", "policy.[0].action"}, {"value", "reject"},
+    }));
+    assert(build_transaction_envelope(
+        transaction_draft, TransactionMode::Commit, "invalid", ready_transaction).error_code ==
+        "transaction.unavailable");
+    auto oversized_transaction = ready_transaction;
+    oversized_transaction.maximum_request_bytes = 64U;
+    assert(build_transaction_envelope(
+        transaction_draft, TransactionMode::Commit, idempotency_key, oversized_transaction)
+        .error_code == "transaction.request_too_large");
+
+    const std::string committed_revision = "sha256:" + std::string(64U, '2');
+    const nlohmann::json success_document{{"success", {
+        {"revision", committed_revision},
+        {"previous_revision", *transaction_draft.base_revision},
+        {"validated_operations", 2U},
+        {"restart", "not-required"},
+        {"warnings", nlohmann::json::array({"bounded warning"})},
+    }}};
+    const auto success_response = success_document.dump();
+    const auto transaction_success = parse_transaction_response(
+        200L, success_response, TransactionMode::Commit, *transaction_draft.base_revision, 2U);
+    assert(transaction_success.state == "succeeded");
+    assert(transaction_success.revision == committed_revision);
+    assert(transaction_success.warning_count == 1U);
+    assert(parse_transaction_response(
+        409L, R"({"error":{"code":"revision_conflict","message":"redacted"}})",
+        TransactionMode::Commit, *transaction_draft.base_revision, 2U).state ==
+        "conflict");
+    assert(parse_transaction_response(
+        422L, R"({"error":{"code":"invalid\ncode"}})", TransactionMode::Validate,
+        *transaction_draft.base_revision, 2U).state == "invalid-response");
+    assert(parse_transaction_response(
+        200L, success_response, TransactionMode::Commit, *transaction_draft.base_revision, 1U).state ==
+        "invalid-response");
+    auto validation_success_document = success_document;
+    validation_success_document["success"]["revision"] = *transaction_draft.base_revision;
+    assert(parse_transaction_response(
+        200L, validation_success_document.dump(), TransactionMode::Validate,
+        *transaction_draft.base_revision, 2U).state == "succeeded");
 
     const auto metrics = parse_listener_metrics(R"({"listeners":[
         {"name":"tcp","workers":2,"sessions_total":12,"sessions_active":3,

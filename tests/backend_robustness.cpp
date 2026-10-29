@@ -6,6 +6,7 @@
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
 #include "transaction_capabilities.hpp"
+#include "transaction_envelope.hpp"
 
 #include <array>
 #include <bit>
@@ -95,6 +96,8 @@ DraftScalar random_scalar(DeterministicRandom& random) {
 }
 
 void exercise_json_parsers(const std::string_view payload) {
+    constexpr std::string_view revision{
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111"};
     static_cast<void>(parse_listener_metrics(payload));
     static_cast<void>(parse_tls_cache_metrics(payload));
     static_cast<void>(parse_neighbor_metrics(payload));
@@ -106,6 +109,10 @@ void exercise_json_parsers(const std::string_view payload) {
     static_cast<void>(parse_config_captures(payload));
     static_cast<void>(parse_config_security_assets(payload, payload, payload));
     static_cast<void>(parse_transaction_capabilities(payload, reviewed_transaction_schemas()));
+    static_cast<void>(parse_transaction_response(
+        200L, payload, TransactionMode::Validate, revision, 0U));
+    static_cast<void>(parse_transaction_response(
+        409L, payload, TransactionMode::Commit, revision, 1U));
 }
 
 void require(const bool condition, const std::string_view message) {

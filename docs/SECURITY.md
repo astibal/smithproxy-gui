@@ -78,6 +78,15 @@ unreviewed collection revisions. Discovery never enables `config_write`; that
 flag remains false until the complete validate, commit, idempotency, rollback,
 and audit path is implemented and reviewed.
 
+The transaction envelope builder accepts only the already pinned draft schema,
+requires a canonical `sha256:` base revision and a reviewed ready capability,
+and rechecks operation and encoded-request limits. Idempotency keys are UUIDv4
+values generated inside the GUI core directly from the operating-system CSPRNG.
+The response parser discards upstream messages and warning contents; it retains
+only a fixed terminal state, validated revisions, operation and warning counts,
+and a bounded restart enum. This adapter is not yet connected to a browser
+commit endpoint.
+
 Draft preflight serializes only bounded aggregate counts and stable blocker
 codes. It does not return paths, values, diffs, or validation payloads and uses
 the same trusted-gateway authentication as the draft itself. The browser rejects

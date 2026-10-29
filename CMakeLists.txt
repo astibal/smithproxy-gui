@@ -102,6 +102,7 @@ add_library(smithproxy_gui_core
     src/backend/smithproxy_client.cpp
     src/backend/tls_metrics.cpp
     src/backend/transaction_capabilities.cpp
+    src/backend/transaction_envelope.cpp
 )
 target_include_directories(smithproxy_gui_core PUBLIC src/backend)
 target_link_libraries(smithproxy_gui_core PUBLIC PkgConfig::CURL nlohmann_json::nlohmann_json)

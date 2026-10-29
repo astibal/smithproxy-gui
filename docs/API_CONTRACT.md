@@ -32,6 +32,18 @@ fixed state vocabulary. Missing gateway authentication reports `unavailable`.
 An advertised schema that is not pinned by the GUI core reports
 `review-required` and does not enable writes.
 
+The internal transaction adapter already builds the reviewed `validate` and
+`commit` envelopes from typed workspace-draft changes. It binds every request
+to the canonical base revision and a core-generated idempotency UUID and rejects
+the encoded body when the negotiated or hard 1 MiB limit is exceeded. Upstream
+responses are reduced to fixed outcome states and aggregate metadata before any
+future browser-facing endpoint can consume them.
+
+A validation success must echo the canonical base revision as both `revision`
+and `previous_revision`. A commit success must echo that base as
+`previous_revision` and return a different canonical `revision`; the GUI core
+rejects any response that does not preserve this binding.
+
 ## Authenticated runtime snapshot
 
 ```text
