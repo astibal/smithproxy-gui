@@ -114,7 +114,7 @@
       "edit": "partial",
       "sensitivity": "secret-bearing",
       "tracked_fields": ["name", "path_configured"],
-      "notes": "Authority names and path posture are exposed; filesystem paths support write-only replace or clear and never reach the browser."
+      "notes": "Authority names and path posture are exposed. Authorities support structural creation and confirmed deletion. Filesystem paths use write-only controls, are cleared after acceptance, remain redacted in draft responses, and must be re-entered before a pending create can be updated."
     },
     {
       "name": "tls_profiles",

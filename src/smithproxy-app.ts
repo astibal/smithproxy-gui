@@ -1650,6 +1650,9 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && Object.values(profileCreateCollections).includes(operation.collection)) {
         objects.add(`profile-create:${operation.localId}`);
       }
+      if (operation.op === 'create' && operation.collection === 'tls_ca') {
+        objects.add(`authority-create:${operation.localId}`);
+      }
       if (operation.op === 'create' && operation.collection === 'content_profiles.content_rules') {
         objects.add(`content-rule-create:${operation.localId}`);
       }
@@ -1662,9 +1665,10 @@ export class SmithproxyApp extends LitElement {
             : operation.collection === 'port_objects' ? 'port'
               : operation.collection === 'proto_objects' ? 'protocol'
                 : operation.collection === 'content_profiles.content_rules' ? 'content-rule'
-                  : operation.collection.endsWith('_signatures.flow') ? 'signature-flow'
-                : operation.collection === 'routing' || operation.collection.endsWith('_profiles')
-                  ? 'profile' : undefined;
+                : operation.collection.endsWith('_signatures.flow') ? 'signature-flow'
+                  : operation.collection === 'tls_ca' ? 'authority'
+                    : operation.collection === 'routing' || operation.collection.endsWith('_profiles')
+                      ? 'profile' : undefined;
         if (kind) objects.add(`${kind}:${operation.entityId}`);
       }
       if (operation.op === 'move' && operation.collection === 'policy') {
@@ -1971,21 +1975,24 @@ export class SmithproxyApp extends LitElement {
       'address_objects', 'port_objects', 'proto_objects', 'policy', 'content_profiles.content_rules',
       'starttls_signatures.flow', 'detection_signatures.flow',
       ...Object.values(profileCreateCollections),
+      'tls_ca',
     ].includes(operation.collection)) return;
     const kind = operation.collection === 'policy' ? 'policy-create'
       : operation.collection === 'address_objects' ? 'address-create'
         : operation.collection === 'port_objects' ? 'port-create'
           : operation.collection === 'proto_objects' ? 'protocol-create'
             : Object.values(profileCreateCollections).includes(operation.collection) ? 'profile-create'
-            : operation.collection === 'content_profiles.content_rules'
-              ? 'content-rule-create' : 'signature-flow-create';
+              : operation.collection === 'tls_ca' ? 'authority-create'
+                : operation.collection === 'content_profiles.content_rules'
+                  ? 'content-rule-create' : 'signature-flow-create';
     const fallback = operation.collection === 'policy' ? 'New policy'
       : operation.collection === 'address_objects' ? 'New address object'
         : operation.collection === 'port_objects' ? 'New port object'
           : operation.collection === 'proto_objects' ? 'New protocol object'
             : Object.values(profileCreateCollections).includes(operation.collection) ? 'New profile'
-            : operation.collection === 'content_profiles.content_rules'
-              ? 'New content rule' : 'New signature flow step';
+              : operation.collection === 'tls_ca' ? 'New certificate authority'
+                : operation.collection === 'content_profiles.content_rules'
+                  ? 'New content rule' : 'New signature flow step';
     this.openObjectDrawer({
       kind,
       id: operation.localId,
@@ -2095,6 +2102,13 @@ export class SmithproxyApp extends LitElement {
                     : profile.dns ? 'alg_dns_profiles' : undefined;
       return collection
         ? {collection, entityId: profile.id, label: `${profile.type} profile`, usageCount: profile.usedBy.length}
+        : undefined;
+    }
+    if (entry.kind === 'authority') {
+      const authority = this.snapshot.securityAssets?.certificateAuthorities.find(item => item.id === entry.id);
+      return authority
+        ? {collection: 'tls_ca', entityId: authority.id,
+          label: 'certificate authority', usageCount: 0}
         : undefined;
     }
     if (entry.kind === 'content-rule') {
@@ -2692,6 +2706,14 @@ export class SmithproxyApp extends LitElement {
     }, origin);
   }
 
+  private openNewAuthority(origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable) return;
+    const localId = `create-authority-${crypto.randomUUID()}`;
+    this.openObjectDrawer({
+      kind: 'authority-create', id: localId, title: 'New certificate authority',
+    }, origin);
+  }
+
   private openSignature(id: string, origin?: HTMLElement): void {
     const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === id);
     if (!signature) return;
@@ -2924,7 +2946,8 @@ export class SmithproxyApp extends LitElement {
     this.drawers = [...this.drawerStore.entries];
     if (this.drawers[0]?.kind === 'policy') this.activeSection = 'Policy';
     if (this.drawers[0] && [
-      'settings', 'captures', 'authority', 'signature', 'signature-flow', 'signature-flow-create',
+      'settings', 'captures', 'authority', 'authority-create',
+      'signature', 'signature-flow', 'signature-flow-create',
     ]
       .includes(this.drawers[0].kind)) {
       this.activeSection = 'System';
@@ -2987,6 +3010,13 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'captures' && entry.id === 'captures' && this.snapshot.captures) {
       return {id: 'captures', name: 'Capture settings'};
+    }
+    if (entry.kind === 'authority-create') {
+      const operation = this.workspaceDraft?.structuralOperations.find(item =>
+        item.op === 'create' && item.collection === 'tls_ca' && item.localId === entry.id);
+      return operation?.op === 'create'
+        ? {id: operation.localId, name: String(operation.fields['name'] ?? 'New certificate authority')}
+        : undefined;
     }
     if (entry.kind === 'authority') {
       return this.snapshot.securityAssets?.certificateAuthorities.find(item => item.id === entry.id);
@@ -3787,6 +3817,61 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private pendingAuthorityCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'create' && item.collection === 'tls_ca' && item.localId === entry.id);
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private async saveAuthorityCreate(entry: DrawerEntry): Promise<void> {
+    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#authority-create-name-${entry.id}`);
+    const pathInput = this.renderRoot.querySelector<HTMLInputElement>(`#authority-create-path-${entry.id}`);
+    if (!nameInput || !pathInput) return;
+    const name = nameInput.value.trim();
+    const path = pathInput.value.trim();
+    const printable = (value: string, maximum: number) => value.length > 0 && value.length <= maximum &&
+      !/[\u0000-\u001f\u007f]/u.test(value);
+    if (!printable(name, 128) || !printable(path, 1024)) {
+      this.drawerError = this.pendingAuthorityCreate(entry)
+        ? 'Re-enter the write-only CA path before updating this pending authority.'
+        : 'A printable unique name and CA path are required.';
+      return;
+    }
+    const duplicateLive = this.snapshot?.securityAssets?.certificateAuthorities.some((item, index) =>
+      this.presentedValue(`tls_ca.[${index}].name`, item.name) === name);
+    const duplicateDraft = this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'create' && operation.collection === 'tls_ca' && operation.localId !== entry.id &&
+      operation.fields['name'] === name);
+    if (duplicateLive || duplicateDraft) {
+      this.drawerError = 'Certificate-authority names must be unique.';
+      return;
+    }
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create', localId: entry.id, collection: 'tls_ca', clientId: entry.id,
+        parentId: null, position: {kind: 'last', reference: null}, fields: {name, path},
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      pathInput.value = '';
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error
+        ? error.message : 'Certificate authority could not be added to the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private async saveToDraft(entry: DrawerEntry): Promise<void> {
     if (entry.kind === 'policy-create') {
       await this.savePolicyCreate(entry);
@@ -3802,6 +3887,10 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'profile-create') {
       await this.saveProfileCreate(entry);
+      return;
+    }
+    if (entry.kind === 'authority-create') {
+      await this.saveAuthorityCreate(entry);
       return;
     }
     if (entry.kind === 'content-rule-create') {
@@ -5153,6 +5242,7 @@ export class SmithproxyApp extends LitElement {
                     'content_profiles.content_rules',
                     'starttls_signatures.flow', 'detection_signatures.flow',
                     ...Object.values(profileCreateCollections),
+                    'tls_ca',
                   ].includes(operation.collection)) ||
                     (operation.op === 'move' && (operation.collection === 'policy' ||
                       operation.collection === 'content_profiles.content_rules' ||
@@ -6760,6 +6850,13 @@ export class SmithproxyApp extends LitElement {
                 <dt>Detection flow steps</dt><dd>${securityAssets.detectionFlowStepCount}</dd>
               </dl>
               <div class="reference-stack section" role="group" aria-label="Certificate authorities">
+                <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                  title=${this.structuralDraftsAvailable
+                    ? 'Add a certificate authority to the workspace draft'
+                    : 'Requires reviewed structural transactions and stable entity IDs.'}
+                  @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
+                  New certificate authority
+                </button>
                 ${securityAssets.certificateAuthorities.length === 0
                   ? html`<span>No certificate authorities configured.</span>`
                   : securityAssets.certificateAuthorities.map(authority => html`
@@ -8328,6 +8425,26 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderCertificateAuthorityCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingAuthorityCreate(entry);
+    const readOnly = !this.structuralDraftsAvailable;
+    return html`
+      <div class="form-grid">
+        <label for="authority-create-name-${entry.id}">Name</label>
+        <input id="authority-create-name-${entry.id}" maxlength="128" required autocomplete="off"
+          .value=${String(operation?.fields['name'] ?? '')} .readOnly=${readOnly} />
+        <label for="authority-create-path-${entry.id}">CA path</label>
+        <input id="authority-create-path-${entry.id}" maxlength="1024" required autocomplete="off"
+          aria-label="New CA path" placeholder=${operation ? 'Re-enter path (write-only)' : 'Absolute path (write-only)'}
+          .readOnly=${readOnly} />
+      </div>
+      <div class="privacy-note section">
+        The path is accepted by the GUI core, redacted from draft responses, and cleared from this editor.
+        Reopening a pending authority requires explicit path re-entry before it can be updated.
+      </div>
+    `;
+  }
+
   private renderContentRuleEditor(entry: DrawerEntry) {
     const profile = this.snapshot?.profiles.find(item => item.content?.rules.some(rule => rule.id === entry.id));
     const rule = profile?.content?.rules.find(item => item.id === entry.id);
@@ -8838,6 +8955,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);
+    if (entry.kind === 'authority-create') return this.renderCertificateAuthorityCreateEditor(entry);
     if (entry.kind === 'content-rule') return this.renderContentRuleEditor(entry);
     if (entry.kind === 'content-rule-create') return this.renderContentRuleCreateEditor(entry);
     if (entry.kind === 'signature') return this.renderSignatureEditor(entry);
@@ -8852,9 +8970,10 @@ export class SmithproxyApp extends LitElement {
       : entry.kind === 'port-create' ? 'Create port object'
         : entry.kind === 'protocol-create' ? 'Create protocol object'
           : entry.kind === 'profile-create' ? 'Create profile'
-          : entry.kind === 'policy-create' ? 'Create policy'
-            : entry.kind === 'content-rule-create' ? 'Create content rule'
-              : entry.kind === 'signature-flow-create' ? 'Create signature flow step' : `Edit ${entry.title}`;
+            : entry.kind === 'authority-create' ? 'Create certificate authority'
+              : entry.kind === 'policy-create' ? 'Create policy'
+                : entry.kind === 'content-rule-create' ? 'Create content rule'
+                  : entry.kind === 'signature-flow-create' ? 'Create signature flow step' : `Edit ${entry.title}`;
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
@@ -8873,6 +8992,7 @@ export class SmithproxyApp extends LitElement {
     const draftable = [
       'address-create', 'port-create', 'protocol-create', 'policy-create', 'content-rule-create',
       'signature-flow-create', 'profile-create',
+      'authority-create',
     ].includes(entry.kind)
       ? this.structuralDraftsAvailable
       : this.snapshot?.source !== 'live' ||
@@ -8899,9 +9019,10 @@ export class SmithproxyApp extends LitElement {
               ? 'Create port object' : entry.kind === 'protocol-create'
                 ? 'Create protocol object' : entry.kind === 'policy-create'
                   ? 'Create policy' : entry.kind === 'profile-create'
-                    ? 'Create profile' : entry.kind === 'content-rule-create'
-                    ? 'Create content rule' : entry.kind === 'signature-flow-create'
-                      ? 'Create signature flow step' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+                    ? 'Create profile' : entry.kind === 'authority-create'
+                      ? 'Create certificate authority' : entry.kind === 'content-rule-create'
+                        ? 'Create content rule' : entry.kind === 'signature-flow-create'
+                          ? 'Create signature flow step' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}

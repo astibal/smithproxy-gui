@@ -497,6 +497,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           ? new Set(['rules_session_filter'])
           : body.operation.collection === 'tls_profiles'
             ? new Set(['sni_filter_bypass'])
+            : body.operation.collection === 'tls_ca'
+              ? new Set(['path'])
           : body.operation.collection === 'ssh_profiles'
             ? new Set(['host_key'])
             : body.operation.collection === 'script_profiles'
@@ -1911,6 +1913,62 @@ test('creates a complete fail-closed TLS profile with a redacted SNI bypass list
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText(/Re-enter the write-only SNI bypass list/u)).toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
+  await expectNoWcagViolations(page);
+});
+
+test('creates and deletes certificate authorities without exposing filesystem paths', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const authorities = page.getByRole('group', {name: 'Certificate authorities'});
+
+  await authorities.getByRole('button', {name: /default · path configured/i}).click();
+  const existingEditor = page.getByRole('dialog', {name: 'Edit default'});
+  await existingEditor.getByRole('button', {name: 'Delete certificate authority'}).click();
+  await existingEditor.getByRole('button', {name: 'Confirm delete certificate authority'}).click();
+  await expect(existingEditor).toBeHidden();
+
+  await authorities.getByRole('button', {name: 'New certificate authority'}).click();
+  let createEditor = page.getByRole('dialog', {name: 'Create certificate authority'});
+  await createEditor.getByLabel('Name').fill('branch-ca');
+  await createEditor.getByLabel('New CA path').fill('/private/pki/branch-ca.pem');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
+
+  expect(state.structuralMutationRequests).toHaveLength(2);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0, csrf: '1',
+    operation: {op: 'delete', collection: 'tls_ca', entity_id: 'certificate-authority-0'},
+  });
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 1, csrf: '1', operation: {
+      op: 'create', collection: 'tls_ca', position: {last: true},
+      fields: {name: 'branch-ca', path: '/private/pki/branch-ca.pem'},
+    },
+  });
+  expect(state.structuralMutationRequests![1]!.operation.local_id)
+    .toMatch(/^create-authority-[0-9a-f-]{36}$/u);
+
+  await createEditor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 2'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(table).toContainText('tls_ca · delete');
+  await expect(table).toContainText('tls_ca · create');
+  await expect(table).not.toContainText('/private/pki/branch-ca.pem');
+  await table.getByRole('row').filter({hasText: 'tls_ca · create'})
+    .getByRole('button', {name: 'Edit'}).click();
+  createEditor = page.getByRole('dialog', {name: 'Create certificate authority'});
+  await expect(createEditor.getByLabel('Name')).toHaveValue('branch-ca');
+  await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
+  await createEditor.getByLabel('Name').fill('branch-ca-updated');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText(/Re-enter the write-only CA path/u)).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(2);
   await expectNoWcagViolations(page);
 });
 

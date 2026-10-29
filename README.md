@@ -224,6 +224,9 @@ Content profiles expose nested creation, confirmed deletion, and first/before/la
 ordering for stable content rules. New write-only match and replacement expressions
 are cleared from the editor after the GUI core accepts them and must be re-entered
 before a pending create operation can be updated.
+Certificate authorities support structural creation and confirmed deletion. New CA
+paths are write-only, cleared after acceptance, redacted from draft review, and must
+be re-entered before a pending authority can be updated.
 STARTTLS and detection signatures provide the same nested create, confirmed delete,
 and ordered move workflow for their flow steps. Write-only matcher expressions are
 redacted by the GUI core, cleared from the editor after acceptance, and never shown
