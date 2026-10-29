@@ -20,6 +20,7 @@ struct AppConfig {
     std::filesystem::path asset_root;
     std::optional<SmithproxyConfig> smithproxy;
     std::optional<std::string> gateway_secret;
+    std::optional<std::string> previous_gateway_secret;
 };
 
 struct ParseResult {

@@ -395,6 +395,7 @@ def main() -> int:
     fake_thread.start()
     secret = "integration-secret-that-must-not-leak"
     gateway_secret = "gateway-secret-used-only-by-integration-tests"
+    previous_gateway_secret = "previous-gateway-secret-used-by-tests"
     with tempfile.NamedTemporaryFile() as certificate:
         configured_port = free_port()
         configured_environment = environment.copy()
@@ -403,6 +404,7 @@ def main() -> int:
             "SMITHPROXY_API_KEY": secret,
             "SMITHPROXY_CA_CERT": certificate.name,
             "SMITHPROXY_GUI_GATEWAY_SECRET": gateway_secret,
+            "SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS": previous_gateway_secret,
             "HTTP_PROXY": "http://127.0.0.1:1",
         })
         configured = subprocess.Popen(
@@ -447,6 +449,11 @@ def main() -> int:
             assert isinstance(snapshot["smithproxy"]["latency_ms"], int)
             assert len(snapshot["smithproxy"]["history"]) >= 1
             assert snapshot["smithproxy"]["availability_window"]["successful"] >= 1
+            status, _, body = request(configured_port, "/api/v1/status", headers={
+                "X-Smithproxy-GUI-Gateway": previous_gateway_secret,
+            })
+            assert status == 200
+            assert json.loads(body)["smithproxy"]["state"] == "ready"
             status, _, body = request(
                 configured_port, "/api/v1/events/recent", headers=gateway_headers)
             events = json.loads(body)
@@ -938,6 +945,7 @@ def main() -> int:
         assert configured.returncode == 0
         assert secret not in output
         assert gateway_secret not in output
+        assert previous_gateway_secret not in output
     fake.shutdown()
     fake.server_close()
     fake_thread.join(timeout=2)

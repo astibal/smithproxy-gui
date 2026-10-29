@@ -42,6 +42,12 @@ available for orchestration. A non-loopback listener is rejected at startup
 unless gateway authentication is configured. Configuration reads and mutations
 always require an authenticated gateway, including on loopback.
 
+Gateway-secret rotation uses a bounded two-value overlap. The current value is
+mandatory; `SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS` is optional, independently
+validated, and must differ. Both comparisons use the constant-time helper. A
+deployment writes `current=new, previous=old`, restarts the GUI core, switches
+the ingress to `new`, and then removes `previous` at the next restart.
+
 Draft mutations additionally fail closed unless `Origin` exactly matches the
 request host and the request carries JSON content type plus the custom
 `X-Smithproxy-GUI-CSRF: 1` header. Optional Fetch Metadata must report

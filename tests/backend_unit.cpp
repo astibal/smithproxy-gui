@@ -24,6 +24,7 @@ int main() {
     unsetenv("SMITHPROXY_API_KEY");
     unsetenv("SMITHPROXY_CA_CERT");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
+    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
     assert(normalize_base_path("/") == "/");
     assert(normalize_base_path("/ws001/smithproxy-gui/") == "/ws001/smithproxy-gui");
     assert(!normalize_base_path("ws001"));
@@ -460,6 +461,21 @@ int main() {
     assert(authenticated.config);
     assert(authenticated.config->gateway_secret == "0123456789abcdef0123456789abcdef");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
+
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS", "previous-0123456789abcdef01234567", 1);
+    const auto previous_without_current = parse_config(
+        static_cast<int>(argv.size()), argv.data(), "/srv/gui");
+    assert(!previous_without_current.config);
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
+    const auto rotating = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
+    assert(rotating.config);
+    assert(rotating.config->previous_gateway_secret == "previous-0123456789abcdef01234567");
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS", "0123456789abcdef0123456789abcdef", 1);
+    const auto duplicate_secrets = parse_config(
+        static_cast<int>(argv.size()), argv.data(), "/srv/gui");
+    assert(!duplicate_secrets.config);
+    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
+    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
 
     std::vector<std::string> remote_arguments{"smithproxy-gui", "--bind", "0.0.0.0"};
     std::vector<char*> remote_argv;

@@ -385,7 +385,11 @@ private:
         if (!config_.gateway_secret) return false;
         const auto* supplied = MHD_lookup_connection_value(
             connection, MHD_HEADER_KIND, "X-Smithproxy-GUI-Gateway");
-        return supplied != nullptr && constant_time_equal(supplied, *config_.gateway_secret);
+        if (supplied == nullptr) return false;
+        const bool current = constant_time_equal(supplied, *config_.gateway_secret);
+        const bool previous = config_.previous_gateway_secret &&
+                              constant_time_equal(supplied, *config_.previous_gateway_secret);
+        return current || previous;
     }
 
     bool management_authenticated(MHD_Connection* connection) const {

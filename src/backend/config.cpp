@@ -128,6 +128,20 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
         }
         config.gateway_secret = std::move(gateway_secret);
     }
+    if (auto previous = environment("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS")) {
+        if (!config.gateway_secret) {
+            return failure("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS requires the current secret");
+        }
+        if (previous->size() < 32U || previous->size() > 256U ||
+            !valid_header_value(*previous)) {
+            return failure(
+                "SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS must contain 32..256 safe header characters");
+        }
+        if (*previous == *config.gateway_secret) {
+            return failure("current and previous gateway secrets must differ");
+        }
+        config.previous_gateway_secret = std::move(previous);
+    }
     if (!is_loopback_bind(config.bind_address) && !config.gateway_secret) {
         return failure("non-loopback bind requires SMITHPROXY_GUI_GATEWAY_SECRET");
     }
@@ -142,7 +156,8 @@ std::string usage() {
            "  --assets PATH     frontend asset directory (build/frontend)\n"
            "\nSmithproxy credentials are read only from SMITHPROXY_API_URL,\n"
            "SMITHPROXY_API_KEY and SMITHPROXY_CA_CERT. A trusted reverse proxy\n"
-           "must authenticate non-loopback browser APIs with SMITHPROXY_GUI_GATEWAY_SECRET.\n";
+           "must authenticate non-loopback browser APIs with SMITHPROXY_GUI_GATEWAY_SECRET.\n"
+           "SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS supports bounded rotation overlap.\n";
 }
 
 } // namespace smithproxy::gui

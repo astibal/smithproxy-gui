@@ -71,6 +71,7 @@ SMITHPROXY_API_URL=https://127.0.0.1:55555
 SMITHPROXY_API_KEY=...
 SMITHPROXY_CA_CERT=/path/to/ca-cert.pem
 SMITHPROXY_GUI_GATEWAY_SECRET=at-least-32-random-characters
+SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS=optional-overlap-during-rotation
 ```
 
 The variables must be provided together. The API key is never accepted through
@@ -90,6 +91,9 @@ When gateway mode is active, status snapshots, metrics, session aggregates,
 neighborhood summaries, events, alerts, and drafts all reject requests that did
 not pass the trusted proxy handoff. Only the bounded health and capability
 surfaces remain available for orchestration and authentication discovery.
+During rotation, the optional previous secret is accepted alongside the current
+secret. It is rejected when the current secret is absent or identical and should
+be removed after the ingress has switched to the new value.
 
 The C++ backend can now retrieve a bounded, validated runtime configuration
 snapshot through the authenticated Smithproxy API. Frontend activation remains
