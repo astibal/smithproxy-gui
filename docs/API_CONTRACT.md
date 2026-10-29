@@ -348,8 +348,18 @@ nejvýše 96 bytů; delší `Last-Event-ID` je odmítnuto před porovnáváním.
 ```http
 GET  /api/v1/jobs
 GET  /api/v1/jobs/{job-id}
-POST /api/v1/jobs/{job-id}/cancel
 ```
+
+Aktuální implementace publikuje omezenou in-memory historii nejvýše 128 úloh
+`config-refresh`. Úloha vznikne až po úspěšném atomickém commitu a skončí teprve,
+když monitorovaný autoritativní snapshot dosáhne revize z commit receipt; po
+deadline skončí jako `failed`. Seznam ani detail neobsahuje cílovou revizi,
+konfigurační hodnoty nebo credentials. Vlastník je zatím poctivě `null`, protože
+gateway kontrakt neposkytuje reviewovanou identitu uživatele.
+
+`POST /api/v1/jobs/{job-id}/cancel` zůstává rezervovanou budoucí capability.
+`config-refresh` bezpečné zrušení nepodporuje a proto vždy vrací
+`cancelable: false`; neimplementovaný endpoint není inzerován v API surface.
 
 Stavy minimálně:
 

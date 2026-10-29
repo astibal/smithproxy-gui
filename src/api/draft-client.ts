@@ -74,6 +74,7 @@ export interface DraftCommit {
   committedOperations: number;
   warningCount: number;
   restart: 'not-required' | 'required' | 'scheduled';
+  refreshJobId: string | null;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -281,6 +282,8 @@ function parseCommit(value: unknown): DraftCommit {
       Number(value.committed_operations) > 4096 ||
       !Number.isSafeInteger(value.warning_count) || Number(value.warning_count) < 0 ||
       Number(value.warning_count) > 64 ||
+      !(value.refresh_job_id === null || (typeof value.refresh_job_id === 'string' &&
+        /^job-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value.refresh_job_id))) ||
       (value.restart !== 'not-required' && value.restart !== 'required' && value.restart !== 'scheduled')) {
     throw new Error('Invalid draft commit response.');
   }
@@ -294,6 +297,7 @@ function parseCommit(value: unknown): DraftCommit {
     committedOperations: Number(value.committed_operations),
     warningCount: Number(value.warning_count),
     restart: value.restart,
+    refreshJobId: value.refresh_job_id,
   };
 }
 

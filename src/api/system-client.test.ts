@@ -328,8 +328,8 @@ describe('SystemClient', () => {
         target_count: 2, targets: ['policy.[0].action', 'settings.enabled'], targets_truncated: false,
       }, {
         id: 'audit-4', occurred_at_unix_ms: 101, request_id: 'abc123-10',
-        operation: 'config.draft.validate', outcome: 'rejected', authentication: 'gateway', actor: null,
-        target_count: 0, targets: [], targets_truncated: false,
+        operation: 'config.draft.commit', outcome: 'succeeded', authentication: 'gateway', actor: null,
+        target_count: 3, targets: [], targets_truncated: true,
       }],
     }));
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
@@ -338,7 +338,7 @@ describe('SystemClient', () => {
       actorAvailable: false,
       entries: [
         {id: 'audit-3', requestId: 'abc123-9', targetCount: 2},
-        {id: 'audit-4', operation: 'config.draft.validate', targetCount: 0},
+        {id: 'audit-4', operation: 'config.draft.commit', targetCount: 3, targetsTruncated: true},
       ],
     });
     expect(fetcher).toHaveBeenCalledWith(
@@ -356,6 +356,58 @@ describe('SystemClient', () => {
       }],
     }));
     await expect(client.recentAudit()).rejects.toThrow('Invalid management audit entry');
+  });
+
+  it('loads bounded backend jobs below the workspace API prefix', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      source: 'gui-core', generated_at_unix_ms: 200, owner_available: false,
+      jobs: [{
+        id: 'job-01234567-89ab-4def-8123-456789abcdef', type: 'config-refresh',
+        state: 'running', phase: 'waiting-for-revision', progress_percent: 75,
+        cancelable: false, created_at_unix_ms: 100, updated_at_unix_ms: 150,
+        deadline_at_unix_ms: 300, owner: null, result: null,
+      }],
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.jobs()).resolves.toMatchObject({
+      ownerAvailable: false,
+      jobs: [{state: 'running', phase: 'waiting-for-revision', progressPercent: 75}],
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/jobs', expect.anything(),
+    );
+  });
+
+  it('loads one terminal backend job and rejects unsafe identifiers', async () => {
+    const id = 'job-01234567-89ab-4def-8123-456789abcdef';
+    const fetcher = vi.fn(async () => jsonResponse({
+      source: 'gui-core', owner_available: false,
+      job: {
+        id, type: 'config-refresh', state: 'succeeded', phase: 'synchronized',
+        progress_percent: 100, cancelable: false, created_at_unix_ms: 100,
+        updated_at_unix_ms: 150, deadline_at_unix_ms: 300, owner: null,
+        result: 'Configuration snapshot synchronized',
+      },
+    }));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+
+    await expect(client.job(id)).resolves.toMatchObject({state: 'succeeded', progressPercent: 100});
+    await expect(client.job('../audit/recent')).rejects.toThrow('Invalid backend job identifier');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects contradictory backend job records', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', generated_at_unix_ms: 200, owner_available: false,
+      jobs: [{
+        id: 'job-01234567-89ab-4def-8123-456789abcdef', type: 'config-refresh',
+        state: 'succeeded', phase: 'synchronized', progress_percent: 75,
+        cancelable: false, created_at_unix_ms: 100, updated_at_unix_ms: 150,
+        deadline_at_unix_ms: 300, owner: null, result: null,
+      }],
+    }));
+    await expect(client.jobs()).rejects.toThrow('Inconsistent backend job state');
   });
 
   it('subscribes to workspace-scoped operational event streams', () => {

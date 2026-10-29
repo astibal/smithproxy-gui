@@ -3,6 +3,7 @@
 #include "audit_store.hpp"
 #include "commit_coordinator.hpp"
 #include "draft_store.hpp"
+#include "job_store.hpp"
 #include "json.hpp"
 #include "operational_alerts.hpp"
 #include "path.hpp"
@@ -169,6 +170,41 @@ std::string timestamp_json(const std::chrono::system_clock::time_point value) {
                               value.time_since_epoch()).count());
 }
 
+bool valid_job_id(const std::string_view value) {
+    if (value.size() != 40U || !value.starts_with("job-")) return false;
+    for (std::size_t index = 4U; index < value.size(); ++index) {
+        const auto uuid_index = index - 4U;
+        const bool separator = uuid_index == 8U || uuid_index == 13U ||
+                               uuid_index == 18U || uuid_index == 23U;
+        const auto character = value[index];
+        const bool lowercase_hex = (character >= '0' && character <= '9') ||
+                                   (character >= 'a' && character <= 'f');
+        if (separator ? character != '-' : !lowercase_hex) {
+            return false;
+        }
+    }
+    return true;
+}
+
+nlohmann::json job_json(const JobRecord& record) {
+    return {
+        {"id", record.id},
+        {"type", record.type},
+        {"state", record.state},
+        {"phase", record.phase},
+        {"progress_percent", record.progress_percent},
+        {"cancelable", record.cancelable},
+        {"created_at_unix_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+            record.created_at.time_since_epoch()).count()},
+        {"updated_at_unix_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+            record.updated_at.time_since_epoch()).count()},
+        {"deadline_at_unix_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+            record.deadline_at.time_since_epoch()).count()},
+        {"owner", nullptr},
+        {"result", record.result ? nlohmann::json(*record.result) : nlohmann::json(nullptr)},
+    };
+}
+
 std::vector<OperationalEventRecord> operational_events(const SmithproxyStatus& status) {
     std::vector<OperationalEventRecord> events;
     events.reserve(status.history.size());
@@ -292,7 +328,7 @@ public:
     GuiController(const AppConfig& config, SmithproxyMonitor& monitor)
         : config_(config), monitor_(monitor), started_at_(std::chrono::steady_clock::now()),
           request_id_prefix_(request_id_prefix()), draft_("workspace-draft"),
-          commit_coordinator_(draft_) {}
+          commit_coordinator_(draft_), jobs_() {}
 
     bool validPath(const char*, const char*) override { return true; }
     lmh::ConnectionState* create_state() override {
@@ -359,7 +395,10 @@ private:
             if (receipt.is_object() && receipt.contains("committed_operations") &&
                 receipt["committed_operations"].is_number_unsigned()) {
                 const auto count = receipt["committed_operations"].get<std::uint64_t>();
-                if (count <= 4096U) metadata.target_count = static_cast<std::size_t>(count);
+                if (count <= 4096U) {
+                    metadata.target_count = static_cast<std::size_t>(count);
+                    metadata.targets_truncated = count > 0U;
+                }
             }
         }
         const auto outcome = response.status >= 200U && response.status < 300U ? "succeeded" :
@@ -490,6 +529,8 @@ private:
                         "{\"error\":\"transaction commit failed\"}"};
             }
             (void)monitor_.note_config_committed(*transaction.revision);
+            jobs_.reconcile(monitor_.status().config_snapshot);
+            const auto refresh_job_id = jobs_.create_config_refresh(*transaction.revision);
             const auto current = draft_.snapshot();
             return {200, "application/json; charset=utf-8", nlohmann::json{
                 {"source", "gui-core"},
@@ -501,6 +542,7 @@ private:
                 {"committed_operations", transaction.validated_operations},
                 {"warning_count", transaction.warning_count},
                 {"restart", transaction.restart},
+                {"refresh_job_id", refresh_job_id ? nlohmann::json(*refresh_job_id) : nlohmann::json(nullptr)},
             }.dump()};
         }
         if (*relative == "/api/v1/config/draft/validate") {
@@ -672,6 +714,10 @@ private:
         if (*relative == "/api/v1/events") return event_stream(connection);
         if (*relative == "/api/v1/alerts") return alerts();
         if (*relative == "/api/v1/audit/recent") return recent_audit();
+        if (*relative == "/api/v1/jobs") return jobs();
+        if (relative->starts_with("/api/v1/jobs/")) {
+            return job(relative->substr(std::string_view{"/api/v1/jobs/"}.size()));
+        }
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
         if (*relative == "/api/v1/config/draft") {
@@ -722,7 +768,8 @@ private:
                     ",\"config_write\":" + (config_write ? "true" : "false") +
                     ",\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"draft_preflight\":" + (config_read ? "true" : "false") +
-                    ",\"jobs\":false,\"events\":" + (monitoring ? "true" : "false") +
+                    ",\"jobs\":" + (monitoring ? "true" : "false") +
+                    ",\"events\":" + (monitoring ? "true" : "false") +
                     ",\"alerts\":" + (monitoring ? "true" : "false") +
                     ",\"audit\":" + (monitoring ? "true" : "false") +
                     ",\"smithproxy_events\":false,\"metrics\":" + (monitoring ? "true" : "false") +
@@ -1439,6 +1486,42 @@ private:
         return {200, "application/json; charset=utf-8", document.dump()};
     }
 
+    Response jobs() {
+        jobs_.reconcile(monitor_.status().config_snapshot);
+        const auto records = jobs_.snapshot();
+        auto generated_at = std::chrono::system_clock::now();
+        for (const auto& record : records) {
+            generated_at = std::max(generated_at, record.updated_at);
+        }
+        nlohmann::json document{
+            {"source", "gui-core"},
+            {"generated_at_unix_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+                generated_at.time_since_epoch()).count()},
+            {"owner_available", false},
+            {"jobs", nlohmann::json::array()},
+        };
+        for (const auto& record : records) {
+            document["jobs"].push_back(job_json(record));
+        }
+        return {200, "application/json; charset=utf-8", document.dump()};
+    }
+
+    Response job(const std::string_view id) {
+        if (!valid_job_id(id)) {
+            return {404, "application/json; charset=utf-8", "{\"error\":\"job not found\"}"};
+        }
+        jobs_.reconcile(monitor_.status().config_snapshot);
+        const auto record = jobs_.find(id);
+        if (!record) {
+            return {404, "application/json; charset=utf-8", "{\"error\":\"job not found\"}"};
+        }
+        return {200, "application/json; charset=utf-8", nlohmann::json{
+            {"source", "gui-core"},
+            {"owner_available", false},
+            {"job", job_json(*record)},
+        }.dump()};
+    }
+
     Response metrics_summary() const {
         const auto metrics = monitor_.status().runtime_metrics;
         std::string history = "[";
@@ -1607,6 +1690,7 @@ private:
     std::atomic<std::uint64_t> request_sequence_{};
     DraftStore draft_;
     CommitCoordinator commit_coordinator_;
+    JobStore jobs_;
     AuditStore audit_;
 };
 

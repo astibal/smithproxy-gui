@@ -99,6 +99,22 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/jobs",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "jobs",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/jobs/{job-id}",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "jobs",
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/config/snapshot",
       "methods": ["GET", "HEAD"],
       "authentication": "gateway",

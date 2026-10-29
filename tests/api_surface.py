@@ -33,6 +33,9 @@ def implemented_routes(source: str) -> dict[str, tuple[str, ...]]:
 
     read_paths = set(re.findall(r'\*relative\s*==\s*"([^"]+)"', read_router))
     read_paths.update(re.findall(r'url\s*==\s*"([^"]+)"', read_router))
+    for prefix in re.findall(r'relative->starts_with\("([^"]+/)"\)', read_router):
+        if prefix.startswith("/api/v1/"):
+            read_paths.add(prefix + "{job-id}")
     mutation_paths = set(re.findall(r'\*relative\s*(?:==|!=)\s*"([^"]+)"', mutation_router))
     mutation_paths.update(re.findall(r'url\s*==\s*"([^"]+)"', mutation_router))
     mutation_paths.discard("/healthz")
@@ -125,6 +128,8 @@ def main() -> None:
         "/api/v1/events": "events",
         "/api/v1/alerts": "alerts",
         "/api/v1/audit/recent": "audit",
+        "/api/v1/jobs": "jobs",
+        "/api/v1/jobs/{job-id}": "jobs",
         "/api/v1/config/snapshot": "config_read",
         "/api/v1/config/draft": "drafts",
         "/api/v1/config/draft/preflight": "draft_preflight",

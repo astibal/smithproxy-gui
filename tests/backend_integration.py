@@ -385,6 +385,7 @@ def main() -> int:
         assert capabilities["features"]["config_write"] is False
         assert capabilities["features"]["drafts"] is False
         assert capabilities["features"]["draft_preflight"] is False
+        assert capabilities["features"]["jobs"] is True
         assert capabilities["features"]["events"] is True
         assert capabilities["features"]["alerts"] is True
         assert capabilities["features"]["audit"] is True
@@ -440,6 +441,14 @@ def main() -> int:
         assert status == 200
         assert json.loads(body) == {
             "source": "gui-core", "actor_available": False, "entries": []}
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/jobs")
+        assert status == 200
+        jobs = json.loads(body)
+        assert jobs["source"] == "gui-core"
+        assert jobs["owner_available"] is False
+        assert jobs["jobs"] == []
+        assert isinstance(jobs["generated_at_unix_ms"], int)
+        assert request(port, "/ws001/smithproxy-gui/api/v1/jobs/not-a-job")[0] == 404
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/auth/session")
         assert status == 200
@@ -822,7 +831,7 @@ def main() -> int:
                 "features"]["metrics"] is False
             unauthenticated_features = json.loads(request(
                 configured_port, "/api/v1/capabilities")[2])["features"]
-            for feature in ("events", "alerts", "metrics", "session_activity",
+            for feature in ("jobs", "events", "alerts", "metrics", "session_activity",
                             "tls_monitoring", "neighbor_monitoring"):
                 assert unauthenticated_features[feature] is False
             assert json.loads(request(configured_port, "/api/v1/capabilities")[2])[
@@ -844,9 +853,15 @@ def main() -> int:
                 "features"]["metrics"] is True
             authenticated_features = json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])["features"]
-            for feature in ("events", "alerts", "metrics", "session_activity",
+            for feature in ("jobs", "events", "alerts", "metrics", "session_activity",
                             "tls_monitoring", "neighbor_monitoring"):
                 assert authenticated_features[feature] is True
+
+            assert request(configured_port, "/api/v1/jobs")[0] == 401
+            status, _, body = request(
+                configured_port, "/api/v1/jobs", headers=gateway_headers)
+            assert status == 200
+            assert json.loads(body)["jobs"] == []
 
             assert request(configured_port, "/api/v1/config/draft")[0] == 401
             status, _, body = request(

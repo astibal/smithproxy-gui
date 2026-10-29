@@ -62,6 +62,7 @@ type MockState = {
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   commitRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   validationOperationDelta?: number;
+  backendJobs?: unknown[];
   initialDraftChanges?: Array<{path: string; value: unknown}>;
   valueOrigins?: Array<{
     path: string;
@@ -90,7 +91,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       ? 'ready' : configRead ? 'review-required' : 'unavailable',
     features: {
       config_read: configRead, config_write: Boolean(state.commitReady), drafts: configRead,
-      draft_preflight: configRead, jobs: false, events: true, alerts: true, audit: true,
+      draft_preflight: configRead, jobs: true, events: true, alerts: true, audit: true,
       smithproxy_events: false,
       metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
     },
@@ -215,6 +216,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       target_count: 1, targets: ['policy.[0].action'], targets_truncated: false,
     }],
   }}));
+  await page.route('**/api/v1/jobs', async route => route.fulfill({json: {
+    source: 'gui-core', generated_at_unix_ms: now(), owner_available: false,
+    jobs: state.backendJobs ?? [],
+  }}));
   await page.route('**/api/v1/config/draft/preflight', async route => {
     const sectionCounts = new Map<string, number>();
     for (const change of draft.changes) {
@@ -284,6 +289,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       committed_draft_version: committedVersion, draft_version: draft.version,
       previous_revision: previousRevision, revision,
       committed_operations: committedOperations, warning_count: 1, restart: 'required',
+      refresh_job_id: null,
     }});
   });
   await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
@@ -1409,6 +1415,32 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
   expect(pending.size).toBe(0);
 });
 
+test('surfaces active backend work in the status bar and System view', async ({page}) => {
+  const now = Date.now();
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    now,
+    backendJobs: [{
+      id: 'job-01234567-89ab-4def-8123-456789abcdef', type: 'config-refresh',
+      state: 'running', phase: 'waiting-for-revision', progress_percent: 75,
+      cancelable: false, created_at_unix_ms: now - 5_000, updated_at_unix_ms: now - 1_000,
+      deadline_at_unix_ms: now + 25_000, owner: null, result: null,
+    }],
+  });
+  await page.goto('/');
+
+  const jobsStatus = page.getByRole('button', {name: '● Jobs: 1 active'});
+  await expect(jobsStatus).toBeVisible();
+  await jobsStatus.click();
+  const jobsCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Backend jobs'}),
+  });
+  await expect(jobsCard).toContainText('Configuration refresh');
+  await expect(jobsCard).toContainText('Waiting for revision');
+  await expect(jobsCard).toContainText('75%');
+  await expect(jobsCard).not.toContainText('sha256:');
+});
+
 test('exposes network, object, and system vertical slices', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'});
   await page.goto('/');
@@ -1485,6 +1517,12 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();
+  const jobsCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Backend jobs'}),
+  });
+  await expect(jobsCard).toContainText('Available');
+  await expect(jobsCard).toContainText('No backend jobs have been recorded');
+  await expect(page.getByRole('button', {name: '● Jobs: Idle'})).toBeVisible();
   const [diagnosticsDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', {name: 'Download diagnostics'}).click(),
@@ -1499,7 +1537,11 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
     application: {apiVersion: 'v1'},
     controlPlane: {core: 'online', smithproxy: 'ready'},
     runtime: {listenerCount: 2, sessionsActive: 4},
-    operations: {eventCount: 1, activeAlertCount: 0, auditEntryCount: 1},
+    capabilities: {jobs: true},
+    operations: {
+      eventCount: 1, activeAlertCount: 0, auditEntryCount: 1,
+      jobCount: 0, activeJobCount: 0, failedJobCount: 0,
+    },
     configuration: {source: 'preview', state: 'ready', draftChangeCount: 0},
   });
   expect(diagnosticsText).not.toMatch(/"(detail|basePath|revision|listeners|protocols|events|alerts|auditEntries|targets|requestId)"/i);

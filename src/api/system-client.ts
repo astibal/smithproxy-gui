@@ -202,7 +202,8 @@ export interface AuditEntry {
   id: string;
   occurredAtUnixMs: number;
   requestId: string;
-  operation: 'config.draft.upsert' | 'config.draft.clear' | 'config.draft.validate' | 'api.mutation';
+  operation: 'config.draft.upsert' | 'config.draft.clear' | 'config.draft.validate' |
+    'config.draft.commit' | 'api.mutation';
   outcome: AuditOutcome;
   authentication: AuditAuthentication;
   targetCount: number;
@@ -214,6 +215,29 @@ export interface AuditSnapshot {
   source: 'gui-core';
   actorAvailable: false;
   entries: ReadonlyArray<AuditEntry>;
+}
+
+export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelling' | 'cancelled';
+
+export interface JobRecord {
+  id: string;
+  type: 'config-refresh';
+  state: JobState;
+  phase: string;
+  progressPercent: number;
+  cancelable: boolean;
+  createdAtUnixMs: number;
+  updatedAtUnixMs: number;
+  deadlineAtUnixMs: number;
+  owner: null;
+  result: string | null;
+}
+
+export interface JobSnapshot {
+  source: 'gui-core';
+  generatedAtUnixMs: number;
+  ownerAvailable: false;
+  jobs: ReadonlyArray<JobRecord>;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -603,7 +627,8 @@ function parseAudit(value: unknown): AuditSnapshot {
     if (!isObject(item) || typeof item.id !== 'string' || !/^audit-[1-9][0-9]{0,19}$/u.test(item.id) ||
         ids.has(item.id) || !isNonNegativeInteger(item.occurred_at_unix_ms) ||
         typeof item.request_id !== 'string' || !/^[0-9a-f]{1,32}-[1-9][0-9]{0,19}$/u.test(item.request_id) ||
-        !['config.draft.upsert', 'config.draft.clear', 'config.draft.validate', 'api.mutation']
+        !['config.draft.upsert', 'config.draft.clear', 'config.draft.validate',
+          'config.draft.commit', 'api.mutation']
           .includes(String(item.operation)) ||
         !['succeeded', 'conflict', 'rejected'].includes(String(item.outcome)) ||
         !['gateway', 'disabled', 'none'].includes(String(item.authentication)) || item.actor !== null ||
@@ -628,6 +653,76 @@ function parseAudit(value: unknown): AuditSnapshot {
     };
   });
   return {source: 'gui-core', actorAvailable: false, entries};
+}
+
+function parseJobRecord(value: unknown): JobRecord {
+  if (!isObject(value) || typeof value.id !== 'string' ||
+      !/^job-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value.id) ||
+      value.type !== 'config-refresh' ||
+      !['queued', 'running', 'succeeded', 'failed', 'cancelling', 'cancelled'].includes(String(value.state)) ||
+      typeof value.phase !== 'string' || value.phase.length < 1 || value.phase.length > 64 ||
+      !/^[a-z][a-z0-9-]*$/u.test(value.phase) || !isNonNegativeInteger(value.progress_percent) ||
+      value.progress_percent > 100 || typeof value.cancelable !== 'boolean' ||
+      !isNonNegativeInteger(value.created_at_unix_ms) || !isNonNegativeInteger(value.updated_at_unix_ms) ||
+      !isNonNegativeInteger(value.deadline_at_unix_ms) || value.updated_at_unix_ms < value.created_at_unix_ms ||
+      value.deadline_at_unix_ms < value.created_at_unix_ms || value.owner !== null ||
+      !(value.result === null || (typeof value.result === 'string' && value.result.length >= 1 &&
+        value.result.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(value.result)))) {
+    throw new Error('Invalid backend job entry.');
+  }
+  const terminal = ['succeeded', 'failed', 'cancelled'].includes(String(value.state));
+  if (terminal !== (value.progress_percent === 100) || terminal !== (value.result !== null) ||
+      (value.state === 'running' && value.cancelable)) {
+    throw new Error('Inconsistent backend job state.');
+  }
+  return {
+    id: value.id,
+    type: 'config-refresh',
+    state: value.state as JobState,
+    phase: value.phase,
+    progressPercent: value.progress_percent,
+    cancelable: value.cancelable,
+    createdAtUnixMs: value.created_at_unix_ms,
+    updatedAtUnixMs: value.updated_at_unix_ms,
+    deadlineAtUnixMs: value.deadline_at_unix_ms,
+    owner: null,
+    result: value.result,
+  };
+}
+
+function parseJobs(value: unknown): JobSnapshot {
+  if (!isObject(value) || value.source !== 'gui-core' || value.owner_available !== false ||
+      !isNonNegativeInteger(value.generated_at_unix_ms) || !Array.isArray(value.jobs) ||
+      value.jobs.length > 128) {
+    throw new Error('Invalid backend job response.');
+  }
+  const generatedAtUnixMs = value.generated_at_unix_ms;
+  const ids = new Set<string>();
+  let previousCreatedAt = -1;
+  const jobs = value.jobs.map(item => {
+    const job = parseJobRecord(item);
+    if (ids.has(job.id) || job.createdAtUnixMs < previousCreatedAt ||
+        job.createdAtUnixMs > generatedAtUnixMs) {
+      throw new Error('Inconsistent backend job history.');
+    }
+    ids.add(job.id);
+    previousCreatedAt = job.createdAtUnixMs;
+    return job;
+  });
+  return {
+    source: 'gui-core',
+    generatedAtUnixMs,
+    ownerAvailable: false,
+    jobs,
+  };
+}
+
+function parseJob(value: unknown): JobRecord {
+  if (!isObject(value) || value.source !== 'gui-core' || value.owner_available !== false ||
+      !Object.hasOwn(value, 'job')) {
+    throw new Error('Invalid backend job response.');
+  }
+  return parseJobRecord(value.job);
 }
 
 export class SystemClient {
@@ -744,6 +839,17 @@ export class SystemClient {
 
   async recentAudit(): Promise<AuditSnapshot> {
     return parseAudit(await this.#request(joinedPath(this.#apiBase, '/audit/recent')));
+  }
+
+  async jobs(): Promise<JobSnapshot> {
+    return parseJobs(await this.#request(joinedPath(this.#apiBase, '/jobs')));
+  }
+
+  async job(id: string): Promise<JobRecord> {
+    if (!/^job-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(id)) {
+      throw new Error('Invalid backend job identifier.');
+    }
+    return parseJob(await this.#request(joinedPath(this.#apiBase, `/jobs/${id}`)));
   }
 
   async #request(path: string): Promise<unknown> {

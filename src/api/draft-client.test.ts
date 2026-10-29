@@ -124,12 +124,14 @@ describe('DraftClient', () => {
       source: 'gui-core', draft_id: 'workspace-draft', committed_draft_version: 7,
       draft_version: 8, previous_revision: previousRevision, revision,
       committed_operations: 3, warning_count: 1, restart: 'required',
+      refresh_job_id: 'job-01234567-89ab-4def-8123-456789abcdef',
     }));
     const client = new DraftClient('/api/v1', fetcher);
     await expect(client.commit(7)).resolves.toEqual({
       source: 'gui-core', draftId: 'workspace-draft', committedDraftVersion: 7,
       draftVersion: 8, previousRevision, revision, committedOperations: 3,
       warningCount: 1, restart: 'required',
+      refreshJobId: 'job-01234567-89ab-4def-8123-456789abcdef',
     });
     expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/commit', expect.objectContaining({
       method: 'POST', body: '{"expected_version":7}',
@@ -166,6 +168,7 @@ describe('DraftClient', () => {
       source: 'gui-core', draft_id: 'workspace-draft', committed_draft_version: 7,
       draft_version: 9, previous_revision: revision, revision,
       committed_operations: 1, warning_count: 0, restart: 'not-required',
+      refresh_job_id: null,
     }));
     await expect(client.commit(7)).rejects.toThrow('Invalid draft commit response');
   });

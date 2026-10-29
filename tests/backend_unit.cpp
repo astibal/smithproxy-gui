@@ -4,6 +4,7 @@
 #include "config_snapshot.hpp"
 #include "draft_store.hpp"
 #include "json.hpp"
+#include "job_store.hpp"
 #include "live_sessions.hpp"
 #include "neighbor_metrics.hpp"
 #include "operational_alerts.hpp"
@@ -172,6 +173,52 @@ int main() {
     assert(!parse_config_revision(
         "{\"success\":{\"revision\":\"" + canonical_revision_a + "\",\"extra\":true}}")
                 .revision);
+
+    JobStore jobs;
+    assert(!jobs.create_config_refresh("revision-7"));
+    const auto successful_job_id = jobs.create_config_refresh(canonical_revision_b);
+    assert(successful_job_id && successful_job_id->starts_with("job-") &&
+           successful_job_id->size() == 40U);
+    auto job_records = jobs.snapshot();
+    assert(job_records.size() == 1U);
+    assert(job_records.front().state == "running");
+    assert(job_records.front().phase == "refreshing");
+    assert(job_records.front().progress_percent == 10U);
+    assert(!job_records.front().cancelable);
+    ConfigSnapshot synchronized_config;
+    synchronized_config.state = "ready";
+    synchronized_config.revision = canonical_revision_b;
+    jobs.reconcile(synchronized_config);
+    const auto successful_job = jobs.find(*successful_job_id);
+    assert(successful_job && successful_job->state == "succeeded");
+    assert(successful_job->phase == "synchronized");
+    assert(successful_job->progress_percent == 100U);
+    assert(successful_job->result == "Configuration snapshot synchronized");
+    assert(!jobs.find("job-00000000-0000-0000-0000-000000000000"));
+
+    JobStore monotonic_jobs;
+    const auto monotonic_job_id = monotonic_jobs.create_config_refresh(canonical_revision_a);
+    assert(monotonic_job_id);
+    ConfigSnapshot different_config;
+    different_config.state = "ready";
+    different_config.revision = canonical_revision_b;
+    monotonic_jobs.reconcile(different_config);
+    assert(monotonic_jobs.find(*monotonic_job_id)->progress_percent == 75U);
+    different_config.state = "unavailable";
+    monotonic_jobs.reconcile(different_config);
+    assert(monotonic_jobs.find(*monotonic_job_id)->progress_percent == 75U);
+
+    JobStore expiring_jobs{std::chrono::milliseconds{0}};
+    const auto expired_job_id = expiring_jobs.create_config_refresh(canonical_revision_a);
+    assert(expired_job_id);
+    ConfigSnapshot stale_config;
+    stale_config.state = "ready";
+    stale_config.revision = canonical_revision_b;
+    expiring_jobs.reconcile(stale_config);
+    const auto expired_job = expiring_jobs.find(*expired_job_id);
+    assert(expired_job && expired_job->state == "failed");
+    assert(expired_job->phase == "timed-out");
+    assert(expired_job->progress_percent == 100U);
 
     DraftStore schema_draft{"schema"};
     assert(schema_draft.upsert(0U, {"settings.enabled", true}) ==

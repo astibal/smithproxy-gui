@@ -28,6 +28,7 @@ import {
   type AuditSnapshot,
   type EventSnapshot,
   type GatewaySession,
+  type JobSnapshot,
   type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
   type SessionActivitySnapshot,
@@ -185,6 +186,13 @@ const initialAudit: AuditSnapshot = {
   entries: [],
 };
 
+const initialJobs: JobSnapshot = {
+  source: 'gui-core',
+  generatedAtUnixMs: 0,
+  ownerAvailable: false,
+  jobs: [],
+};
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -205,15 +213,18 @@ export class SmithproxyApp extends LitElement {
   @state() private operationalEvents: EventSnapshot = initialEvents;
   @state() private operationalAlerts: AlertSnapshot = initialAlerts;
   @state() private managementAudit: AuditSnapshot = initialAudit;
+  @state() private backendJobs: JobSnapshot = initialJobs;
   @state() private eventStreamState: EventStreamState = 'connecting';
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
   @state() private auditError: string | undefined;
+  @state() private jobsError: string | undefined;
   @state() private focusMode = false;
   @state() private configReadAvailable = false;
   @state() private configWriteAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftPreflightAvailable = false;
+  @state() private jobsAvailable = false;
   @state() private draftVersion = 0;
   @state() private draftChangeCount = 0;
   @state() private workspaceDraft?: DraftSnapshot;
@@ -436,6 +447,12 @@ export class SmithproxyApp extends LitElement {
     .system-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; }
     .system-grid .domain-card dl { grid-template-columns: minmax(110px, .6fr) minmax(150px, 1fr); }
     .system-grid .domain-card dd { overflow-wrap: anywhere; }
+    .system-grid .job-card { grid-column: 1 / -1; }
+    .job-list { display: grid; gap: 8px; margin-top: 16px; }
+    .job-row { display: grid; grid-template-columns: minmax(145px, .8fr) minmax(170px, 1fr) minmax(120px, .7fr) 64px; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--app-border); background: var(--app-canvas); }
+    .job-row small { overflow: hidden; color: var(--app-muted); text-overflow: ellipsis; white-space: nowrap; }
+    .job-progress { display: grid; grid-template-columns: minmax(80px, 1fr) 38px; gap: 8px; align-items: center; }
+    .job-progress progress { width: 100%; accent-color: var(--app-brand); }
 
     .table { overflow: hidden; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .row { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px; gap: 16px; align-items: center; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--app-border); background: transparent; text-align: left; cursor: pointer; }
@@ -584,6 +601,7 @@ export class SmithproxyApp extends LitElement {
       .incident-duration, .incident-time { display: none; }
       .audit-row { grid-template-columns: 72px minmax(0, 1fr); }
       .audit-row .event-time, .audit-request { display: none; }
+      .job-row { grid-template-columns: 1fr; gap: 7px; }
       .draft-row { grid-template-columns: 1fr; gap: 5px; }
       .preflight-grid { grid-template-columns: 1fr; }
       .preflight-heading { align-items: stretch; flex-direction: column; }
@@ -746,7 +764,7 @@ export class SmithproxyApp extends LitElement {
     try {
       const systemClient = this.systemClient;
       this.systemStatus = statusFromSnapshot(await systemClient.status());
-      const [metrics, sessions, tlsCache, neighbors, events, alerts, audit] = await Promise.allSettled([
+      const [metrics, sessions, tlsCache, neighbors, events, alerts, audit, jobs] = await Promise.allSettled([
         systemClient.metricsSummary(),
         systemClient.sessionActivity(),
         systemClient.tlsCacheSummary(),
@@ -754,6 +772,7 @@ export class SmithproxyApp extends LitElement {
         systemClient.recentEvents(),
         systemClient.activeAlerts(),
         systemClient.recentAudit(),
+        this.jobsAvailable ? systemClient.jobs() : Promise.resolve(initialJobs),
       ] as const);
       if (metrics.status === 'fulfilled') {
         this.runtimeMetrics = metrics.value;
@@ -809,6 +828,12 @@ export class SmithproxyApp extends LitElement {
       } else {
         this.auditError = audit.reason instanceof Error ? audit.reason.message : 'Management audit is unavailable.';
       }
+      if (jobs.status === 'fulfilled') {
+        this.backendJobs = jobs.value;
+        this.jobsError = undefined;
+      } else {
+        this.jobsError = jobs.reason instanceof Error ? jobs.reason.message : 'Backend jobs are unavailable.';
+      }
       await this.refreshConfiguration();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -833,6 +858,7 @@ export class SmithproxyApp extends LitElement {
         detail: 'Neighborhood metrics are unavailable while the GUI core is offline.',
       };
       this.auditError = 'Management audit is unavailable while the GUI core is offline.';
+      this.jobsError = 'Backend jobs are unavailable while the GUI core is offline.';
     } finally {
       this.systemProbeInFlight = false;
       if (this.systemProbePending) {
@@ -880,6 +906,11 @@ export class SmithproxyApp extends LitElement {
       this.configWriteAvailable = capabilities.features.configWrite;
       this.draftAvailable = capabilities.features.drafts;
       this.draftPreflightAvailable = capabilities.features.draftPreflight;
+      this.jobsAvailable = capabilities.features.jobs;
+      if (!this.jobsAvailable) {
+        this.backendJobs = initialJobs;
+        this.jobsError = undefined;
+      }
       if (!this.draftPreflightAvailable) {
         this.draftPreflight = undefined;
         this.draftPreflightError = undefined;
@@ -897,6 +928,7 @@ export class SmithproxyApp extends LitElement {
       this.configWriteAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
+      this.jobsAvailable = false;
       this.draftPreflight = undefined;
       this.draftPreflightError = undefined;
     } finally {
@@ -992,6 +1024,7 @@ export class SmithproxyApp extends LitElement {
         configWrite: this.configWriteAvailable,
         drafts: this.draftAvailable,
         draftPreflight: this.draftPreflightAvailable,
+        jobs: this.jobsAvailable,
         configTransaction: this.transactionCapabilityState,
       },
       runtime: {
@@ -1038,6 +1071,10 @@ export class SmithproxyApp extends LitElement {
         eventCount: this.operationalEvents.events.length,
         activeAlertCount: this.operationalAlerts.alerts.length,
         auditEntryCount: this.managementAudit.entries.length,
+        jobCount: this.backendJobs.jobs.length,
+        activeJobCount: this.backendJobs.jobs.filter(job =>
+          job.state === 'queued' || job.state === 'running' || job.state === 'cancelling').length,
+        failedJobCount: this.backendJobs.jobs.filter(job => job.state === 'failed').length,
       },
       configuration: {
         source: this.snapshot?.source ?? 'unavailable',
@@ -1273,6 +1310,14 @@ export class SmithproxyApp extends LitElement {
       this.draftCommitResult = result;
       this.draftValidation = undefined;
       await this.loadDraftPreflight();
+      if (this.jobsAvailable && this.systemClient) {
+        try {
+          this.backendJobs = await this.systemClient.jobs();
+          this.jobsError = undefined;
+        } catch (error) {
+          this.jobsError = error instanceof Error ? error.message : 'Backend jobs are unavailable.';
+        }
+      }
       this.configRefreshDeferred = true;
       this.nextConfigRefreshAt = 0;
     } catch (error) {
@@ -2681,7 +2726,10 @@ export class SmithproxyApp extends LitElement {
           <div class="metrics-message" role="status">
             Atomic commit completed: ${this.draftCommitResult.committedOperations} operations ·
             ${this.draftCommitResult.warningCount} warnings · restart
-            ${this.draftCommitResult.restart.replaceAll('-', ' ')}. Configuration refresh is pending.
+            ${this.draftCommitResult.restart.replaceAll('-', ' ')}.
+            ${this.draftCommitResult.refreshJobId
+              ? 'The configuration refresh job is being tracked.'
+              : 'Configuration refresh tracking is unavailable.'}
           </div>
         ` : this.draftCommitError ? html`
           <div class="error" role="alert">${this.draftCommitError}</div>
@@ -3483,6 +3531,26 @@ export class SmithproxyApp extends LitElement {
               <dt>Tracked values</dt><dd>${this.snapshot?.valueOrigins.length ?? 0}</dd>
               <dt>Editing target</dt><dd>Persistent config</dd>
             </dl>
+          </article>
+          <article class="domain-card job-card">
+            <header>
+              <div><h3>Backend jobs</h3><p>Bounded, redacted control-plane work queue</p></div>
+              <span class="runtime-state ${this.jobsError ? 'danger' : this.jobsAvailable ? 'success' : 'warning'}">
+                ● ${this.jobsError ? 'Unavailable' : this.jobsAvailable ? 'Available' : 'Not advertised'}
+              </span>
+            </header>
+            ${this.jobsError ? html`<p role="alert">${this.jobsError}</p>` : nothing}
+            <div class="job-list" aria-label="Recent backend jobs">
+              ${[...this.backendJobs.jobs].reverse().slice(0, 5).map(job => html`
+                <div class="job-row" title=${job.id}>
+                  <strong>${job.type === 'config-refresh' ? 'Configuration refresh' : job.type}</strong>
+                  <span>${displayState(job.phase.replaceAll('-', ' '))}<small>${job.result ?? `Deadline ${this.timeLabel(job.deadlineAtUnixMs)}`}</small></span>
+                  <span class="job-progress"><progress max="100" .value=${job.progressPercent}></progress><small>${job.progressPercent}%</small></span>
+                  <span class="system-state ${job.state === 'succeeded' ? 'success' : job.state === 'failed' || job.state === 'cancelled' ? 'danger' : 'warning'}">${displayState(job.state)}</span>
+                </div>
+              `)}
+              ${this.backendJobs.jobs.length === 0 ? html`<p>No backend jobs have been recorded since this core started.</p>` : nothing}
+            </div>
           </article>
           ${settings ? html`
             <article class="domain-card">
@@ -4983,6 +5051,10 @@ export class SmithproxyApp extends LitElement {
     const alertTone = this.alertsError || hasCriticalAlert ? 'danger' : activeAlertCount > 0 ? 'warning' : 'success';
     const streamTone = this.eventsError || this.eventStreamState === 'invalid' ? 'danger' :
       this.eventStreamState === 'live' ? 'success' : 'warning';
+    const activeJobCount = this.backendJobs.jobs.filter(job =>
+      job.state === 'queued' || job.state === 'running' || job.state === 'cancelling').length;
+    const failedJobCount = this.backendJobs.jobs.filter(job => job.state === 'failed').length;
+    const jobTone = this.jobsError ? 'danger' : activeJobCount > 0 ? 'warning' : failedJobCount > 0 ? 'danger' : 'success';
     return html`
       <div class="shell" @keydown=${this.handleKeydown}>
         <aside class="sidebar">
@@ -5039,6 +5111,11 @@ export class SmithproxyApp extends LitElement {
             title=${this.eventsError ?? 'Open operational events'}
             @click=${() => { this.activeSection = 'Monitoring'; }}>
             ● Events: ${displayState(this.eventStreamState)}
+          </button>
+          <button class="status-action status-secondary system-state ${jobTone}" type="button"
+            title=${this.jobsError ?? 'Open the bounded backend job queue'}
+            @click=${() => { this.activeSection = 'System'; }}>
+            ● Jobs: ${this.jobsError ? 'Unavailable' : activeJobCount > 0 ? `${activeJobCount} active` : 'Idle'}
           </button>
           <span class="status-secondary ${this.draftChangeCount ? 'draft' : ''}">Draft: ${this.draftChangeCount} changes</span>
           <span class="status-secondary" title=${this.configError ?? this.snapshot?.detail ?? ''}>

@@ -28,6 +28,7 @@ export interface DiagnosticsReportInput {
     configWrite: boolean;
     drafts: boolean;
     draftPreflight: boolean;
+    jobs: boolean;
     configTransaction: 'starting' | 'not-advertised' | 'review-required' | 'incompatible' | 'unavailable' | 'ready' | 'unknown';
   };
   runtime: TimedAggregateInput & {
@@ -39,7 +40,15 @@ export interface DiagnosticsReportInput {
     hostsTotal: number; activeToday: number; activeWeek: number; taggedHosts: number;
     observations: number; bytesUp: number; bytesDown: number;
   };
-  operations: {eventStream: EventStreamDiagnosticState; eventCount: number; activeAlertCount: number; auditEntryCount: number};
+  operations: {
+    eventStream: EventStreamDiagnosticState;
+    eventCount: number;
+    activeAlertCount: number;
+    auditEntryCount: number;
+    jobCount: number;
+    activeJobCount: number;
+    failedJobCount: number;
+  };
   configuration: {source: 'live' | 'preview' | 'unavailable'; state: RuntimeDiagnosticState | 'unknown'; draftChangeCount: number};
 }
 
@@ -92,6 +101,7 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
       configWrite: input.capabilities.configWrite,
       drafts: input.capabilities.drafts,
       draftPreflight: input.capabilities.draftPreflight,
+      jobs: input.capabilities.jobs,
       configTransaction: input.capabilities.configTransaction,
     },
     runtime: {
@@ -130,6 +140,9 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
       eventCount: requiredInteger(input.operations.eventCount),
       activeAlertCount: requiredInteger(input.operations.activeAlertCount),
       auditEntryCount: requiredInteger(input.operations.auditEntryCount),
+      jobCount: requiredInteger(input.operations.jobCount),
+      activeJobCount: requiredInteger(input.operations.activeJobCount),
+      failedJobCount: requiredInteger(input.operations.failedJobCount),
     },
     configuration: {
       source: input.configuration.source,
