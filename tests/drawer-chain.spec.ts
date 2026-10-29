@@ -2520,6 +2520,8 @@ test('creates and deletes certificate authorities without exposing filesystem pa
   await existingEditor.getByRole('button', {name: 'Delete certificate authority'}).click();
   await existingEditor.getByRole('button', {name: 'Confirm delete certificate authority'}).click();
   await expect(existingEditor).toBeHidden();
+  await expect(authorities.getByRole('button', {name: /default · path configured/i}))
+    .toContainText('Pending delete');
 
   await authorities.getByRole('button', {name: 'New certificate authority'}).click();
   let createEditor = page.getByRole('dialog', {name: 'Create certificate authority'});
@@ -2758,6 +2760,7 @@ test('moves a stable policy and removes the operation when order is restored', a
   let policyRows = page.getByRole('group', {name: 'Policies'}).getByRole('button');
   await expect(policyRows.nth(0)).toContainText('Policy 2');
   await expect(policyRows.nth(1)).toContainText('Policy 1');
+  await expect(policyRows.nth(1)).toContainText('Pending move');
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   const moveRow = table.getByRole('row').filter({hasText: 'policy · move'});
@@ -2918,6 +2921,7 @@ test('reorders and deletes stable nested content rules', async ({page}) => {
   const ruleRows = profileEditor.getByRole('group', {name: 'Content rules'}).locator('button.reference');
   await expect(ruleRows.nth(0)).toContainText('every 3th match');
   await expect(ruleRows.nth(1)).toContainText('empty replacement');
+  await expect(ruleRows.nth(1)).toContainText('Pending move');
   await profileEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const moveRow = page.getByRole('table', {name: 'Pending draft changes'})
@@ -2945,6 +2949,12 @@ test('reorders and deletes stable nested content rules', async ({page}) => {
     },
     csrf: '1',
   });
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /capture content/i}).click();
+  profileEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  await expect(profileEditor.getByRole('group', {name: 'Content rules'})
+    .getByRole('button').filter({hasText: 'Pending delete'})).toHaveCount(1);
 });
 
 test('creates and safely reopens a nested content rule', async ({page}) => {
@@ -3061,6 +3071,7 @@ test('reorders and deletes stable signature flow steps', async ({page}) => {
   await expect(flowRows.nth(0)).toContainText('bytes 0…512');
   await expect(flowRows.nth(1)).toContainText('2. R · regex');
   await expect(flowRows.nth(1)).toContainText('bytes 0…16');
+  await expect(flowRows.nth(1)).toContainText('Pending move');
   await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const moveRow = page.getByRole('table', {name: 'Pending draft changes'})
@@ -3088,6 +3099,17 @@ test('reorders and deletes stable signature flow steps', async ({page}) => {
     },
     csrf: '1',
   });
+
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const refreshedTrust = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await refreshedTrust.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await refreshedTrust.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  const refreshedSignature = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
+  await expect(refreshedSignature.getByRole('group', {name: 'Signature flow steps'})
+    .getByRole('button').filter({hasText: 'Pending delete'})).toHaveCount(1);
+  await refreshedSignature.getByRole('button', {name: 'Cancel'}).click();
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
@@ -3254,6 +3276,8 @@ test('creates and removes a signature with its first flow step atomically', asyn
     expectedVersion: 2, csrf: '1',
     operation: {op: 'delete', collection: 'detection_signatures', entity_id: 'detection-signature-0'},
   });
+  await expect(trustAfterRemoval.getByRole('button', {name: /http\/request · 1 flow step/i}))
+    .toContainText('Pending delete');
   await expectNoWcagViolations(page);
 });
 

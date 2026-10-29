@@ -222,7 +222,8 @@ unreferenced reusable objects can be placed into the
 same draft as confirmed delete operations; active references and conflicting pending
 field edits block the delete locally before the authoritative Smithproxy validation.
 Nested content rules and signature flow steps likewise present pending creates and moves
-in their effective draft order inside the parent editor. A new ordered item can target an
+in their effective draft order inside the parent editor. Stable rows explicitly distinguish
+pending moves and deletes in policy, object, trust-asset, and nested lists. A new ordered item can target an
 earlier pending create through its transaction-scoped client identifier; later operations
 are excluded to prevent use-before-create drafts. Existing ordered items can move relative
 to an earlier pending create under the same rule. The effective list projection replays

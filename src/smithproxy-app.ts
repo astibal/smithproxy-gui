@@ -7490,7 +7490,9 @@ export class SmithproxyApp extends LitElement {
                       @click=${(event: MouseEvent) => this.openAuthority(
                         authority.id, event.currentTarget as HTMLElement,
                       )}>
-                      <span><strong>${this.authorityDisplayName(authority.id, authority.name)}</strong> · ${authority.pathConfigured ? 'path configured' : 'path missing'}</span>
+                      <span><strong>${this.authorityDisplayName(authority.id, authority.name)}</strong> ·
+                        ${authority.pathConfigured ? 'path configured' : 'path missing'}
+                        ${this.renderPendingBadge('authority', authority.id)}</span>
                       <span aria-hidden="true">→</span>
                     </button>
                   `)}
@@ -7527,7 +7529,9 @@ export class SmithproxyApp extends LitElement {
                         @click=${(event: MouseEvent) => this.openSignature(
                           signature.id, event.currentTarget as HTMLElement,
                         )}>
-                        <span><strong>${this.signatureDisplayName(signature.id, signature.name)}</strong> · ${signature.flow.length} flow step${signature.flow.length === 1 ? '' : 's'}</span>
+                        <span><strong>${this.signatureDisplayName(signature.id, signature.name)}</strong> ·
+                          ${signature.flow.length} flow step${signature.flow.length === 1 ? '' : 's'}
+                          ${this.renderPendingBadge('signature', signature.id)}</span>
                         <span aria-hidden="true">→</span>
                       </button>
                     `)}
@@ -8697,7 +8701,8 @@ export class SmithproxyApp extends LitElement {
                       ${rule.replacementConfigured
                         ? rule.replacementHasValue ? 'replacement configured' : 'empty replacement'
                         : 'no replacement'} · ${rule.fillLength ? 'length preserved' : 'length may change'} ·
-                      ${rule.replaceEachNth <= 1 ? 'every match' : `every ${rule.replaceEachNth}th match`}</span>
+                      ${rule.replaceEachNth <= 1 ? 'every match' : `every ${rule.replaceEachNth}th match`}
+                      ${this.renderPendingBadge('content-rule', rule.id)}</span>
                     <span aria-hidden="true">→</span>
                   </button>`;
                 }
@@ -9412,7 +9417,8 @@ export class SmithproxyApp extends LitElement {
                 )}>
                 <span><strong>${index + 1}. ${step.side.toUpperCase()} · ${step.type}</strong>
                   · bytes ${step.bytesStart}…${step.bytesMax}
-                  · ${step.expressionConfigured ? 'expression configured' : 'expression missing'}</span>
+                  · ${step.expressionConfigured ? 'expression configured' : 'expression missing'}
+                  ${this.renderPendingBadge('signature-flow', step.id)}</span>
                 <span aria-hidden="true">→</span>
               </button>`;
             }
@@ -9760,7 +9766,16 @@ export class SmithproxyApp extends LitElement {
 
   private renderPendingBadge(kind: DrawerEntry['kind'], id: string) {
     if (!this.draftObjects.has(`${kind}:${id}`)) return nothing;
-    return html`<span class="pending-badge" title="This row includes pending workspace draft values">Pending</span>`;
+    const target = this.structuralDeleteTarget({kind, id, title: ''});
+    const operation = target ? this.workspaceDraft?.structuralOperations.find(candidate =>
+      candidate.collection === target.collection && candidate.op !== 'create' &&
+      candidate.entityId === target.entityId) : undefined;
+    const label = operation?.op === 'delete' ? 'Pending delete'
+      : operation?.op === 'move' ? 'Pending move' : 'Pending';
+    const title = operation?.op === 'delete' ? 'This row is pending structural deletion'
+      : operation?.op === 'move' ? 'This row has a pending structural move'
+        : 'This row includes pending workspace draft values';
+    return html`<span class="pending-badge" title=${title}>${label}</span>`;
   }
 
   private renderAugmentOrigins(entry: DrawerEntry) {
