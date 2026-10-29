@@ -893,6 +893,22 @@ int main() {
             {"entity_id", "cfg:policy:second"}, {"position", {{"before", "cfg:policy:first"}}},
         },
     }));
+    auto referenced_create_draft = structural_draft;
+    referenced_create_draft.changes = {
+        {"policy.[0].src", std::vector<std::string>{"office-net"}},
+    };
+    const auto referenced_create_envelope = build_transaction_envelope(
+        referenced_create_draft, TransactionMode::Validate, idempotency_key, ready_transaction);
+    assert(referenced_create_envelope.body);
+    const auto referenced_create_document = nlohmann::json::parse(*referenced_create_envelope.body);
+    assert(referenced_create_document["operations"].size() == 4U);
+    assert(referenced_create_document["operations"][0]["op"] == "create");
+    assert(referenced_create_document["operations"][0]["client_id"] == "new-office-network");
+    assert(referenced_create_document["operations"][1] == nlohmann::json({
+        {"op", "set"}, {"path", "policy.[0].src"}, {"value", {"office-net"}},
+    }));
+    assert(referenced_create_document["operations"][2]["op"] == "delete");
+    assert(referenced_create_document["operations"][3]["op"] == "move");
     auto invalid_structural_draft = structural_draft;
     std::get<DraftMoveOperation>(invalid_structural_draft.structural_operations.back()).collection =
         "address_objects";

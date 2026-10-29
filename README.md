@@ -167,6 +167,10 @@ drawer from the reference chain. Pending renames resolve by their current
 draft-visible name while retaining the live entity's stable ID. Literals and
 unresolved names remain marked for review without blocking Smithproxy-specific
 expressions.
+At the control-plane boundary, top-level creates in unordered reusable collections
+are emitted before indexed field updates. Existing entities can therefore bind to
+those pending objects without producing a use-before-create transaction, while
+ordered and nested creates retain their index-safe position after field updates.
 The global configuration search covers policies, reusable objects, profiles,
 content rules, certificate authorities, protocol signatures, system settings,
 and capture settings. Results use pending draft values and open the matching

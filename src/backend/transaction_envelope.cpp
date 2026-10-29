@@ -137,23 +137,8 @@ TransactionEnvelope build_transaction_envelope(
         return {std::nullopt, "transaction.unavailable"};
     }
 
-    nlohmann::json operations = nlohmann::json::array();
-    std::set<std::string, std::less<>> paths;
-    for (const auto& change : draft.changes) {
-        if (!paths.emplace(change.path).second ||
-            validate_draft_schema(change) != DraftSchemaResult::Valid) {
-            return {std::nullopt, "transaction.invalid_draft"};
-        }
-        if (const auto* number = std::get_if<double>(&change.value);
-            number != nullptr && !std::isfinite(*number)) {
-            return {std::nullopt, "transaction.invalid_draft"};
-        }
-        operations.push_back({
-            {"op", "set"},
-            {"path", change.path},
-            {"value", scalar_json(change.value)},
-        });
-    }
+    nlohmann::json prerequisite_creates = nlohmann::json::array();
+    nlohmann::json remaining_structural = nlohmann::json::array();
     std::set<std::string, std::less<>> local_ids;
     std::set<std::string, std::less<>> client_ids;
     std::set<std::pair<std::string, std::string>> structural_targets;
@@ -205,7 +190,33 @@ TransactionEnvelope build_transaction_envelope(
             }
         }, operation);
         if (!serialized) return {std::nullopt, "transaction.invalid_draft"};
-        operations.push_back(*serialized);
+        const auto* create = std::get_if<DraftCreateOperation>(&operation);
+        if (create != nullptr && !collection->ordered && !collection->nested) {
+            prerequisite_creates.push_back(std::move(*serialized));
+        } else {
+            remaining_structural.push_back(std::move(*serialized));
+        }
+    }
+
+    nlohmann::json operations = std::move(prerequisite_creates);
+    std::set<std::string, std::less<>> paths;
+    for (const auto& change : draft.changes) {
+        if (!paths.emplace(change.path).second ||
+            validate_draft_schema(change) != DraftSchemaResult::Valid) {
+            return {std::nullopt, "transaction.invalid_draft"};
+        }
+        if (const auto* number = std::get_if<double>(&change.value);
+            number != nullptr && !std::isfinite(*number)) {
+            return {std::nullopt, "transaction.invalid_draft"};
+        }
+        operations.push_back({
+            {"op", "set"},
+            {"path", change.path},
+            {"value", scalar_json(change.value)},
+        });
+    }
+    for (auto& operation : remaining_structural) {
+        operations.push_back(std::move(operation));
     }
     const nlohmann::json document{
         {"mode", mode == TransactionMode::Validate ? "validate" : "commit"},

@@ -239,6 +239,12 @@ operation. Duplicate mutation of the same structural target, use-before-create,
 ambiguous placement, deletion followed by use, and cyclic placement all reject
 the complete transaction.
 
+The GUI core canonicalizes top-level creates for unordered reusable collections
+before indexed `set` operations. This lets an existing policy or profile bind to
+a reusable object created in the same draft without a use-before-create request,
+while keeping ordered and nested creates after indexed updates so their placement
+cannot shift a base-snapshot index before it is used.
+
 Creation, deletion, and movement participate in the same reference validation,
 impact preview, idempotency, persistence, activation, and rollback guarantees as
 scalar updates. No structural operation is committed separately.
