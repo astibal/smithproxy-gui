@@ -7,6 +7,7 @@ import {
   type DraftChange,
   type DraftCommit,
   type DraftCreateOperation,
+  type DraftDeleteOperation,
   type DraftPreflight,
   type DraftScalar,
   type DraftSnapshot,
@@ -291,6 +292,7 @@ export class SmithproxyApp extends LitElement {
   @state() private draftCommitError: string | undefined;
   @state() private draftCommitResult: DraftCommit | undefined;
   @state() private draftRemovalArmedKey: string | undefined;
+  @state() private structuralDeleteArmedKey: string | undefined;
   @state() private drawerError: string | undefined;
   @state() private dirtyDrawerKeys = new Set<string>();
   @state() private pendingCloseIndex: number | undefined;
@@ -1620,6 +1622,13 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && operation.collection === 'proto_objects') {
         objects.add(`protocol-create:${operation.localId}`);
       }
+      if (operation.op === 'delete') {
+        const kind = operation.collection === 'policy' ? 'policy'
+          : operation.collection === 'address_objects' ? 'address'
+            : operation.collection === 'port_objects' ? 'port'
+              : operation.collection === 'proto_objects' ? 'protocol' : undefined;
+        if (kind) objects.add(`${kind}:${operation.entityId}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -1956,6 +1965,112 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private structuralDeleteTarget(entry: DrawerEntry): {
+    collection: DraftDeleteOperation['collection'];
+    entityId: string;
+    label: string;
+    usageCount: number;
+  } | undefined {
+    if (!this.snapshot) return undefined;
+    if (entry.kind === 'policy') {
+      const policy = this.snapshot.policies.find(item => item.id === entry.id);
+      return policy
+        ? {collection: 'policy', entityId: policy.id, label: 'policy', usageCount: 0}
+        : undefined;
+    }
+    if (entry.kind === 'address') {
+      const address = this.snapshot.addresses.find(item => item.id === entry.id);
+      return address
+        ? {collection: 'address_objects', entityId: address.id,
+          label: 'address object', usageCount: address.usedBy.length}
+        : undefined;
+    }
+    if (entry.kind === 'port') {
+      const port = this.snapshot.ports.find(item => item.id === entry.id);
+      return port
+        ? {collection: 'port_objects', entityId: port.id, label: 'port object', usageCount: port.usedBy.length}
+        : undefined;
+    }
+    if (entry.kind === 'protocol') {
+      const protocol = this.snapshot.protocols.find(item => item.id === entry.id);
+      return protocol
+        ? {collection: 'proto_objects', entityId: protocol.id,
+          label: 'protocol object', usageCount: protocol.usedBy.length}
+        : undefined;
+    }
+    return undefined;
+  }
+
+  private pendingStructuralDelete(target: {collection: string; entityId: string}): boolean {
+    return this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'delete' && operation.collection === target.collection &&
+      operation.entityId === target.entityId) ?? false;
+  }
+
+  private structuralDeleteBlocker(entry: DrawerEntry, target: {
+    collection: string;
+    entityId: string;
+    usageCount: number;
+  }): string | undefined {
+    if (!this.structuralDraftsAvailable) return 'Stable structural transactions are unavailable.';
+    if (this.dirtyDrawerKeys.has(this.drawerKey(entry))) return 'Discard or save unsaved editor changes first.';
+    if (this.draftPathsForDrawer(entry).length > 0) return 'Remove pending field edits before deleting this entry.';
+    if (target.usageCount > 0) {
+      return `This object is referenced by ${target.usageCount} configuration ${target.usageCount === 1 ? 'entry' : 'entries'}.`;
+    }
+    if (this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.collection === target.collection &&
+      ('entityId' in operation ? operation.entityId === target.entityId : false))) {
+      return this.pendingStructuralDelete(target)
+        ? 'Deletion is already pending in the workspace draft.'
+        : 'Another structural operation already targets this entry.';
+    }
+    return undefined;
+  }
+
+  private async deleteStructuralEntry(entry: DrawerEntry): Promise<void> {
+    const target = this.structuralDeleteTarget(entry);
+    if (!target || !this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const blocker = this.structuralDeleteBlocker(entry, target);
+    if (blocker) {
+      this.drawerError = blocker;
+      return;
+    }
+    const key = this.drawerKey(entry);
+    if (this.structuralDeleteArmedKey !== key) {
+      this.structuralDeleteArmedKey = key;
+      this.drawerError = `Confirm deletion of this ${target.label}.`;
+      return;
+    }
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'delete', localId: `delete-${entry.kind}-${crypto.randomUUID()}`,
+        collection: target.collection, entityId: target.entityId,
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+      this.markDrawerSaved(entry);
+      this.structuralDeleteArmedKey = undefined;
+      const index = this.drawerStore.entries.findIndex(item => this.drawerKey(item) === key);
+      if (index >= 0) this.closeDrawer(index);
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'The entry could not be deleted from the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) {
+        this.draftSaving = false;
+        this.structuralDeleteArmedKey = undefined;
+      }
+    }
+  }
+
   private draftValueSummary(path: string, value: DraftScalar): string {
     if (value === '[redacted:clear]') return 'Cleared · redacted';
     if (value === '[redacted:replace]') return 'Replaced · redacted';
@@ -2204,6 +2319,7 @@ export class SmithproxyApp extends LitElement {
     }
     const key = this.drawerKey(entry);
     if (this.draftRemovalArmedKey === key) this.draftRemovalArmedKey = undefined;
+    if (this.structuralDeleteArmedKey === key) this.structuralDeleteArmedKey = undefined;
     if (!this.dirtyDrawerKeys.has(key)) {
       this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
     }
@@ -2259,6 +2375,7 @@ export class SmithproxyApp extends LitElement {
 
   private closeDrawer(index: number): void {
     this.draftRemovalArmedKey = undefined;
+    this.structuralDeleteArmedKey = undefined;
     const remainingDirty = new Set(this.dirtyDrawerKeys);
     for (const entry of this.drawerStore.entries.slice(index)) {
       remainingDirty.delete(this.drawerKey(entry));
@@ -7286,6 +7403,10 @@ export class SmithproxyApp extends LitElement {
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
     const drawerDraftPaths = this.draftPathsForDrawer(entry);
     const removalArmed = this.draftRemovalArmedKey === this.drawerKey(entry);
+    const deleteTarget = this.structuralDeleteTarget(entry);
+    const deletePending = deleteTarget ? this.pendingStructuralDelete(deleteTarget) : false;
+    const deleteBlocker = deleteTarget ? this.structuralDeleteBlocker(entry, deleteTarget) : undefined;
+    const deleteArmed = this.structuralDeleteArmedKey === this.drawerKey(entry);
     const closePending = active && this.pendingCloseIndex !== undefined;
     const closeFromIndex = this.pendingCloseIndex ?? index;
     return html`
@@ -7333,6 +7454,16 @@ export class SmithproxyApp extends LitElement {
                 ${removalArmed
                   ? `Confirm remove ${drawerDraftPaths.length} draft change${drawerDraftPaths.length === 1 ? '' : 's'}`
                   : `Remove ${drawerDraftPaths.length} draft change${drawerDraftPaths.length === 1 ? '' : 's'}`}
+              </button>
+            ` : nothing}
+            ${deleteTarget && (this.structuralDraftsAvailable || deletePending) ? html`
+              <button class="secondary danger-button" type="button"
+                title=${deleteBlocker ?? `Add ${deleteTarget.label} deletion to the workspace draft`}
+                ?disabled=${deletePending || deleteBlocker !== undefined || this.draftSaving ||
+                  this.draftValidating || this.draftCommitting}
+                @click=${() => this.deleteStructuralEntry(entry)}>
+                ${deletePending ? 'Deletion pending'
+                  : deleteArmed ? `Confirm delete ${deleteTarget.label}` : `Delete ${deleteTarget.label}`}
               </button>
             ` : nothing}
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>

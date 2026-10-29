@@ -204,7 +204,10 @@ typed right-side creation drawers for address, port, protocol, and policy entrie
 They reject duplicate identities and invalid ranges locally, store ordered create
 operations under optimistic draft concurrency, and reopen pending items from draft
 review. A policy can be placed first, last, or immediately before an existing stable
-policy and can open referenced objects in another nested drawer.
+policy and can open referenced objects in another nested drawer. Existing policies
+and unreferenced reusable objects can be placed into the same draft as confirmed
+delete operations; active references and conflicting pending field edits block the
+delete locally before the authoritative Smithproxy validation.
 Current legacy deployments keep the controls disabled because their snapshot IDs
 are not stable.
 

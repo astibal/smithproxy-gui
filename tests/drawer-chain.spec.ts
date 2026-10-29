@@ -1673,6 +1673,65 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   await expect(editor.getByLabel('Placement')).toHaveValue('before:policy-0');
 });
 
+test('confirms policy deletion and blocks removal of referenced objects', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+    structuralRemovalRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button', {name: /office/i}).click();
+  let editor = page.getByRole('dialog', {name: 'Edit office'});
+  const referencedDelete = editor.getByRole('button', {name: 'Delete address object'});
+  await expect(referencedDelete).toBeDisabled();
+  await expect(referencedDelete).toHaveAttribute('title', 'This object is referenced by 1 configuration entry.');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /Policy 1/i}).click();
+  editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await editor.getByLabel('Action', {exact: true}).fill('drop');
+  await expect(editor.getByRole('button', {name: 'Delete policy'})).toBeDisabled();
+  await expect(editor.getByRole('button', {name: 'Delete policy'}))
+    .toHaveAttribute('title', 'Discard or save unsaved editor changes first.');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await editor.getByRole('button', {name: 'Discard changes'}).click();
+  await expect(editor).toBeHidden();
+  await page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /Policy 1/i}).click();
+  editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await editor.getByRole('button', {name: 'Delete policy'}).click();
+  await expect(editor.getByRole('button', {name: 'Confirm delete policy'})).toBeVisible();
+  await expect(editor.getByRole('status')).toHaveText('Confirm deletion of this policy.');
+  await expectNoWcagViolations(page);
+  await editor.getByRole('button', {name: 'Confirm delete policy'}).click();
+  await expect(editor).toBeHidden();
+
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {op: 'delete', collection: 'policy', entity_id: 'policy-0'},
+    csrf: '1',
+  });
+  expect(state.structuralMutationRequests![0]!.operation.local_id)
+    .toMatch(/^delete-policy-[0-9a-f-]{36}$/u);
+  await expect(page.getByRole('group', {name: 'Policies'}).getByText('Pending')).toBeVisible();
+
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(table).toContainText('policy · delete');
+  await expect(table).toContainText('policy-0');
+  await table.getByRole('button', {name: /Remove delete operation/u}).click();
+  await expect(page.getByText('No pending changes')).toBeVisible();
+  expect(state.structuralRemovalRequests).toHaveLength(1);
+});
+
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
