@@ -1,14 +1,62 @@
 import {expect, test, type Page} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+const saslikVisualThemes = {
+  'grill-dark': {
+    canvas: '#0b0d0f', surface: '#121519', 'surface-raised': '#20242a', text: '#f2efe7',
+    muted: '#a6a9ae', border: '#292e35', 'border-strong': '#6b818c', brand: '#ff6b35',
+    'on-brand': '#140b07', input: '#0b0d0f', focus: '#a2c3ca', success: '#58d68d',
+    'success-bg': '#142c20', warning: '#f5b942', 'warning-bg': '#342b1d', danger: '#ff7892',
+    shadow: '#00000066',
+  },
+  'grill-light': {
+    canvas: '#f2ece4', surface: '#fffaf3', 'surface-raised': '#e9dfd2', text: '#292018',
+    muted: '#514338', border: '#c6b7a5', 'border-strong': '#688491', brand: '#ff6b35',
+    'on-brand': '#140b07', input: '#fffaf3', focus: '#963b19', success: '#176448',
+    'success-bg': '#e0f3e9', warning: '#795208', 'warning-bg': '#fff0c8', danger: '#ab253e',
+    shadow: '#132f4926',
+  },
+  'petroleum-dark': {
+    canvas: '#0c1923', surface: '#122b36', 'surface-raised': '#173440', text: '#e8eff1',
+    muted: '#a6bac3', border: '#2c4855', 'border-strong': '#6b818c', brand: '#d99152',
+    'on-brand': '#20160e', input: '#0c1923', focus: '#a2c3ca', success: '#58d68d',
+    'success-bg': '#142c20', warning: '#f5b942', 'warning-bg': '#342b1d', danger: '#ff7892',
+    shadow: '#00000066',
+  },
+  'petroleum-light': {
+    canvas: '#dce9f2', surface: '#e8f1f6', 'surface-raised': '#cddfea', text: '#122530',
+    muted: '#122530', border: '#b2c8d6', 'border-strong': '#688491', brand: '#d99152',
+    'on-brand': '#20160e', input: '#e8f1f6', focus: '#27566d', success: '#176448',
+    'success-bg': '#e0f3e9', warning: '#795208', 'warning-bg': '#fff0c8', danger: '#ab253e',
+    shadow: '#132f4926',
+  },
+} as const;
+
+type SaslikVisualTheme = keyof typeof saslikVisualThemes;
+
+async function applySaslikVisualTheme(page: Page, theme: SaslikVisualTheme): Promise<void> {
+  const [palette, mode] = theme.split('-') as ['grill' | 'petroleum', 'dark' | 'light'];
+  await page.locator('html').evaluate((root, fixture) => {
+    root.dataset.saslikApp = 'smithproxy-gui';
+    root.dataset.saslikTheme = fixture.palette;
+    root.dataset.saslikMode = fixture.mode;
+    root.style.colorScheme = fixture.mode;
+    for (const [name, value] of Object.entries(fixture.tokens)) {
+      root.style.setProperty(`--st-${name}`, value);
+    }
+  }, {palette, mode, tokens: saslikVisualThemes[theme]});
+}
+
 type MockState = {
   smithproxy: 'ready' | 'unreachable';
+  now?: number;
   configFetches?: number;
   conflictNextDraftWrite?: boolean;
   draftMutationVersions?: number[];
 };
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
+  const now = (): number => state.now ?? Date.now();
   let draft = {id: 'workspace-draft', base_revision: null, version: 0, changes: [] as Array<{path: string; value: unknown}>};
   await page.route('**/api/v1/capabilities', async route => route.fulfill({json: {
     service: 'smithproxy-gui',
@@ -28,35 +76,35 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       configured: true,
       state: state.smithproxy,
       detail: state.smithproxy === 'ready' ? 'Connected' : 'Connection timed out',
-      checked_at_unix_ms: Date.now(),
-      last_success_at_unix_ms: Date.now() - 5000,
+      checked_at_unix_ms: now(),
+      last_success_at_unix_ms: now() - 5000,
       latency_ms: state.smithproxy === 'ready' ? 12 : 2500,
       total_probes: 3,
       consecutive_failures: state.smithproxy === 'ready' ? 0 : 1,
       availability_window: {samples: 2, successful: state.smithproxy === 'ready' ? 2 : 1},
       history: state.smithproxy === 'ready'
         ? [
-            {state: 'ready', checked_at_unix_ms: Date.now() - 5000, latency_ms: 11},
-            {state: 'ready', checked_at_unix_ms: Date.now(), latency_ms: 12},
+            {state: 'ready', checked_at_unix_ms: now() - 5000, latency_ms: 11},
+            {state: 'ready', checked_at_unix_ms: now(), latency_ms: 12},
           ]
         : [
-            {state: 'ready', checked_at_unix_ms: Date.now() - 5000, latency_ms: 11},
-            {state: 'unreachable', checked_at_unix_ms: Date.now(), latency_ms: 2500},
+            {state: 'ready', checked_at_unix_ms: now() - 5000, latency_ms: 11},
+            {state: 'unreachable', checked_at_unix_ms: now(), latency_ms: 2500},
           ],
     },
   }}));
   await page.route('**/api/v1/metrics/summary', async route => route.fulfill({json: {
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current listener metrics' : 'Metrics are stale',
-    checked_at_unix_ms: Date.now(),
-    last_success_at_unix_ms: Date.now() - 5000,
+    checked_at_unix_ms: now(),
+    last_success_at_unix_ms: now() - 5000,
     totals: {workers: 3, sessions_total: 19, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
     history: [
-      {state: 'ready', checked_at_unix_ms: Date.now() - 10000, sessions_active: 2,
+      {state: 'ready', checked_at_unix_ms: now() - 10000, sessions_active: 2,
        bytes_up: 1000, bytes_down: 1400},
-      {state: 'ready', checked_at_unix_ms: Date.now() - 5000, sessions_active: 3,
+      {state: 'ready', checked_at_unix_ms: now() - 5000, sessions_active: 3,
        bytes_up: 1200, bytes_down: 1800},
-      {state: state.smithproxy === 'ready' ? 'ready' : 'unavailable', checked_at_unix_ms: Date.now(),
+      {state: state.smithproxy === 'ready' ? 'ready' : 'unavailable', checked_at_unix_ms: now(),
        sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
     ],
     listeners: [
@@ -67,8 +115,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   await page.route('**/api/v1/sessions/activity', async route => route.fulfill({json: {
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current session activity' : 'Session activity is stale',
-    checked_at_unix_ms: Date.now(),
-    last_success_at_unix_ms: Date.now() - 5000,
+    checked_at_unix_ms: now(),
+    last_success_at_unix_ms: now() - 5000,
     total: 4,
     speed_up: 1536,
     speed_down: 2304,
@@ -80,13 +128,13 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   await page.route('**/api/v1/tls/cache/summary', async route => route.fulfill({json: {
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current TLS cache metrics' : 'TLS cache metrics are stale',
-    checked_at_unix_ms: Date.now(), last_success_at_unix_ms: Date.now() - 5000,
+    checked_at_unix_ms: now(), last_success_at_unix_ms: now() - 5000,
     size: 42, capacity: 1000,
   }}));
   await page.route('**/api/v1/network/neighbors/summary', async route => route.fulfill({json: {
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current neighborhood aggregates' : 'Neighborhood is stale',
-    checked_at_unix_ms: Date.now(), last_success_at_unix_ms: Date.now() - 5000,
+    checked_at_unix_ms: now(), last_success_at_unix_ms: now() - 5000,
     hosts_total: 8, active_today: 3, active_week: 6, tagged_hosts: 4,
     observations: 20, bytes_up: 1000, bytes_down: 2000,
   }}));
@@ -94,11 +142,11 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     source: 'gui-core', smithproxy_events_available: false,
     events: [
       {
-        id: '0-100', source_revision: 1, occurred_at_unix_ms: Date.now() - 5000, severity: 'info',
+        id: '0-100', source_revision: 1, occurred_at_unix_ms: now() - 5000, severity: 'info',
         source: 'gui-core', message: 'Smithproxy control plane is reachable',
       },
       ...(state.smithproxy === 'ready' ? [] : [{
-        id: '1-200', source_revision: 2, occurred_at_unix_ms: Date.now(), severity: 'error',
+        id: '1-200', source_revision: 2, occurred_at_unix_ms: now(), severity: 'error',
         source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
       }]),
     ],
@@ -108,13 +156,13 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     body: `retry: 60000\nevent: snapshot\ndata: ${JSON.stringify({
       source: 'gui-core', smithproxy_events_available: false,
       events: [{
-        id: 'stream-100', source_revision: 1, occurred_at_unix_ms: Date.now(), severity: 'info',
+        id: 'stream-100', source_revision: 1, occurred_at_unix_ms: now(), severity: 'info',
         source: 'gui-core', message: 'Smithproxy control plane is reachable',
       }],
     })}\n\n`,
   }));
   await page.route('**/api/v1/alerts', async route => route.fulfill({json: {
-    source: 'gui-core', generated_at_unix_ms: Date.now(),
+    source: 'gui-core', generated_at_unix_ms: now(),
     alerts: state.smithproxy === 'ready' ? [] : [{
       id: 'control-plane-unavailable', severity: 'critical', title: 'Control plane is unavailable',
       detail: 'The GUI core cannot currently reach the authenticated Smithproxy API.',
@@ -165,8 +213,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     await page.route('**/api/v1/config/snapshot', async route => {
       state.configFetches = (state.configFetches ?? 0) + 1;
       await route.fulfill({json: {
-      state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: Date.now(),
-      last_success_at_unix_ms: Date.now(), view: 'runtime', revision: null,
+      state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: now(),
+      last_success_at_unix_ms: now(), view: 'runtime', revision: null,
       policies: [{
         id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
         source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
@@ -1237,6 +1285,54 @@ test('derives the system API from a workspace mount', async ({page}) => {
 
   await expect(page.getByText('Core: Online')).toBeVisible();
   await expect.poll(() => requests).toContain('/ws001/smithproxy-gui/api/v1/status');
+});
+
+test.describe('Saslik visual regression', () => {
+  for (const theme of Object.keys(saslikVisualThemes) as SaslikVisualTheme[]) {
+    test(`${theme} preserves dashboard and nested editor geometry`, async ({page, browserName}) => {
+      test.skip(browserName !== 'chromium', 'Canonical pixel baselines use Chromium; behavior runs in every browser.');
+      await page.setViewportSize({width: 1440, height: 900});
+      await page.emulateMedia({reducedMotion: 'reduce'});
+      await page.addInitScript(() => { Date.now = () => 1_800_000_000_000; });
+      await mockSystemApi(page, {smithproxy: 'ready', now: 1_800_000_000_000}, true);
+      await page.goto('/');
+      await expect(page.getByText('Config: Ready')).toBeVisible();
+      await applySaslikVisualTheme(page, theme);
+
+      await expect(page).toHaveScreenshot(`${theme}-dashboard.png`, {
+        animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
+      });
+
+      await page.getByRole('button', {name: 'Policy', exact: true}).click();
+      await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+      await page.getByRole('dialog', {name: 'Edit Policy 1'})
+        .getByRole('button', {name: 'office', exact: true}).click();
+      await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+      await expect(page).toHaveScreenshot(`${theme}-nested-editors.png`, {
+        animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
+      });
+    });
+  }
+
+  for (const theme of ['petroleum-dark', 'petroleum-light'] as const) {
+    test(`${theme} preserves the mobile policy layout`, async ({page, browserName}) => {
+      test.skip(browserName !== 'chromium', 'Canonical pixel baselines use Chromium; behavior runs in every browser.');
+      await page.setViewportSize({width: 390, height: 844});
+      await page.emulateMedia({reducedMotion: 'reduce'});
+      await page.addInitScript(() => { Date.now = () => 1_800_000_000_000; });
+      await mockSystemApi(page, {smithproxy: 'ready', now: 1_800_000_000_000}, true);
+      await page.goto('/');
+      await expect(page.getByText('Config: Ready')).toHaveText('Config: Ready');
+      await applySaslikVisualTheme(page, theme);
+      await page.getByRole('button', {name: 'Policy', exact: true}).click();
+      await expect(page.getByRole('heading', {name: 'Policies'})).toBeVisible();
+      await expect(page.getByRole('group', {name: 'Policies'}).getByRole('button')).toHaveCount(1);
+
+      await expect(page).toHaveScreenshot(`${theme}-mobile-policy.png`, {
+        animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
+      });
+    });
+  }
 });
 
 test('meets automated WCAG rules across primary and nested views', async ({page}) => {

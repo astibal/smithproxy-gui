@@ -35,7 +35,15 @@ vývojový příkaz používá pro rychlost Chromium; shodný tříbrowserový m
 zapíná proměnnou `PLAYWRIGHT_ALL_BROWSERS=1`.
 CI záměrně nepoužívá retry a zapisuje detail každého browserového pádu přímo do
 GitHub check annotations, aby platformní rozdíl nemohl zůstat skrytý za obecným
-exit kódem.
+exit kódem. Při pádu navíc na sedm dní uloží Playwright trace a případné
+expected/actual/diff obrázky jako `playwright-diagnostics` artifact.
+
+Chromium pixel gate drží deset baseline obrázků: dashboard a vnořený policy →
+address editor pro Grill/Petroleum v dark/light režimu a mobilní policy layout
+pro oba Petroleum režimy. Fixture používá tokeny canonical Saslik appearance
+contractu v1, fixní UTC locale, device scale, reduced motion a deterministický
+čas. Firefox a WebKit zůstávají behaviorální a WCAG gate; pixelové baseline jsou
+záměrně vázané na jediný renderer a Linux runner.
 
 Axe automaticky kontroluje WCAG A/AA pravidla na dashboardu, policy listu,
 prvním i vnořeném editoru a mobilním layoutu. Nález se opravuje v UI; test
