@@ -371,7 +371,7 @@ export class SmithproxyApp extends LitElement {
     .empty-state h2 { margin: 0 0 6px; color: var(--app-text); }
     .empty-state p { max-width: 460px; margin: 0; }
 
-    @keyframes slide-in { from { translate: 32px 0; opacity: 0; } }
+    @keyframes slide-in { from { translate: 32px 0; } }
 
     @media (max-width: 900px) {
       .shell { grid-template-columns: 76px minmax(0, 1fr); }
