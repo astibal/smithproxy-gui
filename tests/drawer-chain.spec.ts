@@ -1504,7 +1504,7 @@ test('creates and reopens an address object through a structural drawer', async 
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
-  const create = page.getByRole('button', {name: 'New address object'});
+  const create = page.getByRole('button', {name: 'New address'});
   await expect(create).toBeEnabled();
   await create.click();
 
@@ -1539,6 +1539,79 @@ test('creates and reopens an address object through a structural drawer', async 
   editor = page.getByRole('dialog', {name: 'Create address object'});
   await expect(editor.getByLabel('Name')).toHaveValue('branch-office');
   await expect(editor.getByLabel('Address', {exact: true})).toHaveValue('192.0.2.0/24');
+});
+
+test('creates and reopens bounded port and protocol objects', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await page.getByRole('button', {name: 'New port'}).click();
+  let editor = page.getByRole('dialog', {name: 'Create port object'});
+  await editor.getByLabel('Name').fill('https');
+  await editor.getByLabel('First port').fill('9000');
+  await editor.getByLabel('Last port').fill('8000');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(/valid ascending port range/u)).toBeVisible();
+  expect(state.structuralMutationRequests).toEqual([]);
+  await editor.getByLabel('First port').fill('8443');
+  await editor.getByLabel('Last port').fill('8444');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Port object names must be unique.')).toBeVisible();
+  expect(state.structuralMutationRequests).toEqual([]);
+  await editor.getByLabel('Name').fill('branch-tls');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'New protocol'}).click();
+  editor = page.getByRole('dialog', {name: 'Create protocol object'});
+  await editor.getByLabel('Name').fill('branch-tcp');
+  await editor.getByLabel('IP protocol number').fill('6');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Protocol object names and numbers must be unique.')).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  await editor.getByLabel('IP protocol number').fill('17');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+
+  expect(state.structuralMutationRequests).toHaveLength(2);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {
+      op: 'create', collection: 'port_objects', position: {last: true},
+      fields: {name: 'branch-tls', start: 8443, end: 8444},
+    },
+    csrf: '1',
+  });
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 1,
+    operation: {
+      op: 'create', collection: 'proto_objects', position: {last: true},
+      fields: {name: 'branch-tcp', id: 17},
+    },
+    csrf: '1',
+  });
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 2'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  const portRow = table.getByRole('row').filter({hasText: 'port_objects · create'});
+  const protocolRow = table.getByRole('row').filter({hasText: 'proto_objects · create'});
+  await expect(portRow).toContainText('branch-tls');
+  await expect(protocolRow).toContainText('branch-tcp');
+  await portRow.getByRole('button', {name: 'Edit'}).click();
+  editor = page.getByRole('dialog', {name: 'Create port object'});
+  await expect(editor.getByLabel('First port')).toHaveValue('8443');
+  await expect(editor.getByLabel('Last port')).toHaveValue('8444');
+  await expectNoWcagViolations(page);
 });
 
 test('creates an ordered policy and opens referenced objects from its drawer', async ({page}) => {
@@ -2667,7 +2740,9 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByLabel('Network listeners').getByText('3', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
-  await expect(page.getByRole('button', {name: 'New address object'})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'New address'})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'New port'})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'New protocol'})).toBeDisabled();
   await expect(page.getByText('Requires reviewed structural transactions and stable entity IDs.')).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();

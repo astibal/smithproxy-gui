@@ -200,10 +200,11 @@ an exact reviewed collection schema and opaque stable entity IDs bound to the
 draft revision. The review surface already counts, displays, removes, validates,
 and commits scalar and structural operations as one transaction.
 When the core advertises `structural_drafts`, the Objects and Policy views enable
-typed right-side creation drawers. They reject duplicate names locally, store
-ordered create operations under optimistic draft concurrency, and reopen pending
-items from draft review. A policy can be placed first, last, or immediately before
-an existing stable policy and can open referenced objects in another nested drawer.
+typed right-side creation drawers for address, port, protocol, and policy entries.
+They reject duplicate identities and invalid ranges locally, store ordered create
+operations under optimistic draft concurrency, and reopen pending items from draft
+review. A policy can be placed first, last, or immediately before an existing stable
+policy and can open referenced objects in another nested drawer.
 Current legacy deployments keep the controls disabled because their snapshot IDs
 are not stable.
 

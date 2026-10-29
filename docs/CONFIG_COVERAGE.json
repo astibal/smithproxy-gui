@@ -64,7 +64,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "start", "end"],
-      "notes": "Port ranges are represented by the typed object editor."
+      "notes": "Port ranges are represented by typed edit and structural create drawers. Structural creation validates ascending bounded ranges and remains capability-gated on stable entity IDs."
     },
     {
       "name": "proto_objects",
@@ -73,7 +73,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "id"],
-      "notes": "Protocol identifiers are represented by the typed object editor."
+      "notes": "Protocol identifiers are represented by typed edit and structural create drawers. Structural creation validates unique protocol numbers and remains capability-gated on stable entity IDs."
     },
     {
       "name": "detection_profiles",

@@ -406,6 +406,8 @@ export class SmithproxyApp extends LitElement {
     .section-head h2 { margin: 0 0 3px; font-size: 20px; }
     .section-head p { margin: 0; color: var(--app-muted); }
     .structural-action { display: grid; max-width: 260px; gap: 4px; justify-items: end; text-align: right; }
+    .object-structural-action { max-width: 520px; }
+    .structural-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .structural-action small { color: var(--app-muted); }
     .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 3px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .55; }
@@ -1612,6 +1614,12 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && operation.collection === 'policy') {
         objects.add(`policy-create:${operation.localId}`);
       }
+      if (operation.op === 'create' && operation.collection === 'port_objects') {
+        objects.add(`port-create:${operation.localId}`);
+      }
+      if (operation.op === 'create' && operation.collection === 'proto_objects') {
+        objects.add(`protocol-create:${operation.localId}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -1890,13 +1898,19 @@ export class SmithproxyApp extends LitElement {
 
   private openDraftStructuralOperation(localId: string, origin: HTMLElement): void {
     const operation = this.workspaceDraft?.structuralOperations.find(item => item.localId === localId);
-    if (operation?.op !== 'create' ||
-        !['address_objects', 'policy'].includes(operation.collection)) return;
-    const policy = operation.collection === 'policy';
+    if (operation?.op !== 'create' || ![
+      'address_objects', 'port_objects', 'proto_objects', 'policy',
+    ].includes(operation.collection)) return;
+    const kind = operation.collection === 'policy' ? 'policy-create'
+      : operation.collection === 'address_objects' ? 'address-create'
+        : operation.collection === 'port_objects' ? 'port-create' : 'protocol-create';
+    const fallback = operation.collection === 'policy' ? 'New policy'
+      : operation.collection === 'address_objects' ? 'New address object'
+        : operation.collection === 'port_objects' ? 'New port object' : 'New protocol object';
     this.openObjectDrawer({
-      kind: policy ? 'policy-create' : 'address-create',
+      kind,
       id: operation.localId,
-      title: String(operation.fields['name'] ?? (policy ? 'New policy' : 'New address object')),
+      title: String(operation.fields['name'] ?? fallback),
     }, origin);
   }
 
@@ -2043,6 +2057,18 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({
       kind: 'address-create', id: localId, title: 'New address object',
     }, origin);
+  }
+
+  private openNewPort(origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable) return;
+    const localId = `create-port-${crypto.randomUUID()}`;
+    this.openObjectDrawer({kind: 'port-create', id: localId, title: 'New port object'}, origin);
+  }
+
+  private openNewProtocol(origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable) return;
+    const localId = `create-protocol-${crypto.randomUUID()}`;
+    this.openObjectDrawer({kind: 'protocol-create', id: localId, title: 'New protocol object'}, origin);
   }
 
   private openNewPolicy(origin?: HTMLElement): void {
@@ -2345,6 +2371,16 @@ export class SmithproxyApp extends LitElement {
         ? {id: operation.localId, name: String(operation.fields['name'] ?? 'New address object')}
         : undefined;
     }
+    if (entry.kind === 'port-create' || entry.kind === 'protocol-create') {
+      const collection = entry.kind === 'port-create' ? 'port_objects' : 'proto_objects';
+      const operation = this.workspaceDraft?.structuralOperations.find(
+        item => item.op === 'create' && item.collection === collection && item.localId === entry.id,
+      );
+      const fallback = entry.kind === 'port-create' ? 'New port object' : 'New protocol object';
+      return operation?.op === 'create'
+        ? {id: operation.localId, name: String(operation.fields['name'] ?? fallback)}
+        : undefined;
+    }
     if (entry.kind === 'port') return this.snapshot.ports.find(item => item.id === entry.id);
     if (entry.kind === 'protocol') return this.snapshot.protocols.find(item => item.id === entry.id);
     if (entry.kind === 'settings' && entry.id === 'settings' && this.snapshot.settings) {
@@ -2565,6 +2601,100 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private pendingSimpleObjectCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const collection = entry.kind === 'port-create' ? 'port_objects'
+      : entry.kind === 'protocol-create' ? 'proto_objects' : undefined;
+    if (!collection) return undefined;
+    const operation = this.workspaceDraft?.structuralOperations.find(
+      item => item.op === 'create' && item.collection === collection && item.localId === entry.id,
+    );
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private async saveSimpleObjectCreate(entry: DrawerEntry): Promise<void> {
+    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting ||
+        (entry.kind !== 'port-create' && entry.kind !== 'protocol-create')) return;
+    const port = entry.kind === 'port-create';
+    const prefix = port ? 'port-create' : 'protocol-create';
+    const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#${prefix}-name-${entry.id}`);
+    const firstInput = this.renderRoot.querySelector<HTMLInputElement>(
+      `#${prefix}-${port ? 'start' : 'number'}-${entry.id}`,
+    );
+    const endInput = port
+      ? this.renderRoot.querySelector<HTMLInputElement>(`#port-create-end-${entry.id}`)
+      : undefined;
+    if (!nameInput || !firstInput || (port && !endInput)) return;
+    const name = nameInput.value.trim();
+    const first = firstInput.valueAsNumber;
+    const end = endInput?.valueAsNumber;
+    const maximum = port ? 65535 : 255;
+    if (name.length === 0 || name.length > 128 || /[\u0000-\u001f\u007f]/u.test(name) ||
+        !Number.isInteger(first) || first < 0 || first > maximum ||
+        (port && (!Number.isInteger(end) || end! < first || end! > maximum))) {
+      this.drawerError = port
+        ? 'A unique name and a valid ascending port range from 0 to 65535 are required.'
+        : 'A unique name and a protocol number from 0 to 255 are required.';
+      return;
+    }
+    const collection = port ? 'port_objects' : 'proto_objects';
+    const duplicateLiveName = port
+      ? this.snapshot?.ports.some((item, index) =>
+        this.presentedValue(`port_objects.[${index}].name`, item.name) === name)
+      : this.snapshot?.protocols.some((item, index) =>
+        this.presentedValue(`proto_objects.[${index}].name`, item.name) === name);
+    const duplicateDraftName = this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'create' && operation.collection === collection &&
+      operation.localId !== entry.id && operation.fields['name'] === name);
+    const duplicateProtocolNumber = !port && (
+      this.snapshot?.protocols.some((item, index) =>
+        this.presentedValue(`proto_objects.[${index}].id`, item.number) === first) ||
+      this.workspaceDraft?.structuralOperations.some(operation =>
+        operation.op === 'create' && operation.collection === 'proto_objects' &&
+        operation.localId !== entry.id && operation.fields['id'] === first)
+    );
+    if (duplicateLiveName || duplicateDraftName || duplicateProtocolNumber) {
+      this.drawerError = port
+        ? 'Port object names must be unique.'
+        : 'Protocol object names and numbers must be unique.';
+      return;
+    }
+    const fields: DraftCreateOperation['fields'] = port
+      ? {name, start: first, end: end!}
+      : {name, id: first};
+    const existing = this.pendingSimpleObjectCreate(entry);
+    const unchanged = existing !== undefined && Object.keys(existing.fields).length === Object.keys(fields).length &&
+      Object.entries(fields).every(([field, value]) => Object.is(existing.fields[field], value));
+    if (unchanged) {
+      this.drawerError = undefined;
+      this.markDrawerSaved(entry);
+      return;
+    }
+
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create', localId: entry.id, collection, clientId: entry.id,
+        parentId: null, position: {kind: 'last', reference: null}, fields,
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const fallback = port ? 'Port object could not be added to the draft.'
+        : 'Protocol object could not be added to the draft.';
+      const message = error instanceof Error ? error.message : fallback;
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private async saveToDraft(entry: DrawerEntry): Promise<void> {
     if (entry.kind === 'policy-create') {
       await this.savePolicyCreate(entry);
@@ -2572,6 +2702,10 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'address-create') {
       await this.saveAddressCreate(entry);
+      return;
+    }
+    if (entry.kind === 'port-create' || entry.kind === 'protocol-create') {
+      await this.saveSimpleObjectCreate(entry);
       return;
     }
     if (this.snapshot?.source !== 'live') {
@@ -3910,8 +4044,9 @@ export class SmithproxyApp extends LitElement {
                     : operation.entityId}
                 </span>
                 <span class="draft-actions" role="cell">
-                  ${operation.op === 'create' &&
-                    ['address_objects', 'policy'].includes(operation.collection) ? html`
+                  ${operation.op === 'create' && [
+                    'address_objects', 'port_objects', 'proto_objects', 'policy',
+                  ].includes(operation.collection) ? html`
                     <button class="secondary" type="button"
                       ?disabled=${!this.structuralDraftsAvailable}
                       @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
@@ -4380,14 +4515,26 @@ export class SmithproxyApp extends LitElement {
       <div class="content" tabindex="0">
         <div class="section-head">
           <div><h2>Configuration objects</h2><p>Reusable values referenced by policy</p></div>
-          <div class="structural-action">
-            <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
-              aria-describedby="new-address-blocker"
-              @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>
-              New address object
-            </button>
-            <small id="new-address-blocker">${this.structuralDraftsAvailable
-              ? 'Creates one operation in the shared workspace draft.'
+          <div class="structural-action object-structural-action">
+            <div class="structural-buttons">
+              <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                aria-describedby="new-object-blocker"
+                @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>
+                New address
+              </button>
+              <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                aria-describedby="new-object-blocker"
+                @click=${(event: MouseEvent) => this.openNewPort(event.currentTarget as HTMLElement)}>
+                New port
+              </button>
+              <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                aria-describedby="new-object-blocker"
+                @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>
+                New protocol
+              </button>
+            </div>
+            <small id="new-object-blocker">${this.structuralDraftsAvailable
+              ? 'Creates one typed operation in the shared workspace draft.'
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
         </div>
@@ -5987,6 +6134,50 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderPortCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingSimpleObjectCreate(entry);
+    const name = String(operation?.fields['name'] ?? '');
+    const start = Number(operation?.fields['start'] ?? 0);
+    const end = Number(operation?.fields['end'] ?? 65535);
+    const readOnly = !this.structuralDraftsAvailable;
+    return html`
+      <div class="form-grid">
+        <label for="port-create-name-${entry.id}">Name</label>
+        <input id="port-create-name-${entry.id}" .value=${name} maxlength="128" required
+          autocomplete="off" .readOnly=${readOnly} />
+        <label for="port-create-start-${entry.id}">First port</label>
+        <input id="port-create-start-${entry.id}" type="number" min="0" max="65535" step="1"
+          .value=${String(start)} required .readOnly=${readOnly} />
+        <label for="port-create-end-${entry.id}">Last port</label>
+        <input id="port-create-end-${entry.id}" type="number" min="0" max="65535" step="1"
+          .value=${String(end)} required .readOnly=${readOnly} />
+      </div>
+      <div class="impact">
+        The port range is retained only in the workspace draft until Smithproxy validates and commits it.
+      </div>
+    `;
+  }
+
+  private renderProtocolCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingSimpleObjectCreate(entry);
+    const name = String(operation?.fields['name'] ?? '');
+    const number = Number(operation?.fields['id'] ?? 6);
+    const readOnly = !this.structuralDraftsAvailable;
+    return html`
+      <div class="form-grid">
+        <label for="protocol-create-name-${entry.id}">Name</label>
+        <input id="protocol-create-name-${entry.id}" .value=${name} maxlength="128" required
+          autocomplete="off" .readOnly=${readOnly} />
+        <label for="protocol-create-number-${entry.id}">IP protocol number</label>
+        <input id="protocol-create-number-${entry.id}" type="number" min="0" max="255" step="1"
+          .value=${String(number)} required .readOnly=${readOnly} />
+      </div>
+      <div class="impact">
+        The protocol object is retained only in the workspace draft until Smithproxy validates and commits it.
+      </div>
+    `;
+  }
+
   private renderPortEditor(entry: DrawerEntry) {
     const port = this.snapshot?.ports.find(item => item.id === entry.id);
     if (!port) return nothing;
@@ -7054,7 +7245,9 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'address') return this.renderAddressEditor(entry);
     if (entry.kind === 'address-create') return this.renderAddressCreateEditor(entry);
     if (entry.kind === 'port') return this.renderPortEditor(entry);
+    if (entry.kind === 'port-create') return this.renderPortCreateEditor(entry);
     if (entry.kind === 'protocol') return this.renderProtocolEditor(entry);
+    if (entry.kind === 'protocol-create') return this.renderProtocolCreateEditor(entry);
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);
@@ -7067,7 +7260,9 @@ export class SmithproxyApp extends LitElement {
   private renderDrawer(entry: DrawerEntry, index: number) {
     const saved = this.draftObjects.has(`${entry.kind}:${entry.id}`);
     const editLabel = entry.kind === 'address-create' ? 'Create address object'
-      : entry.kind === 'policy-create' ? 'Create policy' : `Edit ${entry.title}`;
+      : entry.kind === 'port-create' ? 'Create port object'
+        : entry.kind === 'protocol-create' ? 'Create protocol object'
+          : entry.kind === 'policy-create' ? 'Create policy' : `Edit ${entry.title}`;
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
@@ -7083,7 +7278,7 @@ export class SmithproxyApp extends LitElement {
       profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns ||
       profile?.script || profile?.authentication,
     );
-    const draftable = entry.kind === 'address-create' || entry.kind === 'policy-create'
+    const draftable = ['address-create', 'port-create', 'protocol-create', 'policy-create'].includes(entry.kind)
       ? this.structuralDraftsAvailable
       : this.snapshot?.source !== 'live' ||
         (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
@@ -7101,8 +7296,10 @@ export class SmithproxyApp extends LitElement {
         @change=${(event: Event) => this.markDrawerDirty(entry, event)}>
         <header class="drawer-head">
           <div class="drawer-title"><small>${entry.kind === 'address-create'
-            ? 'Create address object' : entry.kind === 'policy-create'
-              ? 'Create policy' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+            ? 'Create address object' : entry.kind === 'port-create'
+              ? 'Create port object' : entry.kind === 'protocol-create'
+                ? 'Create protocol object' : entry.kind === 'policy-create'
+                  ? 'Create policy' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}
