@@ -580,8 +580,6 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto accept_socks = boolean_scalar(*value, "accept_socks", false);
     const auto accept_http_connect = boolean_scalar(*value, "accept_http_connect", false);
     const auto accept_api = boolean_scalar(*value, "accept_api", false);
-    const auto extended_local_destination_protection = boolean_scalar(
-        *value, "extended_local_destination_protection", true);
     const auto policy_fail_open = boolean_scalar(*value, "policy_fail_open", false);
     const auto access_fail_open = boolean_scalar(*value, "policy_access_request_fail_open", false);
     const auto plaintext_workers = optional_signed_decimal(*value, "plaintext_workers", 0, -1, 4096);
@@ -710,9 +708,6 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto webhook_sift_instance = bounded_string(webhook, "sift_instance_id", maximum_value_length, true);
     const auto webhook_sift_payload_limit = optional_decimal(
         webhook, "sift_payload_limit_per_direction", 262144U, 1073741824U);
-    const auto webhook_sift_lored_mode_raw = bounded_string(webhook, "sift_lored_mode", 16U, true);
-    const auto webhook_sift_lored_include_url = boolean_scalar(
-        webhook, "sift_lored_include_url", false);
     const auto webhook_host_id = bounded_string(webhook, "hostid", maximum_value_length, true);
     const auto webhook_bind_interface = bounded_string(webhook, "bind_interface", maximum_value_length, true);
     const auto webhook_api_override = boolean_scalar(webhook, "api_override", false);
@@ -724,11 +719,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto webhook_task_debug = boolean_scalar(webhook, "task_debug", false);
     const auto webhook_task_debug_dump = boolean_scalar(webhook, "task_debug_dump", false);
 
-    const auto webhook_sift_lored_mode = webhook_sift_lored_mode_raw && webhook_sift_lored_mode_raw->empty()
-        ? std::optional<std::string>{"disabled"}
-        : webhook_sift_lored_mode_raw;
     if (!accept_tproxy || !accept_redirect || !accept_socks || !accept_http_connect || !accept_api ||
-        !extended_local_destination_protection ||
         !policy_fail_open || !access_fail_open || !plaintext_workers || !tls_workers || !udp_workers ||
         !dtls_workers || !quic_workers || !socks_workers || !http_connect_workers || !plaintext_port ||
         !tls_port || !udp_port || !dtls_port || !quic_port || !socks_port || !http_connect_port || !ocsp_status_ttl ||
@@ -753,9 +744,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !loopback_only || !pam_login || !api_header || !bind_address || !bind_interface ||
         !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
         !webhook_sift_url || !webhook_sift_tenant || !webhook_sift_instance ||
-        !webhook_sift_payload_limit || *webhook_sift_payload_limit == 0U || !webhook_sift_lored_mode ||
-        (*webhook_sift_lored_mode != "disabled" && *webhook_sift_lored_mode != "optional" &&
-         *webhook_sift_lored_mode != "required") || !webhook_sift_lored_include_url || !webhook_host_id ||
+        !webhook_sift_payload_limit || *webhook_sift_payload_limit == 0U || !webhook_host_id ||
         !webhook_bind_interface || !webhook_api_override || !webhook_ping_interval ||
         !webhook_neighbor_update_interval || !webhook_neighbor_tag_refresh_age ||
         !webhook_task_debug || !webhook_task_debug_dump) {
@@ -775,7 +764,6 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     }
     return {ConfigSystemSettings{
                 *accept_tproxy, *accept_redirect, *accept_socks, *accept_http_connect, *accept_api,
-                *extended_local_destination_protection,
                 *policy_fail_open, *access_fail_open, *plaintext_workers, *tls_workers, *udp_workers,
                 *dtls_workers, *quic_workers, *socks_workers, *http_connect_workers,
                 *plaintext_port, *tls_port, *udp_port, *dtls_port, *quic_port, *socks_port, *http_connect_port,
@@ -800,8 +788,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !bind_address->empty(), !bind_interface->empty(), *webhook_enabled, *webhook_tls_verify,
                 !webhook_url->empty(), *webhook_sift, !webhook_sift_url->empty(),
                 !webhook_sift_tenant->empty(), !webhook_sift_instance->empty(),
-                *webhook_sift_payload_limit, *webhook_sift_lored_mode,
-                *webhook_sift_lored_include_url, !webhook_host_id->empty(),
+                *webhook_sift_payload_limit, !webhook_host_id->empty(),
                 !webhook_bind_interface->empty(), *webhook_api_override, *webhook_ping_interval,
                 *webhook_neighbor_update_interval, *webhook_neighbor_tag_refresh_age,
                 *webhook_task_debug, *webhook_task_debug_dump,

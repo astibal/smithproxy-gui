@@ -314,14 +314,14 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
     constexpr std::array booleans{
         std::string_view{"accept_tproxy"}, std::string_view{"accept_redirect"},
         std::string_view{"accept_socks"}, std::string_view{"accept_http_connect"},
-        std::string_view{"accept_api"}, std::string_view{"extended_local_destination_protection"},
+        std::string_view{"accept_api"},
         std::string_view{"policy_fail_open"}, std::string_view{"policy_access_request_fail_open"},
         std::string_view{"ssl_autodetect"}, std::string_view{"ssl_autodetect_harder"},
         std::string_view{"ssl_use_ktls"}, std::string_view{"http_api.key_extend_on_access"},
         std::string_view{"http_api.loopback_only"}, std::string_view{"http_api.pam_login"},
         std::string_view{"http_api.allow_api_header"}, std::string_view{"webhook.enabled"},
         std::string_view{"webhook.tls_verify"}, std::string_view{"webhook.sift"},
-        std::string_view{"webhook.api_override"}, std::string_view{"webhook.sift_lored_include_url"},
+        std::string_view{"webhook.api_override"},
         std::string_view{"webhook.task_debug"}, std::string_view{"webhook.task_debug_dump"},
         std::string_view{"default_write_payload"}, std::string_view{"log_console"},
         std::string_view{"tpool_log"}, std::string_view{"socks.async_dns"},
@@ -360,9 +360,6 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
     if (integer_rule != integer_rules.end()) {
         if (field == "syslog_family") return valid(bounded_integer(value, 4, 4) || bounded_integer(value, 6, 6));
         return valid(bounded_integer(value, integer_rule->minimum, integer_rule->maximum));
-    }
-    if (field == "webhook.sift_lored_mode") {
-        return valid(enumerated(value, {"disabled", "optional", "required"}));
     }
     if (field == "nameservers" || field == "http_api.allowed_ips") {
         const auto* items = strings(value);

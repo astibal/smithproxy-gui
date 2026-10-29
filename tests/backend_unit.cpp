@@ -1091,15 +1091,6 @@ int main() {
     assert(settings.settings->webhook_neighbor_tag_refresh_age == 240U);
     assert(settings.settings->webhook_task_debug);
     assert(!settings.settings->webhook_task_debug_dump);
-    assert(settings.settings->extended_local_destination_protection);
-    assert(settings.settings->webhook_sift_lored_mode == "disabled");
-    assert(!settings.settings->webhook_sift_lored_include_url);
-    const auto current_security_settings = parse_config_settings(
-        R"({"success":{"settings":{"extended_local_destination_protection":"false","webhook":{"sift_lored_mode":"required","sift_lored_include_url":"true"}}}})");
-    assert(current_security_settings.settings);
-    assert(!current_security_settings.settings->extended_local_destination_protection);
-    assert(current_security_settings.settings->webhook_sift_lored_mode == "required");
-    assert(current_security_settings.settings->webhook_sift_lored_include_url);
     const auto tuning_settings = parse_config_settings(
         R"({"success":{"settings":{"certs_ctlog":"/private/ct-log.cnf","ca_bundle_file":"/private/ca.pem","admin":{"group":"smithproxy-admins"},"tuning":{"host_bufsz_min":"4096","host_bufsz_max_multiplier":"512","host_write_full":"100000","host_io_batch":"131072","tls_write_chunk":"32768","host_open_timeout":"9","host_idle_timeout":"1800","nbr_cache_size":"4000"}}}})");
     assert(tuning_settings.settings);
@@ -1136,8 +1127,6 @@ int main() {
         R"({"success":{"settings":{"quic_workers":"-2"}}})").settings);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"default_write_payload":"false","http_api":{"port":"1024"}}}})").settings);
-    assert(!parse_config_settings(
-        R"({"success":{"settings":{"webhook":{"sift_lored_mode":"unexpected"}}}})").settings);
     const auto debug = parse_config_debug(
         R"({"success":{"debug":{"log_data_crc":"true","log_sockets":"false","log_online_cx_name":"true","log_srclines":"false","log_srclines_always":"true","log":{"proxy":"7","tls":"8"}}}})");
     assert(debug.debug);
@@ -1222,12 +1211,8 @@ int main() {
     assert(active_alerts.size() == 1U);
     assert(active_alerts.front().id == "interfaces");
     alert_status.interface_metrics.state = "ready";
-    alert_status.config_snapshot.settings.emplace();
-    alert_status.config_snapshot.settings->extended_local_destination_protection = false;
     active_alerts = derive_operational_alerts(alert_status, true, true, now);
-    assert(active_alerts.size() == 1U);
-    assert(active_alerts.front().id == "local-destination-protection-disabled");
-    assert(active_alerts.front().severity == "warning");
+    assert(active_alerts.empty());
 
     const auto unconfigured_alerts = derive_operational_alerts({}, false, false, now);
     assert(unconfigured_alerts.size() == 1U);

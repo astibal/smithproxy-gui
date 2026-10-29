@@ -1464,8 +1464,6 @@ private:
                        ",\"accept_socks\":" + (value.accept_socks ? "true" : "false") +
                        ",\"accept_http_connect\":" + (value.accept_http_connect ? "true" : "false") +
                        ",\"accept_api\":" + (value.accept_api ? "true" : "false") +
-                       ",\"extended_local_destination_protection\":" +
-                       (value.extended_local_destination_protection ? "true" : "false") +
                        ",\"policy_fail_open\":" + (value.policy_fail_open ? "true" : "false") +
                        ",\"access_request_fail_open\":" +
                        (value.access_request_fail_open ? "true" : "false") +
@@ -1564,9 +1562,6 @@ private:
                        ",\"sift_tenant_configured\":" + (value.webhook_sift_tenant_configured ? "true" : "false") +
                        ",\"sift_instance_configured\":" + (value.webhook_sift_instance_configured ? "true" : "false") +
                        ",\"sift_payload_limit_per_direction\":" + std::to_string(value.webhook_sift_payload_limit) +
-                       ",\"sift_lored_mode\":" + json_string(value.webhook_sift_lored_mode) +
-                       ",\"sift_lored_include_url\":" +
-                       (value.webhook_sift_lored_include_url ? "true" : "false") +
                        ",\"hostid_configured\":" + (value.webhook_host_id_configured ? "true" : "false") +
                        ",\"bind_interface_configured\":" + (value.webhook_bind_interface_configured ? "true" : "false") +
                        ",\"api_override\":" + (value.webhook_api_override ? "true" : "false") +

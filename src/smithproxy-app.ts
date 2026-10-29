@@ -86,7 +86,6 @@ const systemBooleanFields = [
   ['accept_tproxy', 'accept-tproxy'], ['accept_redirect', 'accept-redirect'],
   ['accept_socks', 'accept-socks'], ['accept_http_connect', 'accept-http-connect'],
   ['accept_api', 'accept-api'],
-  ['extended_local_destination_protection', 'extended-local-destination-protection'],
   ['policy_fail_open', 'policy-fail-open'],
   ['policy_access_request_fail_open', 'access-fail-open'],
   ['ssl_autodetect', 'tls-autodetect'], ['ssl_autodetect_harder', 'tls-autodetect-harder'],
@@ -95,7 +94,6 @@ const systemBooleanFields = [
   ['http_api.pam_login', 'api-pam'], ['http_api.allow_api_header', 'api-header'],
   ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
   ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
-  ['webhook.sift_lored_include_url', 'webhook-sift-lored-include-url'],
   ['webhook.task_debug', 'webhook-task-debug'],
   ['webhook.task_debug_dump', 'webhook-task-debug-dump'],
   ['default_write_payload', 'logging-default-payload'], ['log_console', 'logging-console'],
@@ -5147,12 +5145,6 @@ export class SmithproxyApp extends LitElement {
       if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
       changes.push({path: `settings.${path}`, value: select.value === 'true'});
     }
-    const siftLoredMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-webhook-sift-lored-mode');
-    if (!siftLoredMode || !['disabled', 'optional', 'required'].includes(siftLoredMode.value)) {
-      this.draftError = 'Sift LoreD mode is invalid.';
-      return undefined;
-    }
-    changes.push({path: 'settings.webhook.sift_lored_mode', value: siftLoredMode.value});
     for (const [path, id] of systemWorkerFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-worker-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
@@ -5886,7 +5878,6 @@ export class SmithproxyApp extends LitElement {
       flag('accept_socks', settings.acceptSocks),
       flag('accept_http_connect', settings.acceptHttpConnect),
       flag('accept_api', settings.acceptApi),
-      flag('extended_local_destination_protection', settings.extendedLocalDestinationProtection),
       flag('policy_fail_open', settings.policyFailOpen),
       flag('policy_access_request_fail_open', settings.accessRequestFailOpen),
       scalar('plaintext_workers', settings.workers.plaintext),
@@ -5942,8 +5933,6 @@ export class SmithproxyApp extends LitElement {
       flag('webhook.tls_verify', settings.webhook.tlsVerify),
       flag('webhook.sift', settings.webhook.siftEnabled),
       flag('webhook.api_override', settings.webhook.apiOverride),
-      scalar('webhook.sift_lored_mode', settings.webhook.siftLoredMode),
-      flag('webhook.sift_lored_include_url', settings.webhook.siftLoredIncludeUrl),
       scalar('webhook.sift_payload_limit_per_direction', settings.webhook.siftPayloadLimitPerDirection),
       scalar('webhook.ping_interval', settings.webhook.pingInterval),
       scalar('webhook.nbr_update_interval', settings.webhook.neighborUpdateInterval),
@@ -7339,7 +7328,6 @@ export class SmithproxyApp extends LitElement {
               <dl>
                 <dt>TPROXY / REDIRECT</dt><dd>${setting('accept_tproxy', settings.acceptTproxy) ? 'On' : 'Off'} / ${setting('accept_redirect', settings.acceptRedirect) ? 'On' : 'Off'}</dd>
                 <dt>SOCKS / CONNECT</dt><dd>${setting('accept_socks', settings.acceptSocks) ? 'On' : 'Off'} / ${setting('accept_http_connect', settings.acceptHttpConnect) ? 'On' : 'Off'}</dd>
-                <dt>Local destination protection</dt><dd>${setting('extended_local_destination_protection', settings.extendedLocalDestinationProtection) ? 'Enforced' : 'Disabled · unsafe'}</dd>
                 <dt>Policy failure</dt><dd>${setting('policy_fail_open', settings.policyFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
                 <dt>Access request failure</dt><dd>${setting('policy_access_request_fail_open', settings.accessRequestFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
               </dl>
@@ -7416,8 +7404,6 @@ export class SmithproxyApp extends LitElement {
                 <dt>Sift</dt><dd>${setting('webhook.sift', settings.webhook.siftEnabled) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Sift endpoint</dt><dd>${settings.webhook.siftUrlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>Sift payload limit</dt><dd>${setting('webhook.sift_payload_limit_per_direction', settings.webhook.siftPayloadLimitPerDirection)} bytes / direction</dd>
-                <dt>LoreD enrichment</dt><dd>${setting('webhook.sift_lored_mode', settings.webhook.siftLoredMode)}</dd>
-                <dt>LoreD URL disclosure</dt><dd>${setting('webhook.sift_lored_include_url', settings.webhook.siftLoredIncludeUrl) ? 'Allowed' : 'Blocked'}</dd>
                 <dt>Ping interval</dt><dd>${setting('webhook.ping_interval', settings.webhook.pingInterval)}s</dd>
                 <dt>API override</dt><dd>${setting('webhook.api_override', settings.webhook.apiOverride) ? 'Allowed' : 'Blocked'}</dd>
                 <dt>Nameservers</dt><dd>${settingStrings('nameservers', settings.nameservers).join(', ') || 'None'}</dd>
@@ -8886,11 +8872,6 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('accept-socks', 'SOCKS listener', settings.acceptSocks)}
         ${booleanField('accept-http-connect', 'HTTP CONNECT listener', settings.acceptHttpConnect)}
         ${booleanField('accept-api', 'Smithproxy API listener', settings.acceptApi)}
-        ${booleanField(
-          'extended-local-destination-protection',
-          'Protect local explicit-proxy destinations',
-          settings.extendedLocalDestinationProtection,
-        )}
         ${booleanField('policy-fail-open', 'Policy failure', settings.policyFailOpen)}
         ${booleanField('access-fail-open', 'Access request failure', settings.accessRequestFailOpen)}
         ${workerField('plaintext', 'Plaintext workers', settings.workers.plaintext)}
@@ -8979,19 +8960,6 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
         ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
         ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
-        <label for="settings-webhook-sift-lored-mode">Sift LoreD enrichment</label>
-        <select id="settings-webhook-sift-lored-mode"
-          .value=${scalar('settings.webhook.sift_lored_mode', settings.webhook.siftLoredMode)}
-          ?disabled=${locked('settings.webhook.sift_lored_mode')}>
-          <option value="disabled">Disabled</option>
-          <option value="optional">Optional</option>
-          <option value="required">Required</option>
-        </select>
-        ${booleanField(
-          'webhook-sift-lored-include-url',
-          'Allow LoreD URL disclosure',
-          settings.webhook.siftLoredIncludeUrl,
-        )}
         ${numericField('webhook-sift-payload-limit', 'Sift payload limit per direction', settings.webhook.siftPayloadLimitPerDirection, 1073741824)}
         ${numericField('webhook-ping-interval', 'Webhook ping interval (seconds)', settings.webhook.pingInterval, 2147483647)}
         ${numericField('webhook-neighbor-update-interval', 'Neighbor update interval (seconds)', settings.webhook.neighborUpdateInterval, 2147483647)}

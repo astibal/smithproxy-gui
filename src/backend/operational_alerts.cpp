@@ -78,12 +78,6 @@ std::vector<OperationalAlert> derive_operational_alerts(
         append_collector_alert(alerts, "configuration", "Configuration snapshot is degraded",
                                status.config_snapshot.state, status.config_snapshot.last_success_at,
                                std::chrono::seconds{180}, now);
-        if (status.config_snapshot.state == "ready" && status.config_snapshot.settings &&
-            !status.config_snapshot.settings->extended_local_destination_protection) {
-            alerts.push_back({"local-destination-protection-disabled", "warning",
-                              "Local destination protection is disabled",
-                              "Explicit-proxy clients may reach services bound to local host addresses."});
-        }
     }
 
     const auto capacity = status.tls_cache_metrics.capacity;

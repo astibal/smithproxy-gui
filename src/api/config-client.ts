@@ -71,11 +71,11 @@ const indexedProvenanceFields: Readonly<Record<string, ReadonlySet<string>>> = {
 
 const settingsProvenanceFields = new Set([
   'accept_tproxy', 'accept_redirect', 'accept_socks', 'accept_http_connect', 'accept_api',
-  'extended_local_destination_protection', 'policy_fail_open', 'policy_access_request_fail_open',
+  'policy_fail_open', 'policy_access_request_fail_open',
   'ssl_autodetect', 'ssl_autodetect_harder', 'ssl_use_ktls',
   'http_api.key_extend_on_access', 'http_api.loopback_only', 'http_api.pam_login',
   'http_api.allow_api_header', 'webhook.enabled', 'webhook.tls_verify', 'webhook.sift',
-  'webhook.api_override', 'webhook.sift_lored_include_url', 'webhook.task_debug',
+  'webhook.api_override', 'webhook.task_debug',
   'webhook.task_debug_dump', 'default_write_payload', 'log_console', 'tpool_log',
   'socks.async_dns', 'socks.ipver_mixing', 'socks.prefer_ipv6', 'plaintext_workers',
   'ssl_workers', 'udp_workers', 'dtls_workers', 'quic_workers', 'socks_workers',
@@ -87,7 +87,7 @@ const settingsProvenanceFields = new Set([
   'tuning.host_bufsz_min', 'tuning.host_bufsz_max_multiplier', 'tuning.host_write_full',
   'tuning.host_io_batch', 'tuning.tls_write_chunk', 'tuning.host_open_timeout',
   'tuning.host_idle_timeout', 'tuning.nbr_cache_size', 'webhook.sift_payload_limit_per_direction',
-  'webhook.sift_lored_mode', 'nameservers', 'http_api.allowed_ips', 'udp_quick_ports',
+  'nameservers', 'http_api.allowed_ips', 'udp_quick_ports',
 ]);
 
 const captureProvenanceFields = new Set([
@@ -194,12 +194,6 @@ function allowedInteger(value: unknown, label: string, allowed: ReadonlyArray<nu
     throw new Error(`Invalid ${label}.`);
   }
   return value;
-}
-
-function allowedString(value: unknown, label: string, allowed: ReadonlyArray<string>): string {
-  const result = safeString(value, label, 128);
-  if (!allowed.includes(result)) throw new Error(`Invalid ${label}.`);
-  return result;
 }
 
 function safeBoolean(value: unknown, label: string): boolean {
@@ -619,9 +613,6 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       acceptSocks: safeBoolean(value.settings.accept_socks, 'SOCKS listener state'),
       acceptHttpConnect: safeBoolean(value.settings.accept_http_connect, 'HTTP CONNECT listener state'),
       acceptApi: safeBoolean(value.settings.accept_api, 'Smithproxy API listener state'),
-      extendedLocalDestinationProtection: safeBoolean(
-        value.settings.extended_local_destination_protection, 'local destination protection state',
-      ),
       policyFailOpen: safeBoolean(value.settings.policy_fail_open, 'policy fail-open state'),
       accessRequestFailOpen: safeBoolean(
         value.settings.access_request_fail_open, 'access-request fail-open state',
@@ -790,13 +781,6 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         siftPayloadLimitPerDirection: rangedInteger(
           value.settings.webhook.sift_payload_limit_per_direction,
           'Sift payload limit', 1, 1073741824,
-        ),
-        siftLoredMode: allowedString(
-          value.settings.webhook.sift_lored_mode,
-          'Sift LoreD mode', ['disabled', 'optional', 'required'],
-        ) as SystemSettings['webhook']['siftLoredMode'],
-        siftLoredIncludeUrl: safeBoolean(
-          value.settings.webhook.sift_lored_include_url, 'Sift LoreD URL disclosure state',
         ),
         hostIdConfigured: safeBoolean(value.settings.webhook.hostid_configured, 'webhook host ID state'),
         bindInterfaceConfigured: safeBoolean(

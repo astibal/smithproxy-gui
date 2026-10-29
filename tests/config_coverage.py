@@ -37,7 +37,7 @@ SENSITIVITIES = {
 FULL_TYPED_FIELDS = {
     "settings": {
         "accept_tproxy", "accept_redirect", "accept_socks", "accept_http_connect",
-        "accept_api", "extended_local_destination_protection", "policy_fail_open",
+        "accept_api", "policy_fail_open",
         "policy_access_request_fail_open", "plaintext_workers", "ssl_workers",
         "udp_workers", "dtls_workers", "quic_workers", "socks_workers",
         "http_connect_workers", "plaintext_port", "ssl_port", "udp_port", "dtls_port",
@@ -50,8 +50,7 @@ FULL_TYPED_FIELDS = {
         "ca_bundle_file", "admin", "tuning", "messages_dir",
         "write_payload_file_prefix", "write_payload_file_suffix", "cli", "web_rating",
         "tpool_log", "socks", "ssl_autodetect_harder", "ssl_use_ktls", "nameservers",
-        "http_api", "webhook", "webhook.sift_lored_mode",
-        "webhook.sift_lored_include_url",
+        "http_api", "webhook",
     },
     "debug": {
         "log_data_crc", "log_sockets", "log_online_cx_name", "log_srclines",
