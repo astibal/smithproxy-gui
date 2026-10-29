@@ -77,6 +77,7 @@ std::string error_code(const std::string_view message) {
     if (message == "invalid path") return "request.invalid_path";
     if (message == "invalid event cursor") return "events.invalid_cursor";
     if (message == "draft version conflict") return "draft.version_conflict";
+    if (message == "draft change not found") return "draft.change_not_found";
     if (message == "transaction revision conflict") return "config.revision_conflict";
     if (message == "transaction validation unavailable") return "config.validation_unavailable";
     if (message == "transaction validation rejected") return "config.validation_rejected";
@@ -114,6 +115,9 @@ MutationAuditMetadata mutation_audit_metadata(
     const std::string_view relative, const std::string_view body) {
     MutationAuditMetadata metadata;
     if (relative == "/api/v1/config/draft/changes") metadata.operation = "config.draft.upsert";
+    else if (relative == "/api/v1/config/draft/changes/remove") {
+        metadata.operation = "config.draft.remove";
+    }
     else if (relative == "/api/v1/config/draft/clear") metadata.operation = "config.draft.clear";
     else if (relative == "/api/v1/config/draft/validate") metadata.operation = "config.draft.validate";
     else if (relative == "/api/v1/config/draft/commit") metadata.operation = "config.draft.commit";
@@ -461,6 +465,7 @@ private:
             return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
         }
         if (*relative != "/api/v1/config/draft/changes" &&
+            *relative != "/api/v1/config/draft/changes/remove" &&
             *relative != "/api/v1/config/draft/clear" &&
             *relative != "/api/v1/config/draft/validate" &&
             *relative != "/api/v1/config/draft/commit") {
@@ -625,6 +630,36 @@ private:
             if (result == DraftMutationResult::VersionConflict) {
                 return {409, "application/json; charset=utf-8",
                         "{\"error\":\"draft version conflict\"}"};
+            }
+            return draft_snapshot();
+        }
+        if (*relative == "/api/v1/config/draft/changes/remove") {
+            if (document.is_discarded() || !document.is_object() || document.size() != 2U ||
+                !document.contains("expected_version") ||
+                !document["expected_version"].is_number_unsigned() ||
+                !document.contains("path") || !document["path"].is_string()) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid draft remove request\"}"};
+            }
+            const auto result = commit_coordinator_.mutate([&] {
+                return draft_.remove(document["expected_version"].get<std::uint64_t>(),
+                                     document["path"].get<std::string>());
+            });
+            if (result == DraftMutationResult::Busy) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit in progress\"}"};
+            }
+            if (result == DraftMutationResult::VersionConflict) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"draft version conflict\"}"};
+            }
+            if (result == DraftMutationResult::Missing) {
+                return {404, "application/json; charset=utf-8",
+                        "{\"error\":\"draft change not found\"}"};
+            }
+            if (result != DraftMutationResult::Applied) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid draft remove request\"}"};
             }
             return draft_snapshot();
         }

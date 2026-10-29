@@ -155,6 +155,14 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/config/draft/changes/remove",
+      "methods": ["POST"],
+      "authentication": "gateway",
+      "csrf": true,
+      "feature": "drafts",
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/config/draft/validate",
       "methods": ["POST"],
       "authentication": "gateway",

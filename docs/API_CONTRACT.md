@@ -175,7 +175,10 @@ pojmenované objekty a seřazené kolekce.
 The GUI core currently exposes one workspace-scoped foundation draft at
 `GET /api/v1/config/draft` and accepts typed atomic batches at
 `POST /api/v1/config/draft/changes`. The complete draft can be discarded with
-`POST /api/v1/config/draft/clear`. An explicit
+`POST /api/v1/config/draft/clear`; one pending path can be removed with
+`POST /api/v1/config/draft/changes/remove`. Both operations require the current
+draft version, so one operator cannot silently erase a concurrent operator's
+work. An explicit
 `POST /api/v1/config/draft/validate` sends the current immutable draft snapshot
 through the reviewed upstream transaction transport when that capability and a
 canonical base revision are available. A batch carries one expected version and a

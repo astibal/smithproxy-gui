@@ -519,7 +519,7 @@ export class SmithproxyApp extends LitElement {
     .row:not(.heading):hover { background: var(--app-raised); }
     .row.heading { color: var(--app-muted); font-size: 12px; cursor: default; }
     .row strong { font-weight: 650; }
-    .draft-row { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr); gap: 18px; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
+    .draft-row { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr) auto; gap: 18px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .draft-row:last-child { border-bottom: 0; }
     .draft-row.heading { color: var(--app-muted); font-size: 12px; }
     .draft-path { overflow-wrap: anywhere; color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
@@ -1735,6 +1735,26 @@ export class SmithproxyApp extends LitElement {
         this.discardDraftArmed = false;
         if (this.draftChangeCount === 0) void this.refreshConfiguration(true);
       }
+    }
+  }
+
+  private async removeDraftChange(path: string): Promise<void> {
+    if (!this.draftAvailable || !this.draftClient || this.draftSaving || this.draftCommitting) return;
+    this.draftSaving = true;
+    const accessEpoch = this.configurationAccessEpoch;
+    this.draftError = undefined;
+    try {
+      const draft = await this.draftClient.remove(this.draftVersion, path);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Draft change could not be removed.';
+      await this.loadDraft();
+      this.draftError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
     }
   }
 
@@ -3155,11 +3175,18 @@ export class SmithproxyApp extends LitElement {
             <div class="draft-row heading" role="row">
               <span role="columnheader">Configuration path</span>
               <span role="columnheader">Draft value</span>
+              <span role="columnheader">Action</span>
             </div>
             ${changes.map(change => html`
               <div class="draft-row" role="row">
                 <span class="draft-path" role="cell">${change.path}</span>
                 <span class="draft-value" role="cell">${this.draftValueSummary(change.path, change.value)}</span>
+                <span role="cell">
+                  <button class="secondary" type="button"
+                    aria-label=${`Remove ${change.path} from draft`}
+                    ?disabled=${this.draftSaving || this.draftValidating || this.draftCommitting}
+                    @click=${() => this.removeDraftChange(change.path)}>Remove</button>
+                </span>
               </div>
             `)}
           </div>

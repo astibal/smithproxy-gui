@@ -71,6 +71,20 @@ describe('DraftClient', () => {
     }));
   });
 
+  it('removes one path from a draft with optimistic concurrency headers', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      id: 'workspace-draft', base_revision: null, version: 4, changes: [],
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+    await expect(client.remove(3, 'policy.[0].action')).resolves.toMatchObject({version: 4, changes: []});
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/changes/remove', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({expected_version: 3, path: 'policy.[0].action'}),
+      headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+    }));
+    await expect(client.remove(4, '../unsafe')).rejects.toThrow('Invalid draft path');
+  });
+
   it('loads a bounded redacted preflight impact summary', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: 7,

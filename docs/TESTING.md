@@ -98,6 +98,9 @@ samostatnými povinnými důkazy.
 - fuzzing vstupních parserů a event streamu;
 - restart/crash testy draftů, jobů a auditu.
 
+Jednotlivé odebrání draft změny je testováno přes browser klienta, HTTP boundary
+i workspace review UI včetně stale-version konfliktu a value-free auditu.
+
 Deterministický robustness corpus mutuje validní JSON obálky, libovolné bajtové
 payloady, schema cesty a všechny podporované varianty draft hodnot. Každý běh
 prochází všemi produkčními snapshot parsery a draft validátorem. CI jej spouští

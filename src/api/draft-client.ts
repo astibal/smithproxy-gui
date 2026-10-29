@@ -336,6 +336,18 @@ export class DraftClient {
     }));
   }
 
+  async remove(expectedVersion: number, path: string): Promise<DraftSnapshot> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid draft version.');
+    if (path.length === 0 || path.length > 512 || !/^[A-Za-z0-9_.\[\]-]+$/u.test(path)) {
+      throw new Error('Invalid draft path.');
+    }
+    return parseDraft(await this.#request(`${this.#endpoint}/changes/remove`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({expected_version: expectedVersion, path}),
+    }));
+  }
+
   async clear(expectedVersion: number): Promise<DraftSnapshot> {
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid draft version.');
     return parseDraft(await this.#request(`${this.#endpoint}/clear`, {

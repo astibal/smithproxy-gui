@@ -427,6 +427,23 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     draft = {...draft, version: draft.version + 1, changes: []};
     await route.fulfill({json: draft});
   });
+  await page.route('**/api/v1/config/draft/changes/remove', async route => {
+    const body = route.request().postDataJSON() as {expected_version: number; path: string};
+    if (body.expected_version !== draft.version) {
+      await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
+      return;
+    }
+    if (!draft.changes.some(change => change.path === body.path)) {
+      await route.fulfill({status: 404, json: {error: 'draft change not found'}});
+      return;
+    }
+    draft = {
+      ...draft,
+      version: draft.version + 1,
+      changes: draft.changes.filter(change => change.path !== body.path),
+    };
+    await route.fulfill({json: draft});
+  });
   await page.route('**/api/v1/config/draft/changes', async route => {
     const request = route.request();
     const body = request.postDataJSON() as {
@@ -676,6 +693,7 @@ async function expectNoWcagViolations(page: Page): Promise<void> {
 }
 
 test('loads authenticated runtime configuration and saves an atomic policy draft', async ({page}) => {
+  test.setTimeout(45_000);
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
@@ -900,10 +918,13 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('tls_ca.[0].path');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/etc/smithproxy/private/new-default-ca');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('auth_profiles.[0].authenticate');
+  await page.getByRole('button', {name: 'Remove policy.[0].action from draft'}).click();
+  await expect(page.getByRole('button', {name: 'Remove policy.[0].action from draft'})).toHaveCount(0);
+  await expect(page.getByText('Draft: 101 changes')).toBeVisible();
   await page.getByRole('button', {name: 'Discard draft'}).click();
-  await expect(page.getByRole('button', {name: 'Confirm discard 102 changes'})).toBeVisible();
-  await expect(page.getByText('Draft: 102 changes')).toBeVisible();
-  await page.getByRole('button', {name: 'Confirm discard 102 changes'}).click();
+  await expect(page.getByRole('button', {name: 'Confirm discard 101 changes'})).toBeVisible();
+  await expect(page.getByText('Draft: 101 changes')).toBeVisible();
+  await page.getByRole('button', {name: 'Confirm discard 101 changes'}).click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
 });

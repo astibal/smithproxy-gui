@@ -1221,7 +1221,34 @@ def main() -> int:
             assert b"secret content replacement" not in body
             assert b"/new/private/ca/default" not in body
             assert b"secret replacement regex" not in body
-            clear_change = json.dumps({"expected_version": 3})
+            remove_change = json.dumps({
+                "expected_version": 3, "path": "policy.[0].action"})
+            assert request(
+                configured_port, "/api/v1/config/draft/changes/remove", "POST",
+                headers={**mutation_headers, "Origin": "https://attacker.invalid"},
+                body=remove_change,
+            )[0] == 403
+            status, _, body = request(
+                configured_port, "/api/v1/config/draft/changes/remove", "POST",
+                headers=mutation_headers, body=remove_change)
+            assert status == 200
+            removed_snapshot = json.loads(body)
+            assert removed_snapshot["version"] == 4
+            assert all(change["path"] != "policy.[0].action"
+                       for change in removed_snapshot["changes"])
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes/remove", "POST",
+                headers=mutation_headers,
+                body=json.dumps({
+                    "expected_version": 3, "path": "policy.[0].name"}),
+            ), 409, "draft.version_conflict")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes/remove", "POST",
+                headers=mutation_headers,
+                body=json.dumps({
+                    "expected_version": 4, "path": "policy.[0].action"}),
+            ), 404, "draft.change_not_found")
+            clear_change = json.dumps({"expected_version": 4})
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",
                 headers={**mutation_headers, "Origin": "https://attacker.invalid"},
@@ -1232,7 +1259,7 @@ def main() -> int:
                 headers=mutation_headers, body=clear_change)
             assert status == 200
             cleared_snapshot = json.loads(body)
-            assert cleared_snapshot["version"] == 4
+            assert cleared_snapshot["version"] == 5
             assert cleared_snapshot["changes"] == []
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",
