@@ -89,6 +89,7 @@ endif()
 
 add_library(smithproxy_gui_core
     src/backend/audit_store.cpp
+    src/backend/commit_coordinator.cpp
     src/backend/config.cpp
     src/backend/config_snapshot.cpp
     src/backend/draft_store.cpp

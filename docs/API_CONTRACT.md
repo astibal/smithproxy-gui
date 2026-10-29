@@ -39,7 +39,9 @@ the encoded body when the negotiated or hard 1 MiB limit is exceeded. Upstream
 responses are reduced to fixed outcome states and aggregate metadata before any
 browser-facing endpoint can consume them. The explicit validation endpoint uses
 this adapter. The internal commit transport accepts an idempotency UUID supplied
-by its coordinator so an uncertain attempt can be retried with the same key;
+by its coordinator so an uncertain attempt can be retried with the same key.
+The move-only coordinator lease rejects a second commit and local draft
+mutations while an attempt is in flight and releases the gate on every exit;
 commit still has no browser-facing endpoint.
 
 A validation success must echo the canonical base revision as both `revision`

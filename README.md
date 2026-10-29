@@ -130,11 +130,13 @@ The internal transaction envelope and response parser are also implemented:
 they bind typed changes to a canonical revision and OS-generated idempotency
 UUID while discarding free-form upstream response text. No browser commit path
 is enabled yet. The internal commit transport now requires a caller-owned stable
-idempotency UUID, and draft finalization atomically verifies the draft version,
-clears changes, and advances the canonical base revision only after a bound
-success response. Draft preflight reports the exact fixed blocker category instead
-of collapsing missing advertisement, schema review, compatibility, revision,
-and transport readiness into one generic error.
+idempotency UUID. A move-only commit coordinator retains that key across an
+uncertain retry, rejects local mutations while an attempt is in flight, and
+releases its gate through RAII. Draft finalization atomically verifies the draft
+version, clears changes, and advances the canonical base revision only after a
+bound success response. Draft preflight reports the exact fixed blocker category
+instead of collapsing missing advertisement, schema review, compatibility,
+revision, and transport readiness into one generic error.
 The CSRF-protected validation endpoint is present as well and sends no draft
 values from the browser. The review UI binds a successful result to the exact
 draft version, base revision, and operation count and invalidates it on the next

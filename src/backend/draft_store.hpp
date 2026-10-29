@@ -31,6 +31,7 @@ enum class DraftMutationResult {
     InvalidValue,
     CapacityExceeded,
     Missing,
+    Busy,
 };
 
 class DraftStore {

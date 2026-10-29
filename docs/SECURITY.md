@@ -93,9 +93,10 @@ The response parser discards upstream messages and warning contents; it retains
 only a fixed terminal state, validated revisions, operation and warning counts,
 and a bounded restart enum. The adapter is connected only to the explicit
 browser validation endpoint; no browser commit endpoint exists yet. Its internal
-commit mode does not generate a fresh key implicitly: the future coordinator
-must retain and reuse one validated UUID for every uncertain retry of the same
-draft version and base revision.
+commit mode does not generate a fresh key implicitly. The coordinator retains
+and reuses one validated UUID for every uncertain retry of the same draft
+version and base revision. Its move-only RAII lease keeps at most one attempt in
+flight and rejects local draft mutations until the attempt terminates.
 
 The explicit draft-validation endpoint accepts only an optimistic draft version;
 it obtains every value from the server-side snapshot after gateway and CSRF

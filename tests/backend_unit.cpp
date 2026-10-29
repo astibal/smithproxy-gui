@@ -1,4 +1,5 @@
 #include "audit_store.hpp"
+#include "commit_coordinator.hpp"
 #include "config.hpp"
 #include "config_snapshot.hpp"
 #include "draft_store.hpp"
@@ -21,6 +22,7 @@
 #include <filesystem>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace smithproxy::gui;
@@ -111,6 +113,48 @@ int main() {
     assert(commit_draft.snapshot().changes.empty());
     assert(commit_draft.complete_commit(2U, canonical_revision_a) ==
            DraftMutationResult::Missing);
+
+    DraftStore coordinated_draft{"coordinated-draft", canonical_revision_a};
+    CommitCoordinator coordinator{coordinated_draft};
+    assert(coordinator.begin(0U).result() == CommitPreparationResult::Empty);
+    assert(coordinator.mutate([&] {
+        return coordinated_draft.upsert(
+            0U, {"policy.[0].action", std::string("reject")});
+    }) == DraftMutationResult::Applied);
+    assert(coordinator.begin(0U).result() == CommitPreparationResult::VersionConflict);
+    std::string retained_key;
+    {
+        auto lease = coordinator.begin(1U);
+        assert(lease);
+        auto moved_lease = std::move(lease);
+        assert(moved_lease);
+        retained_key = moved_lease.idempotency_key();
+        assert(moved_lease.draft().version == 1U);
+        assert(coordinator.busy());
+        assert(coordinator.begin(1U).result() == CommitPreparationResult::Busy);
+        assert(coordinator.mutate([&] {
+            return coordinated_draft.clear(1U);
+        }) == DraftMutationResult::Busy);
+    }
+    assert(!coordinator.busy());
+    auto retry = coordinator.begin(1U);
+    assert(retry);
+    assert(retry.idempotency_key() == retained_key);
+    retry.release(false);
+    auto replacement = coordinator.begin(1U);
+    assert(replacement);
+    assert(replacement.idempotency_key().size() == 36U);
+    assert(replacement.complete_success(canonical_revision_b) == DraftMutationResult::Applied);
+    assert(!coordinator.busy());
+    assert(coordinated_draft.snapshot().version == 2U);
+    assert(coordinated_draft.snapshot().base_revision == canonical_revision_b);
+    assert(coordinated_draft.snapshot().changes.empty());
+
+    DraftStore invalid_commit_draft{"invalid-commit-draft", "revision-7"};
+    assert(invalid_commit_draft.upsert(
+        0U, {"policy.[0].action", std::string("reject")}) == DraftMutationResult::Applied);
+    CommitCoordinator invalid_coordinator{invalid_commit_draft};
+    assert(invalid_coordinator.begin(1U).result() == CommitPreparationResult::InvalidDraft);
 
     const auto parsed_revision = parse_config_revision(
         "{\"success\":{\"revision\":\"" + canonical_revision_a + "\"}}");
