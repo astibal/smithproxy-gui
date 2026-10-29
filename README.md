@@ -152,6 +152,9 @@ Editor saves include only fields changed since that editor opened. When a
 pending value is restored to its persistent origin, the GUI core atomically
 removes that path while applying any sibling updates under the same optimistic
 draft-version check.
+System and Captures summary cards use the same pending values as their editors,
+show a pending badge, and state explicitly that Smithproxy runtime remains
+unchanged until a validated atomic commit.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls.

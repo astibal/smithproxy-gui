@@ -68,6 +68,8 @@ breadcrumbů, aby se aktivní editor nezmenšoval.
 - editor umí po explicitním potvrzení atomicky odebrat všechny své draft změny;
 - policy a object listy i globální hledání používají pending hodnoty; listy je
   označují výrazným `Pending` badge;
+- System a Captures souhrny používají stejné pending hodnoty jako editory a
+  výslovně odlišují draft konfiguraci od dosud nezměněného runtime stavu;
 - `Esc` zavře aktuální úroveň až po vyřešení neuložených změn;
 - browser Back a opuštění stránky používají stejnou ochranu rozepsaných změn;
 - stav řetězce je reprezentován v URL a lze jej obnovit po reloadu.

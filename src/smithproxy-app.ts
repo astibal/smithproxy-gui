@@ -4761,16 +4761,31 @@ export class SmithproxyApp extends LitElement {
     const captures = this.snapshot?.captures;
     const securityAssets = this.snapshot?.securityAssets;
     const workers = (value: number) => value === -1 ? 'Disabled' : String(value);
+    const setting = <T extends ConfigScalar>(path: string, fallback: T): T =>
+      this.presentedValue(`settings.${path}`, fallback);
+    const settingStrings = (path: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
+      this.presentedListValue(`settings.${path}`, fallback, 'string');
+    const debugSetting = <T extends ConfigScalar>(path: string, fallback: T): T =>
+      this.presentedValue(`debug.${path}`, fallback);
+    const captureSetting = <T extends ConfigScalar>(path: string, fallback: T): T =>
+      this.presentedValue(`captures.${path}`, fallback);
     const gateway = this.gatewayStatus();
     const capabilityTone = this.capabilityBootstrapState === 'ready' ? 'success' :
       this.capabilityBootstrapState === 'unavailable' ? 'danger' : 'warning';
     const enabledCapabilityCount = this.enabledCapabilityCount();
+    const pendingConfiguration = this.draftObjects.has('settings:settings') ||
+      this.draftObjects.has('captures:captures') ||
+      [...this.draftObjects].some(key => key.startsWith('authority:') || key.startsWith('signature:') ||
+        key.startsWith('signature-flow:'));
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div><h2>System integration</h2><p>Non-sensitive diagnostics for this GUI instance</p></div>
           <button class="secondary" type="button" @click=${() => this.downloadDiagnostics()}>Download diagnostics</button>
         </div>
+        ${pendingConfiguration ? html`<div class="scope-note" role="status">
+          Configuration cards include pending workspace draft values. Smithproxy runtime remains unchanged until a validated atomic commit.
+        </div>` : nothing}
         <div class="system-grid">
           <article class="domain-card">
             <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
@@ -4871,58 +4886,60 @@ export class SmithproxyApp extends LitElement {
           </article>
           ${settings ? html`
             <article class="domain-card">
-              <header><div><h3>Traffic admission</h3><p>Runtime listener and failure policy</p></div>
-                <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
+              <header><div><h3>Traffic admission</h3><p>Configured listener and failure policy</p></div>
+                <div class="preflight-actions">${this.renderPendingBadge('settings', 'settings')}
+                  <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
+                </div>
               </header>
               <dl>
-                <dt>TPROXY / REDIRECT</dt><dd>${settings.acceptTproxy ? 'On' : 'Off'} / ${settings.acceptRedirect ? 'On' : 'Off'}</dd>
-                <dt>SOCKS / CONNECT</dt><dd>${settings.acceptSocks ? 'On' : 'Off'} / ${settings.acceptHttpConnect ? 'On' : 'Off'}</dd>
-                <dt>Local destination protection</dt><dd>${settings.extendedLocalDestinationProtection ? 'Enforced' : 'Disabled · unsafe'}</dd>
-                <dt>Policy failure</dt><dd>${settings.policyFailOpen ? 'Fail open' : 'Fail closed'}</dd>
-                <dt>Access request failure</dt><dd>${settings.accessRequestFailOpen ? 'Fail open' : 'Fail closed'}</dd>
+                <dt>TPROXY / REDIRECT</dt><dd>${setting('accept_tproxy', settings.acceptTproxy) ? 'On' : 'Off'} / ${setting('accept_redirect', settings.acceptRedirect) ? 'On' : 'Off'}</dd>
+                <dt>SOCKS / CONNECT</dt><dd>${setting('accept_socks', settings.acceptSocks) ? 'On' : 'Off'} / ${setting('accept_http_connect', settings.acceptHttpConnect) ? 'On' : 'Off'}</dd>
+                <dt>Local destination protection</dt><dd>${setting('extended_local_destination_protection', settings.extendedLocalDestinationProtection) ? 'Enforced' : 'Disabled · unsafe'}</dd>
+                <dt>Policy failure</dt><dd>${setting('policy_fail_open', settings.policyFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
+                <dt>Access request failure</dt><dd>${setting('policy_access_request_fail_open', settings.accessRequestFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
               </dl>
             </article>
             <article class="domain-card">
               <header><div><h3>Worker pools</h3><p>Configured runtime concurrency</p></div></header>
               <dl>
-                <dt>Plaintext / TLS</dt><dd>${workers(settings.workers.plaintext)} / ${workers(settings.workers.tls)}</dd>
-                <dt>UDP / DTLS / QUIC</dt><dd>${workers(settings.workers.udp)} / ${workers(settings.workers.dtls)} / ${workers(settings.workers.quic)}</dd>
-                <dt>SOCKS / CONNECT</dt><dd>${workers(settings.workers.socks)} / ${workers(settings.workers.httpConnect)}</dd>
-                <dt>TLS autodetect</dt><dd>${settings.tlsAutodetect ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Kernel TLS</dt><dd>${settings.kernelTls ? 'Requested' : 'Disabled'}</dd>
+                <dt>Plaintext / TLS</dt><dd>${workers(setting('plaintext_workers', settings.workers.plaintext))} / ${workers(setting('ssl_workers', settings.workers.tls))}</dd>
+                <dt>UDP / DTLS / QUIC</dt><dd>${workers(setting('udp_workers', settings.workers.udp))} / ${workers(setting('dtls_workers', settings.workers.dtls))} / ${workers(setting('quic_workers', settings.workers.quic))}</dd>
+                <dt>SOCKS / CONNECT</dt><dd>${workers(setting('socks_workers', settings.workers.socks))} / ${workers(setting('http_connect_workers', settings.workers.httpConnect))}</dd>
+                <dt>TLS autodetect</dt><dd>${setting('ssl_autodetect', settings.tlsAutodetect) ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Kernel TLS</dt><dd>${setting('ssl_use_ktls', settings.kernelTls) ? 'Requested' : 'Disabled'}</dd>
               </dl>
             </article>
             <article class="domain-card">
               <header><div><h3>Listener endpoints</h3><p>Configured local ports and certificate status caches</p></div></header>
               <dl>
-                <dt>Plaintext / TLS</dt><dd>${settings.ports.plaintext} / ${settings.ports.tls}</dd>
-                <dt>UDP / QUIC</dt><dd>${settings.ports.udp} / ${settings.ports.quic}</dd>
-                <dt>HTTP CONNECT</dt><dd>${settings.ports.httpConnect}</dd>
-                <dt>OCSP status TTL</dt><dd>${settings.ocspStatusTtl.toLocaleString()} s</dd>
-                <dt>CRL status TTL</dt><dd>${settings.crlStatusTtl.toLocaleString()} s</dd>
+                <dt>Plaintext / TLS</dt><dd>${setting('plaintext_port', settings.ports.plaintext)} / ${setting('ssl_port', settings.ports.tls)}</dd>
+                <dt>UDP / QUIC</dt><dd>${setting('udp_port', settings.ports.udp)} / ${setting('quic_port', settings.ports.quic)}</dd>
+                <dt>HTTP CONNECT</dt><dd>${setting('http_connect_port', settings.ports.httpConnect)}</dd>
+                <dt>OCSP status TTL</dt><dd>${setting('ssl_ocsp_status_ttl', settings.ocspStatusTtl).toLocaleString()} s</dd>
+                <dt>CRL status TTL</dt><dd>${setting('ssl_crl_status_ttl', settings.crlStatusTtl).toLocaleString()} s</dd>
               </dl>
             </article>
             <article class="domain-card">
               <header><div><h3>Logging and payloads</h3><p>Destinations stay redacted</p></div></header>
               <dl>
-                <dt>Log level / console</dt><dd>${settings.logging.level} / ${settings.logging.console ? 'On' : 'Off'}</dd>
+                <dt>Log level / console</dt><dd>${setting('log_level', settings.logging.level)} / ${setting('log_console', settings.logging.console) ? 'On' : 'Off'}</dd>
                 <dt>Log file</dt><dd>${settings.logging.fileConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>TLS key log</dt><dd>${settings.logging.sslKeyFileConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>Default payload capture</dt><dd>${settings.logging.defaultWritePayload ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Default payload capture</dt><dd>${setting('default_write_payload', settings.logging.defaultWritePayload) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Payload directory</dt><dd>${settings.logging.payloadDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>Single PCAP quota</dt><dd>${settings.logging.pcapSingleQuota.toLocaleString()}</dd>
-                <dt>Syslog</dt><dd>${settings.logging.syslogServerConfigured ? `Configured · IPv${settings.logging.syslogFamily}` : 'Not configured'}</dd>
-                <dt>Syslog port / facility / level</dt><dd>${settings.logging.syslogPort} / ${settings.logging.syslogFacility} / ${settings.logging.syslogLevel}</dd>
+                <dt>Single PCAP quota</dt><dd>${setting('write_pcap_single_quota', settings.logging.pcapSingleQuota).toLocaleString()}</dd>
+                <dt>Syslog</dt><dd>${settings.logging.syslogServerConfigured ? `Configured · IPv${setting('syslog_family', settings.logging.syslogFamily)}` : 'Not configured'}</dd>
+                <dt>Syslog port / facility / level</dt><dd>${setting('syslog_port', settings.logging.syslogPort)} / ${setting('syslog_facility', settings.logging.syslogFacility)} / ${setting('syslog_level', settings.logging.syslogLevel)}</dd>
               </dl>
             </article>
             <article class="domain-card">
               <header><div><h3>Auxiliary services</h3><p>Credentials and filesystem paths stay redacted</p></div></header>
               <dl>
-                <dt>CLI port / password</dt><dd>${settings.auxiliary.cliPort} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
-                <dt>SOCKS async DNS</dt><dd>${settings.auxiliary.socksAsyncDns ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Host buffer</dt><dd>${settings.auxiliary.tuning.hostBufferMin} bytes</dd>
-                <dt>Neighbor cache</dt><dd>${settings.auxiliary.tuning.neighborCacheSize} entries</dd>
-                <dt>UDP quick ports</dt><dd>${settings.auxiliary.udpQuickPorts.join(', ') || 'None'}</dd>
+                <dt>CLI port / password</dt><dd>${setting('cli.port', settings.auxiliary.cliPort)} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
+                <dt>SOCKS async DNS</dt><dd>${setting('socks.async_dns', settings.auxiliary.socksAsyncDns) ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Host buffer</dt><dd>${setting('tuning.host_bufsz_min', settings.auxiliary.tuning.hostBufferMin)} bytes</dd>
+                <dt>Neighbor cache</dt><dd>${setting('tuning.nbr_cache_size', settings.auxiliary.tuning.neighborCacheSize)} entries</dd>
+                <dt>UDP quick ports</dt><dd>${settingStrings('udp_quick_ports', settings.auxiliary.udpQuickPorts).join(', ') || 'None'}</dd>
                 <dt>Certificates / CA bundle</dt><dd>${settings.auxiliary.certificatesPathConfigured ? 'Configured' : 'Missing'} / ${settings.auxiliary.caBundlePathConfigured ? 'Configured' : 'Missing'}</dd>
                 <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>Message assets</dt><dd>${settings.auxiliary.messagesDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
@@ -4933,45 +4950,47 @@ export class SmithproxyApp extends LitElement {
             <article class="domain-card">
               <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div></header>
               <dl>
-                <dt>Listener</dt><dd>${settings.acceptApi ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Listener</dt><dd>${setting('accept_api', settings.acceptApi) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>API keys</dt><dd>${settings.httpApi.keyCount} configured</dd>
-                <dt>Allowed IPs</dt><dd>${settings.httpApi.allowedIps.join(', ') || 'None'}</dd>
-                <dt>Listener</dt><dd>Port ${settings.httpApi.port} · ${settings.httpApi.keyTimeout}s token TTL</dd>
-                <dt>Token refresh</dt><dd>${settings.httpApi.keyExtendOnAccess ? 'On access' : 'Fixed expiry'}</dd>
-                <dt>Loopback only</dt><dd>${settings.httpApi.loopbackOnly ? 'Yes' : 'No'}</dd>
+                <dt>Allowed IPs</dt><dd>${settingStrings('http_api.allowed_ips', settings.httpApi.allowedIps).join(', ') || 'None'}</dd>
+                <dt>Listener</dt><dd>Port ${setting('http_api.port', settings.httpApi.port)} · ${setting('http_api.key_timeout', settings.httpApi.keyTimeout)}s token TTL</dd>
+                <dt>Token refresh</dt><dd>${setting('http_api.key_extend_on_access', settings.httpApi.keyExtendOnAccess) ? 'On access' : 'Fixed expiry'}</dd>
+                <dt>Loopback only</dt><dd>${setting('http_api.loopback_only', settings.httpApi.loopbackOnly) ? 'Yes' : 'No'}</dd>
                 <dt>Bind address</dt><dd>${settings.httpApi.bindAddressConfigured ? 'Configured · redacted' : 'Default'}</dd>
                 <dt>Bind interface</dt><dd>${settings.httpApi.bindInterfaceConfigured ? 'Configured · redacted' : 'Default'}</dd>
-                <dt>API header access</dt><dd>${settings.httpApi.allowApiHeader ? 'Allowed' : 'Blocked'}</dd>
-                <dt>PAM login</dt><dd>${settings.httpApi.pamLogin ? 'Enabled' : 'Disabled'}</dd>
+                <dt>API header access</dt><dd>${setting('http_api.allow_api_header', settings.httpApi.allowApiHeader) ? 'Allowed' : 'Blocked'}</dd>
+                <dt>PAM login</dt><dd>${setting('http_api.pam_login', settings.httpApi.pamLogin) ? 'Enabled' : 'Disabled'}</dd>
               </dl>
             </article>
             <article class="domain-card">
               <header><div><h3>Webhook posture</h3><p>URLs and identities are redacted</p></div></header>
               <dl>
-                <dt>Webhook</dt><dd>${settings.webhook.enabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Webhook</dt><dd>${setting('webhook.enabled', settings.webhook.enabled) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>URL</dt><dd>${settings.webhook.urlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>TLS verification</dt><dd>${settings.webhook.tlsVerify ? 'Required' : 'Disabled'}</dd>
-                <dt>Sift</dt><dd>${settings.webhook.siftEnabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>TLS verification</dt><dd>${setting('webhook.tls_verify', settings.webhook.tlsVerify) ? 'Required' : 'Disabled'}</dd>
+                <dt>Sift</dt><dd>${setting('webhook.sift', settings.webhook.siftEnabled) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Sift endpoint</dt><dd>${settings.webhook.siftUrlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>Sift payload limit</dt><dd>${settings.webhook.siftPayloadLimitPerDirection} bytes / direction</dd>
-                <dt>LoreD enrichment</dt><dd>${settings.webhook.siftLoredMode}</dd>
-                <dt>LoreD URL disclosure</dt><dd>${settings.webhook.siftLoredIncludeUrl ? 'Allowed' : 'Blocked'}</dd>
-                <dt>Ping interval</dt><dd>${settings.webhook.pingInterval}s</dd>
-                <dt>API override</dt><dd>${settings.webhook.apiOverride ? 'Allowed' : 'Blocked'}</dd>
-                <dt>Nameservers</dt><dd>${settings.nameservers.join(', ') || 'None'}</dd>
+                <dt>Sift payload limit</dt><dd>${setting('webhook.sift_payload_limit_per_direction', settings.webhook.siftPayloadLimitPerDirection)} bytes / direction</dd>
+                <dt>LoreD enrichment</dt><dd>${setting('webhook.sift_lored_mode', settings.webhook.siftLoredMode)}</dd>
+                <dt>LoreD URL disclosure</dt><dd>${setting('webhook.sift_lored_include_url', settings.webhook.siftLoredIncludeUrl) ? 'Allowed' : 'Blocked'}</dd>
+                <dt>Ping interval</dt><dd>${setting('webhook.ping_interval', settings.webhook.pingInterval)}s</dd>
+                <dt>API override</dt><dd>${setting('webhook.api_override', settings.webhook.apiOverride) ? 'Allowed' : 'Blocked'}</dd>
+                <dt>Nameservers</dt><dd>${settingStrings('nameservers', settings.nameservers).join(', ') || 'None'}</dd>
               </dl>
             </article>
           ` : nothing}
           ${debug ? html`
             <article class="domain-card">
               <header><div><h3>Debug logging</h3><p>Potentially expensive diagnostic controls</p></div>
-                <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
+                <div class="preflight-actions">${this.renderPendingBadge('settings', 'settings')}
+                  <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
+                </div>
               </header>
               <dl>
-                <dt>Payload CRC</dt><dd>${debug.logDataCrc ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Socket events</dt><dd>${debug.logSockets ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Resolve online names</dt><dd>${debug.logOnlineConnectionName ? 'Enabled · expensive' : 'Disabled'}</dd>
-                <dt>Source lines</dt><dd>${debug.logSourceLinesAlways ? 'Always' : debug.logSourceLines ? 'Diagnostic levels' : 'Disabled'}</dd>
+                <dt>Payload CRC</dt><dd>${debugSetting('log_data_crc', debug.logDataCrc) ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Socket events</dt><dd>${debugSetting('log_sockets', debug.logSockets) ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Resolve online names</dt><dd>${debugSetting('log_online_cx_name', debug.logOnlineConnectionName) ? 'Enabled · expensive' : 'Disabled'}</dd>
+                <dt>Source lines</dt><dd>${debugSetting('log_srclines_always', debug.logSourceLinesAlways) ? 'Always' : debugSetting('log_srclines', debug.logSourceLines) ? 'Diagnostic levels' : 'Disabled'}</dd>
                 <dt>Module overrides</dt><dd>${debug.moduleOverrideCount} configured</dd>
               </dl>
             </article>
@@ -4979,18 +4998,20 @@ export class SmithproxyApp extends LitElement {
           ${captures ? html`
             <article class="domain-card">
               <header><div><h3>Capture posture</h3><p>Paths and destinations are redacted</p></div>
-                <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('captures', event.currentTarget as HTMLElement)}>Edit</button>
+                <div class="preflight-actions">${this.renderPendingBadge('captures', 'captures')}
+                  <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('captures', event.currentTarget as HTMLElement)}>Edit</button>
+                </div>
               </header>
               <dl>
-                <dt>Local capture</dt><dd>${captures.local.enabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Local capture</dt><dd>${captureSetting('local.enabled', captures.local.enabled) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Local target</dt><dd>${captures.local.directoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>Filename prefix / suffix</dt><dd>${captures.local.filePrefixConfigured ? 'Configured' : 'Empty'} / ${captures.local.fileSuffixConfigured ? 'Configured' : 'Empty'}</dd>
-                <dt>Format / quota</dt><dd>${captures.local.format} / ${captures.local.quotaMiB} MiB</dd>
-                <dt>Remote capture</dt><dd>${captures.remote.enabled ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Tunnel format</dt><dd>${captures.remote.tunnelType} / ${captures.remote.greFormat}</dd>
+                <dt>Format / quota</dt><dd>${captureSetting('local.format', captures.local.format)} / ${captureSetting('local.pcap_quota', captures.local.quotaMiB)} MiB</dd>
+                <dt>Remote capture</dt><dd>${captureSetting('remote.enabled', captures.remote.enabled) ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Tunnel format</dt><dd>${captures.remote.tunnelType} / ${captureSetting('remote.gre_format', captures.remote.greFormat)}</dd>
                 <dt>Remote target</dt><dd>${captures.remote.destinationConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>TTL / bound interface</dt><dd>${captures.remote.ttl} / ${captures.remote.bindInterfaceConfigured ? 'Yes' : 'No'}</dd>
-                <dt>Checksums</dt><dd>${captures.calculateChecksums ? 'Calculated' : 'Preserved'}</dd>
+                <dt>TTL / bound interface</dt><dd>${captureSetting('remote.tun_ttl', captures.remote.ttl)} / ${captures.remote.bindInterfaceConfigured ? 'Yes' : 'No'}</dd>
+                <dt>Checksums</dt><dd>${captureSetting('options.calculate_checksums', captures.calculateChecksums) ? 'Calculated' : 'Preserved'}</dd>
               </dl>
             </article>
           ` : nothing}
@@ -5013,7 +5034,7 @@ export class SmithproxyApp extends LitElement {
                       @click=${(event: MouseEvent) => this.openAuthority(
                         authority.id, event.currentTarget as HTMLElement,
                       )}>
-                      <span><strong>${authority.name}</strong> · ${authority.pathConfigured ? 'path configured' : 'path missing'}</span>
+                      <span><strong>${this.authorityDisplayName(authority.id, authority.name)}</strong> · ${authority.pathConfigured ? 'path configured' : 'path missing'}</span>
                       <span aria-hidden="true">→</span>
                     </button>
                   `)}
@@ -5028,7 +5049,7 @@ export class SmithproxyApp extends LitElement {
                         @click=${(event: MouseEvent) => this.openSignature(
                           signature.id, event.currentTarget as HTMLElement,
                         )}>
-                        <span><strong>${signature.name}</strong> · ${signature.flow.length} flow step${signature.flow.length === 1 ? '' : 's'}</span>
+                        <span><strong>${this.signatureDisplayName(signature.id, signature.name)}</strong> · ${signature.flow.length} flow step${signature.flow.length === 1 ? '' : 's'}</span>
                         <span aria-hidden="true">→</span>
                       </button>
                     `)}

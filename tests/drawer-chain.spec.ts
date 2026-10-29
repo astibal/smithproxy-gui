@@ -2494,6 +2494,33 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
 
+  await expect(page.getByText(/Configuration cards include pending workspace draft values.*runtime remains unchanged/u))
+    .toBeVisible();
+  await expect(trafficCard).toContainText('Disabled · unsafe');
+  await expect(trafficCard).toContainText('Policy failureFail open');
+  await expect(trafficCard.getByText('Pending', {exact: true})).toBeVisible();
+  const workerCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Worker pools'}),
+  });
+  await expect(workerCard).toContainText('Plaintext / TLS2 / 8');
+  const listenerCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Listener endpoints'}),
+  });
+  await expect(listenerCard).toContainText('Plaintext / TLS50080 / 5443');
+  const apiPosture = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Smithproxy API posture'}),
+  });
+  await expect(apiPosture).toContainText('Port 55580 · 900s token TTL');
+  const webhookPosture = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Webhook posture'}),
+  });
+  await expect(webhookPosture).toContainText('LoreD enrichmentrequired');
+  await expect(webhookPosture).toContainText('resolver.example');
+  const debugCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Debug logging'}),
+  });
+  await expect(debugCard).toContainText('Socket eventsEnabled');
+
   const captureCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capture posture'}),
   });
@@ -2510,6 +2537,10 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(captureCard).toContainText('Local captureEnabled');
+  await expect(captureCard).toContainText('Format / quotasmcap / 1024 MiB');
+  await expect(captureCard).toContainText('TTL / bound interface32 / No');
+  await expect(captureCard.getByText('Pending', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: /Review draft · \d+/u}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
