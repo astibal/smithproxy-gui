@@ -154,6 +154,11 @@ The proposed atomic Smithproxy write contract is documented in
 The GUI intentionally does not emulate a transaction by issuing multiple legacy
 configuration writes.
 
+The System view can download a local, versioned diagnostics report containing
+only allowlisted states, timestamps, capability flags, and aggregate counters.
+It never includes configuration values, revisions, paths, event text, audit
+targets, listener names, protocol names, credentials, or tokens.
+
 The privacy-preserving interface-monitor contract required for future netlink
 health monitoring is documented in
 [`docs/SMITHPROXY_INTERFACE_API_PROPOSAL.md`](docs/SMITHPROXY_INTERFACE_API_PROPOSAL.md).

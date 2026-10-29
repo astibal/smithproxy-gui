@@ -32,6 +32,11 @@ import {
   type TlsCacheSnapshot,
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
+import {
+  buildDiagnosticsReport,
+  serializeDiagnosticsReport,
+  type GatewayDiagnosticState,
+} from './diagnostics/report';
 import {classifyFreshness, freshnessLabel, type FreshnessState} from './monitoring/freshness';
 import {probeIncidents} from './monitoring/incidents';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
@@ -936,6 +941,99 @@ export class SmithproxyApp extends LitElement {
       tone: 'success',
       detail: 'Saslik authenticated this request and the GUI core verified its gateway handoff.',
     };
+  }
+
+  private downloadDiagnostics(): void {
+    let gatewayState: GatewayDiagnosticState = 'verified';
+    if (this.gatewaySessionError) gatewayState = 'unavailable';
+    else if (!this.gatewaySession) gatewayState = 'discovering';
+    else if (this.gatewaySession.mode === 'disabled') gatewayState = 'disabled';
+    else if (!this.gatewaySession.authenticated) gatewayState = 'rejected';
+    const report = buildDiagnosticsReport({
+      generatedAtUnixMs: Date.now(),
+      application: {mode: this.mode, apiVersion: this.apiVersion},
+      controlPlane: {
+        core: this.systemStatus.core,
+        smithproxy: this.systemStatus.smithproxy,
+        checkedAtUnixMs: this.systemStatus.checkedAtUnixMs,
+        lastSuccessAtUnixMs: this.systemStatus.lastSuccessAtUnixMs,
+        latencyMs: this.systemStatus.latencyMs,
+        totalProbes: this.systemStatus.totalProbes,
+        consecutiveFailures: this.systemStatus.consecutiveFailures,
+        availabilitySamples: this.systemStatus.availabilitySamples,
+        availabilitySuccessful: this.systemStatus.availabilitySuccessful,
+      },
+      gateway: {
+        mode: this.gatewaySession?.mode ?? 'unknown',
+        authenticated: this.gatewaySession?.authenticated ?? null,
+        state: gatewayState,
+      },
+      capabilities: {
+        configRead: this.configReadAvailable,
+        configWrite: this.configWriteAvailable,
+        drafts: this.draftAvailable,
+        draftPreflight: this.draftPreflightAvailable,
+      },
+      runtime: {
+        state: this.runtimeMetrics.state,
+        checkedAtUnixMs: this.runtimeMetrics.checkedAtUnixMs,
+        lastSuccessAtUnixMs: this.runtimeMetrics.lastSuccessAtUnixMs,
+        workers: this.runtimeMetrics.totals.workers,
+        sessionsTotal: this.runtimeMetrics.totals.sessionsTotal,
+        sessionsActive: this.runtimeMetrics.totals.sessionsActive,
+        bytesUp: this.runtimeMetrics.totals.bytesUp,
+        bytesDown: this.runtimeMetrics.totals.bytesDown,
+        listenerCount: this.runtimeMetrics.listeners.length,
+      },
+      sessionActivity: {
+        state: this.sessionActivity.state,
+        checkedAtUnixMs: this.sessionActivity.checkedAtUnixMs,
+        lastSuccessAtUnixMs: this.sessionActivity.lastSuccessAtUnixMs,
+        total: this.sessionActivity.total,
+        speedUp: this.sessionActivity.speedUp,
+        speedDown: this.sessionActivity.speedDown,
+        protocolCount: this.sessionActivity.protocols.length,
+      },
+      tlsCache: {
+        state: this.tlsCache.state,
+        checkedAtUnixMs: this.tlsCache.checkedAtUnixMs,
+        lastSuccessAtUnixMs: this.tlsCache.lastSuccessAtUnixMs,
+        size: this.tlsCache.size,
+        capacity: this.tlsCache.capacity,
+      },
+      neighbors: {
+        state: this.neighbors.state,
+        checkedAtUnixMs: this.neighbors.checkedAtUnixMs,
+        lastSuccessAtUnixMs: this.neighbors.lastSuccessAtUnixMs,
+        hostsTotal: this.neighbors.hostsTotal,
+        activeToday: this.neighbors.activeToday,
+        activeWeek: this.neighbors.activeWeek,
+        taggedHosts: this.neighbors.taggedHosts,
+        observations: this.neighbors.observations,
+        bytesUp: this.neighbors.bytesUp,
+        bytesDown: this.neighbors.bytesDown,
+      },
+      operations: {
+        eventStream: this.eventStreamState,
+        eventCount: this.operationalEvents.events.length,
+        activeAlertCount: this.operationalAlerts.alerts.length,
+        auditEntryCount: this.managementAudit.entries.length,
+      },
+      configuration: {
+        source: this.snapshot?.source ?? 'unavailable',
+        state: this.snapshot?.state ?? 'unknown',
+        draftChangeCount: this.draftChangeCount,
+      },
+    });
+    const url = URL.createObjectURL(new Blob([serializeDiagnosticsReport(report)], {type: 'application/json'}));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'smithproxy-gui-diagnostics.json';
+    anchor.hidden = true;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   private async loadConfiguration(): Promise<void> {
@@ -3154,6 +3252,7 @@ export class SmithproxyApp extends LitElement {
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div><h2>System integration</h2><p>Non-sensitive diagnostics for this GUI instance</p></div>
+          <button class="secondary" type="button" @click=${() => this.downloadDiagnostics()}>Download diagnostics</button>
         </div>
         <div class="system-grid">
           <article class="domain-card">

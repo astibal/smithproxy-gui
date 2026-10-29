@@ -1,3 +1,4 @@
+import {readFile} from 'node:fs/promises';
 import {expect, test, type Page} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
@@ -1332,6 +1333,27 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();
+  const [diagnosticsDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', {name: 'Download diagnostics'}).click(),
+  ]);
+  expect(diagnosticsDownload.suggestedFilename()).toBe('smithproxy-gui-diagnostics.json');
+  const diagnosticsPath = await diagnosticsDownload.path();
+  expect(diagnosticsPath).not.toBeNull();
+  const diagnosticsText = await readFile(diagnosticsPath!, 'utf8');
+  const diagnostics = JSON.parse(diagnosticsText) as Record<string, unknown>;
+  expect(diagnostics).toMatchObject({
+    schemaVersion: 1,
+    application: {apiVersion: 'v1'},
+    controlPlane: {core: 'online', smithproxy: 'ready'},
+    runtime: {listenerCount: 2, sessionsActive: 4},
+    operations: {eventCount: 1, activeAlertCount: 0, auditEntryCount: 1},
+    configuration: {source: 'preview', state: 'ready', draftChangeCount: 0},
+  });
+  expect(diagnosticsText).not.toMatch(/"(detail|basePath|revision|listeners|protocols|events|alerts|auditEntries|targets|requestId)"/i);
+  expect(diagnosticsText).not.toContain('policy.[0].action');
+  expect(diagnosticsText).not.toContain('abc123-7');
+  expect(diagnosticsText).not.toContain('Smithproxy control plane is reachable');
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
   });

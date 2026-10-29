@@ -129,6 +129,13 @@ terminator because the GUI core itself serves internal HTTP.
 - validace cest a identifikátorů neumožní filesystem traversal;
 - commit vyžaduje aktuální revision a kontrolu oprávnění v okamžiku commitu.
 
+The System view creates the diagnostics report locally. Its versioned allowlist
+contains state enums, timestamps, capability flags, aggregate counters, and item
+counts only. It excludes configuration values and revisions, paths, workspace
+and base-path identifiers, free-form upstream details, listener and protocol
+names, event and alert text, audit targets and request IDs, credentials, and
+tokens.
+
 ## Audit
 
 Všechny současné HTTP odpovědi dostávají korelační `X-Request-ID`; error envelope
