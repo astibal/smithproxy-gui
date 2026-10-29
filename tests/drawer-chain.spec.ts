@@ -919,6 +919,10 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('tls_ca.[0].path');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/etc/smithproxy/private/new-default-ca');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('auth_profiles.[0].authenticate');
+  await expect(page.getByRole('button', {name: 'Edit policy.[0].action'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Edit address_objects.[0].value'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Edit routing.[0].dnat_lb_method'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Edit tls_ca.[0].path'})).toBeVisible();
   await page.getByRole('button', {name: 'Remove policy.[0].action from draft'}).click();
   await expect(page.getByRole('button', {name: 'Remove policy.[0].action from draft'})).toHaveCount(0);
   await expect(page.getByText('Draft: 101 changes')).toBeVisible();
@@ -965,11 +969,15 @@ test('rehydrates pending scalar and reference values when an editor is reopened'
       {path: 'policy.[0].action', value: 'reject'},
       {path: 'policy.[0].dst', value: ['office']},
       {path: 'policy.[0].sport', value: ['https']},
+      {path: 'starttls_signatures.[0].flow.[0].side', value: 'w'},
     ],
   }, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+  await page.getByRole('button', {name: 'Review draft · 5'}).click();
+  await expect(page.getByRole('button', {
+    name: 'Edit starttls_signatures.[0].flow.[0].side',
+  })).toBeVisible();
+  await page.getByRole('button', {name: 'Edit policy.[0].name'}).click();
 
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await expect(editor.getByLabel('Name', {exact: true})).toHaveValue('Pending office policy');
@@ -2366,6 +2374,10 @@ test('edits nested signature flow metadata with write-only expressions', async (
   await expect(changes).toContainText('detection_signatures.[0].flow.[0].signature');
   await expect(changes).toContainText('Replaced · redacted');
   await expect(changes).not.toContainText('PRIVATE');
+  await page.getByRole('button', {
+    name: 'Edit detection_signatures.[0].flow.[0].signature',
+  }).click();
+  await expect(page.getByRole('dialog', {name: 'Edit Flow R'})).toBeVisible();
 });
 
 test('rotates nested content rules without exposing expressions', async ({page}) => {
@@ -2400,6 +2412,10 @@ test('rotates nested content rules without exposing expressions', async ({page})
   await expect(changes).toContainText('Replaced · redacted');
   await expect(changes).toContainText('Cleared · redacted');
   await expect(changes).not.toContainText('PRIVATE-MATCH');
+  await page.getByRole('button', {
+    name: 'Edit content_profiles.[0].content_rules.[0].fill_length',
+  }).click();
+  await expect(page.getByRole('dialog', {name: 'Edit Content rule 1'})).toBeVisible();
 });
 
 test('searches policies and configuration objects without unsafe markup', async ({page}) => {

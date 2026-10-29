@@ -292,6 +292,7 @@ export class SmithproxyApp extends LitElement {
 
   private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
+  private draftChangeTargets = new Map<string, DrawerEntry>();
   private runtime?: RuntimeConfig;
   private systemClient?: SystemClient;
   private configClient?: ApiConfigClient;
@@ -522,6 +523,7 @@ export class SmithproxyApp extends LitElement {
     .draft-row:last-child { border-bottom: 0; }
     .draft-row.heading { color: var(--app-muted); font-size: 12px; }
     .draft-path { overflow-wrap: anywhere; color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    .draft-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: end; }
     .draft-value { overflow-wrap: anywhere; }
     .preflight { padding: 15px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-surface); }
     .preflight h3 { margin: 0; font-size: 15px; }
@@ -1085,6 +1087,7 @@ export class SmithproxyApp extends LitElement {
 
   private clearDraftSessionState(): void {
     this.workspaceDraft = undefined;
+    this.draftChangeTargets = new Map();
     this.draftVersion = 0;
     this.draftChangeCount = 0;
     this.draftObjects = new Set<string>();
@@ -1486,6 +1489,7 @@ export class SmithproxyApp extends LitElement {
     }
     if (snapshot.changes.length === 0) this.discardDraftArmed = false;
     const objects = new Set<string>();
+    const targets = new Map<string, DrawerEntry>();
     for (const change of snapshot.changes) {
       const policy = /^policy\.\[(\d+)\]\./u.exec(change.path);
       if (policy) {
@@ -1571,8 +1575,77 @@ export class SmithproxyApp extends LitElement {
       if (change.path.startsWith('settings.')) objects.add('settings:settings');
       if (change.path.startsWith('debug.')) objects.add('settings:settings');
       if (change.path.startsWith('captures.')) objects.add('captures:captures');
+      const target = this.draftTargetForPath(change.path);
+      if (target) targets.set(change.path, target);
     }
+    this.draftChangeTargets = targets;
     this.draftObjects = objects;
+  }
+
+  private draftTargetForPath(path: string): DrawerEntry | undefined {
+    if (path.startsWith('settings.') || path.startsWith('debug.')) {
+      return {kind: 'settings', id: 'settings', title: 'System settings'};
+    }
+    if (path.startsWith('captures.')) {
+      return {kind: 'captures', id: 'captures', title: 'Capture settings'};
+    }
+
+    const indexed = <T>(pattern: RegExp, items: ReadonlyArray<T>): T | undefined => {
+      const match = pattern.exec(path);
+      return match ? items[Number(match[1])] : undefined;
+    };
+    const policy = indexed(/^policy\.\[(\d+)\]\./u, this.snapshot?.policies ?? []);
+    if (policy) return {kind: 'policy', id: policy.id, title: policy.name};
+    const address = indexed(/^address_objects\.\[(\d+)\]\./u, this.snapshot?.addresses ?? []);
+    if (address) return {kind: 'address', id: address.id, title: address.name};
+    const port = indexed(/^port_objects\.\[(\d+)\]\./u, this.snapshot?.ports ?? []);
+    if (port) return {kind: 'port', id: port.id, title: port.name};
+    const protocol = indexed(/^proto_objects\.\[(\d+)\]\./u, this.snapshot?.protocols ?? []);
+    if (protocol) return {kind: 'protocol', id: protocol.id, title: protocol.name};
+    const authority = indexed(
+      /^tls_ca\.\[(\d+)\]\./u, this.snapshot?.securityAssets?.certificateAuthorities ?? [],
+    );
+    if (authority) return {kind: 'authority', id: authority.id, title: authority.name};
+
+    const signatureMatch = /^(?:starttls|detection)_signatures\.\[(\d+)\](?:\.flow\.\[(\d+)\])?\./u
+      .exec(path);
+    if (signatureMatch) {
+      const kind = path.startsWith('starttls_') ? 'starttls' : 'detection';
+      const signature = this.snapshot?.securityAssets?.signatures
+        .filter(item => item.kind === kind)[Number(signatureMatch[1])];
+      const flowIndex = signatureMatch[2];
+      const step = flowIndex === undefined ? undefined : signature?.flow[Number(flowIndex)];
+      if (step) {
+        return {kind: 'signature-flow', id: step.id, title: `Flow ${step.side.toUpperCase()}`};
+      }
+      if (signature) return {kind: 'signature', id: signature.id, title: signature.name};
+    }
+
+    const profileSections: ReadonlyArray<{
+      pattern: RegExp;
+      matches: (profile: ProfileObject) => boolean;
+    }> = [
+      {pattern: /^routing\.\[(\d+)\]\./u, matches: profile => profile.routing !== null},
+      {pattern: /^detection_profiles\.\[(\d+)\]\./u, matches: profile => profile.detection !== null},
+      {pattern: /^alg_dns_profiles\.\[(\d+)\]\./u, matches: profile => profile.dns !== null},
+      {pattern: /^tls_profiles\.\[(\d+)\]\./u, matches: profile => profile.tls !== null},
+      {pattern: /^content_profiles\.\[(\d+)\]\./u, matches: profile => profile.content !== null},
+      {pattern: /^ssh_profiles\.\[(\d+)\]\./u, matches: profile => profile.ssh !== null},
+      {pattern: /^script_profiles\.\[(\d+)\]\./u, matches: profile => profile.script !== null},
+      {pattern: /^auth_profiles\.\[(\d+)\]\./u, matches: profile => profile.authentication !== null},
+    ];
+    for (const section of profileSections) {
+      const match = section.pattern.exec(path);
+      if (!match) continue;
+      const profile = this.snapshot?.profiles.filter(section.matches)[Number(match[1])];
+      if (!profile) return undefined;
+      const ruleMatch = /^content_profiles\.\[\d+\]\.content_rules\.\[(\d+)\]\./u.exec(path);
+      const rule = ruleMatch ? profile.content?.rules[Number(ruleMatch[1])] : undefined;
+      return rule
+        ? {kind: 'content-rule', id: rule.id, title: `Content rule ${Number(ruleMatch![1]) + 1}`}
+        : {kind: 'profile', id: profile.id, title: profile.name};
+    }
+    return undefined;
   }
 
   private async loadDraft(): Promise<void> {
@@ -3193,18 +3266,25 @@ export class SmithproxyApp extends LitElement {
               <span role="columnheader">Draft value</span>
               <span role="columnheader">Action</span>
             </div>
-            ${changes.map(change => html`
-              <div class="draft-row" role="row">
+            ${changes.map(change => {
+              const target = this.draftChangeTargets.get(change.path);
+              return html`<div class="draft-row" role="row">
                 <span class="draft-path" role="cell">${change.path}</span>
                 <span class="draft-value" role="cell">${this.draftValueSummary(change.path, change.value)}</span>
-                <span role="cell">
+                <span class="draft-actions" role="cell">
+                  ${target ? html`
+                    <button class="secondary" type="button"
+                      aria-label=${`Edit ${change.path}`}
+                      @click=${(event: MouseEvent) =>
+                        this.openObjectDrawer(target, event.currentTarget as HTMLElement)}>Edit</button>
+                  ` : nothing}
                   <button class="secondary" type="button"
                     aria-label=${`Remove ${change.path} from draft`}
                     ?disabled=${this.draftSaving || this.draftValidating || this.draftCommitting}
                     @click=${() => this.removeDraftChange(change.path)}>Remove</button>
                 </span>
-              </div>
-            `)}
+              </div>`;
+            })}
           </div>
           <div class="scope-note section">
             This is a pending management draft only. It has not changed persistent or runtime Smithproxy configuration.

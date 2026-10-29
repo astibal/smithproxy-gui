@@ -57,6 +57,7 @@ breadcrumbů, aby se aktivní editor nezmenšoval.
 - focus mode může editor roztáhnout přes celou pracovní plochu;
 - znovu otevřený editor načte běžné pending hodnoty ze sdíleného draftu;
 - write-only hodnoty zůstávají redigované a editor je nikdy nerehydratuje;
+- každý známý řádek review otevře přímo odpovídající editor nebo vnořený editor;
 - `Esc` zavře aktuální úroveň až po vyřešení neuložených změn;
 - browser Back a opuštění stránky používají stejnou ochranu rozepsaných změn;
 - stav řetězce je reprezentován v URL a lze jej obnovit po reloadu.
