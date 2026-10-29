@@ -105,7 +105,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["name", "write_payload", "write_format", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http", "rules_session_filter", "content_rules"],
-      "notes": "Content controls and nested rule action metadata are typed. Session filters and rule match/replacement expressions remain server-side and use write-only rotation; structural rule add and remove operations still require a transaction schema."
+      "notes": "Content controls and nested rule action metadata are typed. Session filters and rule match/replacement expressions remain server-side and use write-only rotation. Structural rule add, remove, and reorder semantics are specified in the transaction proposal but remain unavailable until the reviewed upstream capability exists."
     },
     {
       "name": "tls_ca",
@@ -185,7 +185,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement; structural add and remove operations still require a transaction schema."
+      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement. Structural add, remove, and reorder semantics are specified in the transaction proposal but remain unavailable until the reviewed upstream capability exists."
     },
     {
       "name": "detection_signatures",
@@ -194,7 +194,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement; structural add and remove operations still require a transaction schema."
+      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement. Structural add, remove, and reorder semantics are specified in the transaction proposal but remain unavailable until the reviewed upstream capability exists."
     },
     {
       "name": "script_profiles",

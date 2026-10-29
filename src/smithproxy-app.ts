@@ -309,9 +309,11 @@ export class SmithproxyApp extends LitElement {
     .content-layer { height: 100%; }
     .content { height: 100%; overflow: auto; padding: 22px; }
     .content:focus-visible { outline: 2px solid var(--app-focus); outline-offset: -2px; }
-    .section-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 16px; }
+    .section-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; margin-bottom: 16px; }
     .section-head h2 { margin: 0 0 3px; font-size: 20px; }
     .section-head p { margin: 0; color: var(--app-muted); }
+    .structural-action { display: grid; max-width: 260px; gap: 4px; justify-items: end; text-align: right; }
+    .structural-action small { color: var(--app-muted); }
     .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 3px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .55; }
 
@@ -541,6 +543,8 @@ export class SmithproxyApp extends LitElement {
       nav button { width: 42px; padding: 8px; }
       .main { grid-row: 2; grid-template-rows: 94px minmax(0, 1fr); }
       .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto; gap: 5px 8px; padding: 8px 12px; }
+      .section-head { align-items: start; }
+      .structural-action { max-width: 190px; }
       .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .topbar p { display: none; }
       .topbar .search { display: block; grid-column: 1 / -1; width: 100%; max-width: none; }
@@ -2447,8 +2451,10 @@ export class SmithproxyApp extends LitElement {
       <div class="content" tabindex="0">
         <div class="section-head">
           <div><h2>Policies</h2><p>Traffic decisions and inspection behavior</p></div>
-          <button class="primary" type="button"
-            ?disabled=${this.snapshot?.source === 'live' && !this.configWriteAvailable}>New policy</button>
+          <div class="structural-action">
+            <button class="primary" type="button" disabled aria-describedby="new-policy-blocker">New policy</button>
+            <small id="new-policy-blocker">Requires the reviewed structural transaction API.</small>
+          </div>
         </div>
         <div class="table" role="group" aria-label="Policies">
           <div class="row heading" aria-hidden="true">
@@ -2526,8 +2532,12 @@ export class SmithproxyApp extends LitElement {
       <div class="content" tabindex="0">
         <div class="section-head">
           <div><h2>Configuration objects</h2><p>Reusable values referenced by policy</p></div>
-          <button class="primary" type="button"
-            ?disabled=${this.snapshot?.source === 'live' && !this.configWriteAvailable}>New address object</button>
+          <div class="structural-action">
+            <button class="primary" type="button" disabled aria-describedby="new-address-blocker">
+              New address object
+            </button>
+            <small id="new-address-blocker">Requires the reviewed structural transaction API.</small>
+          </div>
         </div>
         <section class="object-section">
           <h3>Address objects</h3>

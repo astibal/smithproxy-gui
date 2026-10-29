@@ -1269,6 +1269,8 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByLabel('Network listeners').getByText('3', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'New address object'})).toBeDisabled();
+  await expect(page.getByText('Requires the reviewed structural transaction API.')).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Protocol objects'})).toBeVisible();
@@ -1312,6 +1314,10 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
 
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCSS('border-radius', '4px');
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'New policy'})).toBeDisabled();
+  await expect(page.getByText('Requires the reviewed structural transaction API.')).toBeVisible();
 
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Operational events'})).toBeVisible();
