@@ -63,6 +63,8 @@ breadcrumbů, aby se aktivní editor nezmenšoval.
 - znovu otevřený editor načte běžné pending hodnoty ze sdíleného draftu;
 - write-only hodnoty zůstávají redigované a editor je nikdy nerehydratuje;
 - každý známý řádek review otevře přímo odpovídající editor nebo vnořený editor;
+- referenční pole průběžně rozlišují známé otevíratelné objekty od literálů nebo
+  nerozpoznaných názvů; upozornění neblokuje legitimní Smithproxy výraz;
 - editor umí po explicitním potvrzení atomicky odebrat všechny své draft změny;
 - policy a object listy i globální hledání používají pending hodnoty; listy je
   označují výrazným `Pending` badge;

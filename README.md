@@ -155,6 +155,9 @@ draft-version check.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls.
+Policy and routing reference fields preview the value being typed. Known objects
+open directly in the next nested editor, while literals and unresolved names are
+marked for review without blocking Smithproxy-specific expressions.
 The global configuration search covers policies, reusable objects, profiles,
 content rules, certificate authorities, protocol signatures, system settings,
 and capture settings. Results use pending draft values and open the matching

@@ -312,6 +312,7 @@ export class SmithproxyApp extends LitElement {
   private drawerHistoryDepth = 0;
   private drawerOrigins: HTMLElement[] = [];
   private readonly drawerInitialChanges = new Map<string, ReadonlyMap<string, DraftScalar>>();
+  private readonly referencePreviewValues = new Map<string, string>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -586,6 +587,9 @@ export class SmithproxyApp extends LitElement {
     .reference-edit { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 7px; align-items: center; }
     .reference-edit .reference { width: auto; }
     .reference { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); cursor: pointer; }
+    .reference-advisory { display: flex; min-width: 0; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 10px; border-left: 2px solid var(--app-warning); background: var(--app-warning-bg); color: var(--app-warning); }
+    .reference-advisory strong { overflow-wrap: anywhere; color: var(--app-text); }
+    .reference-advisory small { flex: 0 0 auto; color: inherit; }
     .section { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--app-border); }
     .section h3 { margin: 0 0 12px; font-size: 15px; }
     .impact { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--app-warning) 48%, var(--app-border)); border-radius: 3px; background: var(--app-warning-bg); color: var(--app-warning); }
@@ -2102,6 +2106,17 @@ export class SmithproxyApp extends LitElement {
     if (!this.dirtyDrawerKeys.has(key)) {
       this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
     }
+    if (target instanceof HTMLInputElement && target.dataset.referencePreview === 'true') {
+      this.referencePreviewValues.set(`${key}|${target.id}`, target.value);
+      this.requestUpdate();
+    }
+  }
+
+  private clearReferencePreviews(entry: DrawerEntry): void {
+    const prefix = `${this.drawerKey(entry)}|`;
+    for (const key of this.referencePreviewValues.keys()) {
+      if (key.startsWith(prefix)) this.referencePreviewValues.delete(key);
+    }
   }
 
   private markDrawerSaved(entry: DrawerEntry): void {
@@ -2111,6 +2126,7 @@ export class SmithproxyApp extends LitElement {
       remaining.delete(key);
       this.dirtyDrawerKeys = remaining;
     }
+    this.clearReferencePreviews(entry);
     this.pendingCloseIndex = undefined;
   }
 
@@ -2146,6 +2162,7 @@ export class SmithproxyApp extends LitElement {
     for (const entry of this.drawerStore.entries.slice(index)) {
       remainingDirty.delete(this.drawerKey(entry));
       this.drawerInitialChanges.delete(this.drawerKey(entry));
+      this.clearReferencePreviews(entry);
     }
     this.dirtyDrawerKeys = remainingDirty;
     this.pendingCloseIndex = undefined;
@@ -4985,14 +5002,16 @@ export class SmithproxyApp extends LitElement {
         <label for="policy-sources-${entry.id}">Sources</label>
         <div class="reference-stack">
           <input id="policy-sources-${entry.id}" .value=${sourceValues.join(', ')}
+            data-reference-preview="true"
             .readOnly=${this.originReadOnly(`${policyBase}.src`, liveReadOnly)} />
-          ${this.renderAddressReferences(sourceValues)}</div>
+          ${this.renderAddressReferences(entry, `policy-sources-${entry.id}`, sourceValues)}</div>
         <label for="destination-${entry.id}">Destinations</label>
         <div class="reference-stack">
           <input id="destination-${entry.id}"
             .value=${destinationValues.join(', ')}
+            data-reference-preview="true"
             .readOnly=${this.originReadOnly(`${policyBase}.dst`, liveReadOnly)} />
-          ${this.renderAddressReferences(destinationValues)}
+          ${this.renderAddressReferences(entry, `destination-${entry.id}`, destinationValues)}
         </div>
         <label for="action-${entry.id}">Action</label>
         <input id="action-${entry.id}" .value=${this.persistentValue(`${policyBase}.action`, policy.action)}
@@ -5003,18 +5022,19 @@ export class SmithproxyApp extends LitElement {
         <div class="form-grid">
           <label for="policy-protocol-${entry.id}">Protocol</label>
           <div class="reference-edit"><input id="policy-protocol-${entry.id}" .value=${protocolValue}
+            data-reference-preview="true"
             .readOnly=${this.originReadOnly(`${policyBase}.proto`, liveReadOnly)} />
-            ${protocol ? html`<button class="reference" type="button"
-              @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
-              <span>${protocol.name}</span><span aria-hidden="true">→</span></button>` : nothing}</div>
+            ${this.renderProtocolReference(entry, `policy-protocol-${entry.id}`, protocol?.name ?? protocolValue)}</div>
           <label for="policy-source-ports-${entry.id}">Source ports</label>
           <div class="reference-stack"><input id="policy-source-ports-${entry.id}"
             .value=${sourcePortValues.join(', ')}
-            .readOnly=${this.originReadOnly(`${policyBase}.sport`, liveReadOnly)} />${this.renderPortReferences(sourcePortValues)}</div>
+            data-reference-preview="true"
+            .readOnly=${this.originReadOnly(`${policyBase}.sport`, liveReadOnly)} />${this.renderPortReferences(entry, `policy-source-ports-${entry.id}`, sourcePortValues)}</div>
           <label for="policy-destination-ports-${entry.id}">Destination ports</label>
           <div class="reference-stack"><input id="policy-destination-ports-${entry.id}"
             .value=${destinationPortValues.join(', ')}
-            .readOnly=${this.originReadOnly(`${policyBase}.dport`, liveReadOnly)} />${this.renderPortReferences(destinationPortValues)}</div>
+            data-reference-preview="true"
+            .readOnly=${this.originReadOnly(`${policyBase}.dport`, liveReadOnly)} />${this.renderPortReferences(entry, `policy-destination-ports-${entry.id}`, destinationPortValues)}</div>
           ${this.renderPolicyProfileField(entry, 'tls', 'TLS profile', 'tls', policy.tlsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'routing', 'Routing profile', 'routing', policy.routing, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'detection', 'Detection profile', 'detection', policy.detectionProfile, liveReadOnly)}
@@ -5034,7 +5054,23 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
-  private renderAddressReferences(names: ReadonlyArray<string>) {
+  private previewReferenceNames(
+    entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>,
+  ): ReadonlyArray<string> {
+    const current = this.referencePreviewValues.get(`${this.drawerKey(entry)}|${inputId}`);
+    return current === undefined
+      ? fallback
+      : current.split(',').map(value => value.trim()).filter(Boolean);
+  }
+
+  private renderReferenceAdvisory(name: string) {
+    return html`<span class="reference-advisory">
+      <strong>${name}</strong><small>Literal or unresolved</small>
+    </span>`;
+  }
+
+  private renderAddressReferences(entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>) {
+    const names = this.previewReferenceNames(entry, inputId, fallback);
     return html`${names.map(name => {
       const reference = this.snapshot?.addresses.find(item => item.name === name);
       return reference ? html`
@@ -5042,27 +5078,39 @@ export class SmithproxyApp extends LitElement {
           @click=${(event: MouseEvent) => this.openAddress(reference.id, event.currentTarget as HTMLElement)}>
           <span>${reference.name}</span><span aria-hidden="true">→</span>
         </button>
-      ` : html`<span>${name}</span>`;
+      ` : this.renderReferenceAdvisory(name);
     })}`;
   }
 
-  private renderPortReferences(names: ReadonlyArray<string>) {
+  private renderPortReferences(entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>) {
+    const names = this.previewReferenceNames(entry, inputId, fallback);
     return html`<div class="reference-stack">${names.map(name => {
       const port = this.snapshot?.ports.find(item => item.name === name);
       return port ? html`<button class="reference" type="button"
         @click=${(event: MouseEvent) => this.openPort(port.id, event.currentTarget as HTMLElement)}>
         <span>${port.name}</span><span aria-hidden="true">→</span>
-      </button>` : html`<span>${name}</span>`;
+      </button>` : this.renderReferenceAdvisory(name);
     })}</div>`;
   }
 
-  private renderProfileReference(type: string, name: string) {
+  private renderProtocolReference(entry: DrawerEntry, inputId: string, fallback: string) {
+    const name = this.previewReferenceNames(entry, inputId, [fallback])[0] ?? '';
+    if (name.length === 0) return nothing;
+    const protocol = this.snapshot?.protocols.find(item => item.name === name);
+    return protocol ? html`<button class="reference" type="button"
+      @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
+      <span>${protocol.name}</span><span aria-hidden="true">→</span>
+    </button>` : this.renderReferenceAdvisory(name);
+  }
+
+  private renderProfileReference(entry: DrawerEntry, inputId: string, type: string, fallback: string) {
+    const name = this.previewReferenceNames(entry, inputId, [fallback])[0] ?? '';
     if (name.length === 0 || name === 'none') return html`<span>None</span>`;
     const profile = this.snapshot?.profiles.find(item => item.type === type && item.name === name);
     return profile ? html`<button class="reference" type="button"
       @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
       <span>${profile.name}</span><span aria-hidden="true">→</span>
-    </button>` : html`<span>${name}</span>`;
+    </button>` : this.renderReferenceAdvisory(name);
   }
 
   private renderPolicyProfileField(
@@ -5075,10 +5123,11 @@ export class SmithproxyApp extends LitElement {
     };
     const path = `policy.[${policyIndex}].${fields[id] ?? id}`;
     const persistent = this.persistentValue(path, value);
+    const inputId = `policy-${id}-${entry.id}`;
     return html`<label for="policy-${id}-${entry.id}">${label}</label>
-      <div class="reference-edit"><input id="policy-${id}-${entry.id}" .value=${persistent}
+      <div class="reference-edit"><input id=${inputId} .value=${persistent} data-reference-preview="true"
         .readOnly=${this.originReadOnly(path, readOnly)} />
-        ${this.renderProfileReference(type, persistent)}</div>`;
+        ${this.renderProfileReference(entry, inputId, type, persistent)}</div>`;
   }
 
   private renderAddressEditor(entry: DrawerEntry) {
@@ -5184,6 +5233,12 @@ export class SmithproxyApp extends LitElement {
       prefix ? this.persistentListValue(`${prefix}${field}`, fallback, 'string') : fallback;
     const persistentNumbers = (field: string, fallback: ReadonlyArray<number>): ReadonlyArray<number> =>
       prefix ? this.persistentListValue(`${prefix}${field}`, fallback, 'number') : fallback;
+    const routingAddressValues = routing
+      ? persistentStrings('dnat_address', routing.destinationAddresses)
+      : [];
+    const routingPortValues = routing
+      ? persistentStrings('dnat_port', routing.destinationPorts)
+      : [];
     const fieldReadOnly = (field: string): boolean =>
       prefix ? this.originReadOnly(`${prefix}${field}`, mappedReadOnly) : mappedReadOnly;
     const booleanSelect = (
@@ -5206,23 +5261,20 @@ export class SmithproxyApp extends LitElement {
         ${routing ? html`
           <label for="routing-addresses-${entry.id}">Destination addresses</label>
           <input id="routing-addresses-${entry.id}"
-            .value=${persistentStrings('dnat_address', routing.destinationAddresses).join(', ')}
+            .value=${routingAddressValues.join(', ')} data-reference-preview="true"
             .readOnly=${fieldReadOnly('dnat_address')} />
           <label>Address object links</label>
-          <div class="reference-stack">${routing.destinationAddresses.length === 0 ? html`<span>None</span>` :
-            routing.destinationAddresses.map(name => {
-              const address = this.snapshot?.addresses.find(item => item.name === name);
-              return address ? html`<button class="reference" type="button"
-                @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
-                <span>${name}</span><span aria-hidden="true">→</span>
-              </button>` : html`<span>${name}</span>`;
-            })}</div>
+          <div class="reference-stack">${routingAddressValues.length === 0
+            ? html`<span>None</span>`
+            : this.renderAddressReferences(entry, `routing-addresses-${entry.id}`, routingAddressValues)}</div>
           <label for="routing-ports-${entry.id}">Destination ports</label>
           <input id="routing-ports-${entry.id}"
-            .value=${persistentStrings('dnat_port', routing.destinationPorts).join(', ')}
+            .value=${routingPortValues.join(', ')} data-reference-preview="true"
             .readOnly=${fieldReadOnly('dnat_port')} />
           <label>Port object links</label>
-          ${this.renderPortReferences(routing.destinationPorts)}
+          ${routingPortValues.length === 0
+            ? html`<span>None</span>`
+            : this.renderPortReferences(entry, `routing-ports-${entry.id}`, routingPortValues)}
           <label for="routing-load-balancing-${entry.id}">Load balancing</label>
           <select id="routing-load-balancing-${entry.id}"
             .value=${persistent('dnat_lb_method', routing.loadBalancingMethod)}

@@ -1048,6 +1048,55 @@ test('rehydrates pending scalar and reference values when an editor is reopened'
   await expect(editor.getByLabel('Source ports').locator('..').getByRole('button', {name: /https/i})).toBeVisible();
 });
 
+test('previews known and unresolved policy references while editing', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const sources = editor.getByLabel('Sources');
+  await sources.fill('office, possible-expression');
+  await expect(sources.locator('..').getByRole('button', {name: 'office', exact: true})).toBeVisible();
+  await expect(sources.locator('..').locator('.reference-advisory')).toContainText(
+    'possible-expressionLiteral or unresolved',
+  );
+
+  const protocol = editor.getByLabel('Protocol');
+  await protocol.fill('custom-protocol');
+  await expect(protocol.locator('..').locator('.reference-advisory')).toContainText(
+    'custom-protocolLiteral or unresolved',
+  );
+  await protocol.fill('tcp');
+  await expect(protocol.locator('..').getByRole('button', {name: 'tcp', exact: true})).toBeVisible();
+});
+
+test('uses pending routing references for links and live previews', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    initialDraftChanges: [
+      {path: 'routing.[0].dnat_address', value: ['office']},
+      {path: 'routing.[0].dnat_port', value: ['https']},
+    ],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+  await page.getByRole('dialog', {name: 'Edit Policy 1'})
+    .getByRole('button', {name: 'main', exact: true}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit main'});
+  const addresses = editor.getByLabel('Destination addresses');
+  await expect(addresses).toHaveValue('office');
+  await expect(editor.getByText('Address object links').locator('..')
+    .getByRole('button', {name: 'office', exact: true})).toBeVisible();
+  await addresses.fill('internet, upstream-literal');
+  await expect(editor.getByText('Address object links').locator('..')
+    .getByRole('button', {name: 'internet', exact: true})).toBeVisible();
+  await expect(editor.getByText('Address object links').locator('..').locator('.reference-advisory'))
+    .toContainText('upstream-literalLiteral or unresolved');
+});
+
 test('atomically removes only the active editor changes from the workspace draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
