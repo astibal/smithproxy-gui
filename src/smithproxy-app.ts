@@ -2437,6 +2437,104 @@ export class SmithproxyApp extends LitElement {
     return changes.filter(change => this.valueOrigin(change.path)?.editable !== false);
   }
 
+  private renamedReferenceChanges(
+    kind: 'address' | 'port' | 'protocol' | 'profile',
+    entityId: string,
+    currentName: string,
+    nextName: string,
+  ): ReadonlyArray<DraftChange> {
+    if (!this.snapshot || currentName === nextName) return [];
+    const changes = new Map<string, DraftChange>();
+    const replaceList = (path: string, current: ReadonlyArray<string>) => {
+      const presented = this.presentedListValue(path, current, 'string');
+      if (!presented.includes(currentName)) return;
+      changes.set(path, {
+        path,
+        value: presented.map(value => value === currentName ? nextName : value),
+      });
+    };
+    const replaceScalar = (path: string, current: string) => {
+      const presented = this.presentedValue(path, current);
+      if (presented === currentName) changes.set(path, {path, value: nextName});
+    };
+
+    for (const [index, policy] of this.snapshot.policies.entries()) {
+      const base = `policy.[${index}]`;
+      if (kind === 'address') {
+        replaceList(`${base}.src`, policy.sources.map(item => item.name));
+        replaceList(`${base}.dst`, policy.destinations.map(item => item.name));
+      } else if (kind === 'port') {
+        replaceList(`${base}.sport`, policy.sourcePorts);
+        replaceList(`${base}.dport`, policy.destinationPorts);
+      } else if (kind === 'protocol') {
+        replaceScalar(`${base}.proto`, policy.protocol);
+      } else {
+        const profile = this.snapshot.profiles.find(item => item.id === entityId);
+        if (!profile) continue;
+        if (profile.routing) replaceScalar(`${base}.routing`, policy.routing);
+        else if (profile.tls) replaceScalar(`${base}.tls_profile`, policy.tlsProfile);
+        else if (profile.ssh) replaceScalar(`${base}.ssh_profile`, policy.sshProfile);
+        else if (profile.detection) replaceScalar(`${base}.detection_profile`, policy.detectionProfile);
+        else if (profile.content) replaceScalar(`${base}.content_profile`, policy.contentProfile);
+        else if (profile.authentication) replaceScalar(`${base}.auth_profile`, policy.authProfile);
+        else if (profile.dns) replaceScalar(`${base}.alg_dns_profile`, policy.dnsProfile);
+        else if (profile.script) replaceScalar(`${base}.script_profile`, policy.scriptProfile);
+      }
+    }
+
+    if (kind === 'address' || kind === 'port') {
+      const routingProfiles = this.snapshot.profiles.filter(item => item.routing !== null);
+      for (const [index, profile] of routingProfiles.entries()) {
+        const base = `routing.[${index}]`;
+        if (kind === 'address') {
+          replaceList(`${base}.dnat_address`, profile.routing!.destinationAddresses);
+        } else {
+          replaceList(`${base}.dnat_port`, profile.routing!.destinationPorts);
+        }
+      }
+    }
+    return [...changes.values()];
+  }
+
+  private duplicateConfigurationName(
+    kind: 'policy' | 'address' | 'port' | 'protocol' | 'profile',
+    entityId: string,
+    nextName: string,
+  ): boolean {
+    if (!this.snapshot) return false;
+    if (kind === 'policy') {
+      return this.snapshot.policies.some((item, index) => item.id !== entityId &&
+        this.presentedValue(`policy.[${index}].name`, item.name) === nextName);
+    }
+    if (kind === 'address') {
+      return this.snapshot.addresses.some((item, index) => item.id !== entityId &&
+        this.presentedValue(`address_objects.[${index}].name`, item.name) === nextName);
+    }
+    if (kind === 'port') {
+      return this.snapshot.ports.some((item, index) => item.id !== entityId &&
+        this.presentedValue(`port_objects.[${index}].name`, item.name) === nextName);
+    }
+    if (kind === 'protocol') {
+      return this.snapshot.protocols.some((item, index) => item.id !== entityId &&
+        this.presentedValue(`proto_objects.[${index}].name`, item.name) === nextName);
+    }
+    const current = this.snapshot.profiles.find(item => item.id === entityId);
+    const prefix = this.profileOriginPrefixes().get(entityId);
+    if (!current || !prefix) return false;
+    const sameCollection = (item: ProfileObject) =>
+      Boolean(item.routing) === Boolean(current.routing) && Boolean(item.tls) === Boolean(current.tls) &&
+      Boolean(item.detection) === Boolean(current.detection) && Boolean(item.content) === Boolean(current.content) &&
+      Boolean(item.ssh) === Boolean(current.ssh) && Boolean(item.dns) === Boolean(current.dns) &&
+      Boolean(item.script) === Boolean(current.script) &&
+      Boolean(item.authentication) === Boolean(current.authentication);
+    const prefixes = this.profileOriginPrefixes();
+    return this.snapshot.profiles.some(item => {
+      const itemPrefix = prefixes.get(item.id);
+      return item.id !== entityId && itemPrefix !== undefined && sameCollection(item) &&
+        this.presentedValue(`${itemPrefix}name`, item.name) === nextName;
+    });
+  }
+
   private draftChanges(entry: DrawerEntry): ReadonlyArray<DraftChange> | undefined {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'settings') return this.systemSettingsDraftChanges();
@@ -2629,9 +2727,10 @@ export class SmithproxyApp extends LitElement {
       const destinations = list(destination);
       const destinationPortValues = list(destinationPorts);
       const featureValues = list(features);
+      const normalizedName = name.value.trim();
       const validList = (values: ReadonlyArray<string>) => values.length <= 256 &&
         values.every(value => value.length <= 128) && new Set(values).size === values.length;
-      if (name.value.trim().length === 0 || name.value.trim().length > 128 ||
+      if (normalizedName.length === 0 || normalizedName.length > 128 ||
           action.value.trim().length === 0 || action.value.trim().length > 32 ||
           protocol.value.trim().length === 0 || protocol.value.trim().length > 128 ||
           sourceValues.length === 0 || destinations.length === 0 ||
@@ -2640,8 +2739,12 @@ export class SmithproxyApp extends LitElement {
         this.draftError = 'Policy fields and unique bounded references are required.';
         return undefined;
       }
+      if (this.duplicateConfigurationName('policy', entry.id, normalizedName)) {
+        this.draftError = 'Policy names must be unique.';
+        return undefined;
+      }
       return [
-        {path: `policy.[${index}].name`, value: name.value.trim()},
+        {path: `policy.[${index}].name`, value: normalizedName},
         {path: `policy.[${index}].disabled`, value: !enabled.checked},
         {path: `policy.[${index}].proto`, value: protocol.value.trim()},
         {path: `policy.[${index}].src`, value: sourceValues},
@@ -2667,15 +2770,22 @@ export class SmithproxyApp extends LitElement {
       const type = this.renderRoot.querySelector<HTMLSelectElement>(`#address-type-${entry.id}`);
       const value = this.renderRoot.querySelector<HTMLInputElement>(`#address-value-${entry.id}`);
       if (index < 0 || !name || !type || !value) return undefined;
-      if (name.value.trim().length === 0 || value.value.trim().length === 0 ||
+      const normalizedName = name.value.trim();
+      const currentName = this.persistentValue(`address_objects.[${index}].name`, this.snapshot.addresses[index]!.name);
+      if (normalizedName.length === 0 || normalizedName.length > 128 || value.value.trim().length === 0 ||
           !['cidr', 'fqdn', 'host', 'subnet', 'range'].includes(type.value)) {
         this.draftError = 'Name and address value are required.';
         return undefined;
       }
+      if (this.duplicateConfigurationName('address', entry.id, normalizedName)) {
+        this.draftError = 'Address object names must be unique.';
+        return undefined;
+      }
       return [
-        {path: `address_objects.[${index}].name`, value: name.value.trim()},
+        {path: `address_objects.[${index}].name`, value: normalizedName},
         {path: `address_objects.[${index}].type`, value: type.value},
         {path: `address_objects.[${index}].value`, value: value.value.trim()},
+        ...this.renamedReferenceChanges('address', entry.id, currentName, normalizedName),
       ];
     }
     if (entry.kind === 'port') {
@@ -2686,15 +2796,23 @@ export class SmithproxyApp extends LitElement {
       const startValue = start?.valueAsNumber ?? Number.NaN;
       const endValue = end?.valueAsNumber ?? Number.NaN;
       if (index < 0 || !name || !start || !end) return undefined;
-      if (name.value.trim().length === 0 || !Number.isInteger(startValue) || !Number.isInteger(endValue) ||
+      const normalizedName = name.value.trim();
+      const currentName = this.persistentValue(`port_objects.[${index}].name`, this.snapshot.ports[index]!.name);
+      if (normalizedName.length === 0 || normalizedName.length > 128 ||
+          !Number.isInteger(startValue) || !Number.isInteger(endValue) ||
           startValue < 0 || endValue > 65535 || startValue > endValue) {
         this.draftError = 'Name and a valid port range from 0 to 65535 are required.';
         return undefined;
       }
+      if (this.duplicateConfigurationName('port', entry.id, normalizedName)) {
+        this.draftError = 'Port object names must be unique.';
+        return undefined;
+      }
       return [
-        {path: `port_objects.[${index}].name`, value: name.value.trim()},
+        {path: `port_objects.[${index}].name`, value: normalizedName},
         {path: `port_objects.[${index}].start`, value: startValue},
         {path: `port_objects.[${index}].end`, value: endValue},
+        ...this.renamedReferenceChanges('port', entry.id, currentName, normalizedName),
       ];
     }
     if (entry.kind === 'protocol') {
@@ -2703,14 +2821,21 @@ export class SmithproxyApp extends LitElement {
       const number = this.renderRoot.querySelector<HTMLInputElement>(`#protocol-number-${entry.id}`);
       const numberValue = number?.valueAsNumber ?? Number.NaN;
       if (index < 0 || !name || !number) return undefined;
-      if (name.value.trim().length === 0 || !Number.isInteger(numberValue) ||
+      const normalizedName = name.value.trim();
+      const currentName = this.persistentValue(`proto_objects.[${index}].name`, this.snapshot.protocols[index]!.name);
+      if (normalizedName.length === 0 || normalizedName.length > 128 || !Number.isInteger(numberValue) ||
           numberValue < 0 || numberValue > 255) {
         this.draftError = 'Name and a valid IP protocol number from 0 to 255 are required.';
         return undefined;
       }
+      if (this.duplicateConfigurationName('protocol', entry.id, normalizedName)) {
+        this.draftError = 'Protocol object names must be unique.';
+        return undefined;
+      }
       return [
-        {path: `proto_objects.[${index}].name`, value: name.value.trim()},
+        {path: `proto_objects.[${index}].name`, value: normalizedName},
         {path: `proto_objects.[${index}].id`, value: numberValue},
+        ...this.renamedReferenceChanges('protocol', entry.id, currentName, normalizedName),
       ];
     }
     if (entry.kind === 'profile') {
@@ -2720,6 +2845,17 @@ export class SmithproxyApp extends LitElement {
         this.draftError = 'A profile name up to 128 characters is required.';
         return undefined;
       }
+      const prefix = this.profileOriginPrefixes().get(entry.id);
+      if (!prefix) return undefined;
+      const normalizedName = name.value.trim();
+      const currentName = this.persistentValue(`${prefix}name`, profile.name);
+      if (this.duplicateConfigurationName('profile', entry.id, normalizedName)) {
+        this.draftError = 'Profile names must be unique within their configuration section.';
+        return undefined;
+      }
+      const renameChanges = this.renamedReferenceChanges(
+        'profile', entry.id, currentName, normalizedName,
+      );
       if (profile.routing) {
         const profiles = this.snapshot.profiles.filter(item => item.routing !== null);
         const index = profiles.findIndex(item => item.id === entry.id);
@@ -2744,7 +2880,8 @@ export class SmithproxyApp extends LitElement {
           return undefined;
         }
         return [
-          {path: `routing.[${index}].name`, value: name.value.trim()},
+          {path: `routing.[${index}].name`, value: normalizedName},
+          ...renameChanges,
           {path: `routing.[${index}].dnat_address`, value: addressValues},
           {path: `routing.[${index}].dnat_port`, value: portValues},
           {path: `routing.[${index}].dnat_lb_method`, value: loadBalancing.value},
@@ -2836,7 +2973,8 @@ export class SmithproxyApp extends LitElement {
           bypassReplacement = parsed as string[];
         }
         return [
-          {path: `tls_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `tls_profiles.[${index}].name`, value: normalizedName},
+          ...renameChanges,
           ...booleanChanges,
           {path: `tls_profiles.[${index}].ocsp_mode`, value: Number(ocspMode.value)},
           {path: `tls_profiles.[${index}].ocsp_stapling_mode`, value: Number(staplingMode.value)},
@@ -2889,7 +3027,8 @@ export class SmithproxyApp extends LitElement {
           return undefined;
         }
         return [
-          {path: `content_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `content_profiles.[${index}].name`, value: normalizedName},
+          ...renameChanges,
           ...changes,
           {path: `content_profiles.[${index}].write_format`, value: format.value},
           ...(filterMode.value === 'replace'
@@ -2936,7 +3075,8 @@ export class SmithproxyApp extends LitElement {
           changes.push({path: `ssh_profiles.[${index}].${path}`, value: select.value});
         }
         return [
-          {path: `ssh_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `ssh_profiles.[${index}].name`, value: normalizedName},
+          ...renameChanges,
           {path: `ssh_profiles.[${index}].hostkey_policy`, value: policy.value},
           ...changes,
           ...(hostKeyMode.value === 'replace'
@@ -2966,7 +3106,8 @@ export class SmithproxyApp extends LitElement {
         }
         const configuredType = runtime.value === 'python' ? '0' : runtime.value === 'go' ? '1' : '-1';
         return [
-          {path: `script_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `script_profiles.[${index}].name`, value: normalizedName},
+          ...renameChanges,
           {path: `script_profiles.[${index}].type`, value: configuredType},
           ...(moduleMode.value === 'replace'
             ? [{path: `script_profiles.[${index}].script-file`, value: replacement}]
@@ -2985,7 +3126,8 @@ export class SmithproxyApp extends LitElement {
           return undefined;
         }
         return [
-          {path: `auth_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `auth_profiles.[${index}].name`, value: normalizedName},
+          ...renameChanges,
           {path: `auth_profiles.[${index}].authenticate`, value: authenticate.value === 'true'},
           {path: `auth_profiles.[${index}].resolve`, value: resolve.value === 'true'},
         ];
@@ -3003,7 +3145,8 @@ export class SmithproxyApp extends LitElement {
           return undefined;
         }
         return [
-          {path: `detection_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `detection_profiles.[${index}].name`, value: normalizedName},
+          ...renameChanges,
           {path: `detection_profiles.[${index}].mode`, value: modeValue},
           {path: `detection_profiles.[${index}].engines_enabled`, value: engines.value === 'true'},
           {path: `detection_profiles.[${index}].kb_enabled`, value: knowledgeBase.value === 'true'},
@@ -3020,7 +3163,8 @@ export class SmithproxyApp extends LitElement {
           return undefined;
         }
         return [
-          {path: `alg_dns_profiles.[${index}].name`, value: name.value.trim()},
+          {path: `alg_dns_profiles.[${index}].name`, value: normalizedName},
+          ...renameChanges,
           {path: `alg_dns_profiles.[${index}].match_request_id`, value: match.value === 'true'},
           {path: `alg_dns_profiles.[${index}].randomize_id`, value: randomize.value === 'true'},
           {path: `alg_dns_profiles.[${index}].cached_responses`, value: cached.value === 'true'},

@@ -89,6 +89,13 @@ Draft obsahuje base revision. Pokud se persistentní config mezitím změní, se
 commit odmítne jako konflikt a vrátí strukturovaný rozdíl. GUI nesmí změny tiše
 rebasovat ani přepsat.
 
+Přejmenování existujícího adresního, portového, protokolového nebo profilového
+objektu se ukládá v jediné reconcile dávce společně se všemi známými policy a
+routing referencemi. Výpočet vychází i z již pending hodnot, takže opakované
+přejmenování nenechá ve draftu starý mezistupeň. Duplicitní jméno je odmítnuto a
+pokud je některá dotčená reference vlastněná aktivním augmentem, nevznikne ani
+částečný rename draft.
+
 Base revision se získává dvěma ohraničujícími čteními kanonické SHA-256 revize
 před a po načtení všech config sekcí. Draft se na ni naváže pouze při shodě obou
 čtení. Změna revize prázdného draftu zvýší jeho verzi; neprázdný draft se nikdy

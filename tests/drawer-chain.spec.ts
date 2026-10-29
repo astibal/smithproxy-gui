@@ -994,6 +994,119 @@ test('saves only fields changed since the editor opened', async ({page}) => {
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
 });
 
+test('renames referenced configuration entities atomically across pending references', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', draftMutationBatches: []};
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  const addresses = page.getByRole('group', {name: 'Address objects'});
+  await addresses.getByRole('button').filter({hasText: 'internet'}).click();
+  const addressEditor = page.getByRole('dialog', {name: 'Edit internet'});
+  await addressEditor.getByLabel('Name').fill('office');
+  await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(addressEditor.getByText('Address object names must be unique.')).toBeVisible();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
+  await addressEditor.getByLabel('Name').fill('public-internet');
+  await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches?.[0]).toEqual([
+    {path: 'address_objects.[1].name', value: 'public-internet'},
+    {path: 'policy.[0].dst', value: ['public-internet']},
+    {path: 'routing.[0].dnat_address', value: ['public-internet']},
+  ]);
+  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  const ports = page.getByRole('group', {name: 'Port objects'});
+  await ports.getByRole('button').filter({hasText: 'https'}).click();
+  const portEditor = page.getByRole('dialog', {name: 'Edit https'});
+  await portEditor.getByLabel('Name').fill('web-tls');
+  await portEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches?.[1]).toEqual([
+    {path: 'port_objects.[0].name', value: 'web-tls'},
+    {path: 'policy.[0].dport', value: ['web-tls']},
+    {path: 'routing.[0].dnat_port', value: ['web-tls']},
+  ]);
+  await portEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  const protocols = page.getByRole('group', {name: 'Protocol objects'});
+  await protocols.getByRole('button').filter({hasText: 'tcp'}).click();
+  const protocolEditor = page.getByRole('dialog', {name: 'Edit tcp'});
+  await protocolEditor.getByLabel('Name').fill('tcp-stream');
+  await protocolEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches?.[2]).toEqual([
+    {path: 'proto_objects.[0].name', value: 'tcp-stream'},
+    {path: 'policy.[0].proto', value: 'tcp-stream'},
+  ]);
+  await protocolEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await profiles.getByRole('button').filter({hasText: 'inspect'}).click();
+  const profileEditor = page.getByRole('dialog', {name: 'Edit inspect'});
+  await profileEditor.getByLabel('Name').fill('strict-inspection');
+  await profileEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches?.[3]).toEqual([
+    {path: 'tls_profiles.[0].name', value: 'strict-inspection'},
+    {path: 'policy.[0].tls_profile', value: 'strict-inspection'},
+  ]);
+  await expect(page.getByText('Draft: 10 changes')).toBeVisible();
+});
+
+test('rejects an entity rename when an affected reference is augment-owned', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    draftMutationBatches: [],
+    valueOrigins: [{
+      path: 'policy.[0].dst',
+      persistent_value: ['internet'],
+      effective_value: ['maintenance-target'],
+      layers: [{
+        id: 'maintenance-routing', priority: 100,
+        value: ['maintenance-target'], active: true,
+      }],
+      editable: false,
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button').filter({hasText: 'internet'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit internet'});
+  await editor.getByLabel('Name').fill('public-internet');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(
+    'policy.[0].dst is owned by an active augment layer and cannot be changed here.',
+  )).toBeVisible();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
+});
+
+test('renames an already pending entity without retaining an intermediate reference', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    draftMutationBatches: [],
+    initialDraftChanges: [
+      {path: 'address_objects.[1].name', value: 'public-internet'},
+      {path: 'policy.[0].dst', value: ['public-internet']},
+      {path: 'routing.[0].dnat_address', value: ['public-internet']},
+    ],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button').filter({hasText: 'public-internet'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit public-internet'});
+  await editor.getByLabel('Name').fill('external-network');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches).toEqual([[
+    {path: 'address_objects.[1].name', value: 'external-network'},
+    {path: 'policy.[0].dst', value: ['external-network']},
+    {path: 'routing.[0].dnat_address', value: ['external-network']},
+  ]]);
+  await expect(page.getByText('Draft: 3 changes')).toBeVisible();
+});
+
 test('validates the immutable workspace draft through the Smithproxy transaction', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
