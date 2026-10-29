@@ -120,6 +120,8 @@ export class SmithproxyApp extends LitElement {
   @state() private draftSaving = false;
   @state() private draftError: string | undefined;
   @state() private drawerError: string | undefined;
+  @state() private dirtyDrawerKeys = new Set<string>();
+  @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
   @state() private searchQuery = '';
@@ -337,6 +339,7 @@ export class SmithproxyApp extends LitElement {
     .drawer-body { overflow: auto; padding: 22px 24px 32px; }
     .drawer-foot { display: flex; gap: 10px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--app-border); background: var(--app-raised); }
     .drawer-foot .validation { flex: 1; color: var(--app-success); }
+    .drawer-foot .validation.warning { color: var(--app-warning); }
     .secondary { padding: 8px 13px; border: 1px solid var(--app-border-strong); border-radius: 3px; background: transparent; cursor: pointer; }
     .form-grid { display: grid; grid-template-columns: minmax(120px, 0.35fr) minmax(240px, 1fr); gap: 18px 24px; max-width: 920px; }
     .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .3fr) minmax(170px, 1fr) minmax(120px, .3fr) minmax(170px, 1fr); max-width: none; }
@@ -438,6 +441,7 @@ export class SmithproxyApp extends LitElement {
     }
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     window.addEventListener('online', this.handleOnline);
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
     window.addEventListener('popstate', this.handlePopState);
     void this.loadConfiguration();
   }
@@ -446,6 +450,7 @@ export class SmithproxyApp extends LitElement {
     this.clearSystemProbe();
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('online', this.handleOnline);
+    window.removeEventListener('beforeunload', this.handleBeforeUnload);
     window.removeEventListener('popstate', this.handlePopState);
     super.disconnectedCallback();
   }
@@ -462,7 +467,19 @@ export class SmithproxyApp extends LitElement {
     void this.probeSystem();
   };
 
+  private readonly handleBeforeUnload = (event: BeforeUnloadEvent): void => {
+    if (this.dirtyDrawerKeys.size === 0) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
+
   private readonly handlePopState = (): void => {
+    if (this.drawers.some(entry => this.dirtyDrawerKeys.has(this.drawerKey(entry)))) {
+      const hostState = typeof history.state === 'object' && history.state !== null ? history.state : {};
+      history.pushState({...hostState, smithproxyGuiDrawer: true}, '', this.drawerUrl());
+      this.requestCloseDrawer(this.drawers.length - 1);
+      return;
+    }
     this.drawerHistoryDepth = 0;
     this.restoreDrawerRoute();
     const target = this.pendingReturnFocus;
@@ -883,6 +900,7 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     this.drawerError = undefined;
+    this.pendingCloseIndex = undefined;
     this.drawerOrigins = [
       ...this.drawerOrigins.slice(0, this.drawerStore.entries.length - 1),
       ...(origin ? [origin] : []),
@@ -891,7 +909,64 @@ export class SmithproxyApp extends LitElement {
     this.syncDrawers(true);
   }
 
+  private drawerKey(entry: Pick<DrawerEntry, 'kind' | 'id'>): string {
+    return `${entry.kind}:${entry.id}`;
+  }
+
+  private markDrawerDirty(entry: DrawerEntry, event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement ||
+          target instanceof HTMLTextAreaElement) || target.disabled ||
+        ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) && target.readOnly)) {
+      return;
+    }
+    const key = this.drawerKey(entry);
+    if (!this.dirtyDrawerKeys.has(key)) {
+      this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
+    }
+  }
+
+  private markDrawerSaved(entry: DrawerEntry): void {
+    const key = this.drawerKey(entry);
+    if (this.dirtyDrawerKeys.has(key)) {
+      const remaining = new Set(this.dirtyDrawerKeys);
+      remaining.delete(key);
+      this.dirtyDrawerKeys = remaining;
+    }
+    this.pendingCloseIndex = undefined;
+  }
+
+  private requestCloseDrawer(index: number): void {
+    const dirty = this.drawerStore.entries.slice(index)
+      .some(entry => this.dirtyDrawerKeys.has(this.drawerKey(entry)));
+    if (!dirty) {
+      this.closeDrawer(index);
+      return;
+    }
+    this.pendingCloseIndex = index;
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLElement>(`[data-keep-editing="${index}"]`)?.focus();
+    });
+  }
+
+  private keepEditing(): void {
+    this.pendingCloseIndex = undefined;
+    void this.updateComplete.then(() => this.focusActiveDrawer());
+  }
+
+  private discardDrawerChanges(index: number): void {
+    const remaining = new Set(this.dirtyDrawerKeys);
+    for (const entry of this.drawerStore.entries.slice(index)) remaining.delete(this.drawerKey(entry));
+    this.dirtyDrawerKeys = remaining;
+    this.pendingCloseIndex = undefined;
+    this.closeDrawer(index);
+  }
+
   private closeDrawer(index: number): void {
+    const remainingDirty = new Set(this.dirtyDrawerKeys);
+    for (const entry of this.drawerStore.entries.slice(index)) remainingDirty.delete(this.drawerKey(entry));
+    this.dirtyDrawerKeys = remainingDirty;
+    this.pendingCloseIndex = undefined;
     const levels = this.drawerStore.entries.length - index;
     const returnFocus = this.drawerOrigins[index];
     this.drawerStore.closeFrom(index);
@@ -1012,6 +1087,7 @@ export class SmithproxyApp extends LitElement {
     if (this.snapshot?.source !== 'live') {
       this.draftObjects = new Set(this.draftObjects).add(`${entry.kind}:${entry.id}`);
       this.draftChangeCount = this.draftObjects.size;
+      this.markDrawerSaved(entry);
       return;
     }
     if (!this.draftAvailable || !this.draftClient) return;
@@ -1021,6 +1097,7 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
+      this.markDrawerSaved(entry);
       if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile' ||
           entry.kind === 'authority' || entry.kind === 'signature-flow' || entry.kind === 'content-rule') {
         this.renderRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
@@ -1951,7 +2028,7 @@ export class SmithproxyApp extends LitElement {
   private handleKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape' && this.drawers.length > 0) {
       event.preventDefault();
-      this.closeDrawer(this.drawers.length - 1);
+      this.requestCloseDrawer(this.drawers.length - 1);
       return;
     }
     if (event.key === 'Escape' && this.searchQuery) {
@@ -3978,10 +4055,14 @@ export class SmithproxyApp extends LitElement {
     const draftable = this.snapshot?.source !== 'live' ||
       (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
     const readOnly = !draftable;
+    const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
+    const closePending = this.pendingCloseIndex === index;
     return html`
       <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''}"
         data-depth=${visibleDepth} role="dialog" aria-modal=${active ? 'true' : 'false'}
-        aria-hidden=${active ? nothing : 'true'} aria-label=${editLabel} tabindex="-1" ?inert=${!active}>
+        aria-hidden=${active ? nothing : 'true'} aria-label=${editLabel} tabindex="-1" ?inert=${!active}
+        @input=${(event: Event) => this.markDrawerDirty(entry, event)}
+        @change=${(event: Event) => this.markDrawerDirty(entry, event)}>
         <header class="drawer-head">
           <div class="drawer-title"><small>Edit ${entry.kind}</small><h2>${entry.title}</h2></div>
           ${active ? html`
@@ -3990,19 +4071,28 @@ export class SmithproxyApp extends LitElement {
               title=${this.focusMode ? 'Exit focus mode' : 'Focus mode'}
               @click=${() => { this.focusMode = !this.focusMode; }}>⛶</button>
           ` : nothing}
-          <button class="icon-button" type="button" aria-label=${closeLabel} @click=${() => this.closeDrawer(index)}>×</button>
+          <button class="icon-button" type="button" aria-label=${closeLabel}
+            @click=${() => this.requestCloseDrawer(index)}>×</button>
         </header>
         <div class="drawer-body">
           ${this.renderDrawerBody(entry)}
           ${this.renderAugmentOrigins(entry)}
         </div>
         <footer class="drawer-foot">
-          <span class="validation" role="status" aria-live="polite">
-            ${this.drawerError ?? this.draftError ?? (readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}
-          </span>
-          <button class="secondary" type="button" @click=${() => this.closeDrawer(index)}>Cancel</button>
-          <button class="primary" type="button" ?disabled=${readOnly || this.draftSaving}
-            @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
+          ${closePending ? html`
+            <span class="validation warning" role="alert">Discard unsaved changes in this editor?</span>
+            <button class="secondary" type="button" data-keep-editing=${index}
+              @click=${() => this.keepEditing()}>Keep editing</button>
+            <button class="secondary danger-button" type="button"
+              @click=${() => this.discardDrawerChanges(index)}>Discard changes</button>
+          ` : html`
+            <span class="validation ${dirty ? 'warning' : ''}" role="status" aria-live="polite">
+              ${this.drawerError ?? this.draftError ?? (dirty ? 'Unsaved changes' : readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}
+            </span>
+            <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>
+            <button class="primary" type="button" ?disabled=${readOnly || this.draftSaving}
+              @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
+          `}
         </footer>
       </section>
     `;

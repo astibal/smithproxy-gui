@@ -725,6 +725,51 @@ test('restores drawer routes and manages focus across the chain', async ({page})
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
 });
 
+test('requires an explicit decision before closing unsaved drawer changes', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  const policyRow = page.getByRole('button', {name: /office office-net/i});
+  await policyRow.click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit office'});
+  await editor.getByLabel('Name').fill('Unsaved policy');
+  await expect(editor.getByRole('status')).toHaveText('Unsaved changes');
+  await expect.poll(() => page.evaluate(() => {
+    const event = new Event('beforeunload', {cancelable: true});
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  })).toBe(true);
+  await page.keyboard.press('Escape');
+
+  await expect(editor).toBeVisible();
+  await expect(editor.getByRole('alert')).toHaveText('Discard unsaved changes in this editor?');
+  await expect(editor.getByRole('button', {name: 'Keep editing'})).toBeFocused();
+  await expectNoWcagViolations(page);
+  await editor.getByRole('button', {name: 'Keep editing'}).click();
+  await expect(editor.getByRole('status')).toHaveText('Unsaved changes');
+
+  await page.goBack();
+  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-office');
+  await expect(editor.getByRole('alert')).toHaveText('Discard unsaved changes in this editor?');
+  await editor.getByRole('button', {name: 'Discard changes'}).click();
+  await expect(editor).not.toBeVisible();
+  await expect(policyRow).toBeFocused();
+
+  await policyRow.click();
+  const reopened = page.getByRole('dialog', {name: 'Edit office'});
+  await reopened.getByLabel('Name').fill('Saved policy');
+  await reopened.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(reopened.getByRole('status')).toHaveText('Saved to draft');
+  await expect.poll(() => page.evaluate(() => {
+    const event = new Event('beforeunload', {cancelable: true});
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  })).toBe(false);
+  await page.keyboard.press('Escape');
+  await expect(reopened).not.toBeVisible();
+});
+
 test('shows live Smithproxy status transitions', async ({page}) => {
   const state: MockState = {smithproxy: 'ready'};
   await mockSystemApi(page, state);
