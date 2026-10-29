@@ -1149,6 +1149,17 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openObjectDrawer(entry: DrawerEntry, origin?: HTMLElement): void {
+    const existing = this.drawerStore.entries.findIndex(
+      item => item.kind === entry.kind && item.id === entry.id,
+    );
+    if (existing >= 0) {
+      if (existing === this.drawerStore.entries.length - 1) {
+        void this.updateComplete.then(() => this.focusActiveDrawer());
+        return;
+      }
+      this.requestCloseDrawer(existing + 1);
+      return;
+    }
     if (!this.drawerStore.open(entry)) {
       this.drawerError = `Editor chain is limited to ${MAXIMUM_DRAWER_DEPTH} levels. Close an earlier editor to continue.`;
       return;
@@ -1199,7 +1210,7 @@ export class SmithproxyApp extends LitElement {
     }
     this.pendingCloseIndex = index;
     void this.updateComplete.then(() => {
-      this.renderRoot.querySelector<HTMLElement>(`[data-keep-editing="${index}"]`)?.focus();
+      this.renderRoot.querySelector<HTMLElement>('[data-keep-editing]')?.focus();
     });
   }
 
@@ -4553,7 +4564,8 @@ export class SmithproxyApp extends LitElement {
       (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
     const readOnly = !draftable;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
-    const closePending = this.pendingCloseIndex === index;
+    const closePending = active && this.pendingCloseIndex !== undefined;
+    const closeFromIndex = this.pendingCloseIndex ?? index;
     return html`
       <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''}"
         data-depth=${visibleDepth} role="dialog" aria-modal=${active ? 'true' : 'false'}
@@ -4577,11 +4589,13 @@ export class SmithproxyApp extends LitElement {
         </div>
         <footer class="drawer-foot">
           ${closePending ? html`
-            <span class="validation warning" role="alert">Discard unsaved changes in this editor?</span>
-            <button class="secondary" type="button" data-keep-editing=${index}
+            <span class="validation warning" role="alert">${closeFromIndex === index
+              ? 'Discard unsaved changes in this editor?'
+              : 'Discard unsaved changes in nested editors?'}</span>
+            <button class="secondary" type="button" data-keep-editing
               @click=${() => this.keepEditing()}>Keep editing</button>
             <button class="secondary danger-button" type="button"
-              @click=${() => this.discardDrawerChanges(index)}>Discard changes</button>
+              @click=${() => this.discardDrawerChanges(closeFromIndex)}>Discard changes</button>
           ` : html`
             <span class="validation ${dirty ? 'warning' : ''}" role="status" aria-live="polite">
               ${this.drawerError ?? this.draftError ?? (dirty ? 'Unsaved changes' : readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}

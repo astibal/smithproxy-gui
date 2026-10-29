@@ -610,9 +610,18 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(routingEditor.getByText('Saved to draft')).toBeVisible();
   await expect(page.getByText('Draft: 97 changes')).toBeVisible();
   await routingEditor.getByRole('button', {name: 'internet', exact: true}).click();
-  await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  const internetEditor = page.getByRole('dialog', {name: 'Edit internet'});
+  await expect(internetEditor).toBeVisible();
+  await internetEditor.getByLabel('Address').fill('changed.example.test');
+  await internetEditor.getByRole('button', {name: /Policy 1 policy/}).click();
+  await expect(internetEditor.getByRole('alert')).toHaveText('Discard unsaved changes in nested editors?');
+  await internetEditor.getByRole('button', {name: 'Keep editing'}).click();
+  await expect(internetEditor.getByLabel('Address')).toHaveValue('changed.example.test');
+  await internetEditor.getByRole('button', {name: /Policy 1 policy/}).click();
+  await internetEditor.getByRole('button', {name: 'Discard changes'}).click();
+  await expect(internetEditor).not.toBeVisible();
+  await expect(routingEditor).not.toBeVisible();
+  await expect(editor).not.toHaveAttribute('inert', '');
   await editor.getByRole('button', {name: 'office', exact: true}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit office'});
   await expect(addressEditor).toBeVisible();
@@ -815,8 +824,17 @@ test('walks reverse dependencies through nested editors', async ({page}) => {
   await expect(policyEditor).toHaveAttribute('inert', '');
   await expect(tlsEditor.getByLabel('Inspection')).toHaveValue('true');
 
-  await page.keyboard.press('Escape');
+  await tlsEditor.getByLabel('Inspection').selectOption('false');
+  await tlsEditor.getByRole('button', {name: /office policy/}).click();
+  await expect(tlsEditor.getByRole('alert')).toHaveText('Discard unsaved changes in this editor?');
+  await tlsEditor.getByRole('button', {name: 'Keep editing'}).click();
+  await expect(tlsEditor.getByLabel('Inspection')).toHaveValue('false');
+
+  await tlsEditor.getByRole('button', {name: /office policy/}).click();
+  await tlsEditor.getByRole('button', {name: 'Discard changes'}).click();
+  await expect(tlsEditor).not.toBeVisible();
   await expect(policyEditor).not.toHaveAttribute('inert', '');
+
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toHaveAttribute('inert', '');
 });
