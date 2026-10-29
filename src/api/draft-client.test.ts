@@ -71,6 +71,42 @@ describe('DraftClient', () => {
     }));
   });
 
+  it('loads a bounded redacted preflight impact summary', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: 7,
+      base_revision: null, change_count: 3, sensitive_change_count: 1,
+      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      sections: [
+        {name: 'policy', change_count: 2, sensitive_change_count: 0},
+        {name: 'settings', change_count: 1, sensitive_change_count: 1},
+      ],
+      blockers: [{
+        code: 'upstream.transaction_unavailable',
+        message: 'Smithproxy does not advertise the reviewed atomic transaction API.',
+      }],
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+    await expect(client.preflight()).resolves.toMatchObject({
+      draftVersion: 7, changeCount: 3, sensitiveChangeCount: 1,
+      schemaValidation: 'valid', upstreamValidation: 'unavailable', commitAvailable: false,
+      sections: [{name: 'policy', changeCount: 2}, {name: 'settings', changeCount: 1}],
+    });
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/preflight', expect.objectContaining({
+      method: 'GET', credentials: 'same-origin', redirect: 'error',
+    }));
+  });
+
+  it('rejects inconsistent or unbounded preflight summaries', async () => {
+    const client = new DraftClient('/api/v1', async () => response({
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: 1,
+      base_revision: null, change_count: 2, sensitive_change_count: 0,
+      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      sections: [{name: 'policy', change_count: 1, sensitive_change_count: 0}],
+      blockers: [{code: 'upstream.transaction_unavailable', message: 'Blocked.'}],
+    }));
+    await expect(client.preflight()).rejects.toThrow('Inconsistent draft preflight');
+  });
+
   it('rejects oversized draft responses before parsing', async () => {
     const client = new DraftClient('/api/v1', async () => new Response('{}', {
       headers: {'Content-Length': String(8 * 1024 * 1024 + 1)},

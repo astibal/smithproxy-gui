@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <memory>
 #include <random>
 #include <sstream>
@@ -509,6 +510,12 @@ private:
             }
             return draft_snapshot();
         }
+        if (*relative == "/api/v1/config/draft/preflight") {
+            if (!gateway_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+            }
+            return draft_preflight();
+        }
         if (*relative == "/api/v1/config/snapshot") {
             if (!gateway_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
@@ -539,6 +546,7 @@ private:
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":false,"
                     "\"drafts\":" + (config_read ? "true" : "false") +
+                    ",\"draft_preflight\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":false,\"events\":" + (monitoring ? "true" : "false") +
                     ",\"alerts\":" + (monitoring ? "true" : "false") +
                     ",\"audit\":" + (monitoring ? "true" : "false") +
@@ -599,6 +607,54 @@ private:
             document["changes"].push_back({{"path", change.path}, {"value", std::move(value)}});
         }
         return {200, "application/json; charset=utf-8", document.dump()};
+    }
+
+    Response draft_preflight() const {
+        const auto draft = draft_.snapshot();
+        std::map<std::string, std::pair<std::size_t, std::size_t>> sections;
+        std::size_t sensitive_changes{};
+        for (const auto& change : draft.changes) {
+            const auto separator = change.path.find('.');
+            const auto section = change.path.substr(0U, separator);
+            auto& counts = sections[section];
+            ++counts.first;
+            if (sensitive_draft_path(change.path)) {
+                ++counts.second;
+                ++sensitive_changes;
+            }
+        }
+        nlohmann::json section_list = nlohmann::json::array();
+        for (const auto& [name, counts] : sections) {
+            section_list.push_back({
+                {"name", name},
+                {"change_count", counts.first},
+                {"sensitive_change_count", counts.second},
+            });
+        }
+        nlohmann::json blockers = nlohmann::json::array();
+        if (draft.changes.empty()) {
+            blockers.push_back({
+                {"code", "draft.empty"},
+                {"message", "The workspace draft has no pending changes."},
+            });
+        }
+        blockers.push_back({
+            {"code", "upstream.transaction_unavailable"},
+            {"message", "Smithproxy does not advertise the reviewed atomic transaction API."},
+        });
+        return {200, "application/json; charset=utf-8", nlohmann::json{
+            {"source", "gui-core"},
+            {"draft_id", draft.id},
+            {"draft_version", draft.version},
+            {"base_revision", draft.base_revision ? nlohmann::json(*draft.base_revision) : nlohmann::json(nullptr)},
+            {"change_count", draft.changes.size()},
+            {"sensitive_change_count", sensitive_changes},
+            {"schema_validation", "valid"},
+            {"upstream_validation", "unavailable"},
+            {"commit_available", false},
+            {"sections", std::move(section_list)},
+            {"blockers", std::move(blockers)},
+        }.dump()};
     }
 
     Response config_snapshot() const {

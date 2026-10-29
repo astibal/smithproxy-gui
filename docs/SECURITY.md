@@ -64,6 +64,12 @@ Unknown fields and partially invalid batches fail closed before any draft state
 is changed. The same validator is a mandatory boundary for the future upstream
 transaction adapter; a syntactically safe arbitrary libconfig path is not enough.
 
+Draft preflight serializes only bounded aggregate counts and stable blocker
+codes. It does not return paths, values, diffs, or validation payloads and uses
+the same trusted-gateway authentication as the draft itself. The browser rejects
+a preflight whose version/counts do not match its current draft, preventing a
+stale summary from authorizing or visually blessing a newer change set.
+
 ## Oprávnění
 
 Minimální role:

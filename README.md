@@ -110,7 +110,10 @@ capability-gated until the trusted gateway handoff is configured. Configuration
 writes remain disabled while the atomic upstream commit contract is being
 completed. The server-side draft boundary accepts only pinned typed schema paths
 and rejects an entire batch when any path, type, enum, range, or collection is
-invalid. Policies, objects, system settings, profiles, certificate authorities,
+invalid. The draft review includes a value-free server preflight with affected
+sections and write-only counts, while clearly keeping upstream validation and
+atomic commit blocked until Smithproxy advertises the reviewed transaction API.
+Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls. Control-plane health
 and listener monitoring use the production C++ backend. A bounded five-minute

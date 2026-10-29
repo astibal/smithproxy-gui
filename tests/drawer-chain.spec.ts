@@ -64,7 +64,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     base_path: '/',
     smithproxy_state: state.smithproxy,
     features: {
-      config_read: configRead, config_write: false, drafts: configRead, jobs: false, events: true, alerts: true, audit: true,
+      config_read: configRead, config_write: false, drafts: configRead,
+      draft_preflight: configRead, jobs: false, events: true, alerts: true, audit: true,
       smithproxy_events: false,
       metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
     },
@@ -176,6 +177,24 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       target_count: 1, targets: ['policy.[0].action'], targets_truncated: false,
     }],
   }}));
+  await page.route('**/api/v1/config/draft/preflight', async route => {
+    const sectionCounts = new Map<string, number>();
+    for (const change of draft.changes) {
+      const section = change.path.split('.', 1)[0];
+      sectionCounts.set(section, (sectionCounts.get(section) ?? 0) + 1);
+    }
+    await route.fulfill({json: {
+      source: 'gui-core', draft_id: 'workspace-draft', draft_version: draft.version,
+      base_revision: draft.base_revision, change_count: draft.changes.length, sensitive_change_count: 0,
+      schema_validation: 'valid', upstream_validation: 'unavailable', commit_available: false,
+      sections: [...sectionCounts].sort(([left], [right]) => left.localeCompare(right))
+        .map(([name, count]) => ({name, change_count: count, sensitive_change_count: 0})),
+      blockers: [
+        ...(draft.changes.length === 0 ? [{code: 'draft.empty', message: 'The workspace draft has no pending changes.'}] : []),
+        {code: 'upstream.transaction_unavailable', message: 'Smithproxy does not advertise the reviewed atomic transaction API.'},
+      ],
+    }});
+  });
   await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
   await page.route('**/api/v1/config/draft/clear', async route => {
     const body = route.request().postDataJSON() as {expected_version: number};
@@ -609,6 +628,15 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await authorityEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 102'}).click();
   await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
+  const preflight = page.getByRole('region', {name: 'Draft preflight'});
+  await expect(preflight.getByText('GUI schema validation')).toBeVisible();
+  await expect(preflight.getByText('Valid', {exact: true})).toBeVisible();
+  await expect(preflight.getByText('Smithproxy validation')).toBeVisible();
+  await expect(preflight.getByText('Atomic commit')).toBeVisible();
+  await expect(preflight.getByText('Blocked', {exact: true})).toBeVisible();
+  await expect(preflight.getByLabel('Affected configuration sections')).toContainText('policy');
+  await expect(preflight).toContainText('Smithproxy does not advertise the reviewed atomic transaction API.');
+  await expectNoWcagViolations(page);
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('address_objects.[0].value');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.0/24');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('routing.[0].dnat_lb_method');

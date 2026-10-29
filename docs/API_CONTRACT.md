@@ -122,6 +122,15 @@ limits are checked independently of browser validation. An unknown or invalid
 member rejects the complete batch without changing its version or retaining any
 of its otherwise valid members.
 
+`GET /api/v1/config/draft/preflight` returns a value-free impact summary for the
+current workspace draft. It includes the matching draft version, total and
+write-only change counts, and bounded per-section counts. It reports the local
+schema result independently from upstream Smithproxy validation and commit
+availability. Until the reviewed transaction API is advertised, the response
+must say `upstream_validation: "unavailable"`, `commit_available: false`, and
+include the stable `upstream.transaction_unavailable` blocker. The endpoint
+never returns draft values, normalized diffs, paths, or secret material.
+
 Write-only paths accept explicit `unchanged`, `replace`, or `clear` intent in
 the frontend. The core retains a replacement only inside the server draft.
 Every draft response substitutes an intent-only redaction marker that preserves

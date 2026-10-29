@@ -26,6 +26,7 @@ export interface SystemCapabilities {
     configRead: boolean;
     configWrite: boolean;
     drafts: boolean;
+    draftPreflight: boolean;
     jobs: boolean;
     events: boolean;
     alerts: boolean;
@@ -258,7 +259,8 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   }
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
-      typeof features.drafts !== 'boolean' || typeof features.jobs !== 'boolean' ||
+      typeof features.drafts !== 'boolean' || typeof features.draft_preflight !== 'boolean' ||
+      typeof features.jobs !== 'boolean' ||
       typeof features.events !== 'boolean' || typeof features.alerts !== 'boolean' ||
       typeof features.audit !== 'boolean' ||
       typeof features.smithproxy_events !== 'boolean' ||
@@ -275,6 +277,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       configRead: features.config_read,
       configWrite: features.config_write,
       drafts: features.drafts,
+      draftPreflight: features.draft_preflight,
       jobs: features.jobs,
       events: features.events,
       alerts: features.alerts,

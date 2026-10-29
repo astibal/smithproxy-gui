@@ -14,6 +14,37 @@ export interface DraftSnapshot {
   changes: ReadonlyArray<DraftChange>;
 }
 
+export type DraftSectionName =
+  | 'settings' | 'debug' | 'address_objects' | 'port_objects' | 'proto_objects'
+  | 'detection_profiles' | 'captures' | 'content_profiles' | 'tls_ca' | 'tls_profiles'
+  | 'ssh_profiles' | 'alg_dns_profiles' | 'routing' | 'policy' | 'starttls_signatures'
+  | 'detection_signatures' | 'script_profiles' | 'auth_profiles';
+
+export interface DraftPreflightSection {
+  name: DraftSectionName;
+  changeCount: number;
+  sensitiveChangeCount: number;
+}
+
+export interface DraftPreflightBlocker {
+  code: 'draft.empty' | 'upstream.transaction_unavailable';
+  message: string;
+}
+
+export interface DraftPreflight {
+  source: 'gui-core';
+  draftId: 'workspace-draft';
+  draftVersion: number;
+  baseRevision: string | null;
+  changeCount: number;
+  sensitiveChangeCount: number;
+  schemaValidation: 'valid';
+  upstreamValidation: 'unavailable';
+  commitAvailable: false;
+  sections: ReadonlyArray<DraftPreflightSection>;
+  blockers: ReadonlyArray<DraftPreflightBlocker>;
+}
+
 type JsonObject = Record<string, unknown>;
 const MAX_DRAFT_RESPONSE_BYTES = 8 * 1024 * 1024;
 
@@ -98,6 +129,69 @@ function parseDraft(value: unknown): DraftSnapshot {
   return {id: value.id, baseRevision: value.base_revision, version: value.version, changes};
 }
 
+const draftSectionNames = new Set<DraftSectionName>([
+  'settings', 'debug', 'address_objects', 'port_objects', 'proto_objects',
+  'detection_profiles', 'captures', 'content_profiles', 'tls_ca', 'tls_profiles',
+  'ssh_profiles', 'alg_dns_profiles', 'routing', 'policy', 'starttls_signatures',
+  'detection_signatures', 'script_profiles', 'auth_profiles',
+]);
+
+function parsePreflight(value: unknown): DraftPreflight {
+  if (!isObject(value) || value.source !== 'gui-core' || value.draft_id !== 'workspace-draft' ||
+      !Number.isSafeInteger(value.draft_version) || Number(value.draft_version) < 0 ||
+      !(value.base_revision === null || typeof value.base_revision === 'string') ||
+      !Number.isSafeInteger(value.change_count) || Number(value.change_count) < 0 ||
+      Number(value.change_count) > 4096 || !Number.isSafeInteger(value.sensitive_change_count) ||
+      Number(value.sensitive_change_count) < 0 ||
+      Number(value.sensitive_change_count) > Number(value.change_count) ||
+      value.schema_validation !== 'valid' || value.upstream_validation !== 'unavailable' ||
+      value.commit_available !== false || !Array.isArray(value.sections) || value.sections.length > 18 ||
+      !Array.isArray(value.blockers) || value.blockers.length === 0 || value.blockers.length > 2) {
+    throw new Error('Invalid draft preflight response.');
+  }
+  const sectionNames = new Set<string>();
+  let sectionChanges = 0;
+  let sectionSensitive = 0;
+  const sections = value.sections.map((item): DraftPreflightSection => {
+    if (!isObject(item) || typeof item.name !== 'string' ||
+        !draftSectionNames.has(item.name as DraftSectionName) || sectionNames.has(item.name) ||
+        !Number.isSafeInteger(item.change_count) || Number(item.change_count) <= 0 ||
+        !Number.isSafeInteger(item.sensitive_change_count) || Number(item.sensitive_change_count) < 0 ||
+        Number(item.sensitive_change_count) > Number(item.change_count)) {
+      throw new Error('Invalid draft preflight section.');
+    }
+    sectionNames.add(item.name);
+    sectionChanges += Number(item.change_count);
+    sectionSensitive += Number(item.sensitive_change_count);
+    return {
+      name: item.name as DraftSectionName,
+      changeCount: Number(item.change_count),
+      sensitiveChangeCount: Number(item.sensitive_change_count),
+    };
+  });
+  const blockerCodes = new Set<string>();
+  const blockers = value.blockers.map((item): DraftPreflightBlocker => {
+    if (!isObject(item) || (item.code !== 'draft.empty' && item.code !== 'upstream.transaction_unavailable') ||
+        blockerCodes.has(item.code) || typeof item.message !== 'string' || item.message.length === 0 ||
+        item.message.length > 256 || /[\u0000-\u001f\u007f]/u.test(item.message)) {
+      throw new Error('Invalid draft preflight blocker.');
+    }
+    blockerCodes.add(item.code);
+    return {code: item.code, message: item.message};
+  });
+  if (sectionChanges !== Number(value.change_count) || sectionSensitive !== Number(value.sensitive_change_count) ||
+      (Number(value.change_count) === 0) !== blockerCodes.has('draft.empty') ||
+      !blockerCodes.has('upstream.transaction_unavailable')) {
+    throw new Error('Inconsistent draft preflight response.');
+  }
+  return {
+    source: 'gui-core', draftId: 'workspace-draft', draftVersion: Number(value.draft_version),
+    baseRevision: value.base_revision, changeCount: Number(value.change_count),
+    sensitiveChangeCount: Number(value.sensitive_change_count), schemaValidation: 'valid',
+    upstreamValidation: 'unavailable', commitAvailable: false, sections, blockers,
+  };
+}
+
 export class DraftClient {
   readonly #endpoint: string;
   readonly #fetch: typeof fetch;
@@ -112,6 +206,10 @@ export class DraftClient {
 
   async load(): Promise<DraftSnapshot> {
     return parseDraft(await this.#request(this.#endpoint, {method: 'GET'}));
+  }
+
+  async preflight(): Promise<DraftPreflight> {
+    return parsePreflight(await this.#request(`${this.#endpoint}/preflight`, {method: 'GET'}));
   }
 
   async upsert(expectedVersion: number, path: string, value: DraftScalar): Promise<DraftSnapshot> {

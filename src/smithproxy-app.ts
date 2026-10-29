@@ -1,7 +1,13 @@
 import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {ApiConfigClient} from './api/config-client';
-import {DraftClient, type DraftChange, type DraftScalar, type DraftSnapshot} from './api/draft-client';
+import {
+  DraftClient,
+  type DraftChange,
+  type DraftPreflight,
+  type DraftScalar,
+  type DraftSnapshot,
+} from './api/draft-client';
 import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
@@ -122,12 +128,15 @@ export class SmithproxyApp extends LitElement {
   @state() private configReadAvailable = false;
   @state() private configWriteAvailable = false;
   @state() private draftAvailable = false;
+  @state() private draftPreflightAvailable = false;
   @state() private draftVersion = 0;
   @state() private draftChangeCount = 0;
   @state() private workspaceDraft?: DraftSnapshot;
   @state() private discardDraftArmed = false;
   @state() private draftSaving = false;
   @state() private draftError: string | undefined;
+  @state() private draftPreflight: DraftPreflight | undefined;
+  @state() private draftPreflightError: string | undefined;
   @state() private drawerError: string | undefined;
   @state() private dirtyDrawerKeys = new Set<string>();
   @state() private pendingCloseIndex: number | undefined;
@@ -322,6 +331,15 @@ export class SmithproxyApp extends LitElement {
     .draft-row.heading { color: var(--app-muted); font-size: 12px; }
     .draft-path { overflow-wrap: anywhere; color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
     .draft-value { overflow-wrap: anywhere; }
+    .preflight { padding: 15px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-surface); }
+    .preflight h3 { margin: 0; font-size: 15px; }
+    .preflight-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+    .preflight-check { padding: 10px 11px; border: 1px solid var(--app-border); background: var(--app-canvas); }
+    .preflight-check small { display: block; color: var(--app-muted); }
+    .preflight-check strong { display: block; margin-top: 3px; }
+    .preflight-sections { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+    .preflight-section { padding: 4px 7px; border: 1px solid var(--app-border); color: var(--app-muted); font-size: 12px; }
+    .preflight-blockers { margin: 12px 0 0; padding-left: 20px; color: var(--app-warning); }
     .danger-button { border-color: var(--app-danger); background: transparent; color: var(--app-danger); }
     .status { display: inline-flex; width: fit-content; gap: 6px; align-items: center; color: var(--app-success); }
     .status::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ''; }
@@ -435,6 +453,7 @@ export class SmithproxyApp extends LitElement {
       .audit-row { grid-template-columns: 72px minmax(0, 1fr); }
       .audit-row .event-time, .audit-request { display: none; }
       .draft-row { grid-template-columns: 1fr; gap: 5px; }
+      .preflight-grid { grid-template-columns: 1fr; }
       .event-source { display: none; }
       .probe-history { gap: 2px; }
     }
@@ -666,6 +685,11 @@ export class SmithproxyApp extends LitElement {
       if (!this.configReadAvailable) this.configRefreshDeferred = false;
       this.configWriteAvailable = capabilities.features.configWrite;
       this.draftAvailable = capabilities.features.drafts;
+      this.draftPreflightAvailable = capabilities.features.draftPreflight;
+      if (!this.draftPreflightAvailable) {
+        this.draftPreflight = undefined;
+        this.draftPreflightError = undefined;
+      }
       if (capabilities.features.configRead && this.snapshot?.source !== 'live') {
         await this.refreshConfiguration(true);
         this.restoreDrawerRoute();
@@ -675,6 +699,7 @@ export class SmithproxyApp extends LitElement {
       this.apiVersion = 'unavailable';
       this.configReadAvailable = false;
       this.configRefreshDeferred = false;
+      this.draftPreflightAvailable = false;
     }
   }
 
@@ -721,6 +746,11 @@ export class SmithproxyApp extends LitElement {
     this.workspaceDraft = snapshot;
     this.draftVersion = snapshot.version;
     this.draftChangeCount = snapshot.changes.length;
+    const preflight = this.draftPreflight;
+    if (!preflight || preflight.draftVersion !== snapshot.version ||
+        preflight.changeCount !== snapshot.changes.length) {
+      this.draftPreflight = undefined;
+    }
     if (snapshot.changes.length === 0) this.discardDraftArmed = false;
     const objects = new Set<string>();
     for (const change of snapshot.changes) {
@@ -817,8 +847,25 @@ export class SmithproxyApp extends LitElement {
     try {
       this.applyDraft(await this.draftClient.load());
       this.draftError = undefined;
+      await this.loadDraftPreflight();
     } catch (error) {
       this.draftError = error instanceof Error ? error.message : 'Workspace draft is unavailable.';
+    }
+  }
+
+  private async loadDraftPreflight(): Promise<void> {
+    if (!this.draftPreflightAvailable || !this.draftClient) return;
+    try {
+      const preflight = await this.draftClient.preflight();
+      if (preflight.draftVersion !== this.draftVersion ||
+          preflight.changeCount !== this.draftChangeCount) {
+        throw new Error('Draft preflight does not match the current workspace draft.');
+      }
+      this.draftPreflight = preflight;
+      this.draftPreflightError = undefined;
+    } catch (error) {
+      this.draftPreflight = undefined;
+      this.draftPreflightError = error instanceof Error ? error.message : 'Draft preflight is unavailable.';
     }
   }
 
@@ -832,6 +879,7 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     try {
       this.applyDraft(await this.draftClient.clear(this.draftVersion));
+      await this.loadDraftPreflight();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Workspace draft could not be discarded.';
       await this.loadDraft();
@@ -1154,6 +1202,7 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
+      await this.loadDraftPreflight();
       this.markDrawerSaved(entry);
       if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile' ||
           entry.kind === 'authority' || entry.kind === 'signature-flow' || entry.kind === 'content-rule') {
@@ -2133,6 +2182,45 @@ export class SmithproxyApp extends LitElement {
           </button>
         </div>
         ${this.draftError ? html`<div class="error" role="alert">${this.draftError}</div>` : nothing}
+        ${changes.length > 0 ? html`
+          <section class="preflight" aria-label="Draft preflight">
+            <h3>Validation and impact preflight</h3>
+            ${this.draftPreflight ? html`
+              <div class="preflight-grid">
+                <div class="preflight-check">
+                  <small>GUI schema validation</small><strong class="runtime-state success">Valid</strong>
+                </div>
+                <div class="preflight-check">
+                  <small>Smithproxy validation</small><strong class="runtime-state warning">Unavailable</strong>
+                </div>
+                <div class="preflight-check">
+                  <small>Atomic commit</small><strong class="runtime-state warning">Blocked</strong>
+                </div>
+              </div>
+              <div class="preflight-sections" aria-label="Affected configuration sections">
+                ${this.draftPreflight.sections.map(section => html`
+                  <span class="preflight-section">
+                    ${section.name.replaceAll('_', ' ')} · ${section.changeCount}
+                    ${section.sensitiveChangeCount > 0 ? ` · ${section.sensitiveChangeCount} write-only` : ''}
+                  </span>
+                `)}
+              </div>
+              <ul class="preflight-blockers">
+                ${this.draftPreflight.blockers.map(blocker => html`<li>${blocker.message}</li>`)}
+              </ul>
+              <p class="metric-note">
+                ${this.draftPreflight.sensitiveChangeCount} of ${this.draftPreflight.changeCount}
+                changes contain write-only values. Their values remain redacted.
+              </p>
+            ` : !this.draftPreflightAvailable ? html`
+              <div class="metrics-message">The current GUI core does not advertise draft preflight.</div>
+            ` : this.draftPreflightError ? html`
+              <div class="metrics-message" role="alert">${this.draftPreflightError}</div>
+            ` : html`
+              <div class="metrics-message" role="status">Loading secure preflight…</div>
+            `}
+          </section>
+        ` : nothing}
         ${changes.length === 0 ? html`
           <div class="empty-state">
             <h2>No pending changes</h2>

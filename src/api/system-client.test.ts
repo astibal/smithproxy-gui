@@ -26,7 +26,8 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
       features: {
-        config_read: false, config_write: false, drafts: false, jobs: false, events: true, alerts: true, audit: true,
+        config_read: false, config_write: false, drafts: false, draft_preflight: false,
+        jobs: false, events: true, alerts: true, audit: true,
         smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
       },
@@ -35,7 +36,8 @@ describe('SystemClient', () => {
 
     await expect(client.capabilities()).resolves.toMatchObject({
       apiVersion: 'v1', smithproxyState: 'unconfigured',
-      features: {configWrite: false, drafts: false, events: true, alerts: true, audit: true, smithproxyEvents: false, metrics: true},
+      features: {configWrite: false, drafts: false, draftPreflight: false, events: true,
+        alerts: true, audit: true, smithproxyEvents: false, metrics: true},
     });
   });
 

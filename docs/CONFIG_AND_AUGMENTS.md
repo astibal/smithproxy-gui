@@ -76,6 +76,12 @@ Draft obsahuje base revision. Pokud se persistentní config mezitím změní, se
 commit odmítne jako konflikt a vrátí strukturovaný rozdíl. GUI nesmí změny tiše
 rebasovat ani přepsat.
 
+Aktuální foundation draft poskytuje serverový preflight bez hodnot: ověřenou
+verzi draftu, počet změn, počet write-only změn a počty podle config sekcí.
+Lokální schema validace je zobrazena odděleně od Smithproxy doménové validace.
+Dokud upstream neposkytne schválené transaction API, preflight explicitně blokuje
+commit; GUI nesmí lokální výsledek prezentovat jako validaci runtime aplikace.
+
 ## Validace
 
 Validace má vrstvy:

@@ -350,6 +350,7 @@ def main() -> int:
         assert capabilities["features"]["config_read"] is False
         assert capabilities["features"]["config_write"] is False
         assert capabilities["features"]["drafts"] is False
+        assert capabilities["features"]["draft_preflight"] is False
         assert capabilities["features"]["events"] is True
         assert capabilities["features"]["alerts"] is True
         assert capabilities["features"]["audit"] is True
@@ -797,6 +798,9 @@ def main() -> int:
                 "features"]["drafts"] is True
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
+                "features"]["draft_preflight"] is True
+            assert json.loads(request(
+                configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["metrics"] is True
             authenticated_features = json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])["features"]
@@ -810,6 +814,21 @@ def main() -> int:
             assert status == 200
             assert json.loads(body) == {
                 "id": "workspace-draft", "base_revision": None, "version": 0, "changes": []}
+            assert request(configured_port, "/api/v1/config/draft/preflight")[0] == 401
+            status, _, body = request(
+                configured_port, "/api/v1/config/draft/preflight", headers=gateway_headers)
+            assert status == 200
+            empty_preflight = json.loads(body)
+            assert empty_preflight["source"] == "gui-core"
+            assert empty_preflight["draft_version"] == 0
+            assert empty_preflight["change_count"] == 0
+            assert empty_preflight["sensitive_change_count"] == 0
+            assert empty_preflight["schema_validation"] == "valid"
+            assert empty_preflight["upstream_validation"] == "unavailable"
+            assert empty_preflight["commit_available"] is False
+            assert empty_preflight["sections"] == []
+            assert [item["code"] for item in empty_preflight["blockers"]] == [
+                "draft.empty", "upstream.transaction_unavailable"]
             draft_change = json.dumps({
                 "expected_version": 0, "path": "policy.[0].action", "value": "accept"})
             csrf_failure = request(
@@ -942,6 +961,20 @@ def main() -> int:
             assert changes_by_path["settings.http_api.key_timeout"] == 900
             assert changes_by_path["settings.http_api.port"] == 55580
             assert changes_by_path["settings.http_api.key_extend_on_access"] is False
+            status, _, preflight_body = request(
+                configured_port, "/api/v1/config/draft/preflight", headers=gateway_headers)
+            assert status == 200
+            preflight = json.loads(preflight_body)
+            assert preflight["draft_version"] == 2
+            assert preflight["change_count"] == len(batch_snapshot["changes"])
+            assert sum(section["change_count"] for section in preflight["sections"]) == preflight["change_count"]
+            assert preflight["sensitive_change_count"] > 0
+            assert {section["name"] for section in preflight["sections"]} >= {
+                "policy", "settings", "captures", "tls_profiles", "content_profiles"}
+            assert [item["code"] for item in preflight["blockers"]] == [
+                "upstream.transaction_unavailable"]
+            assert b"new-private-password" not in preflight_body
+            assert b"secret content replacement" not in preflight_body
             status, _, audit_body = request(
                 configured_port, "/api/v1/audit/recent", headers=gateway_headers)
             assert status == 200
