@@ -208,6 +208,9 @@ private:
         if (!relative) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};
         }
+        if (relative->starts_with("/api/") && !management_authenticated(connection)) {
+            return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+        }
         if (*relative != "/api/v1/config/draft/changes" &&
             *relative != "/api/v1/config/draft/clear") {
             return relative->starts_with("/api/")
@@ -319,6 +322,12 @@ private:
         const auto relative = path_below_base(url, config_.base_path);
         if (!relative) return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
         if (*relative == "/healthz") return health();
+        const bool public_api_endpoint = *relative == "/api/v1/capabilities" ||
+                                         *relative == "/api/v1/auth/session";
+        if (relative->starts_with("/api/") && !public_api_endpoint &&
+            !management_authenticated(connection)) {
+            return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+        }
         if (*relative == "/api/v1/status") return status();
         if (*relative == "/api/v1/metrics/summary") return metrics_summary();
         if (*relative == "/api/v1/tls/cache/summary") return tls_cache_summary();
@@ -357,15 +366,19 @@ private:
     Response capabilities(MHD_Connection* connection) const {
         const auto status = monitor_.status();
         const bool config_read = monitor_.config_enabled() && gateway_authenticated(connection);
+        const bool monitoring = management_authenticated(connection);
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":false,"
                     "\"drafts\":" + (config_read ? "true" : "false") +
-                    ",\"jobs\":false,\"events\":true,\"alerts\":true,\"smithproxy_events\":false,\"metrics\":true,"
-                    "\"session_activity\":true,\"tls_monitoring\":true,"
-                    "\"neighbor_monitoring\":true}}"};
+                    ",\"jobs\":false,\"events\":" + (monitoring ? "true" : "false") +
+                    ",\"alerts\":" + (monitoring ? "true" : "false") +
+                    ",\"smithproxy_events\":false,\"metrics\":" + (monitoring ? "true" : "false") +
+                    ",\"session_activity\":" + (monitoring ? "true" : "false") +
+                    ",\"tls_monitoring\":" + (monitoring ? "true" : "false") +
+                    ",\"neighbor_monitoring\":" + (monitoring ? "true" : "false") + "}}"};
     }
 
     bool gateway_authenticated(MHD_Connection* connection) const {
@@ -373,6 +386,10 @@ private:
         const auto* supplied = MHD_lookup_connection_value(
             connection, MHD_HEADER_KIND, "X-Smithproxy-GUI-Gateway");
         return supplied != nullptr && constant_time_equal(supplied, *config_.gateway_secret);
+    }
+
+    bool management_authenticated(MHD_Connection* connection) const {
+        return !config_.gateway_secret || gateway_authenticated(connection);
     }
 
     Response auth_session(MHD_Connection* connection) const {

@@ -34,11 +34,13 @@ trusted reverse proxy must remove every client-supplied
 successful user authentication. The secret is compared without an early exit,
 is never returned to the browser, and must not be logged.
 
-Missing, incorrect, or unconfigured handoff credentials return HTTP 401 from
-sensitive endpoints. Capability discovery reports `config_read: false` unless
-the current request passed the same boundary. This contract deliberately fails
-closed; configuring the GUI process without the matching proxy injection does
-not expose configuration data.
+Missing or incorrect handoff credentials return HTTP 401 from every management
+snapshot, event, alert, and draft endpoint when gateway mode is configured.
+Capability discovery reports those feature flags as unavailable unless the
+current request passed the same boundary. The minimal health endpoint remains
+available for orchestration. A non-loopback listener is rejected at startup
+unless gateway authentication is configured. Configuration reads and mutations
+always require an authenticated gateway, including on loopback.
 
 Draft mutations additionally fail closed unless `Origin` exactly matches the
 request host and the request carries JSON content type plus the custom

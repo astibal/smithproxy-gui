@@ -85,6 +85,12 @@ requests. The secret must never be exposed to browser code or forwarded from a
 client-supplied header. Missing or invalid handoff authentication returns HTTP
 401 and keeps `config_read` disabled in the capability response.
 
+Non-loopback listeners require the same gateway secret at process startup.
+When gateway mode is active, status snapshots, metrics, session aggregates,
+neighborhood summaries, events, alerts, and drafts all reject requests that did
+not pass the trusted proxy handoff. Only the bounded health and capability
+surfaces remain available for orchestration and authentication discovery.
+
 The C++ backend can now retrieve a bounded, validated runtime configuration
 snapshot through the authenticated Smithproxy API. Frontend activation remains
 capability-gated until the trusted gateway handoff is configured. Configuration

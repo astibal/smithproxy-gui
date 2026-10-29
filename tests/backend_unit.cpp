@@ -460,5 +460,20 @@ int main() {
     assert(authenticated.config);
     assert(authenticated.config->gateway_secret == "0123456789abcdef0123456789abcdef");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
+
+    std::vector<std::string> remote_arguments{"smithproxy-gui", "--bind", "0.0.0.0"};
+    std::vector<char*> remote_argv;
+    for (auto& argument : remote_arguments) remote_argv.push_back(argument.data());
+    const auto unauthenticated_remote = parse_config(
+        static_cast<int>(remote_argv.size()), remote_argv.data(), "/srv/gui");
+    assert(!unauthenticated_remote.config);
+    assert(unauthenticated_remote.error ==
+           "non-loopback bind requires SMITHPROXY_GUI_GATEWAY_SECRET");
+
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
+    const auto authenticated_remote = parse_config(
+        static_cast<int>(remote_argv.size()), remote_argv.data(), "/srv/gui");
+    assert(authenticated_remote.config);
+    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     return 0;
 }

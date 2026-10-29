@@ -250,10 +250,10 @@ def wait_for_state(port: int, expected: str):
     raise AssertionError(f"server did not reach Smithproxy state {expected}")
 
 
-def wait_for_snapshot_state(port: int, expected: str):
+def wait_for_snapshot_state(port: int, expected: str, headers=None):
     for _ in range(140):
         try:
-            status, _, body = request(port, "/api/v1/status")
+            status, _, body = request(port, "/api/v1/status", headers=headers)
             snapshot = json.loads(body)
             if status == 200 and snapshot["smithproxy"]["state"] == expected:
                 return snapshot
@@ -413,11 +413,32 @@ def main() -> int:
             text=True,
         )
         try:
+            gateway_headers = {"X-Smithproxy-GUI-Gateway": gateway_secret}
             health_body = wait_for_state(configured_port, "ready")
             assert FakeSmithproxy.api_key == secret
             assert secret.encode() not in health_body
             assert isinstance(json.loads(health_body)["smithproxy"]["checked_at_unix_ms"], int)
-            status, _, body = request(configured_port, "/api/v1/status")
+            protected_paths = (
+                "/api/v1/status", "/api/v1/events/recent", "/api/v1/alerts",
+                "/api/v1/metrics/summary", "/api/v1/tls/cache/summary",
+                "/api/v1/network/neighbors/summary", "/api/v1/sessions/activity",
+            )
+            for path in protected_paths:
+                assert request(configured_port, path)[0] == 401
+                assert request(configured_port, path, headers={
+                    "X-Smithproxy-GUI-Gateway": "incorrect-gateway-secret-value-000",
+                })[0] == 401
+            assert request(configured_port, "/api/v1/future-management-endpoint")[0] == 401
+            assert request(
+                configured_port, "/api/v1/future-management-endpoint",
+                headers=gateway_headers)[0] == 404
+            assert request(
+                configured_port, "/api/v1/future-mutation", "POST")[0] == 401
+            assert request(
+                configured_port, "/api/v1/future-mutation", "POST",
+                headers=gateway_headers)[0] == 404
+            status, _, body = request(
+                configured_port, "/api/v1/status", headers=gateway_headers)
             snapshot = json.loads(body)
             assert status == 200
             assert snapshot["smithproxy"]["configured"] is True
@@ -426,19 +447,22 @@ def main() -> int:
             assert isinstance(snapshot["smithproxy"]["latency_ms"], int)
             assert len(snapshot["smithproxy"]["history"]) >= 1
             assert snapshot["smithproxy"]["availability_window"]["successful"] >= 1
-            status, _, body = request(configured_port, "/api/v1/events/recent")
+            status, _, body = request(
+                configured_port, "/api/v1/events/recent", headers=gateway_headers)
             events = json.loads(body)
             assert status == 200
             assert events["smithproxy_events_available"] is False
             assert events["events"][-1]["message"] == "Smithproxy control plane is reachable"
             assert len(events["events"]) <= 60
-            status, _, body = request(configured_port, "/api/v1/alerts")
+            status, _, body = request(
+                configured_port, "/api/v1/alerts", headers=gateway_headers)
             alerts = json.loads(body)
             assert status == 200
             assert isinstance(alerts["generated_at_unix_ms"], int)
             assert alerts["alerts"] == []
             last_success = snapshot["smithproxy"]["last_success_at_unix_ms"]
-            status, _, body = request(configured_port, "/api/v1/metrics/summary")
+            status, _, body = request(
+                configured_port, "/api/v1/metrics/summary", headers=gateway_headers)
             metrics = json.loads(body)
             assert status == 200
             assert metrics["state"] == "ready"
@@ -450,14 +474,16 @@ def main() -> int:
             assert metrics["history"][-1]["state"] == "ready"
             assert metrics["history"][-1]["sessions_active"] == 4
             metrics_last_success = metrics["last_success_at_unix_ms"]
-            status, _, body = request(configured_port, "/api/v1/tls/cache/summary")
+            status, _, body = request(
+                configured_port, "/api/v1/tls/cache/summary", headers=gateway_headers)
             tls_cache = json.loads(body)
             assert status == 200
             assert tls_cache["state"] == "ready"
             assert tls_cache["size"] == 42
             assert tls_cache["capacity"] == 1000
             tls_cache_last_success = tls_cache["last_success_at_unix_ms"]
-            status, _, body = request(configured_port, "/api/v1/network/neighbors/summary")
+            status, _, body = request(
+                configured_port, "/api/v1/network/neighbors/summary", headers=gateway_headers)
             neighbors = json.loads(body)
             assert status == 200
             assert neighbors["state"] == "ready"
@@ -469,7 +495,8 @@ def main() -> int:
             assert neighbors["bytes_down"] == 220
             assert b"private-neighbor.example" not in body
             neighbor_last_success = neighbors["last_success_at_unix_ms"]
-            status, _, body = request(configured_port, "/api/v1/sessions/activity")
+            status, _, body = request(
+                configured_port, "/api/v1/sessions/activity", headers=gateway_headers)
             activity = json.loads(body)
             assert status == 200
             assert activity["state"] == "ready"
@@ -672,19 +699,33 @@ def main() -> int:
             status, _, body = request(configured_port, "/api/v1/auth/session")
             assert status == 200
             assert json.loads(body) == {"mode": "gateway", "authenticated": False}
-            gateway_headers = {"X-Smithproxy-GUI-Gateway": gateway_secret}
             status, _, body = request(
                 configured_port, "/api/v1/auth/session", headers=gateway_headers)
             assert status == 200
             assert json.loads(body) == {"mode": "gateway", "authenticated": True}
             assert json.loads(request(configured_port, "/api/v1/capabilities")[2])[
                 "features"]["config_read"] is False
+            assert json.loads(request(configured_port, "/api/v1/capabilities")[2])[
+                "features"]["metrics"] is False
+            unauthenticated_features = json.loads(request(
+                configured_port, "/api/v1/capabilities")[2])["features"]
+            for feature in ("events", "alerts", "metrics", "session_activity",
+                            "tls_monitoring", "neighbor_monitoring"):
+                assert unauthenticated_features[feature] is False
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["config_read"] is True
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["drafts"] is True
+            assert json.loads(request(
+                configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
+                "features"]["metrics"] is True
+            authenticated_features = json.loads(request(
+                configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])["features"]
+            for feature in ("events", "alerts", "metrics", "session_activity",
+                            "tls_monitoring", "neighbor_monitoring"):
+                assert authenticated_features[feature] is True
 
             assert request(configured_port, "/api/v1/config/draft")[0] == 401
             status, _, body = request(
@@ -849,16 +890,18 @@ def main() -> int:
             )[0] == 409
 
             FakeSmithproxy.response_status = 503
-            snapshot = wait_for_snapshot_state(configured_port, "error")
+            snapshot = wait_for_snapshot_state(configured_port, "error", gateway_headers)
             assert snapshot["smithproxy"]["consecutive_failures"] == 1
             assert snapshot["smithproxy"]["last_success_at_unix_ms"] == last_success
             assert snapshot["smithproxy"]["history"][-1]["state"] == "error"
-            status, _, body = request(configured_port, "/api/v1/events/recent")
+            status, _, body = request(
+                configured_port, "/api/v1/events/recent", headers=gateway_headers)
             events = json.loads(body)["events"]
             assert events[-1]["severity"] == "error"
             assert events[-1]["message"] == "Smithproxy control plane changed to error"
             assert snapshot["smithproxy"]["availability_window"]["samples"] >= 2
-            status, _, body = request(configured_port, "/api/v1/metrics/summary")
+            status, _, body = request(
+                configured_port, "/api/v1/metrics/summary", headers=gateway_headers)
             stale_metrics = json.loads(body)
             assert status == 200
             assert stale_metrics["state"] == "unavailable"
@@ -866,19 +909,22 @@ def main() -> int:
             assert stale_metrics["totals"]["sessions_active"] == 4
             assert stale_metrics["history"][-1]["state"] == "unavailable"
             assert len(stale_metrics["history"]) <= 60
-            status, _, body = request(configured_port, "/api/v1/tls/cache/summary")
+            status, _, body = request(
+                configured_port, "/api/v1/tls/cache/summary", headers=gateway_headers)
             stale_tls_cache = json.loads(body)
             assert status == 200
             assert stale_tls_cache["state"] == "unavailable"
             assert stale_tls_cache["last_success_at_unix_ms"] == tls_cache_last_success
             assert stale_tls_cache["size"] == 42
-            status, _, body = request(configured_port, "/api/v1/network/neighbors/summary")
+            status, _, body = request(
+                configured_port, "/api/v1/network/neighbors/summary", headers=gateway_headers)
             stale_neighbors = json.loads(body)
             assert status == 200
             assert stale_neighbors["state"] == "unavailable"
             assert stale_neighbors["last_success_at_unix_ms"] == neighbor_last_success
             assert stale_neighbors["hosts_total"] == 2
-            status, _, body = request(configured_port, "/api/v1/sessions/activity")
+            status, _, body = request(
+                configured_port, "/api/v1/sessions/activity", headers=gateway_headers)
             stale_activity = json.loads(body)
             assert status == 200
             assert stale_activity["state"] == "unavailable"

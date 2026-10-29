@@ -51,6 +51,12 @@ bool valid_bind_address(const std::string& address) {
     return ::inet_pton(AF_INET, address.c_str(), &parsed) == 1;
 }
 
+bool is_loopback_bind(const std::string& address) {
+    in_addr parsed{};
+    if (::inet_pton(AF_INET, address.c_str(), &parsed) != 1) return false;
+    return (ntohl(parsed.s_addr) & 0xff000000U) == 0x7f000000U;
+}
+
 std::optional<std::uint16_t> parse_port(const std::string_view value) {
     unsigned port{};
     const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), port);
@@ -122,6 +128,9 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
         }
         config.gateway_secret = std::move(gateway_secret);
     }
+    if (!is_loopback_bind(config.bind_address) && !config.gateway_secret) {
+        return failure("non-loopback bind requires SMITHPROXY_GUI_GATEWAY_SECRET");
+    }
     return {std::move(config), {}, false};
 }
 
@@ -133,7 +142,7 @@ std::string usage() {
            "  --assets PATH     frontend asset directory (build/frontend)\n"
            "\nSmithproxy credentials are read only from SMITHPROXY_API_URL,\n"
            "SMITHPROXY_API_KEY and SMITHPROXY_CA_CERT. A trusted reverse proxy\n"
-           "may authenticate sensitive browser APIs with SMITHPROXY_GUI_GATEWAY_SECRET.\n";
+           "must authenticate non-loopback browser APIs with SMITHPROXY_GUI_GATEWAY_SECRET.\n";
 }
 
 } // namespace smithproxy::gui
