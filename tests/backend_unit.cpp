@@ -72,12 +72,51 @@ int main() {
     assert(draft.clear(4U) == DraftMutationResult::Applied);
     assert(draft.snapshot().version == 5U);
 
+    DraftStore schema_draft{"schema"};
+    assert(schema_draft.upsert(0U, {"settings.enabled", true}) ==
+           DraftMutationResult::InvalidPath);
+    assert(schema_draft.upsert(0U, {"policy.[00].action", std::string("accept")}) ==
+           DraftMutationResult::InvalidPath);
+    assert(schema_draft.upsert(0U, {"policy.[0].action", true}) ==
+           DraftMutationResult::InvalidValue);
+    assert(schema_draft.upsert(0U, {"port_objects.[0].start", std::int64_t{65536}}) ==
+           DraftMutationResult::InvalidValue);
+    assert(schema_draft.upsert(0U, {"settings.syslog_family", std::int64_t{5}}) ==
+           DraftMutationResult::InvalidValue);
+    assert(schema_draft.upsert_many(0U, {
+        {"settings.accept_api", true},
+        {"captures.remote.tun_ttl", std::int64_t{64}},
+        {"content_profiles.[0].content_rules.[0].replace", std::string("first\nsecond")},
+        {"detection_signatures.[0].flow.[0].type", std::string("regex")},
+        {"debug.log.tls", std::string("trace")},
+    }) == DraftMutationResult::Applied);
+    assert(schema_draft.upsert(1U, {"policy.[4096].name", std::string("outside")}) ==
+           DraftMutationResult::InvalidPath);
+
+    DraftStore schema_coverage{"schema-coverage"};
+    assert(schema_coverage.upsert_many(0U, {
+        {"address_objects.[0].type", std::string("cidr")},
+        {"port_objects.[0].start", std::int64_t{443}},
+        {"proto_objects.[0].id", std::int64_t{6}},
+        {"routing.[0].dnat_lb_method", std::string("round-robin")},
+        {"tls_profiles.[0].client_cert_action", std::string("use_configured")},
+        {"content_profiles.[0].write_format", std::string("smcap")},
+        {"ssh_profiles.[0].hostkey_policy", std::string("strict")},
+        {"script_profiles.[0].type", std::string("0")},
+        {"auth_profiles.[0].authenticate", true},
+        {"detection_profiles.[0].mode", std::int64_t{2}},
+        {"alg_dns_profiles.[0].randomize_id", true},
+        {"tls_ca.[0].path", std::string("/etc/smithproxy/ca.pem")},
+        {"starttls_signatures.[0].severity", std::int64_t{3}},
+        {"detection_signatures.[0].flow.[0].signature", std::string("^TLS")},
+    }) == DraftMutationResult::Applied);
+
     DraftStore bounded_draft{"bounded"};
     std::vector<DraftChange> oversized_changes;
-    for (std::size_t index = 0; index < 17U; ++index) {
+    for (std::size_t index = 0; index < 1024U; ++index) {
         oversized_changes.push_back({
-            "settings.large.[" + std::to_string(index) + "]",
-            std::string(65536U, 'x'),
+            "tls_ca.[" + std::to_string(index) + "].path",
+            "/" + std::string(1023U, 'x'),
         });
     }
     assert(bounded_draft.upsert_many(0U, std::move(oversized_changes)) ==
@@ -113,8 +152,9 @@ int main() {
     assert(bounded_entries.back().sequence == 260U);
 
     AuditStore target_bounded_audit;
+    const auto audit_target_count = audit_targets.size();
     target_bounded_audit.record("request-targets", "config.draft.upsert", "succeeded",
-                                "gateway", audit_targets.size(), std::move(audit_targets), false);
+                                "gateway", audit_target_count, std::move(audit_targets), false);
     const auto target_bounded_entry = target_bounded_audit.snapshot().front();
     assert(target_bounded_entry.targets.size() == 32U);
     assert(target_bounded_entry.targets_truncated);

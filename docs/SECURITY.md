@@ -57,6 +57,13 @@ requests are limited to 64 KiB, accumulated draft values to 1 MiB, and browser
 responses to 8 MiB before parsing. Clearing a draft uses the same authentication,
 CSRF, and optimistic-concurrency checks as an upsert.
 
+Browser validation is never authoritative. The core accepts only pinned schema
+paths emitted by the typed editors and independently checks canonical indexes,
+types, enums, ranges, bounded unique collections, and opaque secret limits.
+Unknown fields and partially invalid batches fail closed before any draft state
+is changed. The same validator is a mandatory boundary for the future upstream
+transaction adapter; a syntactically safe arbitrary libconfig path is not enough.
+
 ## Oprávnění
 
 Minimální role:

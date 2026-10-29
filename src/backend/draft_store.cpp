@@ -1,5 +1,7 @@
 #include "draft_store.hpp"
 
+#include "draft_schema.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <type_traits>
@@ -54,6 +56,9 @@ DraftMutationResult DraftStore::upsert_many(
     for (std::size_t index = 0; index < changes.size(); ++index) {
         if (!valid_path(changes[index].path)) return DraftMutationResult::InvalidPath;
         if (!valid_value(changes[index].value)) return DraftMutationResult::InvalidValue;
+        const auto schema = validate_draft_schema(changes[index]);
+        if (schema == DraftSchemaResult::UnknownPath) return DraftMutationResult::InvalidPath;
+        if (schema == DraftSchemaResult::InvalidValue) return DraftMutationResult::InvalidValue;
         for (std::size_t previous = 0; previous < index; ++previous) {
             if (changes[previous].path == changes[index].path) return DraftMutationResult::InvalidPath;
         }

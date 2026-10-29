@@ -114,6 +114,14 @@ stale writers receive HTTP 409. The browser also rejects draft responses above
 bounded raw draft. This store is not yet a commit path and cannot mutate
 Smithproxy configuration.
 
+The GUI core applies an authoritative schema allowlist before storing a batch.
+Every path must map to an editor field in the pinned configuration inventory;
+collection indexes must be canonical and below the snapshot limit. JSON types,
+enums, integer ranges, collection sizes, uniqueness, and sensitive opaque-value
+limits are checked independently of browser validation. An unknown or invalid
+member rejects the complete batch without changing its version or retaining any
+of its otherwise valid members.
+
 Write-only paths accept explicit `unchanged`, `replace`, or `clear` intent in
 the frontend. The core retains a replacement only inside the server draft.
 Every draft response substitutes an intent-only redaction marker that preserves

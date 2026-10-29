@@ -108,7 +108,9 @@ The C++ backend can now retrieve a bounded, validated runtime configuration
 snapshot through the authenticated Smithproxy API. Frontend activation remains
 capability-gated until the trusted gateway handoff is configured. Configuration
 writes remain disabled while the atomic upstream commit contract is being
-completed. Policies, objects, system settings, profiles, certificate authorities,
+completed. The server-side draft boundary accepts only pinned typed schema paths
+and rejects an entire batch when any path, type, enum, range, or collection is
+invalid. Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls. Control-plane health
 and listener monitoring use the production C++ backend. A bounded five-minute

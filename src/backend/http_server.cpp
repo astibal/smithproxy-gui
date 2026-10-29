@@ -284,6 +284,13 @@ public:
         return new RequestState(*this, request_id_prefix_ + "-" + std::to_string(sequence));
     }
 
+    int handleComplete(MHD_Connection*, MHD_RequestTerminationCode,
+                       lmh::ConnectionState* state) override {
+        // lmhpp owns completion dispatch, but its base state has no virtual destructor.
+        delete static_cast<RequestState*>(state);
+        return MHD_YES;
+    }
+
     int handleRequest(MHD_Connection* connection, const char* url, const char* method,
                       const char* upload_data, std::size_t* upload_data_size, void** ptr) override {
         if (*ptr == nullptr) {

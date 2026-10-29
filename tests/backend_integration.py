@@ -865,6 +865,28 @@ def main() -> int:
                 headers=mutation_headers,
                 body=json.dumps({"expected_version": 1, "path": "../unsafe", "value": True}),
             )[0] == 400
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers,
+                body=json.dumps({"expected_version": 1, "path": "settings.enabled", "value": True}),
+            ), 400, "draft.change_rejected")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers,
+                body=json.dumps({
+                    "expected_version": 1,
+                    "changes": [
+                        {"path": "policy.[0].name", "value": "must-not-apply"},
+                        {"path": "settings.http_api.port", "value": 22},
+                    ],
+                }),
+            ), 400, "draft.change_rejected")
+            status, _, body = request(
+                configured_port, "/api/v1/config/draft", headers=gateway_headers)
+            assert status == 200
+            rejected_snapshot = json.loads(body)
+            assert rejected_snapshot["version"] == 1
+            assert all(change["path"] != "policy.[0].name" for change in rejected_snapshot["changes"])
             assert request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers,
