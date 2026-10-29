@@ -227,7 +227,7 @@ const initialJobs: JobSnapshot = {
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
-  @state() private snapshot?: ConfigSnapshot;
+  @state() private snapshot: ConfigSnapshot | undefined;
   @state() private loadingError?: string;
   @state() private activeSection = 'Dashboard';
   @state() private drawers: ReadonlyArray<DrawerEntry> = [];
@@ -260,7 +260,7 @@ export class SmithproxyApp extends LitElement {
   @state() private jobsAvailable = false;
   @state() private draftVersion = 0;
   @state() private draftChangeCount = 0;
-  @state() private workspaceDraft?: DraftSnapshot;
+  @state() private workspaceDraft: DraftSnapshot | undefined;
   @state() private discardDraftArmed = false;
   @state() private draftSaving = false;
   @state() private draftError: string | undefined;
@@ -291,6 +291,9 @@ export class SmithproxyApp extends LitElement {
   private systemProbePending = false;
   private capabilityRefresh: Promise<void> | undefined;
   private nextCapabilityRefreshAt = 0;
+  private monitoringAccessEpoch = 0;
+  private configurationAccessEpoch = 0;
+  private eventStreamEpoch = 0;
   private closeEventStream: (() => void) | undefined;
   private eventStreamDegradedTimer: number | undefined;
   private configRefreshInFlight = false;
@@ -714,6 +717,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private disconnectEventStream(): void {
+    this.eventStreamEpoch += 1;
     this.clearEventStreamDegradedTimer();
     this.closeEventStream?.();
     this.closeEventStream = undefined;
@@ -744,14 +748,19 @@ export class SmithproxyApp extends LitElement {
     }
     if (this.closeEventStream || !this.systemClient || document.visibilityState === 'hidden') return;
     this.eventStreamState = 'connecting';
+    const streamEpoch = ++this.eventStreamEpoch;
+    const streamIsCurrent = (): boolean =>
+      streamEpoch === this.eventStreamEpoch && this.eventsAvailable;
     this.closeEventStream = this.systemClient.subscribeEvents({
       snapshot: snapshot => {
+        if (!streamIsCurrent()) return;
         this.clearEventStreamDegradedTimer();
         this.operationalEvents = snapshot;
         this.eventsError = undefined;
         this.eventStreamState = 'live';
       },
       event: event => {
+        if (!streamIsCurrent()) return;
         this.clearEventStreamDegradedTimer();
         const withoutDuplicate = this.operationalEvents.events.filter(item => item.id !== event.id);
         this.operationalEvents = {
@@ -762,11 +771,13 @@ export class SmithproxyApp extends LitElement {
         this.eventStreamState = 'live';
       },
       invalid: error => {
+        if (!streamIsCurrent()) return;
         this.disconnectEventStream();
         this.eventsError = error.message;
         this.eventStreamState = 'invalid';
       },
       connection: state => {
+        if (!streamIsCurrent()) return;
         if (state === 'reconnecting') this.markEventStreamReconnecting();
       },
     });
@@ -812,10 +823,15 @@ export class SmithproxyApp extends LitElement {
     }
     this.systemProbeInFlight = true;
     if (Date.now() >= this.nextCapabilityRefreshAt) await this.loadCapabilities();
+    const accessEpoch = this.monitoringAccessEpoch;
+    const accessIsCurrent = (): boolean =>
+      accessEpoch === this.monitoringAccessEpoch && this.managementApiAvailable;
     try {
-      if (!this.managementApiAvailable) return;
+      if (!accessIsCurrent()) return;
       const systemClient = this.systemClient;
-      this.systemStatus = statusFromSnapshot(await systemClient.status());
+      const systemStatus = statusFromSnapshot(await systemClient.status());
+      if (!accessIsCurrent()) return;
+      this.systemStatus = systemStatus;
       const [metrics, sessions, tlsCache, neighbors, interfaces, events, alerts, audit, jobs] = await Promise.allSettled([
         this.metricsAvailable ? systemClient.metricsSummary() : Promise.resolve(this.runtimeMetrics),
         this.sessionActivityAvailable ? systemClient.sessionActivity() : Promise.resolve(this.sessionActivity),
@@ -827,6 +843,7 @@ export class SmithproxyApp extends LitElement {
         this.auditAvailable ? systemClient.recentAudit() : Promise.resolve(this.managementAudit),
         this.jobsAvailable ? systemClient.jobs() : Promise.resolve(initialJobs),
       ] as const);
+      if (!accessIsCurrent()) return;
       if (metrics.status === 'fulfilled') {
         this.runtimeMetrics = metrics.value;
       } else {
@@ -905,6 +922,7 @@ export class SmithproxyApp extends LitElement {
       }
       await this.refreshConfiguration();
     } catch (error) {
+      if (!accessIsCurrent()) return;
       this.systemStatus = statusFromFailure(error);
       this.runtimeMetrics = {
         ...this.runtimeMetrics,
@@ -948,6 +966,7 @@ export class SmithproxyApp extends LitElement {
     features: SystemCapabilities['features'] | undefined,
     smithproxyState?: SmithproxyState,
   ): void {
+    this.monitoringAccessEpoch += 1;
     const eventsWereAvailable = this.eventsAvailable;
     this.metricsAvailable = features?.metrics ?? false;
     this.sessionActivityAvailable = features?.sessionActivity ?? false;
@@ -1014,6 +1033,49 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private clearPrivilegedConfigurationState(): void {
+    if (this.snapshot?.source === 'live') this.snapshot = undefined;
+    this.workspaceDraft = undefined;
+    this.draftVersion = 0;
+    this.draftChangeCount = 0;
+    this.draftObjects = new Set<string>();
+    this.discardDraftArmed = false;
+    this.draftSaving = false;
+    this.draftError = undefined;
+    this.draftPreflight = undefined;
+    this.draftPreflightError = undefined;
+    this.draftValidation = undefined;
+    this.draftValidationError = undefined;
+    this.draftValidating = false;
+    this.draftCommitting = false;
+    this.draftCommitArmed = false;
+    this.draftCommitError = undefined;
+    this.draftCommitResult = undefined;
+    this.configRefreshInFlight = false;
+    this.configRefreshDeferred = false;
+    this.configError = undefined;
+    this.drawerStore.clear();
+    this.drawers = [];
+    this.drawerOrigins = [];
+    this.dirtyDrawerKeys = new Set<string>();
+    this.pendingCloseIndex = undefined;
+    this.pendingReturnFocus = undefined;
+    this.drawerHistoryDepth = 0;
+    this.drawerError = undefined;
+    this.focusMode = false;
+    this.searchQuery = '';
+    if (this.activeSection === 'Search') this.activeSection = 'Dashboard';
+    this.replaceDrawerRoute();
+  }
+
+  private configurationAccessIsCurrent(epoch: number): boolean {
+    return epoch === this.configurationAccessEpoch && this.configReadAvailable;
+  }
+
+  private draftAccessIsCurrent(epoch: number): boolean {
+    return this.configurationAccessIsCurrent(epoch) && this.draftAvailable;
+  }
+
   private async loadCapabilities(): Promise<void> {
     if (!this.systemClient) return;
     if (this.capabilityRefresh) return this.capabilityRefresh;
@@ -1064,9 +1126,16 @@ export class SmithproxyApp extends LitElement {
         throw new Error('Management capabilities require a verified trusted gateway session.');
       }
       const draftWasAvailable = this.draftAvailable;
+      const configReadWasAvailable = this.configReadAvailable;
       this.apiVersion = capabilities.apiVersion;
       this.transactionCapabilityState = capabilities.transactionState;
       this.configReadAvailable = capabilities.features.configRead;
+      if (this.configReadAvailable !== configReadWasAvailable) {
+        this.configurationAccessEpoch += 1;
+      }
+      if (configReadWasAvailable && !this.configReadAvailable) {
+        this.clearPrivilegedConfigurationState();
+      }
       if (!this.configReadAvailable) this.configRefreshDeferred = false;
       this.configWriteAvailable = capabilities.features.configWrite;
       this.draftAvailable = capabilities.features.drafts;
@@ -1077,14 +1146,18 @@ export class SmithproxyApp extends LitElement {
         this.draftPreflightError = undefined;
       }
       if (capabilities.features.configRead && this.snapshot?.source !== 'live') {
-        await this.refreshConfiguration(true);
-        this.restoreDrawerRoute();
+        void this.refreshConfiguration(true);
       }
-      if (this.draftAvailable && !draftWasAvailable) await this.loadDraft();
+      if (this.draftAvailable && !draftWasAvailable) void this.loadDraft();
     } catch (error) {
+      const configReadWasAvailable = this.configReadAvailable;
       this.apiVersion = 'unavailable';
       this.transactionCapabilityState = 'unavailable';
       this.configReadAvailable = false;
+      if (configReadWasAvailable) {
+        this.configurationAccessEpoch += 1;
+        this.clearPrivilegedConfigurationState();
+      }
       this.configRefreshDeferred = false;
       this.configWriteAvailable = false;
       this.draftAvailable = false;
@@ -1107,15 +1180,20 @@ export class SmithproxyApp extends LitElement {
     }
 
     this.configRefreshInFlight = true;
+    const accessEpoch = this.configurationAccessEpoch;
     this.nextConfigRefreshAt = now + 30_000;
     try {
-      this.snapshot = await this.configClient.loadSnapshot();
+      const snapshot = await this.configClient.loadSnapshot();
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      this.snapshot = snapshot;
+      this.restoreDrawerRoute();
       this.configError = undefined;
       this.configRefreshDeferred = false;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.configError = error instanceof Error ? error.message : 'Live configuration is unavailable.';
     } finally {
-      this.configRefreshInFlight = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.configRefreshInFlight = false;
     }
   }
 
@@ -1280,8 +1358,11 @@ export class SmithproxyApp extends LitElement {
 
   private async loadConfiguration(): Promise<void> {
     try {
-      this.snapshot = await this.previewClient.loadSnapshot();
-      this.restoreDrawerRoute();
+      const preview = await this.previewClient.loadSnapshot();
+      if (!this.configReadAvailable && this.snapshot?.source !== 'live') {
+        this.snapshot = preview;
+        this.restoreDrawerRoute();
+      }
       await this.loadCapabilities();
     } catch (error) {
       this.loadingError = error instanceof Error ? error.message : 'Unable to load configuration.';
@@ -1402,20 +1483,26 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async loadDraft(): Promise<void> {
-    if (!this.draftClient) return;
+    if (!this.draftAvailable || !this.draftClient) return;
+    const accessEpoch = this.configurationAccessEpoch;
     try {
-      this.applyDraft(await this.draftClient.load());
+      const draft = await this.draftClient.load();
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
       this.draftError = undefined;
       await this.loadDraftPreflight();
     } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.draftError = error instanceof Error ? error.message : 'Workspace draft is unavailable.';
     }
   }
 
   private async loadDraftPreflight(): Promise<void> {
     if (!this.draftPreflightAvailable || !this.draftClient) return;
+    const accessEpoch = this.configurationAccessEpoch;
     try {
       const preflight = await this.draftClient.preflight();
+      if (!this.draftAccessIsCurrent(accessEpoch) || !this.draftPreflightAvailable) return;
       if (preflight.draftVersion !== this.draftVersion ||
           preflight.changeCount !== this.draftChangeCount) {
         throw new Error('Draft preflight does not match the current workspace draft.');
@@ -1423,6 +1510,7 @@ export class SmithproxyApp extends LitElement {
       this.draftPreflight = preflight;
       this.draftPreflightError = undefined;
     } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.draftPreflight = undefined;
       this.draftPreflightError = error instanceof Error ? error.message : 'Draft preflight is unavailable.';
     }
@@ -1436,11 +1524,13 @@ export class SmithproxyApp extends LitElement {
     const expectedVersion = this.draftVersion;
     const expectedChanges = this.draftChangeCount;
     const expectedRevision = preflight.baseRevision;
+    const accessEpoch = this.configurationAccessEpoch;
     this.draftValidating = true;
     this.draftValidation = undefined;
     this.draftValidationError = undefined;
     try {
       const validation = await this.draftClient.validate(expectedVersion);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       if (this.draftVersion !== expectedVersion || validation.draftVersion !== expectedVersion ||
           validation.baseRevision !== expectedRevision ||
           validation.validatedOperations !== expectedChanges) {
@@ -1448,11 +1538,12 @@ export class SmithproxyApp extends LitElement {
       }
       this.draftValidation = validation;
     } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const message = error instanceof Error ? error.message : 'Smithproxy validation is unavailable.';
       await this.loadDraft();
       this.draftValidationError = message;
     } finally {
-      this.draftValidating = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.draftValidating = false;
     }
   }
 
@@ -1475,18 +1566,21 @@ export class SmithproxyApp extends LitElement {
     const expectedVersion = this.draftVersion;
     const expectedRevision = preflight.baseRevision;
     const expectedOperations = this.draftChangeCount;
+    const accessEpoch = this.configurationAccessEpoch;
     this.draftCommitting = true;
     this.draftCommitArmed = false;
     this.draftCommitError = undefined;
     this.draftCommitResult = undefined;
     try {
       const result = await this.draftClient.commit(expectedVersion);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       if (result.committedDraftVersion !== expectedVersion ||
           result.previousRevision !== expectedRevision ||
           result.committedOperations !== expectedOperations) {
         throw new Error('Smithproxy commit does not match the validated workspace draft.');
       }
       const current = await this.draftClient.load();
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       if (current.version !== result.draftVersion || current.baseRevision !== result.revision ||
           current.changes.length !== 0) {
         throw new Error('Committed draft finalization could not be verified.');
@@ -1496,21 +1590,28 @@ export class SmithproxyApp extends LitElement {
       this.draftValidation = undefined;
       await this.loadDraftPreflight();
       if (this.jobsAvailable && this.systemClient) {
+        const monitoringEpoch = this.monitoringAccessEpoch;
         try {
-          this.backendJobs = await this.systemClient.jobs();
-          this.jobsError = undefined;
+          const jobs = await this.systemClient.jobs();
+          if (monitoringEpoch === this.monitoringAccessEpoch && this.jobsAvailable) {
+            this.backendJobs = jobs;
+            this.jobsError = undefined;
+          }
         } catch (error) {
-          this.jobsError = error instanceof Error ? error.message : 'Backend jobs are unavailable.';
+          if (monitoringEpoch === this.monitoringAccessEpoch && this.jobsAvailable) {
+            this.jobsError = error instanceof Error ? error.message : 'Backend jobs are unavailable.';
+          }
         }
       }
       this.configRefreshDeferred = true;
       this.nextConfigRefreshAt = 0;
     } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const message = error instanceof Error ? error.message : 'Atomic commit could not be confirmed.';
       await this.loadDraft();
       this.draftCommitError = message;
     } finally {
-      this.draftCommitting = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.draftCommitting = false;
     }
   }
 
@@ -1522,18 +1623,24 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     this.draftSaving = true;
+    const accessEpoch = this.configurationAccessEpoch;
     this.draftError = undefined;
     try {
-      this.applyDraft(await this.draftClient.clear(this.draftVersion));
+      const draft = await this.draftClient.clear(this.draftVersion);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
       await this.loadDraftPreflight();
     } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const message = error instanceof Error ? error.message : 'Workspace draft could not be discarded.';
       await this.loadDraft();
       this.draftError = message;
     } finally {
-      this.draftSaving = false;
-      this.discardDraftArmed = false;
-      if (this.draftChangeCount === 0) void this.refreshConfiguration(true);
+      if (accessEpoch === this.configurationAccessEpoch) {
+        this.draftSaving = false;
+        this.discardDraftArmed = false;
+        if (this.draftChangeCount === 0) void this.refreshConfiguration(true);
+      }
     }
   }
 
@@ -1873,9 +1980,12 @@ export class SmithproxyApp extends LitElement {
     const changes = this.writableDraftChanges(proposedChanges);
     if (!changes || changes.length === 0) return;
     this.draftSaving = true;
+    const accessEpoch = this.configurationAccessEpoch;
     this.draftError = undefined;
     try {
-      this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
+      const draft = await this.draftClient.upsertMany(this.draftVersion, changes);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
       await this.loadDraftPreflight();
       this.markDrawerSaved(entry);
       if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile' ||
@@ -1888,11 +1998,12 @@ export class SmithproxyApp extends LitElement {
         ).forEach(select => { select.value = 'unchanged'; });
       }
     } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const message = error instanceof Error ? error.message : 'Draft change could not be saved.';
       await this.loadDraft();
       this.draftError = message;
     } finally {
-      this.draftSaving = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
     }
   }
 
@@ -5532,7 +5643,9 @@ export class SmithproxyApp extends LitElement {
           <span class="status-secondary" title=${this.configError ?? this.snapshot?.detail ?? ''}>
             Config: ${this.snapshot?.source === 'live'
               ? `${displayState(this.snapshot.state)}${this.configError ? ' · refresh failed' : ''}`
-              : this.configError ? 'Preview · live unavailable' : this.snapshot ? 'Preview' : 'Loading'}
+              : this.snapshot
+                ? this.configError ? 'Preview · live unavailable' : 'Preview'
+                : this.configReadAvailable ? 'Loading' : 'Unavailable'}
             ${this.configRefreshDeferred ? ' · refresh paused' : ''}
           </span>
           <span class="status-secondary system-state ${this.gatewayStatus().tone}"

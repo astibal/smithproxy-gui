@@ -38,7 +38,12 @@ bootstrap response enables the corresponding management feature for the current
 request. A subsequent capability loss stops those requests, closes SSE, and
 zeroes retained browser aggregates. In gateway mode, management capabilities
 combined with an explicitly rejected gateway session are treated as an
-inconsistent fail-closed response.
+inconsistent fail-closed response. Capability discovery is not blocked by
+slower monitoring, configuration, or draft requests. Every such request is
+bound to the browser's current access epoch; a response from an earlier epoch is
+discarded. Revoking configuration access clears the live snapshot, shared draft
+metadata, validation and commit state, dirty editor chain, and any entered
+write-only values.
 
 The internal transaction adapter already builds the reviewed `validate` and
 `commit` envelopes from typed workspace-draft changes. It binds every request

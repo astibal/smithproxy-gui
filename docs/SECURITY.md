@@ -53,7 +53,11 @@ Monitoring follows the same bootstrap boundary. The frontend opens no protected
 poll or event stream until the current capability response enables it. Capability
 loss closes SSE and replaces retained aggregate snapshots with zeroed unavailable
 states, preventing data observed under an earlier gateway session from remaining
-visible after authorization is withdrawn.
+visible after authorization is withdrawn. Epoch fencing also rejects callbacks
+and HTTP responses that were valid when requested but completed after the
+session changed. Configuration revocation removes the live snapshot, shared
+draft state, validation results, open drawers, and their form controls; slower
+configuration or draft responses cannot repopulate them.
 
 Gateway-secret rotation uses a bounded two-value overlap. The current value is
 mandatory; `SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS` is optional, independently

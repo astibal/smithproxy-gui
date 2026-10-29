@@ -109,7 +109,10 @@ The browser establishes no management poll or event stream until capability
 discovery has completed. It requests only the monitoring surfaces advertised for
 the current gateway session. Losing a capability disconnects its stream, stops
 the corresponding requests, and clears previously retained aggregates from the
-browser state.
+browser state. Responses already in flight are fenced by the capability epoch
+that authorized them and cannot restore data after access is withdrawn. Losing
+configuration access also removes the live snapshot, shared draft state, and
+open editors from the browser.
 
 Without gateway mode, every management API request must carry a canonical
 loopback `Host` authority. This keeps local standalone monitoring inaccessible

@@ -53,6 +53,10 @@ Browser matrix také simuluje souběžného zapisujícího správce. Po `409` ko
 musí GUI načíst novou verzi sdíleného draftu, zachovat cizí změny a další pokus
 odeslat s aktualizovanou optimistic-concurrency verzí.
 
+Gateway rotační scénáře zpožďují monitoring a live config odpovědi přes okamžik
+odebrání přístupu. Pozdní odpověď nesmí obnovit agregáty, snapshot, draft ani
+otevřený editor z předchozí access epochy.
+
 Backend integration suite ověřuje SSE content type, zákaz proxy bufferingu,
 management autentizaci, počáteční snapshot, `Last-Event-ID` replay bez duplikace
 a reset expirované kontinuity. Frontend unit testy ověřují workspace prefix,

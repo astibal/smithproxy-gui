@@ -58,9 +58,14 @@ type MockState = {
     'tls_monitoring' | 'neighbor_monitoring' | 'interface_monitoring'
   >;
   authSessionRequests?: number;
+  metricsRequests?: number;
+  metricsDelayMs?: number;
   now?: number;
   collectorLastSuccessAgeMs?: number;
   configFetches?: number;
+  configSnapshotDelayMs?: number;
+  draftRequests?: number;
+  draftLoadDelayMs?: number;
   conflictNextDraftWrite?: boolean;
   draftMutationVersions?: number[];
   validationReady?: boolean;
@@ -163,7 +168,11 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     }});
   });
   await page.route('**/api/v1/metrics/summary', async route => {
+    state.metricsRequests = (state.metricsRequests ?? 0) + 1;
     const sampledAt = now();
+    if (state.metricsDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, state.metricsDelayMs));
+    }
     await route.fulfill({json: {
       state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
       detail: state.smithproxy === 'ready' ? 'Current listener metrics' : 'Metrics are stale',
@@ -374,7 +383,13 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       refresh_job_id: null,
     }});
   });
-  await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
+  await page.route('**/api/v1/config/draft', async route => {
+    state.draftRequests = (state.draftRequests ?? 0) + 1;
+    if (state.draftLoadDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, state.draftLoadDelayMs));
+    }
+    await route.fulfill({json: draft});
+  });
   await page.route('**/api/v1/config/draft/clear', async route => {
     const body = route.request().postDataJSON() as {expected_version: number};
     if (body.expected_version !== draft.version) {
@@ -418,6 +433,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   if (configRead) {
     await page.route('**/api/v1/config/snapshot', async route => {
       state.configFetches = (state.configFetches ?? 0) + 1;
+      if (state.configSnapshotDelayMs) {
+        await new Promise(resolve => setTimeout(resolve, state.configSnapshotDelayMs));
+      }
       await route.fulfill({json: {
       state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: now(),
       last_success_at_unix_ms: now(), view: 'runtime', revision: null,
@@ -1504,6 +1522,82 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await expect(interfaceCount.getByText('0', {exact: true})).toBeVisible();
   await page.waitForTimeout(200);
   expect(protectedRequests).toHaveLength(acceptedRequestCount);
+});
+
+test('discards monitoring responses completed after gateway access is revoked', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    gatewayMode: 'gateway',
+    gatewayAuthenticated: true,
+    metricsDelayMs: 1_000,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Gateway: Verified');
+  await expect.poll(() => state.metricsRequests ?? 0).toBeGreaterThan(0);
+
+  state.gatewayAuthenticated = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(statusbar).toContainText('Gateway: Rejected');
+  await page.waitForTimeout(1_100);
+
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await expect(page.getByText('No listener samples are available yet.')).toBeVisible();
+  const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
+  await expect(interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'})
+    .getByText('0', {exact: true})).toBeVisible();
+});
+
+test('ignores late configuration and draft snapshots after gateway revocation', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    gatewayMode: 'gateway',
+    gatewayAuthenticated: true,
+    configSnapshotDelayMs: 800,
+    draftLoadDelayMs: 800,
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  await expect.poll(() => state.configFetches ?? 0).toBeGreaterThan(0);
+  await expect.poll(() => state.draftRequests ?? 0).toBeGreaterThan(0);
+  state.gatewayAuthenticated = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Gateway: Rejected');
+  await page.waitForTimeout(900);
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await expect(statusbar).toContainText('Config: Preview');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(statusbar).toContainText('Draft: 0 changes');
+});
+
+test('removes an open live editor when gateway configuration access is revoked', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: true,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Config: Ready');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  const policy = page.getByRole('button', {name: /Policy 1 office internet accept/i});
+  await expect(policy).toBeVisible();
+  await policy.click();
+  await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
+
+  state.gatewayAuthenticated = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Config: Unavailable');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(policy).toHaveCount(0);
+  await expect(statusbar).toContainText('Draft: 0 changes');
 });
 
 test('rejects management capabilities that contradict the gateway session', async ({page}) => {
