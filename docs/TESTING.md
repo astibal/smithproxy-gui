@@ -74,6 +74,12 @@ samostatnými povinnými důkazy.
 - fuzzing vstupních parserů a event streamu;
 - restart/crash testy draftů, jobů a auditu.
 
+Deterministický robustness corpus mutuje validní JSON obálky, libovolné bajtové
+payloady, schema cesty a všechny podporované varianty draft hodnot. Každý běh
+prochází všemi produkčními snapshot parsery a draft validátorem. CI jej spouští
+pod ASan/UBSan a navíc ověřuje, že odmítnutá draft mutace nezmění verzi ani počet
+uložených změn. Seed je fixní, takže každý nález je reprodukovatelný.
+
 ## Config coverage
 
 CI porovná aktuální Smithproxy schema manifest s registrem GUI editorů:
