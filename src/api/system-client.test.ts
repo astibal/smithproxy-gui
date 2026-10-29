@@ -223,7 +223,7 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       source: 'gui-core', smithproxy_events_available: false,
       events: [{
-        id: '4-100', occurred_at_unix_ms: 100, severity: 'error', source: 'gui-core',
+        id: '4-100', source_revision: 4, occurred_at_unix_ms: 100, severity: 'error', source: 'gui-core',
         message: 'Smithproxy control plane changed to unreachable',
       }],
     }));
@@ -242,11 +242,94 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
       source: 'gui-core', smithproxy_events_available: false,
       events: [{
-        id: 'event', occurred_at_unix_ms: 1, severity: 'info', source: 'gui-core',
+        id: 'event', source_revision: 1, occurred_at_unix_ms: 1, severity: 'info', source: 'gui-core',
         message: 'unsafe\nmessage',
       }],
     }));
     await expect(client.recentEvents()).rejects.toThrow('Invalid operational event entry');
+  });
+
+  it('subscribes to workspace-scoped operational event streams', () => {
+    const listeners = new Map<string, (event: MessageEvent<string>) => void>();
+    const close = vi.fn();
+    const eventSourceFactory = vi.fn(() => ({
+      addEventListener: (type: string, listener: (event: MessageEvent<string>) => void) => {
+        listeners.set(type, listener);
+      },
+      close,
+    }));
+    const snapshot = vi.fn();
+    const event = vi.fn();
+    const invalid = vi.fn();
+    const client = new SystemClient(
+      '/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui',
+      async () => jsonResponse({}), 3000, eventSourceFactory,
+    );
+
+    const unsubscribe = client.subscribeEvents({snapshot, event, invalid});
+    listeners.get('snapshot')?.({data: JSON.stringify({
+      source: 'gui-core', smithproxy_events_available: false,
+      events: [{
+        id: '100-ready', source_revision: 1, occurred_at_unix_ms: 100, severity: 'info',
+        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+      }],
+    })} as MessageEvent<string>);
+    listeners.get('operational')?.({data: JSON.stringify({
+      id: '200-error', source_revision: 2, occurred_at_unix_ms: 200, severity: 'error',
+      source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
+    })} as MessageEvent<string>);
+
+    expect(eventSourceFactory).toHaveBeenCalledWith('/ws001/smithproxy-gui/api/v1/events');
+    expect(snapshot).toHaveBeenCalledWith(expect.objectContaining({
+      events: [expect.objectContaining({id: '100-ready'})],
+    }));
+    expect(event).toHaveBeenCalledWith(expect.objectContaining({id: '200-error'}));
+    expect(invalid).not.toHaveBeenCalled();
+    unsubscribe();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('closes an operational event stream after an invalid payload', () => {
+    const listeners = new Map<string, (event: MessageEvent<string>) => void>();
+    const close = vi.fn();
+    const invalid = vi.fn();
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({}), 3000, () => ({
+      addEventListener: (type, listener) => listeners.set(type, listener),
+      close,
+    }));
+    client.subscribeEvents({snapshot: vi.fn(), event: vi.fn(), invalid});
+
+    listeners.get('operational')?.({data: '{not-json'} as MessageEvent<string>);
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(invalid).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('uses a credentialed native EventSource by default', () => {
+    const instances: Array<{url: string; options: EventSourceInit; closed: boolean}> = [];
+    class FakeEventSource {
+      readonly record: {url: string; options: EventSourceInit; closed: boolean};
+
+      constructor(url: string | URL, options: EventSourceInit = {}) {
+        this.record = {url: String(url), options, closed: false};
+        instances.push(this.record);
+      }
+
+      addEventListener(): void {}
+      close(): void { this.record.closed = true; }
+    }
+    vi.stubGlobal('EventSource', FakeEventSource);
+    try {
+      const client = new SystemClient('/api/v1', '/');
+      const unsubscribe = client.subscribeEvents({snapshot: vi.fn(), event: vi.fn(), invalid: vi.fn()});
+      expect(instances).toEqual([{
+        url: '/api/v1/events', options: {withCredentials: true}, closed: false,
+      }]);
+      unsubscribe();
+      expect(instances[0]?.closed).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('rejects inconsistent neighborhood aggregates', async () => {

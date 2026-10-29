@@ -21,6 +21,7 @@ struct ProbeSample {
     std::string state;
     std::chrono::system_clock::time_point checked_at{};
     std::optional<std::uint64_t> latency_ms;
+    std::uint64_t sequence{};
 };
 
 struct SmithproxyStatus {

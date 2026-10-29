@@ -123,6 +123,10 @@ tags, labels, and individual timelines do not. Structured active alerts are
 derived inside the GUI core from reachability,
 rolling availability, collector freshness, and TLS cache capacity. They use a
 bounded fixed vocabulary and never forward arbitrary upstream log text. The root
+monitoring feed uses a same-origin, authenticated SSE endpoint with monotonic
+probe revisions, `Last-Event-ID` replay, and an explicit snapshot reset when a
+client falls behind the bounded history. The periodic snapshot remains a recovery
+path for older deployments and interrupted streams. The root
 web component supports integration into Saslik Tools:
 
 ```html

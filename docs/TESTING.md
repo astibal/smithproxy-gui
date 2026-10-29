@@ -28,7 +28,7 @@ schema, rolí, browserů a chybových stavů. Samotné procento line coverage ne
 - keyboard-only a accessibility testy;
 - responsive testy definovaných breakpointů;
 - visual regression pro Grill/Petroleum, dark/light a klíčové stavy;
-- testy offline/stale SSE, konfliktů revision a obnovy draftu.
+- testy SSE snapshot/replay/reset, konfliktů revision a obnovy draftu.
 
 CI spouští celý Playwright scénář nad Chromium, Firefox a WebKit. Lokální
 vývojový příkaz používá pro rychlost Chromium; shodný tříbrowserový matrix se
@@ -44,6 +44,11 @@ neobsahuje výjimky ani vypnutá pravidla.
 Browser matrix také simuluje souběžného zapisujícího správce. Po `409` konfliktu
 musí GUI načíst novou verzi sdíleného draftu, zachovat cizí změny a další pokus
 odeslat s aktualizovanou optimistic-concurrency verzí.
+
+Backend integration suite ověřuje SSE content type, zákaz proxy bufferingu,
+management autentizaci, počáteční snapshot, `Last-Event-ID` replay bez duplikace
+a reset expirované kontinuity. Frontend unit testy ověřují workspace prefix,
+snapshot i jednotlivou událost a fail-closed chování při nevalidním JSON payloadu.
 
 Unit coverage gate měří importovanou API, config, monitoring a state logiku přes
 V8. Aktuální nepodkročitelné globální prahy jsou 83 % statements, 82 % branches,

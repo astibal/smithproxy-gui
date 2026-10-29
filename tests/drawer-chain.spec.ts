@@ -94,15 +94,25 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     source: 'gui-core', smithproxy_events_available: false,
     events: [
       {
-        id: '0-100', occurred_at_unix_ms: Date.now() - 5000, severity: 'info',
+        id: '0-100', source_revision: 1, occurred_at_unix_ms: Date.now() - 5000, severity: 'info',
         source: 'gui-core', message: 'Smithproxy control plane is reachable',
       },
       ...(state.smithproxy === 'ready' ? [] : [{
-        id: '1-200', occurred_at_unix_ms: Date.now(), severity: 'error',
+        id: '1-200', source_revision: 2, occurred_at_unix_ms: Date.now(), severity: 'error',
         source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
       }]),
     ],
   }}));
+  await page.route('**/api/v1/events', async route => route.fulfill({
+    contentType: 'text/event-stream; charset=utf-8',
+    body: `retry: 60000\nevent: snapshot\ndata: ${JSON.stringify({
+      source: 'gui-core', smithproxy_events_available: false,
+      events: [{
+        id: 'stream-100', source_revision: 1, occurred_at_unix_ms: Date.now(), severity: 'info',
+        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+      }],
+    })}\n\n`,
+  }));
   await page.route('**/api/v1/alerts', async route => route.fulfill({json: {
     source: 'gui-core', generated_at_unix_ms: Date.now(),
     alerts: state.smithproxy === 'ready' ? [] : [{

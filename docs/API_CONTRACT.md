@@ -217,9 +217,20 @@ cache capacity. Disabling local explicit-proxy destination protection emits a
 configuration-posture warning. A control-plane outage suppresses derivative collector alerts
 to avoid an alert storm.
 
-`/events` používá SSE. Každá událost obsahuje typ, čas serveru, monotónní event ID,
-source revision a minimální payload. Po ztrátě kontinuity si klient vyžádá nový
-snapshot místo domýšlení chybějícího stavu.
+`/events` používá autentizované same-origin SSE. První odpověď nese událost
+`snapshot`; další požadavky posílají `Last-Event-ID` a dostanou pouze novější
+události typu `operational`. Event ID i `source_revision` vycházejí z monotónního
+počítadla probe, takže nejsou závislé na systémovém čase. Pokud ID již není v
+omezeném šedesátipoložkovém okně nebo core mezitím restartoval, server pošle
+událost `reset` s autoritativním snapshotem. Prázdná kontinuita vrací SSE
+keepalive. Klient každý payload znovu validuje stejnými limity jako REST snapshot
+a při nevalidním payloadu stream uzavře.
+
+Server vrací `retry: 2500`, `Cache-Control: no-store` a `X-Accel-Buffering: no`.
+Spojení je po každé dávce uzavřeno; standardní `EventSource` jej obnoví bez
+držení backendového workeru pro neaktivní záložku. Periodický `/events/recent`
+zůstává recovery snapshotem a cestou kompatibility pro starší core. Cursor má
+nejvýše 96 bytů; delší `Last-Event-ID` je odmítnuto před porovnáváním.
 
 ## Úlohy
 

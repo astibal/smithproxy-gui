@@ -284,7 +284,9 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 }
                 latest.config_snapshot = std::move(previous_config);
             }
-            latest.history.push_back({latest.state, latest.checked_at, latest.latency_ms});
+            latest.history.push_back({
+                latest.state, latest.checked_at, latest.latency_ms, latest.total_probes,
+            });
             if (latest.history.size() > 60U) latest.history.erase(latest.history.begin());
             status_ = std::move(latest);
         }

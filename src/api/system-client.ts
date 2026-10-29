@@ -134,6 +134,7 @@ export type EventSeverity = 'info' | 'notice' | 'warning' | 'error';
 
 export interface OperationalEvent {
   id: string;
+  sourceRevision: number;
   occurredAtUnixMs: number;
   severity: EventSeverity;
   source: 'gui-core';
@@ -145,6 +146,19 @@ export interface EventSnapshot {
   smithproxyEventsAvailable: boolean;
   events: ReadonlyArray<OperationalEvent>;
 }
+
+export interface EventStreamHandlers {
+  snapshot: (snapshot: EventSnapshot) => void;
+  event: (event: OperationalEvent) => void;
+  invalid: (error: Error) => void;
+}
+
+interface EventSourceLike {
+  addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void;
+  close(): void;
+}
+
+type EventSourceFactory = (url: string) => EventSourceLike;
 
 export type OperationalAlertSeverity = 'notice' | 'warning' | 'critical';
 
@@ -456,7 +470,8 @@ function parseEvents(value: unknown): EventSnapshot {
   const ids = new Set<string>();
   const events = value.events.map((item): OperationalEvent => {
     if (!isObject(item) || typeof item.id !== 'string' || item.id.length === 0 || item.id.length > 96 ||
-        ids.has(item.id) || !isNonNegativeInteger(item.occurred_at_unix_ms) ||
+        ids.has(item.id) || !isNonNegativeInteger(item.source_revision) ||
+        !isNonNegativeInteger(item.occurred_at_unix_ms) ||
         !['info', 'notice', 'warning', 'error'].includes(String(item.severity)) ||
         item.source !== 'gui-core' || typeof item.message !== 'string' ||
         item.message.length === 0 || item.message.length > 256 || /[\u0000-\u001f\u007f]/u.test(item.message)) {
@@ -465,6 +480,7 @@ function parseEvents(value: unknown): EventSnapshot {
     ids.add(item.id);
     return {
       id: item.id,
+      sourceRevision: item.source_revision,
       occurredAtUnixMs: item.occurred_at_unix_ms,
       severity: item.severity as EventSeverity,
       source: 'gui-core',
@@ -506,17 +522,20 @@ export class SystemClient {
   readonly #basePath: string;
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
+  readonly #eventSourceFactory: EventSourceFactory;
 
   constructor(
     apiBase: string,
     basePath: string,
     fetchImplementation: typeof fetch = (input, init) => fetch(input, init),
     timeoutMs = 3000,
+    eventSourceFactory: EventSourceFactory = url => new EventSource(url, {withCredentials: true}),
   ) {
     this.#apiBase = normalizedPath(apiBase, 'API base');
     this.#basePath = normalizedPath(basePath, 'Base path');
     this.#fetch = fetchImplementation;
     this.#timeoutMs = timeoutMs;
+    this.#eventSourceFactory = eventSourceFactory;
   }
 
   async health(): Promise<SystemHealth> {
@@ -549,6 +568,51 @@ export class SystemClient {
 
   async recentEvents(): Promise<EventSnapshot> {
     return parseEvents(await this.#request(joinedPath(this.#apiBase, '/events/recent')));
+  }
+
+  subscribeEvents(handlers: EventStreamHandlers): () => void {
+    const source = this.#eventSourceFactory(joinedPath(this.#apiBase, '/events'));
+    let closed = false;
+    const fail = (reason: unknown): void => {
+      if (closed) return;
+      closed = true;
+      source.close();
+      handlers.invalid(reason instanceof Error ? reason : new Error('Invalid operational event stream.'));
+    };
+    const parseData = (event: MessageEvent<string>): unknown => {
+      if (typeof event.data !== 'string' || event.data.length > 32 * 1024) {
+        throw new Error('Invalid operational event stream payload.');
+      }
+      return JSON.parse(event.data) as unknown;
+    };
+    const acceptSnapshot = (event: MessageEvent<string>): void => {
+      try {
+        handlers.snapshot(parseEvents(parseData(event)));
+      } catch (error) {
+        fail(error);
+      }
+    };
+    source.addEventListener('snapshot', acceptSnapshot);
+    source.addEventListener('reset', acceptSnapshot);
+    source.addEventListener('operational', (event): void => {
+      try {
+        const snapshot = parseEvents({
+          source: 'gui-core',
+          smithproxy_events_available: false,
+          events: [parseData(event)],
+        });
+        const [accepted] = snapshot.events;
+        if (!accepted) throw new Error('Operational event stream entry is missing.');
+        handlers.event(accepted);
+      } catch (error) {
+        fail(error);
+      }
+    });
+    return (): void => {
+      if (closed) return;
+      closed = true;
+      source.close();
+    };
   }
 
   async activeAlerts(): Promise<AlertSnapshot> {

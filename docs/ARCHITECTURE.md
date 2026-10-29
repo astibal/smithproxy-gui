@@ -58,6 +58,13 @@ automatická produkční závislost.
 - idempotency key pro opakovatelné mutace;
 - jasné limity velikosti, času a počtu položek.
 
+Event stream je realizován krátkou SSE odpovědí s `retry`, po které standardní
+`EventSource` obnoví spojení a automaticky pošle `Last-Event-ID`. Core tak nedrží
+vlákno pro každou otevřenou záložku. Platné ID vrací pouze novější přechody;
+ID mimo omezenou historii vrací událost `reset` s autoritativním snapshotem.
+SSE endpoint má stejné management ověření jako REST monitoring a zakazuje
+proxy buffering.
+
 WebSocket se přidá jen tehdy, pokud se prokáže potřeba plně duplexního kanálu.
 
 ## Deploy

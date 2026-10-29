@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -30,10 +31,27 @@ struct RequestState final : lmh::ConnectionState {
 };
 
 struct Response {
+    Response(unsigned response_status = 200,
+             std::string response_content_type = "application/json; charset=utf-8",
+             std::string response_body = {}, std::string response_cache_control = "no-store",
+             std::vector<std::pair<std::string, std::string>> response_headers = {})
+        : status(response_status), content_type(std::move(response_content_type)),
+          body(std::move(response_body)), cache_control(std::move(response_cache_control)),
+          headers(std::move(response_headers)) {}
+
     unsigned status{200};
     std::string content_type{"application/json; charset=utf-8"};
     std::string body;
     std::string cache_control{"no-store"};
+    std::vector<std::pair<std::string, std::string>> headers;
+};
+
+struct OperationalEventRecord {
+    std::string id;
+    std::uint64_t source_revision{};
+    std::chrono::system_clock::time_point occurred_at;
+    std::string severity;
+    std::string message;
 };
 
 constexpr std::size_t maximum_request_body = 64U * 1024U;
@@ -55,6 +73,45 @@ std::string timestamp_json(const std::chrono::system_clock::time_point value) {
     if (value.time_since_epoch().count() == 0) return "null";
     return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
                               value.time_since_epoch()).count());
+}
+
+std::vector<OperationalEventRecord> operational_events(const SmithproxyStatus& status) {
+    std::vector<OperationalEventRecord> events;
+    events.reserve(status.history.size());
+    std::string previous_state;
+    for (const auto& sample : status.history) {
+        if (sample.state == previous_state) continue;
+        previous_state = sample.state;
+        events.push_back({
+            std::to_string(sample.sequence) + "-" + sample.state,
+            sample.sequence,
+            sample.checked_at,
+            sample.state == "ready" ? "info" : sample.state == "starting" ? "notice" : "error",
+            sample.state == "ready" ? "Smithproxy control plane is reachable" :
+            sample.state == "starting" ? "Smithproxy probe is starting" :
+            "Smithproxy control plane changed to " + sample.state,
+        });
+    }
+    return events;
+}
+
+std::string operational_event_json(const OperationalEventRecord& event) {
+    return "{\"id\":" + json_string(event.id) +
+           ",\"source_revision\":" + std::to_string(event.source_revision) +
+           ",\"occurred_at_unix_ms\":" + timestamp_json(event.occurred_at) +
+           ",\"severity\":" + json_string(event.severity) +
+           ",\"source\":\"gui-core\",\"message\":" + json_string(event.message) + "}";
+}
+
+std::string operational_snapshot_json(const std::vector<OperationalEventRecord>& records) {
+    std::string events{"["};
+    for (std::size_t index = 0; index < records.size(); ++index) {
+        if (index != 0U) events += ',';
+        events += operational_event_json(records[index]);
+    }
+    events += ']';
+    return "{\"source\":\"gui-core\",\"smithproxy_events_available\":false,\"events\":" +
+           events + "}";
 }
 
 std::string optional_number_json(const std::optional<std::uint64_t> value) {
@@ -334,6 +391,7 @@ private:
         if (*relative == "/api/v1/network/neighbors/summary") return neighbor_summary();
         if (*relative == "/api/v1/sessions/activity") return session_activity();
         if (*relative == "/api/v1/events/recent") return recent_events();
+        if (*relative == "/api/v1/events") return event_stream(connection);
         if (*relative == "/api/v1/alerts") return alerts();
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
@@ -923,29 +981,46 @@ private:
 
     Response recent_events() const {
         const auto status = monitor_.status();
-        std::string events{"["};
-        std::string previous_state;
-        std::size_t emitted{};
-        for (std::size_t index = 0; index < status.history.size(); ++index) {
-            const auto& sample = status.history[index];
-            if (sample.state == previous_state) continue;
-            previous_state = sample.state;
-            if (emitted++ != 0U) events += ',';
-            const auto severity = sample.state == "ready" ? "info" :
-                                  sample.state == "starting" ? "notice" : "error";
-            const auto message = sample.state == "ready" ? "Smithproxy control plane is reachable" :
-                                 sample.state == "starting" ? "Smithproxy probe is starting" :
-                                 "Smithproxy control plane changed to " + sample.state;
-            events += "{\"id\":" + json_string(std::to_string(index) + "-" +
-                          timestamp_json(sample.checked_at)) +
-                      ",\"occurred_at_unix_ms\":" + timestamp_json(sample.checked_at) +
-                      ",\"severity\":" + json_string(severity) +
-                      ",\"source\":\"gui-core\",\"message\":" + json_string(message) + "}";
-        }
-        events += ']';
         return {200, "application/json; charset=utf-8",
-                "{\"source\":\"gui-core\",\"smithproxy_events_available\":false,\"events\":" +
-                    events + "}"};
+                operational_snapshot_json(operational_events(status))};
+    }
+
+    Response event_stream(MHD_Connection* connection) const {
+        const auto records = operational_events(monitor_.status());
+        const auto* supplied_id = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "Last-Event-ID");
+        const std::string_view last_id = supplied_id == nullptr ? std::string_view{} : supplied_id;
+        if (last_id.size() > 96U) {
+            return {400, "application/json; charset=utf-8", "{\"error\":\"invalid event cursor\"}"};
+        }
+
+        std::string body{"retry: 2500\n"};
+        const auto append_snapshot = [&](const std::string_view event_name) {
+            body += "event: ";
+            body += event_name;
+            body += '\n';
+            if (!records.empty()) body += "id: " + records.back().id + "\n";
+            body += "data: " + operational_snapshot_json(records) + "\n\n";
+        };
+
+        if (last_id.empty()) {
+            append_snapshot("snapshot");
+        } else {
+            const auto previous = std::find_if(records.begin(), records.end(), [&](const auto& event) {
+                return constant_time_equal(event.id, last_id);
+            });
+            if (previous == records.end()) {
+                append_snapshot("reset");
+            } else {
+                for (auto event = std::next(previous); event != records.end(); ++event) {
+                    body += "event: operational\nid: " + event->id +
+                            "\ndata: " + operational_event_json(*event) + "\n\n";
+                }
+                if (std::next(previous) == records.end()) body += ": keepalive\n\n";
+            }
+        }
+        return {200, "text/event-stream; charset=utf-8", std::move(body), "no-store",
+                {{"X-Accel-Buffering", "no"}}};
     }
 
     Response alerts() const {
@@ -1103,6 +1178,9 @@ private:
                                 "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
                                 "worker-src 'self'; manifest-src 'self'; object-src 'none'; "
                                 "base-uri 'none'; form-action 'self'; frame-ancestors 'self'");
+        for (const auto& [name, value] : response.headers) {
+            MHD_add_response_header(output, name.c_str(), value.c_str());
+        }
         const auto queued = MHD_queue_response(connection, response.status, output);
         MHD_destroy_response(output);
         if (queued == MHD_YES) state.response_sent = true;

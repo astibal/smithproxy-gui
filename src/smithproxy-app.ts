@@ -135,6 +135,7 @@ export class SmithproxyApp extends LitElement {
   private systemProbeTimer: number | undefined;
   private systemProbeInFlight = false;
   private systemProbePending = false;
+  private closeEventStream: (() => void) | undefined;
   private configRefreshInFlight = false;
   private nextConfigRefreshAt = 0;
   private drawerHistoryDepth = 0;
@@ -435,6 +436,7 @@ export class SmithproxyApp extends LitElement {
       this.systemClient = new SystemClient(this.runtime.apiBase, this.runtime.basePath);
       this.configClient = new ApiConfigClient(this.runtime.apiBase);
       this.draftClient = new DraftClient(this.runtime.apiBase);
+      this.connectEventStream();
       void this.probeSystem();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
@@ -448,6 +450,7 @@ export class SmithproxyApp extends LitElement {
 
   disconnectedCallback(): void {
     this.clearSystemProbe();
+    this.disconnectEventStream();
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
@@ -458,14 +461,44 @@ export class SmithproxyApp extends LitElement {
   private readonly handleVisibilityChange = (): void => {
     if (document.visibilityState === 'hidden') {
       this.clearSystemProbe();
+      this.disconnectEventStream();
     } else {
+      this.connectEventStream();
       void this.probeSystem();
     }
   };
 
   private readonly handleOnline = (): void => {
+    this.connectEventStream();
     void this.probeSystem();
   };
+
+  private disconnectEventStream(): void {
+    this.closeEventStream?.();
+    this.closeEventStream = undefined;
+  }
+
+  private connectEventStream(): void {
+    if (this.closeEventStream || !this.systemClient || document.visibilityState === 'hidden') return;
+    this.closeEventStream = this.systemClient.subscribeEvents({
+      snapshot: snapshot => {
+        this.operationalEvents = snapshot;
+        this.eventsError = undefined;
+      },
+      event: event => {
+        const withoutDuplicate = this.operationalEvents.events.filter(item => item.id !== event.id);
+        this.operationalEvents = {
+          ...this.operationalEvents,
+          events: [...withoutDuplicate, event].slice(-60),
+        };
+        this.eventsError = undefined;
+      },
+      invalid: error => {
+        this.disconnectEventStream();
+        this.eventsError = error.message;
+      },
+    });
+  }
 
   private readonly handleBeforeUnload = (event: BeforeUnloadEvent): void => {
     if (this.dirtyDrawerKeys.size === 0) return;

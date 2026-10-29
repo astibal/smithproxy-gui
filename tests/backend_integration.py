@@ -368,6 +368,14 @@ def main() -> int:
         assert status == 200
         assert json.loads(body) == {
             "source": "gui-core", "smithproxy_events_available": False, "events": []}
+        status, headers, body = request(port, "/ws001/smithproxy-gui/api/v1/events")
+        assert status == 200
+        assert headers["Content-Type"] == "text/event-stream; charset=utf-8"
+        assert headers["Cache-Control"] == "no-store"
+        assert headers["X-Accel-Buffering"] == "no"
+        assert b"retry: 2500\n" in body
+        assert b"event: snapshot\n" in body
+        assert b'"events":[]' in body
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/alerts")
         assert status == 200
         alerts = json.loads(body)
@@ -433,7 +441,7 @@ def main() -> int:
             assert secret.encode() not in health_body
             assert isinstance(json.loads(health_body)["smithproxy"]["checked_at_unix_ms"], int)
             protected_paths = (
-                "/api/v1/status", "/api/v1/events/recent", "/api/v1/alerts",
+                "/api/v1/status", "/api/v1/events/recent", "/api/v1/events", "/api/v1/alerts",
                 "/api/v1/metrics/summary", "/api/v1/tls/cache/summary",
                 "/api/v1/network/neighbors/summary", "/api/v1/sessions/activity",
             )
@@ -473,6 +481,27 @@ def main() -> int:
             assert events["smithproxy_events_available"] is False
             assert events["events"][-1]["message"] == "Smithproxy control plane is reachable"
             assert len(events["events"]) <= 60
+            latest_event_id = events["events"][-1]["id"]
+            status, headers, body = request(
+                configured_port, "/api/v1/events", headers=gateway_headers)
+            assert status == 200
+            assert headers["Content-Type"] == "text/event-stream; charset=utf-8"
+            assert f"id: {latest_event_id}\n".encode() in body
+            assert b"event: snapshot\n" in body
+            status, _, replay = request(configured_port, "/api/v1/events", headers={
+                **gateway_headers, "Last-Event-ID": latest_event_id,
+            })
+            assert status == 200
+            assert b": keepalive\n\n" in replay
+            assert b"event: operational\n" not in replay
+            status, _, reset = request(configured_port, "/api/v1/events", headers={
+                **gateway_headers, "Last-Event-ID": "expired-event-id",
+            })
+            assert status == 200
+            assert b"event: reset\n" in reset
+            assert request(configured_port, "/api/v1/events", headers={
+                **gateway_headers, "Last-Event-ID": "x" * 97,
+            })[0] == 400
             status, _, body = request(
                 configured_port, "/api/v1/alerts", headers=gateway_headers)
             alerts = json.loads(body)
