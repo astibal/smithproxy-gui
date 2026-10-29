@@ -599,7 +599,10 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto certificates_path = bounded_string(*value, "certs_path", maximum_value_length, true);
     const auto certificate_password = bounded_string(
         *value, "certs_ca_key_password", maximum_value_length, true);
+    const auto certificate_transparency_log = bounded_string(
+        *value, "certs_ctlog", maximum_value_length, true);
     const auto ca_bundle_path = bounded_string(*value, "ca_bundle_path", maximum_value_length, true);
+    const auto ca_bundle_file = bounded_string(*value, "ca_bundle_file", maximum_value_length, true);
     const auto messages_directory = bounded_string(*value, "messages_dir", maximum_value_length, true);
     const auto payload_file_prefix = bounded_string(
         *value, "write_payload_file_prefix", maximum_name_length, true);
@@ -621,6 +624,28 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     }
     const Json& rating = rating_value != value->end() && rating_value->is_object() ? *rating_value : empty;
     const auto rating_key = bounded_string(rating, "wot_key", maximum_value_length, true);
+
+    const auto admin_value = value->find("admin");
+    if (admin_value != value->end() && !admin_value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid administration settings"};
+    }
+    const Json& admin = admin_value != value->end() && admin_value->is_object() ? *admin_value : empty;
+    const auto admin_group = bounded_string(admin, "group", maximum_name_length, true);
+
+    const auto tuning_value = value->find("tuning");
+    if (tuning_value != value->end() && !tuning_value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid tuning settings"};
+    }
+    const Json& tuning = tuning_value != value->end() && tuning_value->is_object() ? *tuning_value : empty;
+    const auto tuning_host_buffer_min = optional_decimal(tuning, "host_bufsz_min", 2048U, 10000000U);
+    const auto tuning_host_buffer_max_multiplier = optional_decimal(
+        tuning, "host_bufsz_max_multiplier", 1024U, 1024000000U);
+    const auto tuning_host_write_full = optional_decimal(tuning, "host_write_full", 200000U, 1024000000U);
+    const auto tuning_host_io_batch = optional_decimal(tuning, "host_io_batch", 262144U, 16777216U);
+    const auto tuning_tls_write_chunk = optional_decimal(tuning, "tls_write_chunk", 20480U, 1048576U);
+    const auto tuning_host_open_timeout = optional_decimal(tuning, "host_open_timeout", 7U, 65535U);
+    const auto tuning_host_idle_timeout = optional_decimal(tuning, "host_idle_timeout", 3600U, 65535U);
+    const auto tuning_neighbor_cache_size = optional_decimal(tuning, "nbr_cache_size", 8000U, 2147483647U);
 
     const auto socks_value = value->find("socks");
     if (socks_value != value->end() && !socks_value->is_object()) {
@@ -685,9 +710,16 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !write_pcap_single_quota || !log_level || !log_file || !log_console ||
         !ssl_key_log_file || !syslog_server || !syslog_port || !syslog_facility ||
         !syslog_level || !syslog_family || (*syslog_family != 4U && *syslog_family != 6U) ||
-        !udp_quick_ports || !certificates_path || !certificate_password || !ca_bundle_path ||
+        !udp_quick_ports || !certificates_path || !certificate_password || !certificate_transparency_log ||
+        !ca_bundle_path || !ca_bundle_file ||
         !messages_directory || !payload_file_prefix || !payload_file_suffix || !cli_port ||
-        !cli_password || !rating_key || !thread_pool_logging || !socks_async_dns ||
+        !cli_password || !rating_key || !admin_group || !tuning_host_buffer_min ||
+        *tuning_host_buffer_min < 1500U || !tuning_host_buffer_max_multiplier ||
+        *tuning_host_buffer_max_multiplier == 0U || !tuning_host_write_full ||
+        *tuning_host_write_full < 1024U || !tuning_host_io_batch || *tuning_host_io_batch < 16384U ||
+        !tuning_tls_write_chunk || *tuning_tls_write_chunk < 1024U || !tuning_host_open_timeout ||
+        !tuning_host_idle_timeout || !tuning_neighbor_cache_size || *tuning_neighbor_cache_size == 0U ||
+        !thread_pool_logging || !socks_async_dns ||
         !socks_ip_version_mixing || !socks_prefer_ipv6 ||
         !tls_autodetect ||
         !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips ||
@@ -724,10 +756,14 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !syslog_server->empty(), *syslog_port, *syslog_facility, *syslog_level,
                 *syslog_family, udp_quick_ports->size(), *udp_quick_ports,
                 !certificates_path->empty(),
-                !certificate_password->empty(), !ca_bundle_path->empty(),
+                !certificate_password->empty(), !certificate_transparency_log->empty(),
+                !ca_bundle_path->empty(), !ca_bundle_file->empty(),
                 !messages_directory->empty(), !payload_file_prefix->empty(),
                 !payload_file_suffix->empty(), *cli_port, !cli_password->empty(),
-                !rating_key->empty(), *thread_pool_logging, *socks_async_dns,
+                !rating_key->empty(), !admin_group->empty(), *tuning_host_buffer_min,
+                *tuning_host_buffer_max_multiplier, *tuning_host_write_full, *tuning_host_io_batch,
+                *tuning_tls_write_chunk, *tuning_host_open_timeout, *tuning_host_idle_timeout,
+                *tuning_neighbor_cache_size, *thread_pool_logging, *socks_async_dns,
                 *socks_ip_version_mixing, *socks_prefer_ipv6, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, nameservers->size(), *nameservers,
                 *api_keys, allowed_ips->size(), *allowed_ips,

@@ -95,7 +95,8 @@ bool sensitive_draft_path(const std::string_view path) {
     constexpr std::array sensitive_paths{
         "settings.webhook.url", "settings.syslog_server", "settings.write_payload_dir",
         "settings.log_file", "settings.sslkeylog_file", "settings.certs_path",
-        "settings.certs_ca_key_password", "settings.ca_bundle_path", "settings.messages_dir",
+        "settings.certs_ca_key_password", "settings.certs_ctlog", "settings.ca_bundle_path",
+        "settings.ca_bundle_file", "settings.admin.group", "settings.messages_dir",
         "settings.write_payload_file_prefix", "settings.write_payload_file_suffix",
         "settings.cli.enable_password", "settings.web_rating.wot_key", "settings.http_api.keys",
         "settings.http_api.bind_address", "settings.http_api.bind_interface",
@@ -676,8 +677,12 @@ private:
                        (value.certificates_path_configured ? "true" : "false") +
                        ",\"certificate_password_configured\":" +
                        (value.certificate_password_configured ? "true" : "false") +
+                       ",\"certificate_transparency_log_configured\":" +
+                       (value.certificate_transparency_log_configured ? "true" : "false") +
                        ",\"ca_bundle_path_configured\":" +
                        (value.ca_bundle_path_configured ? "true" : "false") +
+                       ",\"ca_bundle_file_configured\":" +
+                       (value.ca_bundle_file_configured ? "true" : "false") +
                        ",\"messages_directory_configured\":" +
                        (value.messages_directory_configured ? "true" : "false") +
                        ",\"payload_file_prefix_configured\":" +
@@ -689,6 +694,15 @@ private:
                        (value.cli_password_configured ? "true" : "false") +
                        ",\"web_rating_key_configured\":" +
                        (value.web_rating_key_configured ? "true" : "false") +
+                       ",\"admin_group_configured\":" + (value.admin_group_configured ? "true" : "false") +
+                       ",\"tuning\":{\"host_buffer_min\":" + std::to_string(value.tuning_host_buffer_min) +
+                       ",\"host_buffer_max_multiplier\":" + std::to_string(value.tuning_host_buffer_max_multiplier) +
+                       ",\"host_write_full\":" + std::to_string(value.tuning_host_write_full) +
+                       ",\"host_io_batch\":" + std::to_string(value.tuning_host_io_batch) +
+                       ",\"tls_write_chunk\":" + std::to_string(value.tuning_tls_write_chunk) +
+                       ",\"host_open_timeout\":" + std::to_string(value.tuning_host_open_timeout) +
+                       ",\"host_idle_timeout\":" + std::to_string(value.tuning_host_idle_timeout) +
+                       ",\"neighbor_cache_size\":" + std::to_string(value.tuning_neighbor_cache_size) + "}" +
                        ",\"thread_pool_logging\":" + (value.thread_pool_logging ? "true" : "false") +
                        ",\"socks_async_dns\":" + (value.socks_async_dns ? "true" : "false") +
                        ",\"socks_ip_version_mixing\":" + (value.socks_ip_version_mixing ? "true" : "false") +

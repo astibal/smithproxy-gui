@@ -721,7 +721,8 @@ export class SmithproxyApp extends LitElement {
     const sensitivePaths = new Set([
       'settings.webhook.url', 'settings.syslog_server', 'settings.write_payload_dir',
       'settings.log_file', 'settings.sslkeylog_file', 'settings.certs_path',
-      'settings.certs_ca_key_password', 'settings.ca_bundle_path', 'settings.messages_dir',
+      'settings.certs_ca_key_password', 'settings.certs_ctlog', 'settings.ca_bundle_path',
+      'settings.ca_bundle_file', 'settings.admin.group', 'settings.messages_dir',
       'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
       'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
       'settings.http_api.bind_address', 'settings.http_api.bind_interface',
@@ -1667,6 +1668,25 @@ export class SmithproxyApp extends LitElement {
     }
     changes.push({path: 'settings.http_api.key_timeout', value: apiKeyTimeoutValue});
     changes.push({path: 'settings.http_api.port', value: apiPortValue});
+    const tuningFields = [
+      ['host_bufsz_min', 'host-buffer-min', 1500, 10000000],
+      ['host_bufsz_max_multiplier', 'host-buffer-max-multiplier', 1, 1024000000],
+      ['host_write_full', 'host-write-full', 1024, 1024000000],
+      ['host_io_batch', 'host-io-batch', 16384, 16777216],
+      ['tls_write_chunk', 'tls-write-chunk', 1024, 1048576],
+      ['host_open_timeout', 'host-open-timeout', 0, 65535],
+      ['host_idle_timeout', 'host-idle-timeout', 0, 65535],
+      ['nbr_cache_size', 'neighbor-cache-size', 1, 2147483647],
+    ] as const;
+    for (const [path, id, minimum, maximum] of tuningFields) {
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-tuning-${id}`);
+      const value = input?.valueAsNumber ?? Number.NaN;
+      if (!input || !Number.isInteger(value) || value < minimum || value > maximum) {
+        this.draftError = 'Performance tuning values are outside their supported ranges.';
+        return undefined;
+      }
+      changes.push({path: `settings.tuning.${path}`, value});
+    }
     const siftPayloadLimit = this.renderRoot.querySelector<HTMLInputElement>('#settings-webhook-sift-payload-limit');
     const siftPayloadLimitValue = siftPayloadLimit?.valueAsNumber ?? Number.NaN;
     if (!siftPayloadLimit || !Number.isInteger(siftPayloadLimitValue) ||
@@ -1702,7 +1722,9 @@ export class SmithproxyApp extends LitElement {
       ['write_payload_dir', 'payload-directory', 'path'], ['log_file', 'log-file', 'path'],
       ['sslkeylog_file', 'tls-key-log-file', 'path'], ['certs_path', 'certificates-path', 'path'],
       ['certs_ca_key_password', 'certificate-password', 'secret'],
-      ['ca_bundle_path', 'ca-bundle-path', 'path'], ['messages_dir', 'messages-directory', 'path'],
+      ['certs_ctlog', 'certificate-transparency-log', 'file'],
+      ['ca_bundle_path', 'ca-bundle-path', 'path'], ['ca_bundle_file', 'ca-bundle-file', 'file'],
+      ['admin.group', 'admin-group', 'text'], ['messages_dir', 'messages-directory', 'path'],
       ['write_payload_file_prefix', 'payload-prefix', 'filename'],
       ['write_payload_file_suffix', 'payload-suffix', 'filename'],
       ['cli.enable_password', 'cli-password', 'secret'],
@@ -2638,6 +2660,8 @@ export class SmithproxyApp extends LitElement {
               <dl>
                 <dt>CLI port / password</dt><dd>${settings.auxiliary.cliPort} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
                 <dt>SOCKS async DNS</dt><dd>${settings.auxiliary.socksAsyncDns ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Host buffer</dt><dd>${settings.auxiliary.tuning.hostBufferMin} bytes</dd>
+                <dt>Neighbor cache</dt><dd>${settings.auxiliary.tuning.neighborCacheSize} entries</dd>
                 <dt>UDP quick ports</dt><dd>${settings.auxiliary.udpQuickPorts.join(', ') || 'None'}</dd>
                 <dt>Certificates / CA bundle</dt><dd>${settings.auxiliary.certificatesPathConfigured ? 'Configured' : 'Missing'} / ${settings.auxiliary.caBundlePathConfigured ? 'Configured' : 'Missing'}</dd>
                 <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
@@ -3310,6 +3334,11 @@ export class SmithproxyApp extends LitElement {
       <input id="settings-${id}" type="number" min="0" max=${String(maximum)}
         .value=${String(value)} .readOnly=${disabled} />
     `;
+    const tuningField = (id: string, label: string, value: number, minimum: number, maximum: number) => html`
+      <label for="settings-tuning-${id}">${label}</label>
+      <input id="settings-tuning-${id}" type="number" min=${String(minimum)} max=${String(maximum)}
+        .value=${String(value)} .readOnly=${disabled} />
+    `;
     const writeOnlyField = (
       id: string, label: string, configured: boolean, secret = false,
     ) => html`
@@ -3380,11 +3409,23 @@ export class SmithproxyApp extends LitElement {
           placeholder="0, 53, 443" .readOnly=${disabled} />
         ${writeOnlyField('certificates-path', 'Certificates path', settings.auxiliary.certificatesPathConfigured)}
         ${writeOnlyField('certificate-password', 'Certificate password', settings.auxiliary.certificatePasswordConfigured, true)}
+        ${writeOnlyField('certificate-transparency-log', 'Certificate transparency log file', settings.auxiliary.certificateTransparencyLogConfigured)}
         ${writeOnlyField('ca-bundle-path', 'CA bundle path', settings.auxiliary.caBundlePathConfigured)}
+        ${writeOnlyField('ca-bundle-file', 'CA bundle file', settings.auxiliary.caBundleFileConfigured)}
+        ${writeOnlyField('admin-group', 'Administration group', settings.auxiliary.adminGroupConfigured)}
         ${writeOnlyField('messages-directory', 'Message assets', settings.auxiliary.messagesDirectoryConfigured)}
         ${writeOnlyField('payload-prefix', 'Payload filename prefix', settings.auxiliary.payloadFilePrefixConfigured)}
         ${writeOnlyField('payload-suffix', 'Payload filename suffix', settings.auxiliary.payloadFileSuffixConfigured)}
         ${writeOnlyField('web-rating-key', 'Web rating key', settings.auxiliary.webRatingKeyConfigured, true)}
+        <h3 class="form-span">Performance tuning</h3>
+        ${tuningField('host-buffer-min', 'Initial host buffer (bytes)', settings.auxiliary.tuning.hostBufferMin, 1500, 10000000)}
+        ${tuningField('host-buffer-max-multiplier', 'Maximum buffer multiplier', settings.auxiliary.tuning.hostBufferMaxMultiplier, 1, 1024000000)}
+        ${tuningField('host-write-full', 'Queued write threshold (bytes)', settings.auxiliary.tuning.hostWriteFull, 1024, 1024000000)}
+        ${tuningField('host-io-batch', 'Host I/O batch (bytes)', settings.auxiliary.tuning.hostIoBatch, 16384, 16777216)}
+        ${tuningField('tls-write-chunk', 'TLS write chunk (bytes)', settings.auxiliary.tuning.tlsWriteChunk, 1024, 1048576)}
+        ${tuningField('host-open-timeout', 'Host open timeout (seconds)', settings.auxiliary.tuning.hostOpenTimeout, 0, 65535)}
+        ${tuningField('host-idle-timeout', 'Host idle timeout (seconds)', settings.auxiliary.tuning.hostIdleTimeout, 0, 65535)}
+        ${tuningField('neighbor-cache-size', 'Neighbor cache entries', settings.auxiliary.tuning.neighborCacheSize, 1, 2147483647)}
         ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}

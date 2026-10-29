@@ -325,6 +325,20 @@ int main() {
     assert(settings.settings->webhook_neighbor_tag_refresh_age == 240U);
     assert(settings.settings->webhook_task_debug);
     assert(!settings.settings->webhook_task_debug_dump);
+    const auto tuning_settings = parse_config_settings(
+        R"({"success":{"settings":{"certs_ctlog":"/private/ct-log.cnf","ca_bundle_file":"/private/ca.pem","admin":{"group":"smithproxy-admins"},"tuning":{"host_bufsz_min":"4096","host_bufsz_max_multiplier":"512","host_write_full":"100000","host_io_batch":"131072","tls_write_chunk":"32768","host_open_timeout":"9","host_idle_timeout":"1800","nbr_cache_size":"4000"}}}})");
+    assert(tuning_settings.settings);
+    assert(tuning_settings.settings->certificate_transparency_log_configured);
+    assert(tuning_settings.settings->ca_bundle_file_configured);
+    assert(tuning_settings.settings->admin_group_configured);
+    assert(tuning_settings.settings->tuning_host_buffer_min == 4096U);
+    assert(tuning_settings.settings->tuning_host_buffer_max_multiplier == 512U);
+    assert(tuning_settings.settings->tuning_host_write_full == 100000U);
+    assert(tuning_settings.settings->tuning_host_io_batch == 131072U);
+    assert(tuning_settings.settings->tuning_tls_write_chunk == 32768U);
+    assert(tuning_settings.settings->tuning_host_open_timeout == 9U);
+    assert(tuning_settings.settings->tuning_host_idle_timeout == 1800U);
+    assert(tuning_settings.settings->tuning_neighbor_cache_size == 4000U);
     assert(settings.settings->nameservers == std::vector<std::string>{"192.0.2.53"});
     assert(settings.settings->api_key_count == 1U);
     assert(settings.settings->api_allowed_ips == std::vector<std::string>{"127.0.0.1"});

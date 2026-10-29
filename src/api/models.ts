@@ -203,13 +203,26 @@ export interface SystemSettings {
     udpQuickPorts: ReadonlyArray<string>;
     certificatesPathConfigured: boolean;
     certificatePasswordConfigured: boolean;
+    certificateTransparencyLogConfigured: boolean;
     caBundlePathConfigured: boolean;
+    caBundleFileConfigured: boolean;
     messagesDirectoryConfigured: boolean;
     payloadFilePrefixConfigured: boolean;
     payloadFileSuffixConfigured: boolean;
     cliPort: number;
     cliPasswordConfigured: boolean;
     webRatingKeyConfigured: boolean;
+    adminGroupConfigured: boolean;
+    tuning: {
+      hostBufferMin: number;
+      hostBufferMaxMultiplier: number;
+      hostWriteFull: number;
+      hostIoBatch: number;
+      tlsWriteChunk: number;
+      hostOpenTimeout: number;
+      hostIdleTimeout: number;
+      neighborCacheSize: number;
+    };
     threadPoolLogging: boolean;
     socksAsyncDns: boolean;
     socksIpVersionMixing: boolean;

@@ -248,10 +248,17 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         },
         auxiliary: {
           udp_quick_port_count: 1, udp_quick_ports: ['0'], certificates_path_configured: true,
-          certificate_password_configured: true, ca_bundle_path_configured: true,
+          certificate_password_configured: true, certificate_transparency_log_configured: true,
+          ca_bundle_path_configured: true, ca_bundle_file_configured: false,
           messages_directory_configured: true, payload_file_prefix_configured: false,
           payload_file_suffix_configured: false, cli_port: 50000, cli_password_configured: false,
-          web_rating_key_configured: false, thread_pool_logging: false, socks_async_dns: true,
+          web_rating_key_configured: false, admin_group_configured: true,
+          tuning: {
+            host_buffer_min: 2048, host_buffer_max_multiplier: 1024, host_write_full: 200000,
+            host_io_batch: 262144, tls_write_chunk: 20480, host_open_timeout: 7,
+            host_idle_timeout: 3600, neighbor_cache_size: 8000,
+          },
+          thread_pool_logging: false, socks_async_dns: true,
           socks_ip_version_mixing: true, socks_prefer_ipv6: false,
         },
         tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
@@ -773,16 +780,23 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('Webhook host ID replacement').fill('private-host');
   await settingsEditor.getByLabel('Webhook bind interface', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Webhook bind interface replacement').fill('private-webhook0');
+  await settingsEditor.getByLabel('Initial host buffer (bytes)').fill('4096');
+  await settingsEditor.getByLabel('Certificate transparency log file', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('Certificate transparency log file replacement').fill('/private/ct-log.cnf');
+  await settingsEditor.getByLabel('CA bundle file', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('CA bundle file replacement').fill('/private/ca-bundle.pem');
+  await settingsEditor.getByLabel('Administration group', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('Administration group replacement').fill('private-admins');
   await settingsEditor.getByLabel('Certificate password', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Certificate password replacement').fill('new-private-password');
   await settingsEditor.getByLabel('Syslog server', {exact: true}).selectOption('clear');
   await settingsEditor.getByLabel('HTTP API keys', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('HTTP API keys replacement').fill('["new-api-key", "overlap-api-key"]');
   await settingsEditor.getByLabel('proxy module override').fill('8');
-  await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(10);
+  await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(11);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 75 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 86 changes')).toBeVisible();
   await expect(settingsEditor.getByLabel('HTTP API keys replacement')).toHaveValue('');
   await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -800,11 +814,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 84 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 95 changes')).toBeVisible();
   await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 84'}).click();
+  await page.getByRole('button', {name: 'Review draft · 95'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
@@ -830,6 +844,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('settings.webhook.sift_instance_id');
   await expect(changes).toContainText('settings.webhook.hostid');
   await expect(changes).toContainText('settings.webhook.bind_interface');
+  await expect(changes).toContainText('settings.tuning.host_bufsz_min');
+  await expect(changes).toContainText('settings.tuning.nbr_cache_size');
+  await expect(changes).toContainText('settings.certs_ctlog');
+  await expect(changes).toContainText('settings.ca_bundle_file');
+  await expect(changes).toContainText('settings.admin.group');
   await expect(changes).toContainText('settings.certs_ca_key_password');
   await expect(changes).toContainText('settings.http_api.keys');
   await expect(changes).toContainText('settings.syslog_server');
@@ -853,6 +872,9 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).not.toContainText('private-instance');
   await expect(changes).not.toContainText('private-host');
   await expect(changes).not.toContainText('private-webhook0');
+  await expect(changes).not.toContainText('ct-log.cnf');
+  await expect(changes).not.toContainText('ca-bundle.pem');
+  await expect(changes).not.toContainText('private-admins');
   await expect(changes).not.toContainText('/new/private/captures');
 });
 

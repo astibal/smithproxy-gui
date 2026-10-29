@@ -13,8 +13,8 @@
     {
       "name": "settings",
       "origin": "reference_config",
-      "read": "partial",
-      "edit": "partial",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "secret-bearing",
       "tracked_fields": [
         "accept_tproxy", "accept_redirect", "accept_socks", "accept_http_connect",
@@ -26,12 +26,13 @@
         "write_payload_dir", "write_pcap_single_quota", "log_level", "log_file",
         "log_console", "sslkeylog_file", "syslog_server", "syslog_port",
         "syslog_facility", "syslog_level", "syslog_family", "ssl_autodetect",
-        "udp_quick_ports", "certs_path", "certs_ca_key_password", "ca_bundle_path",
+        "udp_quick_ports", "certs_path", "certs_ca_key_password", "certs_ctlog",
+        "ca_bundle_path", "ca_bundle_file", "admin", "tuning",
         "messages_dir", "write_payload_file_prefix", "write_payload_file_suffix",
         "cli", "web_rating", "tpool_log", "socks",
         "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "Core listener, logging, SOCKS, HTTP API, webhook, and Sift fields are typed and editable. HTTP API and webhook identities, endpoints, bind targets, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys use write-only replace/clear controls. Tuning and administration remain partial."
+      "notes": "All active settings emitted by the current Smithproxy saver are typed and editable. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys use write-only replace/clear controls. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."
     },
     {
       "name": "debug",

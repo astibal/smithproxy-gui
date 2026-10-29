@@ -502,6 +502,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   if (value.settings !== null) {
     if (!isObject(value.settings) || !isObject(value.settings.workers) || !isObject(value.settings.ports) ||
         !isObject(value.settings.logging) || !isObject(value.settings.auxiliary) ||
+        !isObject(value.settings.auxiliary.tuning) ||
         !isObject(value.settings.http_api) ||
         !isObject(value.settings.webhook)) {
       throw new Error('Invalid system settings.');
@@ -580,8 +581,15 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         certificatePasswordConfigured: safeBoolean(
           value.settings.auxiliary.certificate_password_configured, 'certificate password state',
         ),
+        certificateTransparencyLogConfigured: safeBoolean(
+          value.settings.auxiliary.certificate_transparency_log_configured,
+          'certificate transparency log state',
+        ),
         caBundlePathConfigured: safeBoolean(
           value.settings.auxiliary.ca_bundle_path_configured, 'CA bundle path state',
+        ),
+        caBundleFileConfigured: safeBoolean(
+          value.settings.auxiliary.ca_bundle_file_configured, 'CA bundle file state',
         ),
         messagesDirectoryConfigured: safeBoolean(
           value.settings.auxiliary.messages_directory_configured, 'message directory state',
@@ -599,6 +607,37 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         webRatingKeyConfigured: safeBoolean(
           value.settings.auxiliary.web_rating_key_configured, 'web-rating key state',
         ),
+        adminGroupConfigured: safeBoolean(
+          value.settings.auxiliary.admin_group_configured, 'administration group state',
+        ),
+        tuning: {
+          hostBufferMin: rangedInteger(
+            value.settings.auxiliary.tuning.host_buffer_min, 'host buffer minimum', 1500, 10000000,
+          ),
+          hostBufferMaxMultiplier: rangedInteger(
+            value.settings.auxiliary.tuning.host_buffer_max_multiplier,
+            'host buffer maximum multiplier', 1, 1024000000,
+          ),
+          hostWriteFull: rangedInteger(
+            value.settings.auxiliary.tuning.host_write_full, 'host write threshold', 1024, 1024000000,
+          ),
+          hostIoBatch: rangedInteger(
+            value.settings.auxiliary.tuning.host_io_batch, 'host I/O batch', 16384, 16777216,
+          ),
+          tlsWriteChunk: rangedInteger(
+            value.settings.auxiliary.tuning.tls_write_chunk, 'TLS write chunk', 1024, 1048576,
+          ),
+          hostOpenTimeout: safeInteger(
+            value.settings.auxiliary.tuning.host_open_timeout, 'host open timeout', 65535,
+          ),
+          hostIdleTimeout: safeInteger(
+            value.settings.auxiliary.tuning.host_idle_timeout, 'host idle timeout', 65535,
+          ),
+          neighborCacheSize: rangedInteger(
+            value.settings.auxiliary.tuning.neighbor_cache_size,
+            'neighbor cache size', 1, 2147483647,
+          ),
+        },
         threadPoolLogging: safeBoolean(
           value.settings.auxiliary.thread_pool_logging, 'thread-pool logging state',
         ),

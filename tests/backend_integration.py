@@ -81,10 +81,18 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "syslog_family": "4",
             "udp_quick_ports": ["0"], "certs_path": "/private/certs",
             "certs_ca_key_password": "private-ca-password",
-            "ca_bundle_path": "/private/ca-bundle", "messages_dir": "/private/messages",
+            "certs_ctlog": "/private/ct-log-list.cnf",
+            "ca_bundle_path": "/private/ca-bundle", "ca_bundle_file": "/private/ca-bundle.pem",
+            "messages_dir": "/private/messages", "admin": {"group": "private-admins"},
             "write_payload_file_prefix": "private-prefix",
             "write_payload_file_suffix": "private-suffix",
             "cli": {"port": "50000", "enable_password": "private-cli-password"},
+            "tuning": {
+                "host_bufsz_min": "2048", "host_bufsz_max_multiplier": "1024",
+                "host_write_full": "200000", "host_io_batch": "262144",
+                "tls_write_chunk": "20480", "host_open_timeout": "7",
+                "host_idle_timeout": "3600", "nbr_cache_size": "8000",
+            },
             "web_rating": {"wot_key": "private-rating-key"},
             "socks": {"async_dns": "true", "ipver_mixing": "true", "prefer_ipv6": "false"},
             "ssl_autodetect_harder": "false", "ssl_use_ktls": "false",
@@ -512,13 +520,22 @@ def main() -> int:
                 "udp_quick_ports": ["0"],
                 "certificates_path_configured": True,
                 "certificate_password_configured": True,
+                "certificate_transparency_log_configured": True,
                 "ca_bundle_path_configured": True,
+                "ca_bundle_file_configured": True,
                 "messages_directory_configured": True,
                 "payload_file_prefix_configured": True,
                 "payload_file_suffix_configured": True,
                 "cli_port": 50000,
                 "cli_password_configured": True,
                 "web_rating_key_configured": True,
+                "admin_group_configured": True,
+                "tuning": {
+                    "host_buffer_min": 2048, "host_buffer_max_multiplier": 1024,
+                    "host_write_full": 200000, "host_io_batch": 262144,
+                    "tls_write_chunk": 20480, "host_open_timeout": 7,
+                    "host_idle_timeout": 3600, "neighbor_cache_size": 8000,
+                },
                 "thread_pool_logging": False,
                 "socks_async_dns": True,
                 "socks_ip_version_mixing": True,
@@ -583,6 +600,9 @@ def main() -> int:
             assert b"private-instance" not in config_body
             assert b"private-host-id" not in config_body
             assert b"private-webhook0" not in config_body
+            assert b"ct-log-list" not in config_body
+            assert b"ca-bundle.pem" not in config_body
+            assert b"private-admins" not in config_body
             assert b"/private/captures" not in config_body
             assert b"192.0.2.10" not in config_body
             assert b"private0" not in config_body
@@ -723,6 +743,9 @@ def main() -> int:
                     {"path": "settings.webhook.sift_instance_id", "value": "new-private-instance"},
                     {"path": "settings.webhook.hostid", "value": "new-private-host"},
                     {"path": "settings.webhook.bind_interface", "value": "private-webhook1"},
+                    {"path": "settings.certs_ctlog", "value": "/new/private/ct-log.cnf"},
+                    {"path": "settings.ca_bundle_file", "value": "/new/private/ca-bundle.pem"},
+                    {"path": "settings.admin.group", "value": "new-private-admins"},
                     {"path": "captures.local.dir", "value": "/new/private/captures"},
                     {"path": "captures.remote.tun_dst", "value": ""},
                     {"path": "ssh_profiles.[0].host_key", "value": "/new/private/ssh-key"},
@@ -758,6 +781,9 @@ def main() -> int:
                 "settings.webhook.sift_instance_id": "[redacted:replace]",
                 "settings.webhook.hostid": "[redacted:replace]",
                 "settings.webhook.bind_interface": "[redacted:replace]",
+                "settings.certs_ctlog": "[redacted:replace]",
+                "settings.ca_bundle_file": "[redacted:replace]",
+                "settings.admin.group": "[redacted:replace]",
                 "captures.local.dir": "[redacted:replace]",
                 "captures.remote.tun_dst": "[redacted:clear]",
                 "ssh_profiles.[0].host_key": "[redacted:replace]",
@@ -781,6 +807,9 @@ def main() -> int:
             assert b"new-private-instance" not in body
             assert b"new-private-host" not in body
             assert b"private-webhook1" not in body
+            assert b"ct-log.cnf" not in body
+            assert b"ca-bundle.pem" not in body
+            assert b"new-private-admins" not in body
             assert b"/new/private/captures" not in body
             assert b"/new/private/ssh-key" not in body
             assert b"/new/private/audit.py" not in body
