@@ -16,15 +16,26 @@ bool terminal_job_state(const std::string_view state) {
 }
 
 OperationalEventRecord probe_event(const ProbeSample& sample) {
+    const auto code = sample.state == "ready" ? "control-plane.ready" :
+                      sample.state == "starting" ? "control-plane.starting" :
+                      sample.state == "unreachable" ? "control-plane.unreachable" :
+                      sample.state == "unauthorized" ? "control-plane.unauthorized" :
+                      sample.state == "unconfigured" ? "control-plane.unconfigured" :
+                      "control-plane.error";
     return {
         .id = {},
         .source_revision = 0U,
         .occurred_at = sample.checked_at,
+        .category = "control-plane",
+        .code = code,
         .severity = sample.state == "ready" ? "info" :
                     sample.state == "starting" ? "notice" : "error",
         .message = sample.state == "ready" ? "Smithproxy control plane is reachable" :
                    sample.state == "starting" ? "Smithproxy probe is starting" :
-                   "Smithproxy control plane changed to " + sample.state,
+                   sample.state == "unreachable" ? "Smithproxy control plane changed to unreachable" :
+                   sample.state == "unauthorized" ? "Smithproxy control plane changed to unauthorized" :
+                   sample.state == "unconfigured" ? "Smithproxy control plane changed to unconfigured" :
+                   "Smithproxy control plane changed to error",
     };
 }
 
@@ -33,6 +44,8 @@ OperationalEventRecord job_event(const JobRecord& job) {
         .id = {},
         .source_revision = 0U,
         .occurred_at = job.updated_at,
+        .category = "backend-job",
+        .code = "config-refresh." + job.state,
         .severity = job.state == "succeeded" ? "info" :
                     job.state == "cancelled" ? "notice" : "warning",
         .message = job.state == "succeeded" ? "Configuration refresh synchronized" :

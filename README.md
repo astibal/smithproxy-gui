@@ -167,7 +167,10 @@ only from the validated five-minute probe window. The root
 monitoring feed uses a same-origin, authenticated SSE endpoint backed by a
 bounded unified event ring. Its monotonic revisions merge control-plane state
 changes with redacted terminal job results, support `Last-Event-ID` replay, and
-issue an explicit snapshot reset when a client falls behind. The periodic
+issue an explicit snapshot reset when a client falls behind. Every event carries
+a reviewed category and code whose severity and fixed message are validated as
+one tuple in the browser; the Logs view can filter control-plane and backend-job
+events without parsing text. The periodic
 snapshot remains a recovery path for older deployments and interrupted streams. The root
 web component supports integration into Saslik Tools:
 

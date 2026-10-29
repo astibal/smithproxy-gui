@@ -16,6 +16,8 @@ struct OperationalEventRecord {
     std::string id;
     std::uint64_t source_revision{};
     std::chrono::system_clock::time_point occurred_at{};
+    std::string category;
+    std::string code;
     std::string severity;
     std::string message;
 };

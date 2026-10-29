@@ -150,12 +150,26 @@ export interface NeighborSnapshot {
 }
 
 export type EventSeverity = 'info' | 'notice' | 'warning' | 'error';
+const operationalEventVocabulary = {
+  'control-plane.ready': ['control-plane', 'info', 'Smithproxy control plane is reachable'],
+  'control-plane.starting': ['control-plane', 'notice', 'Smithproxy probe is starting'],
+  'control-plane.unreachable': ['control-plane', 'error', 'Smithproxy control plane changed to unreachable'],
+  'control-plane.unauthorized': ['control-plane', 'error', 'Smithproxy control plane changed to unauthorized'],
+  'control-plane.unconfigured': ['control-plane', 'error', 'Smithproxy control plane changed to unconfigured'],
+  'control-plane.error': ['control-plane', 'error', 'Smithproxy control plane changed to error'],
+  'config-refresh.succeeded': ['backend-job', 'info', 'Configuration refresh synchronized'],
+  'config-refresh.failed': ['backend-job', 'warning', 'Configuration refresh did not converge'],
+  'config-refresh.cancelled': ['backend-job', 'notice', 'Configuration refresh was cancelled'],
+} as const;
+export type OperationalEventCode = keyof typeof operationalEventVocabulary;
 
 export interface OperationalEvent {
   id: string;
   sourceRevision: number;
   occurredAtUnixMs: number;
   severity: EventSeverity;
+  category: 'control-plane' | 'backend-job';
+  code: OperationalEventCode;
   source: 'gui-core';
   message: string;
 }
@@ -569,22 +583,29 @@ function parseEvents(value: unknown): EventSnapshot {
   }
   const ids = new Set<string>();
   const events = value.events.map((item): OperationalEvent => {
-    if (!isObject(item) || typeof item.id !== 'string' || item.id.length === 0 || item.id.length > 96 ||
-        ids.has(item.id) || !isNonNegativeInteger(item.source_revision) ||
-        !isNonNegativeInteger(item.occurred_at_unix_ms) ||
-        !['info', 'notice', 'warning', 'error'].includes(String(item.severity)) ||
-        item.source !== 'gui-core' || typeof item.message !== 'string' ||
-        item.message.length === 0 || item.message.length > 256 || /[\u0000-\u001f\u007f]/u.test(item.message)) {
+    if (!isObject(item)) throw new Error('Invalid operational event entry.');
+    const {id, source_revision: sourceRevision, occurred_at_unix_ms: occurredAtUnixMs,
+      category, code, severity, source, message} = item;
+    if (typeof code !== 'string') throw new Error('Invalid operational event entry.');
+    const expected = operationalEventVocabulary[code as keyof typeof operationalEventVocabulary];
+    if (typeof id !== 'string' || id.length === 0 || id.length > 96 || ids.has(id) ||
+        !isNonNegativeInteger(sourceRevision) || !isNonNegativeInteger(occurredAtUnixMs) ||
+        typeof category !== 'string' || typeof severity !== 'string' || typeof message !== 'string' ||
+        !expected || category !== expected[0] || severity !== expected[1] || source !== 'gui-core' ||
+        message !== expected[2] || message.length === 0 || message.length > 256 ||
+        /[\u0000-\u001f\u007f]/u.test(message)) {
       throw new Error('Invalid operational event entry.');
     }
-    ids.add(item.id);
+    ids.add(id);
     return {
-      id: item.id,
-      sourceRevision: item.source_revision,
-      occurredAtUnixMs: item.occurred_at_unix_ms,
-      severity: item.severity as EventSeverity,
+      id,
+      sourceRevision,
+      occurredAtUnixMs,
+      severity: severity as EventSeverity,
+      category: category as OperationalEvent['category'],
+      code: code as OperationalEventCode,
       source: 'gui-core',
-      message: item.message,
+      message,
     };
   });
   return {source: 'gui-core', smithproxyEventsAvailable: value.smithproxy_events_available, events};

@@ -551,6 +551,8 @@ def main() -> int:
             assert status == 200
             assert events["smithproxy_events_available"] is False
             assert events["events"][-1]["message"] == "Smithproxy control plane is reachable"
+            assert events["events"][-1]["category"] == "control-plane"
+            assert events["events"][-1]["code"] == "control-plane.ready"
             assert len(events["events"]) <= 60
             latest_event_id = events["events"][-1]["id"]
             status, headers, body = request(
@@ -1188,6 +1190,8 @@ def main() -> int:
                 configured_port, "/api/v1/events/recent", headers=gateway_headers)
             events = json.loads(body)["events"]
             assert events[-1]["severity"] == "error"
+            assert events[-1]["category"] == "control-plane"
+            assert events[-1]["code"] == "control-plane.error"
             assert events[-1]["message"] == "Smithproxy control plane changed to error"
             assert snapshot["smithproxy"]["availability_window"]["samples"] >= 2
             status, _, body = request(

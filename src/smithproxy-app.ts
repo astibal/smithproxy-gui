@@ -56,6 +56,7 @@ import {
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
 type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid';
+type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 
 const systemBooleanFields = [
   ['accept_tproxy', 'accept-tproxy'], ['accept_redirect', 'accept-redirect'],
@@ -215,6 +216,7 @@ export class SmithproxyApp extends LitElement {
   @state() private managementAudit: AuditSnapshot = initialAudit;
   @state() private backendJobs: JobSnapshot = initialJobs;
   @state() private eventStreamState: EventStreamState = 'connecting';
+  @state() private eventCategoryFilter: EventCategoryFilter = 'all';
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
   @state() private auditError: string | undefined;
@@ -410,6 +412,8 @@ export class SmithproxyApp extends LitElement {
     .event-severity.info { color: var(--app-success); }
     .event-severity.notice, .event-severity.warning { color: var(--app-warning); }
     .event-severity.error, .event-severity.critical { color: var(--app-danger); }
+    .event-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+    .event-filters button[aria-pressed='true'] { border-color: var(--app-brand); color: var(--app-text); }
     .audit-row { display: grid; grid-template-columns: 150px 82px minmax(180px, 1fr) minmax(130px, .7fr); gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .audit-row:last-child { border-bottom: 0; }
     .audit-operation { min-width: 0; }
@@ -3726,26 +3730,44 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderLogs() {
-    const events = [...this.operationalEvents.events].reverse();
+    const allEvents = [...this.operationalEvents.events].reverse();
+    const events = this.eventCategoryFilter === 'all'
+      ? allEvents
+      : allEvents.filter(event => event.category === this.eventCategoryFilter);
+    const controlPlaneCount = allEvents.filter(event => event.category === 'control-plane').length;
+    const jobEventCount = allEvents.length - controlPlaneCount;
     const auditEntries = [...this.managementAudit.entries].reverse();
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div>
             <h2>Operational events</h2>
-            <p>Bounded, privacy-safe control-plane state transitions from the GUI core.</p>
+            <p>Bounded, privacy-safe control-plane and backend-job transitions from the GUI core.</p>
           </div>
           <span class="runtime-state ${this.eventsError ? 'danger' : 'success'}">
-            ${this.eventsError ? 'Unavailable' : `${events.length} transitions`}
+            ${this.eventsError ? 'Unavailable' : this.eventCategoryFilter === 'all'
+              ? `${events.length} events`
+              : `${events.length} of ${allEvents.length} events`}
           </span>
         </div>
         <div class="privacy-note">
           Smithproxy event-ring messages require a future authenticated Smithproxy HTTP API.
           This view intentionally does not parse the administrative CLI or expose arbitrary log text.
         </div>
+        <div class="event-filters" role="group" aria-label="Operational event category">
+          ${([
+            ['all', `All · ${allEvents.length}`],
+            ['control-plane', `Control plane · ${controlPlaneCount}`],
+            ['backend-job', `Backend jobs · ${jobEventCount}`],
+          ] as const).map(([category, label]) => html`
+            <button class="secondary" type="button"
+              aria-pressed=${this.eventCategoryFilter === category}
+              @click=${() => { this.eventCategoryFilter = category; }}>${label}</button>
+          `)}
+        </div>
         ${this.eventsError ? html`<div class="metrics-message">${this.eventsError}</div>` : nothing}
         ${events.length === 0 ? html`
-          <div class="metrics-message">No control-plane state transition has been observed yet.</div>
+          <div class="metrics-message">No matching operational event has been observed yet.</div>
         ` : html`
           <div class="event-list" role="list" aria-label="Operational events">
             ${events.map(event => html`
@@ -3755,7 +3777,7 @@ export class SmithproxyApp extends LitElement {
                 </time>
                 <span class="event-severity ${event.severity}">${event.severity}</span>
                 <strong>${event.message}</strong>
-                <span class="event-source">${event.source}</span>
+                <span class="event-source" title=${event.code}>${event.category === 'backend-job' ? 'backend job' : 'control plane'}</span>
               </article>
             `)}
           </div>

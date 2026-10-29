@@ -340,6 +340,11 @@ restartoval, server pošle událost `reset` s autoritativním snapshotem. Prázd
 kontinuita vrací SSE keepalive. Klient každý payload znovu validuje stejnými
 limity jako REST snapshot a při nevalidním payloadu stream uzavře.
 
+Každý event obsahuje strukturované `category` (`control-plane` nebo
+`backend-job`) a stabilní `code`. Browser přijme pouze reviewovaný trojčlenný
+vztah `code` → category/severity/message; libovolný nebo vzájemně rozporný text
+odmítne. Logs proto může bezpečně filtrovat zdroje bez heuristik nad message.
+
 Server vrací `retry: 2500`, `Cache-Control: no-store` a `X-Accel-Buffering: no`.
 Spojení je po každé dávce uzavřeno; standardní `EventSource` jej obnoví bez
 držení backendového workeru pro neaktivní záložku. Periodický `/events/recent`

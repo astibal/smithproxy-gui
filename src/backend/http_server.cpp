@@ -202,6 +202,8 @@ std::string operational_event_json(const OperationalEventRecord& event) {
     return "{\"id\":" + json_string(event.id) +
            ",\"source_revision\":" + std::to_string(event.source_revision) +
            ",\"occurred_at_unix_ms\":" + timestamp_json(event.occurred_at) +
+           ",\"category\":" + json_string(event.category) +
+           ",\"code\":" + json_string(event.code) +
            ",\"severity\":" + json_string(event.severity) +
            ",\"source\":\"gui-core\",\"message\":" + json_string(event.message) + "}";
 }

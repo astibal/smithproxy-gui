@@ -63,6 +63,7 @@ type MockState = {
   commitRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   validationOperationDelta?: number;
   backendJobs?: unknown[];
+  jobFailure?: boolean;
   initialDraftChanges?: Array<{path: string; value: unknown}>;
   valueOrigins?: Array<{
     path: string;
@@ -182,13 +183,20 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     source: 'gui-core', smithproxy_events_available: false,
     events: [
       {
-        id: '0-100', source_revision: 1, occurred_at_unix_ms: now() - 5000, severity: 'info',
+        id: '0-100', source_revision: 1, occurred_at_unix_ms: now() - 5000,
+        category: 'control-plane', code: 'control-plane.ready', severity: 'info',
         source: 'gui-core', message: 'Smithproxy control plane is reachable',
       },
       ...(state.smithproxy === 'ready' ? [] : [{
-        id: '1-200', source_revision: 2, occurred_at_unix_ms: now(), severity: 'error',
+        id: '1-200', source_revision: 2, occurred_at_unix_ms: now(),
+        category: 'control-plane', code: 'control-plane.unreachable', severity: 'error',
         source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
       }]),
+      ...(state.jobFailure ? [{
+        id: 'event-job-failed', source_revision: 3, occurred_at_unix_ms: now(),
+        category: 'backend-job', code: 'config-refresh.failed', severity: 'warning',
+        source: 'gui-core', message: 'Configuration refresh did not converge',
+      }] : []),
     ],
   }}));
   await page.route('**/api/v1/events', async route => route.fulfill({
@@ -196,14 +204,23 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     body: `retry: 60000\nevent: snapshot\ndata: ${JSON.stringify({
       source: 'gui-core', smithproxy_events_available: false,
       events: [{
-        id: 'stream-100', source_revision: 1, occurred_at_unix_ms: now(), severity: 'info',
+        id: 'stream-100', source_revision: 1, occurred_at_unix_ms: now(),
+        category: 'control-plane', code: 'control-plane.ready', severity: 'info',
         source: 'gui-core', message: 'Smithproxy control plane is reachable',
-      }],
+      }, ...(state.jobFailure ? [{
+        id: 'stream-job-failed', source_revision: 3, occurred_at_unix_ms: now(),
+        category: 'backend-job', code: 'config-refresh.failed', severity: 'warning',
+        source: 'gui-core', message: 'Configuration refresh did not converge',
+      }] : [])],
     })}\n\n`,
   }));
   await page.route('**/api/v1/alerts', async route => route.fulfill({json: {
     source: 'gui-core', generated_at_unix_ms: now(),
-    alerts: state.smithproxy === 'ready' ? [] : [{
+    alerts: state.smithproxy === 'ready' ? (state.jobFailure ? [{
+      id: 'configuration-refresh-failed', severity: 'warning',
+      title: 'Configuration refresh did not converge',
+      detail: 'The authoritative configuration snapshot did not reach the committed revision before the deadline.',
+    }] : []) : [{
       id: 'control-plane-unavailable', severity: 'critical', title: 'Control plane is unavailable',
       detail: 'The GUI core cannot currently reach the authenticated Smithproxy API.',
     }],
@@ -1439,6 +1456,37 @@ test('surfaces active backend work in the status bar and System view', async ({p
   await expect(jobsCard).toContainText('Waiting for revision');
   await expect(jobsCard).toContainText('75%');
   await expect(jobsCard).not.toContainText('sha256:');
+});
+
+test('filters structured job failures without exposing job identifiers', async ({page}) => {
+  const now = Date.now();
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    now,
+    jobFailure: true,
+    backendJobs: [{
+      id: 'job-01234567-89ab-4def-8123-456789abcdef', type: 'config-refresh',
+      state: 'failed', phase: 'timed-out', progress_percent: 100,
+      cancelable: false, created_at_unix_ms: now - 30_000, updated_at_unix_ms: now,
+      deadline_at_unix_ms: now, owner: null,
+      result: 'Configuration refresh deadline exceeded',
+    }],
+  });
+  await page.goto('/');
+  await expect(page.getByRole('region', {name: 'Active operational alerts'}))
+    .toContainText('Configuration refresh did not converge');
+
+  await page.getByRole('button', {name: 'Logs', exact: true}).click();
+  const events = page.getByRole('list', {name: 'Operational events'});
+  await expect(events.getByText('Configuration refresh did not converge')).toBeVisible();
+  await page.getByRole('button', {name: 'Control plane · 1'}).click();
+  await expect(events.getByText('Smithproxy control plane is reachable')).toBeVisible();
+  await expect(events.getByText('Configuration refresh did not converge')).toBeHidden();
+  await page.getByRole('button', {name: 'Backend jobs · 1'}).click();
+  await expect(events.getByText('Configuration refresh did not converge')).toBeVisible();
+  await expect(events.getByText('Smithproxy control plane is reachable')).toBeHidden();
+  await expect(page.getByText('job-01234567-89ab-4def-8123-456789abcdef')).toHaveCount(0);
+  await expect(page.getByText('sha256:', {exact: false})).toHaveCount(0);
 });
 
 test('exposes network, object, and system vertical slices', async ({page}) => {

@@ -293,15 +293,27 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       source: 'gui-core', smithproxy_events_available: false,
       events: [{
-        id: '4-100', source_revision: 4, occurred_at_unix_ms: 100, severity: 'error', source: 'gui-core',
+        id: '4-100', source_revision: 4, occurred_at_unix_ms: 100,
+        category: 'control-plane', code: 'control-plane.unreachable',
+        severity: 'error', source: 'gui-core',
         message: 'Smithproxy control plane changed to unreachable',
+      }, {
+        id: 'event-5', source_revision: 5, occurred_at_unix_ms: 101,
+        category: 'backend-job', code: 'config-refresh.failed',
+        severity: 'warning', source: 'gui-core',
+        message: 'Configuration refresh did not converge',
       }],
     }));
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
 
     await expect(client.recentEvents()).resolves.toMatchObject({
       smithproxyEventsAvailable: false,
-      events: [{id: '4-100', severity: 'error', occurredAtUnixMs: 100}],
+      events: [
+        {id: '4-100', category: 'control-plane', code: 'control-plane.unreachable',
+          severity: 'error', occurredAtUnixMs: 100},
+        {id: 'event-5', category: 'backend-job', code: 'config-refresh.failed',
+          severity: 'warning', occurredAtUnixMs: 101},
+      ],
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/events/recent', expect.anything(),
@@ -312,7 +324,8 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
       source: 'gui-core', smithproxy_events_available: false,
       events: [{
-        id: 'event', source_revision: 1, occurred_at_unix_ms: 1, severity: 'info', source: 'gui-core',
+        id: 'event', source_revision: 1, occurred_at_unix_ms: 1,
+        category: 'control-plane', code: 'control-plane.ready', severity: 'info', source: 'gui-core',
         message: 'unsafe\nmessage',
       }],
     }));
@@ -433,12 +446,14 @@ describe('SystemClient', () => {
     listeners.get('snapshot')?.({data: JSON.stringify({
       source: 'gui-core', smithproxy_events_available: false,
       events: [{
-        id: '100-ready', source_revision: 1, occurred_at_unix_ms: 100, severity: 'info',
+        id: '100-ready', source_revision: 1, occurred_at_unix_ms: 100,
+        category: 'control-plane', code: 'control-plane.ready', severity: 'info',
         source: 'gui-core', message: 'Smithproxy control plane is reachable',
       }],
     })} as MessageEvent<string>);
     listeners.get('operational')?.({data: JSON.stringify({
-      id: '200-error', source_revision: 2, occurred_at_unix_ms: 200, severity: 'error',
+      id: '200-error', source_revision: 2, occurred_at_unix_ms: 200,
+      category: 'control-plane', code: 'control-plane.unreachable', severity: 'error',
       source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
     })} as MessageEvent<string>);
 

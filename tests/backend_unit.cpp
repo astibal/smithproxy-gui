@@ -237,6 +237,8 @@ int main() {
     auto event_records = events.snapshot();
     assert(event_records.size() == 1U);
     assert(event_records.front().id == "event-1");
+    assert(event_records.front().category == "control-plane");
+    assert(event_records.front().code == "control-plane.ready");
     assert(event_records.front().message == "Smithproxy control plane is reachable");
     event_jobs.reconcile(synchronized_config);
     events.observe(event_status, event_jobs.snapshot());
@@ -244,6 +246,8 @@ int main() {
     assert(event_records.size() == 2U);
     assert(event_records.back().id == "event-2");
     assert(event_records.back().severity == "info");
+    assert(event_records.back().category == "backend-job");
+    assert(event_records.back().code == "config-refresh.succeeded");
     assert(event_records.back().message == "Configuration refresh synchronized");
     events.observe(event_status, running_event_jobs);
     events.observe(event_status, event_jobs.snapshot());
