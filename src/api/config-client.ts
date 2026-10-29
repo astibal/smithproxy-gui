@@ -652,7 +652,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   let securityAssets: SecurityAssets | null = null;
   if (value.security_assets !== null) {
     if (!isObject(value.security_assets) || !Array.isArray(value.security_assets.certificate_authorities) ||
-        value.security_assets.certificate_authorities.length > MAX_OBJECTS) {
+        value.security_assets.certificate_authorities.length > MAX_OBJECTS ||
+        !Array.isArray(value.security_assets.signatures) ||
+        value.security_assets.signatures.length > MAX_OBJECTS * 2) {
       throw new Error('Invalid security asset posture.');
     }
     const authorityIds = new Set<string>();
@@ -670,6 +672,50 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         id,
         name,
         pathConfigured: safeBoolean(item.path_configured, 'certificate authority path state'),
+      };
+    });
+    const signatureIds = new Set<string>();
+    const flowIds = new Set<string>();
+    const signatures = value.security_assets.signatures.map(item => {
+      if (!isObject(item)) throw new Error('Invalid signature definition.');
+      const id = safeString(item.id, 'signature ID', 128);
+      const kind = safeString(item.kind, 'signature kind', 16);
+      const side = safeString(item.side, 'signature side', 16);
+      if (signatureIds.has(id) || !['starttls', 'detection'].includes(kind) ||
+          !['client', 'server'].includes(side)) {
+        throw new Error('Invalid signature identity.');
+      }
+      signatureIds.add(id);
+      const flow = boundedArray(item.flow, 'signature flow', MAX_REFERENCES).map(step => {
+        if (!isObject(step)) throw new Error('Invalid signature flow step.');
+        const flowId = safeString(step.id, 'signature flow ID', 128);
+        const flowSide = safeString(step.side, 'signature flow side', 8);
+        const type = safeString(step.type, 'signature flow type', 16);
+        if (flowIds.has(flowId) || !['r', 'w'].includes(flowSide) ||
+            !['regex', 'simple'].includes(type)) {
+          throw new Error('Invalid signature flow step.');
+        }
+        flowIds.add(flowId);
+        return {
+          id: flowId,
+          side: flowSide as 'r' | 'w',
+          type: type as 'regex' | 'simple',
+          expressionConfigured: safeBoolean(step.expression_configured, 'signature expression state'),
+          bytesStart: safeInteger(step.bytes_start, 'signature byte offset', Number.MAX_SAFE_INTEGER),
+          bytesMax: safeInteger(step.bytes_max, 'signature byte window', Number.MAX_SAFE_INTEGER),
+        };
+      });
+      if (flow.length === 0) throw new Error('Invalid signature flow.');
+      return {
+        id,
+        kind: kind as 'starttls' | 'detection',
+        category: optionalString(item.category, 'signature category'),
+        name: safeString(item.name, 'signature name', 128),
+        side: side as 'client' | 'server',
+        group: optionalString(item.group, 'signature group'),
+        enables: optionalString(item.enables, 'signature enable target'),
+        engine: optionalString(item.engine, 'signature engine'),
+        flow,
       };
     });
     securityAssets = {
@@ -692,11 +738,20 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       detectionFlowStepCount: safeInteger(
         value.security_assets.detection_flow_step_count, 'detection flow-step count', MAX_OBJECTS * MAX_REFERENCES,
       ),
+      signatures,
     };
     if (securityAssets.certificateAuthorityCount !== securityAssets.certificateAuthorities.length ||
         securityAssets.certificateAuthorityPathCount !==
           securityAssets.certificateAuthorities.filter(item => item.pathConfigured).length) {
       throw new Error('Invalid certificate authority posture.');
+    }
+    const starttlsSignatures = signatures.filter(item => item.kind === 'starttls');
+    const detectionSignatures = signatures.filter(item => item.kind === 'detection');
+    if (securityAssets.starttlsSignatureCount !== starttlsSignatures.length ||
+        securityAssets.starttlsFlowStepCount !== starttlsSignatures.reduce((sum, item) => sum + item.flow.length, 0) ||
+        securityAssets.detectionSignatureCount !== detectionSignatures.length ||
+        securityAssets.detectionFlowStepCount !== detectionSignatures.reduce((sum, item) => sum + item.flow.length, 0)) {
+      throw new Error('Invalid signature posture.');
     }
   }
   if (typeof value.augment_support !== 'boolean' || !Array.isArray(value.value_origins) ||

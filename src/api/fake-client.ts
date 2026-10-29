@@ -234,10 +234,30 @@ const snapshot: ConfigSnapshot = {
     certificateAuthorities: [{id: 'certificate-authority-0', name: 'default', pathConfigured: true}],
     certificateAuthorityCount: 1,
     certificateAuthorityPathCount: 1,
-    starttlsSignatureCount: 6,
-    starttlsFlowStepCount: 12,
-    detectionSignatureCount: 24,
-    detectionFlowStepCount: 31,
+    starttlsSignatureCount: 1,
+    starttlsFlowStepCount: 2,
+    detectionSignatureCount: 1,
+    detectionFlowStepCount: 1,
+    signatures: [
+      {
+        id: 'starttls-signature-0', kind: 'starttls', category: 'mail', name: 'smtp/starttls',
+        side: 'client', group: '', enables: '', engine: '',
+        flow: [
+          {id: 'starttls-signature-0-flow-0', side: 'r', type: 'regex', expressionConfigured: true,
+           bytesStart: 0, bytesMax: 16},
+          {id: 'starttls-signature-0-flow-1', side: 'w', type: 'regex', expressionConfigured: true,
+           bytesStart: 0, bytesMax: 512},
+        ],
+      },
+      {
+        id: 'detection-signature-0', kind: 'detection', category: 'www', name: 'http/request',
+        side: 'client', group: 'base', enables: 'http', engine: 'http1',
+        flow: [{
+          id: 'detection-signature-0-flow-0', side: 'r', type: 'regex', expressionConfigured: true,
+          bytesStart: 0, bytesMax: 200,
+        }],
+      },
+    ],
   },
   augmentSupport: true,
   valueOrigins: [{

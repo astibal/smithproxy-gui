@@ -242,6 +242,27 @@ struct ConfigCertificateAuthority {
     bool path_configured{};
 };
 
+struct ConfigSignatureFlowStep {
+    std::string id;
+    std::string side;
+    std::string type;
+    bool expression_configured{};
+    std::uint64_t bytes_start{};
+    std::uint64_t bytes_max{};
+};
+
+struct ConfigSignature {
+    std::string id;
+    std::string kind;
+    std::string category;
+    std::string name;
+    std::string side;
+    std::string group;
+    std::string enables;
+    std::string engine;
+    std::vector<ConfigSignatureFlowStep> flow;
+};
+
 struct ConfigSecurityAssets {
     std::vector<ConfigCertificateAuthority> certificate_authorities;
     std::uint64_t certificate_authority_count{};
@@ -250,6 +271,7 @@ struct ConfigSecurityAssets {
     std::uint64_t starttls_flow_step_count{};
     std::uint64_t detection_signature_count{};
     std::uint64_t detection_flow_step_count{};
+    std::vector<ConfigSignature> signatures;
 };
 
 struct ConfigSnapshot {

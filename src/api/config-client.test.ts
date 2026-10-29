@@ -119,8 +119,28 @@ const liveSnapshot = {
   security_assets: {
     certificate_authorities: [{id: 'certificate-authority-0', name: 'default', path_configured: true}],
     certificate_authority_count: 1, certificate_authority_path_count: 1,
-    starttls_signature_count: 6, starttls_flow_step_count: 12,
-    detection_signature_count: 24, detection_flow_step_count: 31,
+    starttls_signature_count: 1, starttls_flow_step_count: 2,
+    detection_signature_count: 1, detection_flow_step_count: 1,
+    signatures: [
+      {
+        id: 'starttls-signature-0', kind: 'starttls', category: 'mail', name: 'smtp/starttls',
+        side: 'client', group: '', enables: '', engine: '',
+        flow: [
+          {id: 'starttls-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
+           bytes_start: 0, bytes_max: 16},
+          {id: 'starttls-signature-0-flow-1', side: 'w', type: 'regex', expression_configured: true,
+           bytes_start: 0, bytes_max: 512},
+        ],
+      },
+      {
+        id: 'detection-signature-0', kind: 'detection', category: 'www', name: 'http/request',
+        side: 'client', group: 'base', enables: 'http', engine: 'http1',
+        flow: [{
+          id: 'detection-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
+          bytes_start: 0, bytes_max: 200,
+        }],
+      },
+    ],
   },
   augment_support: false,
   value_origins: [],
@@ -169,8 +189,9 @@ describe('ApiConfigClient', () => {
     });
     expect(snapshot.captures).toMatchObject({local: {enabled: true, quotaMiB: 512}});
     expect(snapshot.securityAssets).toMatchObject({
-      certificateAuthorityCount: 1, starttlsSignatureCount: 6, detectionFlowStepCount: 31,
+      certificateAuthorityCount: 1, starttlsSignatureCount: 1, detectionFlowStepCount: 1,
       certificateAuthorities: [{id: 'certificate-authority-0', name: 'default', pathConfigured: true}],
+      signatures: [{id: 'starttls-signature-0'}, {id: 'detection-signature-0'}],
     });
     const augmented = parseConfigSnapshot({
       ...liveSnapshot,
@@ -209,6 +230,13 @@ describe('ApiConfigClient', () => {
         certificate_authority_path_count: 1,
       },
     })).toThrow('Invalid certificate authority posture');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      security_assets: {
+        ...liveSnapshot.security_assets,
+        detection_flow_step_count: 2,
+      },
+    })).toThrow('Invalid signature posture');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot, augment_support: false,
       value_origins: [{

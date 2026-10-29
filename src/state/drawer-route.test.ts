@@ -29,6 +29,12 @@ describe('drawer route', () => {
     expect(parseDrawerRoute('?edit=authority:certificate-authority-0')).toEqual([
       {kind: 'authority', id: 'certificate-authority-0'},
     ]);
+    expect(parseDrawerRoute(
+      '?edit=signature:detection-signature-0,signature-flow:detection-signature-0-flow-0',
+    )).toEqual([
+      {kind: 'signature', id: 'detection-signature-0'},
+      {kind: 'signature-flow', id: 'detection-signature-0-flow-0'},
+    ]);
   });
 
   it.each([

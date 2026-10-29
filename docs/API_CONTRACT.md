@@ -57,9 +57,10 @@ destinations, and bind interfaces are exposed as configured flags and edited
 through write-only replace/clear controls.
 
 Trust and signature posture covers configured TLS certificate-authority entries,
-STARTTLS signatures, detection signatures, and their aggregate flow-step counts.
-Certificate paths, signature names, categories, groups, engines, expressions,
-and match windows remain inside the GUI core and are never serialized.
+STARTTLS signatures, detection signatures, and their ordered flow steps.
+Signature names, categories, sides, groups, engines, matcher types, and byte
+windows are typed. Certificate paths and matcher expressions remain inside the
+GUI core and use explicit write-only replacement controls.
 
 The snapshot carries `augment_support` and a bounded `value_origins` collection.
 Each origin identifies a stable schema path, persistent and effective scalar

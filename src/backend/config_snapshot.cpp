@@ -774,30 +774,74 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
         });
     }
 
-    const auto flow_steps = [](const Json& signatures) -> std::optional<std::uint64_t> {
+    std::vector<ConfigSignature> signatures;
+    signatures.reserve(starttls->size() + detection->size());
+    const auto parse_signatures = [&](const Json& collection, const std::string& kind)
+        -> std::optional<std::uint64_t> {
         std::uint64_t total{};
-        for (const auto& signature : signatures) {
+        std::size_t signature_index{};
+        for (const auto& signature : collection) {
             if (!signature.is_object()) return std::nullopt;
+            const auto category = bounded_string(signature, "cat", maximum_name_length, true);
+            const auto name = bounded_string(signature, "name", maximum_name_length);
+            const auto side = bounded_string(signature, "side", 16U, true);
+            const auto group = bounded_string(signature, "group", maximum_name_length, true);
+            const auto enables = bounded_string(signature, "enables", maximum_name_length, true);
+            const auto engine = bounded_string(signature, "engine", maximum_name_length, true);
             const auto flow = signature.find("flow");
-            if (flow == signature.end() || !flow->is_array() || flow->size() > maximum_references) {
+            const auto valid_optional_name = [](const std::optional<std::string>& field) {
+                return field && (field->empty() || valid_name(*field));
+            };
+            if (!valid_optional_name(category) || !name || !valid_name(*name) || !side ||
+                (*side != "" && *side != "client" && *side != "server") ||
+                !valid_optional_name(group) || !valid_optional_name(enables) ||
+                !valid_optional_name(engine) || flow == signature.end() ||
+                !flow->is_array() || flow->empty() || flow->size() > maximum_references) {
                 return std::nullopt;
             }
+            std::vector<ConfigSignatureFlowStep> parsed_flow;
+            parsed_flow.reserve(flow->size());
+            std::size_t flow_index{};
             for (const auto& step : *flow) {
                 if (!step.is_object()) return std::nullopt;
+                const auto flow_side = bounded_string(step, "side", 8U, true);
+                const auto type = bounded_string(step, "type", 16U, true);
+                const auto expression = bounded_string(step, "signature", maximum_rule_length);
+                constexpr std::uint64_t maximum_bytes = 9007199254740991ULL;
+                const auto bytes_start = optional_decimal(step, "bytes_start", 0U, maximum_bytes);
+                const auto bytes_max = optional_decimal(step, "bytes_max", 0U, maximum_bytes);
+                if (!flow_side || (*flow_side != "" && *flow_side != "r" && *flow_side != "w") ||
+                    !type || (*type != "" && *type != "regex" && *type != "simple") ||
+                    !expression || expression->find('\0') != std::string::npos ||
+                    !bytes_start || !bytes_max) {
+                    return std::nullopt;
+                }
+                parsed_flow.push_back(ConfigSignatureFlowStep{
+                    stable_id((kind + "-signature-" + std::to_string(signature_index) + "-flow").c_str(),
+                              flow_index++),
+                    flow_side->empty() ? "r" : *flow_side,
+                    type->empty() ? "regex" : *type,
+                    !expression->empty(), *bytes_start, *bytes_max,
+                });
             }
+            signatures.push_back(ConfigSignature{
+                stable_id((kind + "-signature").c_str(), signature_index++), kind,
+                *category, *name, side->empty() ? "client" : *side,
+                *group, *enables, *engine, std::move(parsed_flow),
+            });
             total += flow->size();
         }
         return total;
     };
-    const auto starttls_steps = flow_steps(*starttls);
-    const auto detection_steps = flow_steps(*detection);
+    const auto starttls_steps = parse_signatures(*starttls, "starttls");
+    const auto detection_steps = parse_signatures(*detection, "detection");
     if (!starttls_steps || !detection_steps) {
         return {std::nullopt, "Smithproxy returned an invalid signature flow"};
     }
     return {ConfigSecurityAssets{
                 std::move(certificate_authorities), authorities->size(), authority_paths,
                 starttls->size(), *starttls_steps,
-                detection->size(), *detection_steps,
+                detection->size(), *detection_steps, std::move(signatures),
             }, {}};
 }
 

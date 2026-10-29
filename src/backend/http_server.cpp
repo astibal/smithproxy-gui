@@ -98,7 +98,9 @@ bool sensitive_draft_path(const std::string_view path) {
            (path.starts_with("script_profiles.[") && path.ends_with("].script-file")) ||
            (path.starts_with("tls_profiles.[") && path.ends_with("].sni_filter_bypass")) ||
            (path.starts_with("content_profiles.[") && path.ends_with("].rules_session_filter")) ||
-           (path.starts_with("tls_ca.[") && path.ends_with("].path"));
+           (path.starts_with("tls_ca.[") && path.ends_with("].path")) ||
+           ((path.starts_with("starttls_signatures.[") ||
+             path.starts_with("detection_signatures.[")) && path.ends_with("].signature"));
 }
 
 bool confined_to_root(const std::filesystem::path& root, const std::filesystem::path& candidate) {
@@ -691,6 +693,34 @@ private:
                                (authority.path_configured ? "true" : "false") + "}";
             }
             authorities += ']';
+            std::string signatures{"["};
+            for (std::size_t index = 0; index < value.signatures.size(); ++index) {
+                if (index != 0U) signatures += ',';
+                const auto& signature = value.signatures[index];
+                std::string flow{"["};
+                for (std::size_t flow_index = 0; flow_index < signature.flow.size(); ++flow_index) {
+                    if (flow_index != 0U) flow += ',';
+                    const auto& step = signature.flow[flow_index];
+                    flow += "{\"id\":" + json_string(step.id) +
+                            ",\"side\":" + json_string(step.side) +
+                            ",\"type\":" + json_string(step.type) +
+                            ",\"expression_configured\":" +
+                            (step.expression_configured ? "true" : "false") +
+                            ",\"bytes_start\":" + std::to_string(step.bytes_start) +
+                            ",\"bytes_max\":" + std::to_string(step.bytes_max) + "}";
+                }
+                flow += ']';
+                signatures += "{\"id\":" + json_string(signature.id) +
+                              ",\"kind\":" + json_string(signature.kind) +
+                              ",\"category\":" + json_string(signature.category) +
+                              ",\"name\":" + json_string(signature.name) +
+                              ",\"side\":" + json_string(signature.side) +
+                              ",\"group\":" + json_string(signature.group) +
+                              ",\"enables\":" + json_string(signature.enables) +
+                              ",\"engine\":" + json_string(signature.engine) +
+                              ",\"flow\":" + flow + "}";
+            }
+            signatures += ']';
             security_assets = "{\"certificate_authorities\":" + authorities +
                               ",\"certificate_authority_count\":" +
                               std::to_string(value.certificate_authority_count) +
@@ -703,7 +733,8 @@ private:
                               ",\"detection_signature_count\":" +
                               std::to_string(value.detection_signature_count) +
                               ",\"detection_flow_step_count\":" +
-                              std::to_string(value.detection_flow_step_count) + "}";
+                              std::to_string(value.detection_flow_step_count) +
+                              ",\"signatures\":" + signatures + "}";
         }
 
         return {200, "application/json; charset=utf-8",

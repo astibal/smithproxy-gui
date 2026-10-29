@@ -160,20 +160,20 @@
     {
       "name": "starttls_signatures",
       "origin": "reference_config",
-      "read": "metadata",
-      "edit": "none",
+      "read": "partial",
+      "edit": "partial",
       "sensitivity": "rule-bearing",
-      "tracked_fields": ["signature_count", "flow_step_count"],
-      "notes": "Only aggregate counts reach the browser; expressions and flow definitions remain server-side."
+      "tracked_fields": ["cat", "name", "side", "flow", "type", "signature", "bytes_start", "bytes_max"],
+      "notes": "Signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement; structural add and remove operations still require a transaction schema."
     },
     {
       "name": "detection_signatures",
       "origin": "reference_config",
-      "read": "metadata",
-      "edit": "none",
+      "read": "partial",
+      "edit": "partial",
       "sensitivity": "rule-bearing",
-      "tracked_fields": ["signature_count", "flow_step_count"],
-      "notes": "Only aggregate counts reach the browser; expressions and flow definitions remain server-side."
+      "tracked_fields": ["cat", "name", "side", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
+      "notes": "Signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement; structural add and remove operations still require a transaction schema."
     },
     {
       "name": "script_profiles",

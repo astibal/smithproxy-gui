@@ -643,6 +643,17 @@ export class SmithproxyApp extends LitElement {
         const item = this.snapshot?.securityAssets?.certificateAuthorities[Number(authority[1])];
         if (item) objects.add(`authority:${item.id}`);
       }
+      const signature = /^(starttls|detection)_signatures\.\[(\d+)\](?:\.flow\.\[(\d+)\])?\./u
+        .exec(change.path);
+      if (signature) {
+        const item = this.snapshot?.securityAssets?.signatures
+          .filter(candidate => candidate.kind === signature[1])[Number(signature[2])];
+        if (item) {
+          objects.add(`signature:${item.id}`);
+          const step = signature[3] === undefined ? undefined : item.flow[Number(signature[3])];
+          if (step) objects.add(`signature-flow:${step.id}`);
+        }
+      }
       if (change.path.startsWith('settings.')) objects.add('settings:settings');
       if (change.path.startsWith('debug.')) objects.add('settings:settings');
       if (change.path.startsWith('captures.')) objects.add('captures:captures');
@@ -695,7 +706,9 @@ export class SmithproxyApp extends LitElement {
       (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
       (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
       (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
-      (path.startsWith('tls_ca.[') && path.endsWith('].path'));
+      (path.startsWith('tls_ca.[') && path.endsWith('].path')) ||
+      ((path.startsWith('starttls_signatures.[') || path.startsWith('detection_signatures.[')) &&
+        path.endsWith('].signature'));
     if (sensitivePaths.has(path) || indexedSensitivePath) {
       if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared · redacted';
       const count = Array.isArray(value) ? ` · ${value.length} item${value.length === 1 ? '' : 's'}` : '';
@@ -753,6 +766,19 @@ export class SmithproxyApp extends LitElement {
     const authority = this.snapshot?.securityAssets?.certificateAuthorities.find(item => item.id === id);
     if (!authority) return;
     this.openObjectDrawer({kind: 'authority', id: authority.id, title: authority.name}, origin);
+  }
+
+  private openSignature(id: string, origin?: HTMLElement): void {
+    const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === id);
+    if (!signature) return;
+    this.openObjectDrawer({kind: 'signature', id: signature.id, title: signature.name}, origin);
+  }
+
+  private openSignatureFlow(id: string, origin?: HTMLElement): void {
+    const step = this.snapshot?.securityAssets?.signatures
+      .flatMap(item => item.flow).find(item => item.id === id);
+    if (!step) return;
+    this.openObjectDrawer({kind: 'signature-flow', id: step.id, title: `Flow ${step.side.toUpperCase()}`}, origin);
   }
 
   private openSystemDrawer(kind: 'settings' | 'captures', origin?: HTMLElement): void {
@@ -831,7 +857,8 @@ export class SmithproxyApp extends LitElement {
     }
     this.drawers = [...this.drawerStore.entries];
     if (this.drawers[0]?.kind === 'policy') this.activeSection = 'Policy';
-    if (this.drawers[0] && ['settings', 'captures', 'authority'].includes(this.drawers[0].kind)) {
+    if (this.drawers[0] && ['settings', 'captures', 'authority', 'signature', 'signature-flow']
+      .includes(this.drawers[0].kind)) {
       this.activeSection = 'System';
     }
     else if (this.drawers[0] && this.drawers[0].kind !== 'policy') this.activeSection = 'Objects';
@@ -853,6 +880,14 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'authority') {
       return this.snapshot.securityAssets?.certificateAuthorities.find(item => item.id === entry.id);
+    }
+    if (entry.kind === 'signature') {
+      return this.snapshot.securityAssets?.signatures.find(item => item.id === entry.id);
+    }
+    if (entry.kind === 'signature-flow') {
+      const step = this.snapshot.securityAssets?.signatures.flatMap(item => item.flow)
+        .find(item => item.id === entry.id);
+      return step ? {id: step.id, name: `Flow ${step.side.toUpperCase()}`} : undefined;
     }
     return this.snapshot.profiles.find(item => item.id === entry.id);
   }
@@ -880,8 +915,8 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     try {
       this.applyDraft(await this.draftClient.upsertMany(this.draftVersion, changes));
-      if (entry.kind === 'settings' || entry.kind === 'captures' ||
-          entry.kind === 'profile' || entry.kind === 'authority') {
+      if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile' ||
+          entry.kind === 'authority' || entry.kind === 'signature-flow') {
         this.renderRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
           '[id*="-write-"][id$="-value"], #settings-api-keys-value',
         ).forEach(input => { input.value = ''; });
@@ -902,6 +937,84 @@ export class SmithproxyApp extends LitElement {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'settings') return this.systemSettingsDraftChanges();
     if (entry.kind === 'captures') return this.captureSettingsDraftChanges();
+    if (entry.kind === 'signature') {
+      const signature = this.snapshot.securityAssets?.signatures.find(item => item.id === entry.id);
+      if (!signature) return undefined;
+      const index = this.snapshot.securityAssets!.signatures
+        .filter(item => item.kind === signature.kind).findIndex(item => item.id === signature.id);
+      const input = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
+        `#signature-${field}-${entry.id}`,
+      );
+      const category = input('category');
+      const name = input('name');
+      const side = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-side-${entry.id}`);
+      const group = input('group');
+      const enables = input('enables');
+      const engine = input('engine');
+      if (index < 0 || !category || !name || !side || !group || !enables || !engine ||
+          !['client', 'server'].includes(side.value)) return undefined;
+      const values: [string, string, string, string, string] = [
+        category.value.trim(), name.value.trim(), group.value.trim(),
+        enables.value.trim(), engine.value.trim(),
+      ];
+      if (values[1].length === 0 || values.some(value => value.length > 128 ||
+          /[\u0000-\u001f\u007f]/u.test(value))) {
+        this.draftError = 'Signature metadata must use bounded printable values and include a name.';
+        return undefined;
+      }
+      const base = `${signature.kind}_signatures.[${index}]`;
+      return [
+        {path: `${base}.cat`, value: values[0]},
+        {path: `${base}.name`, value: values[1]},
+        {path: `${base}.side`, value: side.value},
+        {path: `${base}.group`, value: values[2]},
+        {path: `${base}.enables`, value: values[3]},
+        {path: `${base}.engine`, value: values[4]},
+      ];
+    }
+    if (entry.kind === 'signature-flow') {
+      const signature = this.snapshot.securityAssets?.signatures
+        .find(item => item.flow.some(step => step.id === entry.id));
+      const step = signature?.flow.find(item => item.id === entry.id);
+      if (!signature || !step) return undefined;
+      const signatureIndex = this.snapshot.securityAssets!.signatures
+        .filter(item => item.kind === signature.kind).findIndex(item => item.id === signature.id);
+      const flowIndex = signature.flow.findIndex(item => item.id === step.id);
+      const side = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-flow-side-${entry.id}`);
+      const type = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-flow-type-${entry.id}`);
+      const start = this.renderRoot.querySelector<HTMLInputElement>(`#signature-flow-start-${entry.id}`);
+      const maximum = this.renderRoot.querySelector<HTMLInputElement>(`#signature-flow-maximum-${entry.id}`);
+      const mode = this.renderRoot.querySelector<HTMLSelectElement>(
+        `#signature-flow-write-expression-${entry.id}-mode`,
+      );
+      const expression = this.renderRoot.querySelector<HTMLTextAreaElement>(
+        `#signature-flow-write-expression-${entry.id}-value`,
+      );
+      if (signatureIndex < 0 || flowIndex < 0 || !side || !type || !start || !maximum || !mode ||
+          !expression || !['r', 'w'].includes(side.value) || !['regex', 'simple'].includes(type.value) ||
+          !['unchanged', 'replace'].includes(mode.value)) return undefined;
+      const bytesStart = start.valueAsNumber;
+      const bytesMax = maximum.valueAsNumber;
+      if (![bytesStart, bytesMax].every(value => Number.isSafeInteger(value) && value >= 0)) {
+        this.draftError = 'Signature byte positions must be non-negative safe integers.';
+        return undefined;
+      }
+      if (mode.value === 'replace' &&
+          (expression.value.length === 0 || expression.value.length > 65536 || expression.value.includes('\0'))) {
+        this.draftError = 'A replacement expression from 1 to 65536 characters is required.';
+        return undefined;
+      }
+      const base = `${signature.kind}_signatures.[${signatureIndex}].flow.[${flowIndex}]`;
+      return [
+        {path: `${base}.side`, value: side.value},
+        {path: `${base}.type`, value: type.value},
+        {path: `${base}.bytes_start`, value: bytesStart},
+        {path: `${base}.bytes_max`, value: bytesMax},
+        ...(mode.value === 'replace'
+          ? [{path: `${base}.signature`, value: expression.value}]
+          : []),
+      ];
+    }
     if (entry.kind === 'authority') {
       const authorities = this.snapshot.securityAssets?.certificateAuthorities ?? [];
       const index = authorities.findIndex(item => item.id === entry.id);
@@ -2356,7 +2469,7 @@ export class SmithproxyApp extends LitElement {
           ` : nothing}
           ${securityAssets ? html`
             <article class="domain-card">
-              <header><div><h3>Trust and signatures</h3><p>Paths and signature expressions are redacted</p></div></header>
+              <header><div><h3>Trust and signatures</h3><p>Paths and expressions use write-only controls</p></div></header>
               <dl>
                 <dt>Certificate authorities</dt><dd>${securityAssets.certificateAuthorityCount}</dd>
                 <dt>CA paths configured</dt><dd>${securityAssets.certificateAuthorityPathCount}</dd>
@@ -2378,6 +2491,23 @@ export class SmithproxyApp extends LitElement {
                     </button>
                   `)}
               </div>
+              ${(['starttls', 'detection'] as const).map(kind => html`
+                <details class="section">
+                  <summary>${kind === 'starttls' ? 'STARTTLS' : 'Detection'} signatures</summary>
+                  <div class="reference-stack" role="group"
+                    aria-label="${kind === 'starttls' ? 'STARTTLS' : 'Detection'} signatures">
+                    ${securityAssets.signatures.filter(item => item.kind === kind).map(signature => html`
+                      <button class="reference" type="button"
+                        @click=${(event: MouseEvent) => this.openSignature(
+                          signature.id, event.currentTarget as HTMLElement,
+                        )}>
+                        <span><strong>${signature.name}</strong> · ${signature.flow.length} flow step${signature.flow.length === 1 ? '' : 's'}</span>
+                        <span aria-hidden="true">→</span>
+                      </button>
+                    `)}
+                  </div>
+                </details>
+              `)}
             </article>
           ` : nothing}
         </div>
@@ -3085,6 +3215,97 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderSignatureEditor(entry: DrawerEntry) {
+    const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === entry.id);
+    if (!signature) return nothing;
+    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    return html`
+      <div class="form-grid wide-form-grid">
+        <label for="signature-category-${entry.id}">Category</label>
+        <input id="signature-category-${entry.id}" maxlength="128" .value=${signature.category}
+          .readOnly=${disabled} />
+        <label for="signature-name-${entry.id}">Name</label>
+        <input id="signature-name-${entry.id}" maxlength="128" .value=${signature.name}
+          .readOnly=${disabled} />
+        <label for="signature-side-${entry.id}">Connection side</label>
+        <select id="signature-side-${entry.id}" .value=${signature.side} ?disabled=${disabled}>
+          <option value="client">Client</option>
+          <option value="server">Server</option>
+        </select>
+        <label for="signature-group-${entry.id}">Group</label>
+        <input id="signature-group-${entry.id}" maxlength="128" .value=${signature.group}
+          .readOnly=${disabled} />
+        <label for="signature-enables-${entry.id}">Enables</label>
+        <input id="signature-enables-${entry.id}" maxlength="128" .value=${signature.enables}
+          .readOnly=${disabled} />
+        <label for="signature-engine-${entry.id}">Engine</label>
+        <input id="signature-engine-${entry.id}" maxlength="128" .value=${signature.engine}
+          .readOnly=${disabled} />
+      </div>
+      <div class="section">
+        <h3>Ordered flow</h3>
+        <div class="reference-stack" role="group" aria-label="Signature flow steps">
+          ${signature.flow.map((step, index) => html`
+            <button class="reference" type="button"
+              @click=${(event: MouseEvent) => this.openSignatureFlow(
+                step.id, event.currentTarget as HTMLElement,
+              )}>
+              <span><strong>${index + 1}. ${step.side.toUpperCase()} · ${step.type}</strong>
+                · bytes ${step.bytesStart}…${step.bytesMax}
+                · ${step.expressionConfigured ? 'expression configured' : 'expression missing'}</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          `)}
+        </div>
+      </div>
+      <div class="privacy-note section">
+        Signature expressions stay inside the GUI core. Open a flow step to rotate one through a write-only control.
+      </div>
+    `;
+  }
+
+  private renderSignatureFlowEditor(entry: DrawerEntry) {
+    const signature = this.snapshot?.securityAssets?.signatures
+      .find(item => item.flow.some(step => step.id === entry.id));
+    const step = signature?.flow.find(item => item.id === entry.id);
+    if (!signature || !step) return nothing;
+    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    return html`
+      <div class="form-grid wide-form-grid">
+        <label>Signature</label><span>${signature.name}</span>
+        <label for="signature-flow-side-${entry.id}">Direction</label>
+        <select id="signature-flow-side-${entry.id}" .value=${step.side} ?disabled=${disabled}>
+          <option value="r">Read</option>
+          <option value="w">Write</option>
+        </select>
+        <label for="signature-flow-type-${entry.id}">Matcher</label>
+        <select id="signature-flow-type-${entry.id}" .value=${step.type} ?disabled=${disabled}>
+          <option value="regex">Regular expression</option>
+          <option value="simple">Simple bytes</option>
+        </select>
+        <label for="signature-flow-start-${entry.id}">Byte offset</label>
+        <input id="signature-flow-start-${entry.id}" type="number" min="0"
+          .value=${String(step.bytesStart)} .readOnly=${disabled} />
+        <label for="signature-flow-maximum-${entry.id}">Byte window</label>
+        <input id="signature-flow-maximum-${entry.id}" type="number" min="0"
+          .value=${String(step.bytesMax)} .readOnly=${disabled} />
+        <label for="signature-flow-write-expression-${entry.id}-mode">Expression</label>
+        <div class="write-only-control">
+          <select id="signature-flow-write-expression-${entry.id}-mode" ?disabled=${disabled}>
+            <option value="unchanged">${step.expressionConfigured ? 'Keep configured expression' : 'Keep empty'}</option>
+            <option value="replace">Replace</option>
+          </select>
+          <textarea id="signature-flow-write-expression-${entry.id}-value" maxlength="65536"
+            aria-label="Signature expression replacement" autocomplete="off"
+            placeholder="New expression (write-only)" .readOnly=${disabled}></textarea>
+        </div>
+      </div>
+      <div class="privacy-note section">
+        The current matcher expression is never serialized to the browser. A replacement is redacted in draft review.
+      </div>
+    `;
+  }
+
   private originPrefix(entry: DrawerEntry): string | undefined {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'settings') return 'settings.';
@@ -3092,6 +3313,18 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'authority') {
       const index = this.snapshot.securityAssets?.certificateAuthorities.findIndex(item => item.id === entry.id) ?? -1;
       return index < 0 ? undefined : `tls_ca.[${index}].`;
+    }
+    if (entry.kind === 'signature' || entry.kind === 'signature-flow') {
+      const signature = entry.kind === 'signature'
+        ? this.snapshot.securityAssets?.signatures.find(item => item.id === entry.id)
+        : this.snapshot.securityAssets?.signatures.find(item => item.flow.some(step => step.id === entry.id));
+      if (!signature) return undefined;
+      const index = this.snapshot.securityAssets!.signatures
+        .filter(item => item.kind === signature.kind).findIndex(item => item.id === signature.id);
+      if (index < 0) return undefined;
+      if (entry.kind === 'signature') return `${signature.kind}_signatures.[${index}].`;
+      const flowIndex = signature.flow.findIndex(item => item.id === entry.id);
+      return flowIndex < 0 ? undefined : `${signature.kind}_signatures.[${index}].flow.[${flowIndex}].`;
     }
     if (entry.kind === 'policy') {
       const index = this.snapshot.policies.findIndex(item => item.id === entry.id);
@@ -3161,6 +3394,8 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);
+    if (entry.kind === 'signature') return this.renderSignatureEditor(entry);
+    if (entry.kind === 'signature-flow') return this.renderSignatureFlowEditor(entry);
     return this.renderProfileEditor(entry);
   }
 
@@ -3172,6 +3407,7 @@ export class SmithproxyApp extends LitElement {
     const active = index === this.drawers.length - 1;
     const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = [
       'policy', 'address', 'port', 'protocol', 'settings', 'captures', 'authority',
+      'signature', 'signature-flow',
     ];
     const profile = entry.kind === 'profile'
       ? this.snapshot?.profiles.find(item => item.id === entry.id)

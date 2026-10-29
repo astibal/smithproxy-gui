@@ -248,6 +248,27 @@ export interface CertificateAuthoritySummary {
   pathConfigured: boolean;
 }
 
+export interface SignatureFlowStep {
+  id: string;
+  side: 'r' | 'w';
+  type: 'regex' | 'simple';
+  expressionConfigured: boolean;
+  bytesStart: number;
+  bytesMax: number;
+}
+
+export interface SignatureDefinition {
+  id: string;
+  kind: 'starttls' | 'detection';
+  category: string;
+  name: string;
+  side: 'client' | 'server';
+  group: string;
+  enables: string;
+  engine: string;
+  flow: ReadonlyArray<SignatureFlowStep>;
+}
+
 export interface SecurityAssets {
   certificateAuthorities: ReadonlyArray<CertificateAuthoritySummary>;
   certificateAuthorityCount: number;
@@ -256,6 +277,7 @@ export interface SecurityAssets {
   starttlsFlowStepCount: number;
   detectionSignatureCount: number;
   detectionFlowStepCount: number;
+  signatures: ReadonlyArray<SignatureDefinition>;
 }
 
 export type ConfigScalar = boolean | number | string;

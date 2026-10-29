@@ -319,8 +319,8 @@ int main() {
         R"({"success":{"captures":{"local":{"enabled":"true","dir":"/tmp","format":"raw"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"","tun_ttl":"1"}}}})").captures);
     const auto security_assets = parse_config_security_assets(
         R"({"success":{"tls_ca":{"default":{"path":"/private/ca"}}}})",
-        R"({"success":{"starttls_signatures":[{"flow":[{},{}]}]}})",
-        R"({"success":{"detection_signatures":[{"flow":[{}]},{"flow":[{},{}]}]}})");
+        R"({"success":{"starttls_signatures":[{"cat":"mail","name":"smtp/starttls","side":"client","flow":[{"side":"r","type":"regex","signature":"^STARTTLS","bytes_start":"0","bytes_max":"16"},{"side":"w","type":"regex","signature":"^2[0-5]0","bytes_start":"0","bytes_max":"512"}]}]}})",
+        R"({"success":{"detection_signatures":[{"cat":"www","name":"http/request","side":"client","group":"base","enables":"http","engine":"http1","flow":[{"side":"r","type":"regex","signature":"^GET","bytes_start":"0","bytes_max":"200"}]},{"name":"eicar","flow":[{"signature":"EICAR"},{"side":"w","type":"simple","signature":"test"}]}]}})");
     assert(security_assets.security_assets);
     assert(security_assets.security_assets->certificate_authority_count == 1U);
     assert(security_assets.security_assets->certificate_authorities.size() == 1U);
@@ -329,6 +329,9 @@ int main() {
     assert(security_assets.security_assets->starttls_flow_step_count == 2U);
     assert(security_assets.security_assets->detection_signature_count == 2U);
     assert(security_assets.security_assets->detection_flow_step_count == 3U);
+    assert(security_assets.security_assets->signatures.size() == 3U);
+    assert(security_assets.security_assets->signatures.front().name == "smtp/starttls");
+    assert(security_assets.security_assets->signatures.front().flow.front().expression_configured);
     assert(!parse_config_security_assets(
         R"({"success":{"tls_ca":{}}})",
         R"({"success":{"starttls_signatures":[{"flow":"secret"}]}})",

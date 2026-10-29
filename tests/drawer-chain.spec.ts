@@ -258,8 +258,28 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       security_assets: {
         certificate_authorities: [{id: 'certificate-authority-0', name: 'default', path_configured: true}],
         certificate_authority_count: 1, certificate_authority_path_count: 1,
-        starttls_signature_count: 6, starttls_flow_step_count: 12,
-        detection_signature_count: 24, detection_flow_step_count: 31,
+        starttls_signature_count: 1, starttls_flow_step_count: 2,
+        detection_signature_count: 1, detection_flow_step_count: 1,
+        signatures: [
+          {
+            id: 'starttls-signature-0', kind: 'starttls', category: 'mail', name: 'smtp/starttls',
+            side: 'client', group: '', enables: '', engine: '',
+            flow: [
+              {id: 'starttls-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
+               bytes_start: 0, bytes_max: 16},
+              {id: 'starttls-signature-0-flow-1', side: 'w', type: 'regex', expression_configured: true,
+               bytes_start: 0, bytes_max: 512},
+            ],
+          },
+          {
+            id: 'detection-signature-0', kind: 'detection', category: 'www', name: 'http/request',
+            side: 'client', group: 'base', enables: 'http', engine: 'http1',
+            flow: [{
+              id: 'detection-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
+              bytes_start: 0, bytes_max: 200,
+            }],
+          },
+        ],
       },
       augment_support: false,
       value_origins: [],
@@ -646,8 +666,21 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
   const trustPosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
   await expect(trustPosture).toBeVisible();
-  await expect(trustPosture.getByText('24', {exact: true})).toBeVisible();
-  await expect(trustPosture.getByText(/paths and signature expressions are redacted/i)).toBeVisible();
+  await expect(trustPosture.locator('dt', {hasText: 'STARTTLS signatures'}).locator('xpath=following-sibling::dd[1]'))
+    .toHaveText('1');
+  await expect(trustPosture.locator('dt', {hasText: 'Detection signatures'}).locator('xpath=following-sibling::dd[1]'))
+    .toHaveText('1');
+  await expect(trustPosture.getByText(/paths and expressions use write-only controls/i)).toBeVisible();
+  await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
+  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const signatureEditor = page.getByRole('dialog', {name: 'Edit http/request'});
+  await expect(signatureEditor.getByLabel('Engine')).toHaveValue('http1');
+  await signatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
+  const flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
+  await expect(flowEditor.getByLabel('Expression', {exact: true})).toHaveValue('unchanged');
+  await expect(flowEditor.getByText(/never serialized to the browser/i)).toBeVisible();
+  await flowEditor.getByRole('button', {name: 'Cancel'}).click();
+  await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
   await trustPosture.getByRole('button', {name: /default · path configured/i}).click();
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
   await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
@@ -734,6 +767,40 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).not.toContainText('new-api-key');
   await expect(changes).not.toContainText('overlap-api-key');
   await expect(changes).not.toContainText('/new/private/captures');
+});
+
+test('edits nested signature flow metadata with write-only expressions', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trustPosture = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
+  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const signatureEditor = page.getByRole('dialog', {name: 'Edit http/request'});
+  await signatureEditor.getByLabel('Group').fill('web');
+  await signatureEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(page.getByText('Draft: 6 changes')).toBeVisible();
+
+  await signatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
+  const flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
+  await flowEditor.getByLabel('Byte window').fill('512');
+  await flowEditor.getByLabel('Expression', {exact: true}).selectOption('replace');
+  await flowEditor.getByLabel('Signature expression replacement').fill('^PRIVATE[0-9]+$');
+  await flowEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(page.getByText('Draft: 11 changes')).toBeVisible();
+  await expect(flowEditor.getByLabel('Signature expression replacement')).toHaveValue('');
+  await expect(flowEditor.getByLabel('Expression', {exact: true})).toHaveValue('unchanged');
+  await flowEditor.getByRole('button', {name: 'Cancel'}).click();
+  await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Review draft · 11'}).click();
+  const changes = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(changes).toContainText('detection_signatures.[0].group');
+  await expect(changes).toContainText('detection_signatures.[0].flow.[0].signature');
+  await expect(changes).toContainText('Replaced · redacted');
+  await expect(changes).not.toContainText('PRIVATE');
 });
 
 test('searches policies and configuration objects without unsafe markup', async ({page}) => {
