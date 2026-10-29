@@ -253,6 +253,11 @@ export class SmithproxyApp extends LitElement {
   @state() private managementAudit: AuditSnapshot = initialAudit;
   @state() private backendJobs: JobSnapshot = initialJobs;
   @state() private eventStreamState: EventStreamState = 'connecting';
+  @state() private eventStreamError: string | undefined;
+  @state() private eventStreamConnectedAtUnixMs: number | null = null;
+  @state() private eventStreamLastMessageAtUnixMs: number | null = null;
+  @state() private eventStreamLastDisconnectAtUnixMs: number | null = null;
+  @state() private eventStreamReconnectCount = 0;
   @state() private eventCategoryFilter: EventCategoryFilter = 'all';
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
@@ -739,6 +744,8 @@ export class SmithproxyApp extends LitElement {
 
   private markEventStreamReconnecting(): void {
     if (this.eventStreamState === 'invalid') return;
+    this.eventStreamLastDisconnectAtUnixMs = Date.now();
+    this.eventStreamReconnectCount += 1;
     if (this.eventStreamState !== 'live') {
       this.eventStreamState = 'connecting';
       return;
@@ -755,6 +762,7 @@ export class SmithproxyApp extends LitElement {
       this.eventStreamState = 'unavailable';
       return;
     }
+    if (this.eventStreamState === 'invalid') return;
     if (this.closeEventStream || !this.systemClient || document.visibilityState === 'hidden') return;
     this.eventStreamState = 'connecting';
     const streamEpoch = ++this.eventStreamEpoch;
@@ -766,6 +774,8 @@ export class SmithproxyApp extends LitElement {
         this.clearEventStreamDegradedTimer();
         this.operationalEvents = snapshot;
         this.eventsError = undefined;
+        this.eventStreamError = undefined;
+        this.eventStreamLastMessageAtUnixMs = Date.now();
         this.eventStreamState = 'live';
       },
       event: event => {
@@ -777,19 +787,31 @@ export class SmithproxyApp extends LitElement {
           events: [...withoutDuplicate, event].slice(-60),
         };
         this.eventsError = undefined;
+        this.eventStreamError = undefined;
+        this.eventStreamLastMessageAtUnixMs = Date.now();
         this.eventStreamState = 'live';
       },
       invalid: error => {
         if (!streamIsCurrent()) return;
         this.disconnectEventStream();
-        this.eventsError = error.message;
+        this.eventStreamError = error.message;
+        this.eventStreamLastDisconnectAtUnixMs = Date.now();
         this.eventStreamState = 'invalid';
       },
       connection: state => {
         if (!streamIsCurrent()) return;
-        if (state === 'reconnecting') this.markEventStreamReconnecting();
+        if (state === 'open') this.eventStreamConnectedAtUnixMs = Date.now();
+        else this.markEventStreamReconnecting();
       },
     });
+  }
+
+  private retryEventStream(): void {
+    if (!this.eventsAvailable) return;
+    this.disconnectEventStream();
+    this.eventStreamError = undefined;
+    this.eventStreamState = 'connecting';
+    this.connectEventStream();
   }
 
   private readonly handleBeforeUnload = (event: BeforeUnloadEvent): void => {
@@ -1016,9 +1038,15 @@ export class SmithproxyApp extends LitElement {
       this.disconnectEventStream();
       this.operationalEvents = initialEvents;
       this.eventsError = undefined;
+      this.eventStreamError = undefined;
       this.eventStreamState = 'unavailable';
+      this.eventStreamConnectedAtUnixMs = null;
+      this.eventStreamLastMessageAtUnixMs = null;
+      this.eventStreamLastDisconnectAtUnixMs = null;
+      this.eventStreamReconnectCount = 0;
     } else if (!eventsWereAvailable) {
       this.eventsError = undefined;
+      this.eventStreamError = undefined;
       this.connectEventStream();
     }
     if (!this.alertsAvailable) {
@@ -1393,6 +1421,10 @@ export class SmithproxyApp extends LitElement {
       },
       operations: {
         eventStream: this.eventStreamState,
+        eventStreamConnectedAtUnixMs: this.eventStreamConnectedAtUnixMs,
+        eventStreamLastMessageAtUnixMs: this.eventStreamLastMessageAtUnixMs,
+        eventStreamLastDisconnectAtUnixMs: this.eventStreamLastDisconnectAtUnixMs,
+        eventStreamReconnectCount: this.eventStreamReconnectCount,
         eventCount: this.operationalEvents.events.length,
         activeAlertCount: this.operationalAlerts.alerts.length,
         auditEntryCount: this.managementAudit.entries.length,
@@ -3914,6 +3946,62 @@ export class SmithproxyApp extends LitElement {
       </section>`;
   }
 
+  private renderEventStreamHealth() {
+    const tone = this.eventStreamState === 'live' ? 'success' :
+      this.eventStreamState === 'invalid' || this.eventStreamError ? 'danger' : 'warning';
+    const recoveryLabel = !this.eventsAvailable ? 'Not advertised' :
+      this.eventsError ? 'Unavailable' : 'Available';
+    return html`
+      <section class="monitor-panel" aria-label="Operational event transport">
+        <div class="runtime-heading">
+          <div>
+            <h3>Operational event transport</h3>
+            <p>Authenticated same-origin SSE with a bounded REST recovery snapshot</p>
+          </div>
+          <div class="preflight-actions">
+            <span class="runtime-state ${tone}">● ${displayState(this.eventStreamState)}</span>
+            ${this.eventStreamState === 'invalid' ? html`
+              <button class="secondary" type="button" @click=${() => this.retryEventStream()}>
+                Retry stream
+              </button>
+            ` : nothing}
+          </div>
+        </div>
+        <div class="metric-grid">
+          <article class="metric">
+            <span class="metric-label">Last connection</span>
+            <strong class="metric-value">${this.timeLabel(this.eventStreamConnectedAtUnixMs)}</strong>
+            <span class="metric-note">Browser EventSource opened</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Last validated payload</span>
+            <strong class="metric-value">${this.timeLabel(this.eventStreamLastMessageAtUnixMs)}</strong>
+            <span class="metric-note">Snapshot or structured event accepted</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Reconnect attempts</span>
+            <strong class="metric-value">${this.eventStreamReconnectCount.toLocaleString()}</strong>
+            <span class="metric-note">Last interruption: ${this.timeLabel(this.eventStreamLastDisconnectAtUnixMs)}</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Recovery snapshot</span>
+            <strong class="metric-value ${this.eventsError ? 'danger' : ''}">
+              ${recoveryLabel}
+            </strong>
+            <span class="metric-note">${this.operationalEvents.events.length} bounded events retained</span>
+          </article>
+        </div>
+        ${this.eventStreamError ? html`<div class="metrics-message" role="status">${this.eventStreamError}</div>` : nothing}
+        <div class="privacy-note">
+          ${this.operationalEvents.smithproxyEventsAvailable
+            ? 'The feed includes reviewed Smithproxy events.'
+            : 'The feed currently contains GUI-core control-plane and backend-job transitions only.'}
+          Event payloads are validated before they update this state.
+        </div>
+      </section>
+    `;
+  }
+
   private renderMonitoring() {
     const metrics = this.runtimeMetrics;
     return html`
@@ -3922,6 +4010,7 @@ export class SmithproxyApp extends LitElement {
           <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
         </div>
         ${this.renderActiveAlerts()}
+        ${this.renderEventStreamHealth()}
         ${this.renderCollectorMatrix()}
         ${this.renderProbeAnalysis()}
         ${this.renderProbeIncidents()}
@@ -5700,7 +5789,7 @@ export class SmithproxyApp extends LitElement {
     const activeAlertCount = this.operationalAlerts.alerts.length;
     const hasCriticalAlert = this.operationalAlerts.alerts.some(alert => alert.severity === 'critical');
     const alertTone = this.alertsError || hasCriticalAlert ? 'danger' : activeAlertCount > 0 ? 'warning' : 'success';
-    const streamTone = this.eventsError || this.eventStreamState === 'invalid' ? 'danger' :
+    const streamTone = this.eventStreamError || this.eventStreamState === 'invalid' ? 'danger' :
       this.eventStreamState === 'live' ? 'success' : 'warning';
     const activeJobCount = this.backendJobs.jobs.filter(job =>
       job.state === 'queued' || job.state === 'running' || job.state === 'cancelling').length;
@@ -5760,7 +5849,7 @@ export class SmithproxyApp extends LitElement {
             ● Freshness: ${freshnessLabel(controlFreshness.state)}
           </button>
           <button class="status-action status-secondary system-state ${streamTone}" type="button"
-            title=${this.eventsError ?? 'Open operational events'}
+            title=${this.eventStreamError ?? this.eventsError ?? 'Open operational event transport health'}
             @click=${() => { this.activeSection = 'Monitoring'; }}>
             ● Events: ${displayState(this.eventStreamState)}
           </button>

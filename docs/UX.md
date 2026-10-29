@@ -25,6 +25,11 @@ Provozní položky ve stavové liště používají stejné severity barvy jako 
 a slouží jako zkratky do detailu. Na úzkém viewportu zůstává viditelný pouze
 stav GUI core a Smithproxy; fronta úloh se zobrazí až s reálným backend API.
 
+Monitoring rozlišuje stav SSE transportu od dostupnosti periodického recovery
+snapshotu. Ukazuje poslední otevření spojení, poslední validovaný payload,
+poslední přerušení a počet reconnectů. Nevalidní stream se sám bez vědomí
+operátora znovu neaktivuje; explicitní retry je přímo v transportní kartě.
+
 ## Drawer chain
 
 První editor se vysune zprava přes přibližně 75–80 % pracovní plochy. Seznam

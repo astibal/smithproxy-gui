@@ -77,6 +77,10 @@ Backend integration suite ověřuje SSE content type, zákaz proxy bufferingu,
 management autentizaci, počáteční snapshot, `Last-Event-ID` replay bez duplikace
 a reset expirované kontinuity. Frontend unit testy ověřují workspace prefix,
 snapshot i jednotlivou událost a fail-closed chování při nevalidním JSON payloadu.
+Browser scénář navíc podá strukturálně platný, ale nereviewovaný event, ověří
+terminální stav `invalid`, absenci jeho textu v DOM a úspěšné obnovení až po
+explicitním retry. Live cesta kontroluje čas posledního validovaného payloadu a
+allowlisted transportní údaje v diagnostickém exportu.
 
 Unit coverage gate měří importovanou API, config, monitoring a state logiku přes
 V8. Aktuální nepodkročitelné globální prahy jsou 83 % statements, 82 % branches,

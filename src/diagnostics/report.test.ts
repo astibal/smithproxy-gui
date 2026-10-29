@@ -32,7 +32,10 @@ function fixture(): DiagnosticsReportInput {
       ipv4Addresses: 3, ipv6Addresses: 2, lastErrorCode: null,
     },
     operations: {
-      eventStream: 'live', eventCount: 4, activeAlertCount: 0, auditEntryCount: 2,
+      eventStream: 'live', eventStreamConnectedAtUnixMs: 1_700_000_000_000,
+      eventStreamLastMessageAtUnixMs: 1_700_000_000_100,
+      eventStreamLastDisconnectAtUnixMs: 1_699_999_990_000, eventStreamReconnectCount: 2,
+      eventCount: 4, activeAlertCount: 0, auditEntryCount: 2,
       jobCount: 3, activeJobCount: 1, failedJobCount: 1,
     },
     configuration: {source: 'live', state: 'ready', draftChangeCount: 1},
@@ -53,6 +56,7 @@ describe('diagnostics report', () => {
         jobs: true, metrics: true, interfaceMonitoring: true,
         eventsAvailable: true, alertsAvailable: true, auditAvailable: true},
       operations: {
+        eventStream: 'live', eventStreamReconnectCount: 2,
         eventCount: 4, activeAlertCount: 0, auditEntryCount: 2,
         jobCount: 3, activeJobCount: 1, failedJobCount: 1,
       },
@@ -70,6 +74,10 @@ describe('diagnostics report', () => {
     input.capabilities.checkedAtUnixMs = -1;
     input.capabilities.lastSuccessAtUnixMs = Number.NaN;
     input.capabilities.enabledFeatureCount = 99;
+    input.operations.eventStreamConnectedAtUnixMs = -1;
+    input.operations.eventStreamLastMessageAtUnixMs = Number.NaN;
+    input.operations.eventStreamLastDisconnectAtUnixMs = Number.MAX_VALUE;
+    input.operations.eventStreamReconnectCount = -1;
     input.interfaces.lastErrorCode = 'raw kernel error';
 
     const report = buildDiagnosticsReport(input);
@@ -80,6 +88,10 @@ describe('diagnostics report', () => {
     expect(report.capabilities.checkedAtUnixMs).toBeNull();
     expect(report.capabilities.lastSuccessAtUnixMs).toBeNull();
     expect(report.capabilities.enabledFeatureCount).toBe(13);
+    expect(report.operations.eventStreamConnectedAtUnixMs).toBeNull();
+    expect(report.operations.eventStreamLastMessageAtUnixMs).toBeNull();
+    expect(report.operations.eventStreamLastDisconnectAtUnixMs).toBeNull();
+    expect(report.operations.eventStreamReconnectCount).toBe(0);
     expect(report.interfaces.lastErrorCode).toBeNull();
   });
 });

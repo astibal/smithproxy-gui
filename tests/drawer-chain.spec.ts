@@ -55,6 +55,8 @@ type MockState = {
   gatewayAuthenticated?: boolean;
   forceManagementCapabilities?: boolean;
   inconsistentPrivilegedCapabilities?: boolean;
+  invalidEventStream?: boolean;
+  eventStreamRequests?: number;
   disabledMonitoringFeatures?: Array<
     'jobs' | 'events' | 'alerts' | 'audit' | 'metrics' | 'session_activity' |
     'tls_monitoring' | 'neighbor_monitoring' | 'interface_monitoring'
@@ -292,21 +294,28 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       }] : []),
     ],
   }}));
-  await page.route('**/api/v1/events', async route => route.fulfill({
-    contentType: 'text/event-stream; charset=utf-8',
-    body: `retry: 60000\nevent: snapshot\ndata: ${JSON.stringify({
-      source: 'gui-core', smithproxy_events_available: false,
-      events: [{
-        id: 'stream-100', source_revision: 1, occurred_at_unix_ms: now(),
-        category: 'control-plane', code: 'control-plane.ready', severity: 'info',
-        source: 'gui-core', message: 'Smithproxy control plane is reachable',
-      }, ...(state.jobFailure ? [{
-        id: 'stream-job-failed', source_revision: 3, occurred_at_unix_ms: now(),
-        category: 'backend-job', code: 'config-refresh.failed', severity: 'warning',
-        source: 'gui-core', message: 'Configuration refresh did not converge',
-      }] : [])],
-    })}\n\n`,
-  }));
+  await page.route('**/api/v1/events', async route => {
+    state.eventStreamRequests = (state.eventStreamRequests ?? 0) + 1;
+    const events = state.invalidEventStream ? [{
+      id: 'stream-private', source_revision: 1, occurred_at_unix_ms: now(),
+      category: 'control-plane', code: 'private.unknown', severity: 'error',
+      source: 'gui-core', message: 'private upstream event text',
+    }] : [{
+      id: 'stream-100', source_revision: 1, occurred_at_unix_ms: now(),
+      category: 'control-plane', code: 'control-plane.ready', severity: 'info',
+      source: 'gui-core', message: 'Smithproxy control plane is reachable',
+    }, ...(state.jobFailure ? [{
+      id: 'stream-job-failed', source_revision: 3, occurred_at_unix_ms: now(),
+      category: 'backend-job', code: 'config-refresh.failed', severity: 'warning',
+      source: 'gui-core', message: 'Configuration refresh did not converge',
+    }] : [])];
+    await route.fulfill({
+      contentType: 'text/event-stream; charset=utf-8',
+      body: `retry: 60000\nevent: snapshot\ndata: ${JSON.stringify({
+        source: 'gui-core', smithproxy_events_available: false, events,
+      })}\n\n`,
+    });
+  });
   await page.route('**/api/v1/alerts', async route => route.fulfill({json: {
     source: 'gui-core', generated_at_unix_ms: now(),
     alerts: state.smithproxy === 'ready' ? (state.jobFailure ? [{
@@ -1788,6 +1797,11 @@ test('polls only monitoring surfaces advertised for the current session', async 
   expect(requests).not.toContain('/api/v1/audit/recent');
   expect(requests).not.toContain('/api/v1/network/interfaces/summary');
 
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  const eventTransport = page.getByRole('region', {name: 'Operational event transport'});
+  await expect(eventTransport).toContainText('Unavailable');
+  await expect(eventTransport).toContainText('Not advertised');
+
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Interface synchronization'}))
     .toContainText('Unavailable · Last data no data');
@@ -1822,6 +1836,11 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
   expect(pending.size).toBe(0);
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  const eventTransport = page.getByRole('region', {name: 'Operational event transport'});
+  await expect(eventTransport).toContainText('Live');
+  await expect(eventTransport).toContainText('Recovery snapshot');
+  await expect(eventTransport.getByRole('article').filter({hasText: 'Last validated payload'}))
+    .not.toContainText('Never');
   const collectorHealth = page.getByRole('table', {name: 'Collector health'});
   await expect(collectorHealth.getByRole('row')).toHaveCount(6);
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Runtime metrics'}))
@@ -1858,6 +1877,36 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
   const collectorHealth = page.getByRole('table', {name: 'Collector health'});
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Stale'})).toHaveCount(5);
   await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('0/5 current');
+});
+
+test('diagnoses an invalid event stream and recovers only after an explicit retry', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', invalidEventStream: true};
+  await mockSystemApi(page, state);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Events: Invalid');
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  const transport = page.getByRole('region', {name: 'Operational event transport'});
+  await expect(transport).toContainText('Invalid');
+  await expect(transport.getByRole('article').filter({hasText: 'Last validated payload'}))
+    .toContainText('Never');
+  await expect(transport.getByRole('button', {name: 'Retry stream'})).toBeVisible();
+  await expect(page.getByText('private upstream event text')).toHaveCount(0);
+
+  const streamRequestsAfterFailure = state.eventStreamRequests ?? 0;
+  const sessionRequestsBeforeRefresh = state.authSessionRequests ?? 0;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect.poll(() => state.authSessionRequests ?? 0).toBeGreaterThan(sessionRequestsBeforeRefresh);
+  expect(state.eventStreamRequests).toBe(streamRequestsAfterFailure);
+  await expect(statusbar).toContainText('Events: Invalid');
+
+  state.invalidEventStream = false;
+  await transport.getByRole('button', {name: 'Retry stream'}).click();
+  await expect(statusbar).toContainText('Events: Live');
+  await expect.poll(() => state.eventStreamRequests ?? 0).toBeGreaterThanOrEqual(2);
+  await expect(transport.getByRole('article').filter({hasText: 'Last validated payload'}))
+    .not.toContainText('Never');
 });
 
 test('surfaces active backend work in the status bar and System view', async ({page}) => {
@@ -2045,6 +2094,9 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
     },
     configuration: {source: 'preview', state: 'ready', draftChangeCount: 0},
   });
+  const diagnosticOperations = diagnostics.operations as Record<string, unknown>;
+  expect(diagnosticOperations.eventStreamReconnectCount).toEqual(expect.any(Number));
+  expect(diagnosticOperations.eventStreamLastMessageAtUnixMs).toEqual(expect.any(Number));
   expect(diagnosticsText).not.toMatch(/"(detail|basePath|revision|listeners|protocols|events|alerts|auditEntries|targets|requestId)"/i);
   expect(diagnosticsText).not.toContain('policy.[0].action');
   expect(diagnosticsText).not.toContain('abc123-7');

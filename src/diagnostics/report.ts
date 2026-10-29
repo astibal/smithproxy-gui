@@ -71,6 +71,10 @@ export interface DiagnosticsReportInput {
   };
   operations: {
     eventStream: EventStreamDiagnosticState;
+    eventStreamConnectedAtUnixMs: number | null;
+    eventStreamLastMessageAtUnixMs: number | null;
+    eventStreamLastDisconnectAtUnixMs: number | null;
+    eventStreamReconnectCount: number;
     eventCount: number;
     activeAlertCount: number;
     auditEntryCount: number;
@@ -201,6 +205,13 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
     },
     operations: {
       eventStream: input.operations.eventStream,
+      eventStreamConnectedAtUnixMs: input.operations.eventStreamConnectedAtUnixMs === null
+        ? null : safeInteger(input.operations.eventStreamConnectedAtUnixMs),
+      eventStreamLastMessageAtUnixMs: input.operations.eventStreamLastMessageAtUnixMs === null
+        ? null : safeInteger(input.operations.eventStreamLastMessageAtUnixMs),
+      eventStreamLastDisconnectAtUnixMs: input.operations.eventStreamLastDisconnectAtUnixMs === null
+        ? null : safeInteger(input.operations.eventStreamLastDisconnectAtUnixMs),
+      eventStreamReconnectCount: requiredInteger(input.operations.eventStreamReconnectCount),
       eventCount: requiredInteger(input.operations.eventCount),
       activeAlertCount: requiredInteger(input.operations.activeAlertCount),
       auditEntryCount: requiredInteger(input.operations.auditEntryCount),

@@ -204,8 +204,8 @@ result. They use a bounded fixed vocabulary and never forward arbitrary upstream
 log text. The
 dashboard groups consecutive non-ready control-plane probes into a bounded
 incident timeline with observed states and recovery boundaries. It is derived
-only from the validated five-minute probe window. The root
-monitoring feed uses a same-origin, authenticated SSE endpoint backed by a
+only from the validated five-minute probe window. The monitoring feed uses a
+same-origin, authenticated SSE endpoint backed by a
 bounded unified event ring. Its monotonic revisions merge control-plane state
 changes with redacted terminal job results, support `Last-Event-ID` replay, and
 issue an explicit snapshot reset when a client falls behind. Every event carries
@@ -214,9 +214,12 @@ one tuple in the browser; the Logs view can filter control-plane and backend-job
 events without parsing text. Configuration-refresh jobs follow the same rule:
 the browser accepts only the current fixed lifecycle tuples and rejects unknown
 phases, arbitrary result text, contradictory progress, and future-dated list
-entries. The periodic
-snapshot remains a recovery path for older deployments and interrupted streams. The root
-web component supports integration into Saslik Tools:
+entries. The periodic snapshot remains a recovery path for older deployments
+and interrupted streams. The Monitoring view exposes the SSE connection time, last validated payload,
+interruption time, reconnect count, and REST recovery posture. Invalid payloads
+close the stream and require an explicit retry; arbitrary event text is never
+rendered or included in diagnostics.
+The root web component supports integration into Saslik Tools:
 
 ```html
 <smithproxy-gui

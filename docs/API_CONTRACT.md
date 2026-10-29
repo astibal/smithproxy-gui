@@ -421,6 +421,13 @@ držení backendového workeru pro neaktivní záložku. Periodický `/events/re
 zůstává recovery snapshotem a cestou kompatibility pro starší core. Cursor má
 nejvýše 96 bytů; delší `Last-Event-ID` je odmítnuto před porovnáváním.
 
+Monitoring eviduje čas posledního otevření EventSource, posledního validovaného
+payloadu, posledního přerušení a počet reconnect pokusů. Stav `live` vznikne až
+po přijetí validního snapshotu nebo eventu, nikoliv samotným otevřením TCP/SSE.
+Nevalidní payload stream uzavře a přejde do terminálního stavu `invalid`; další
+pokus vyžaduje explicitní akci operátora. REST recovery snapshot zůstává
+diagnostikován odděleně, takže jeho úspěch nemůže zamaskovat vadný stream.
+
 ## Úlohy
 
 ```http

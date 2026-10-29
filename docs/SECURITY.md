@@ -53,8 +53,9 @@ Monitoring follows the same bootstrap boundary. The frontend opens no protected
 poll or event stream until the current capability response enables it. Capability
 loss closes SSE and replaces retained aggregate snapshots with zeroed unavailable
 states, preventing data observed under an earlier gateway session from remaining
-visible after authorization is withdrawn. Epoch fencing also rejects callbacks
-and HTTP responses that were valid when requested but completed after the
+visible after authorization is withdrawn. It also clears connection timestamps
+and reconnect counters. Epoch fencing rejects callbacks and HTTP responses that
+were valid when requested but completed after the
 session changed, while client-owned abort controllers cancel the pending network
 operations. Configuration revocation removes the live snapshot, shared
 draft state, validation results, open drawers, and their form controls; slower
@@ -223,6 +224,9 @@ is never exported. The report excludes configuration values and revisions, paths
 and base-path identifiers, free-form upstream details, listener and protocol
 names, event and alert text, audit targets and request IDs, credentials, and
 tokens.
+
+Event transport diagnostics add only browser-generated timestamps, a reconnect
+counter, and fixed states. Stream error text and event payloads are excluded.
 
 Augment provenance accepts only bounded scalar or homogeneous string/integer
 list values. List length, item length, control characters, numeric safety, layer
