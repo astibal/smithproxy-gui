@@ -724,7 +724,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(protocolEditor.getByText('Saved to draft')).toBeVisible();
   await expect(page.getByText('Draft: 20 changes')).toBeVisible();
   await protocolEditor.getByRole('button', {name: 'Cancel'}).click();
-  await editor.getByRole('button', {name: 'https', exact: true}).click();
+  await editor.getByLabel('Destination ports').locator('..')
+    .getByRole('button', {name: 'https', exact: true}).click();
   const portEditor = page.getByRole('dialog', {name: 'Edit https'});
   await expect(portEditor).toBeVisible();
   await portEditor.getByLabel('Start').fill('9000');
@@ -954,6 +955,29 @@ test('validates the immutable workspace draft through the Smithproxy transaction
     csrf: '1',
   }]);
   await expectNoWcagViolations(page);
+});
+
+test('rehydrates pending scalar and reference values when an editor is reopened', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    initialDraftChanges: [
+      {path: 'policy.[0].name', value: 'Pending office policy'},
+      {path: 'policy.[0].action', value: 'reject'},
+      {path: 'policy.[0].dst', value: ['office']},
+      {path: 'policy.[0].sport', value: ['https']},
+    ],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(editor.getByLabel('Name', {exact: true})).toHaveValue('Pending office policy');
+  await expect(editor.getByLabel('Action')).toHaveValue('reject');
+  await expect(editor.getByLabel('Destinations')).toHaveValue('office');
+  await expect(editor.getByLabel('Source ports')).toHaveValue('https');
+  await expect(editor.getByLabel('Destinations').locator('..').getByRole('button', {name: /office/i})).toBeVisible();
+  await expect(editor.getByLabel('Source ports').locator('..').getByRole('button', {name: /https/i})).toBeVisible();
 });
 
 test('requires bound validation and explicit confirmation before atomic commit', async ({page}) => {

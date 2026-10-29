@@ -13,7 +13,6 @@ import {
 import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
-  ConfigReference,
   ConfigScalar,
   ConfigSnapshot,
   ConfigValue,
@@ -2125,7 +2124,20 @@ export class SmithproxyApp extends LitElement {
     return this.snapshot?.valueOrigins.find(item => item.path === path);
   }
 
+  private pendingDraftValue(path: string): DraftScalar | undefined {
+    if (this.valueOrigin(path)?.editable === false) return undefined;
+    const value = this.workspaceDraft?.changes.find(change => change.path === path)?.value;
+    if (typeof value === 'string' && /^\[redacted:(?:clear|replace(?::\d+)?)\]$/u.test(value)) {
+      return undefined;
+    }
+    return value;
+  }
+
   private persistentValue<T extends ConfigScalar>(path: string, fallback: T): T {
+    const pending = this.pendingDraftValue(path);
+    if (pending !== undefined && !Array.isArray(pending) && typeof pending === typeof fallback) {
+      return pending as T;
+    }
     const value = this.valueOrigin(path)?.persistentValue;
     return value !== undefined && typeof value === typeof fallback ? value as T : fallback;
   }
@@ -2133,6 +2145,10 @@ export class SmithproxyApp extends LitElement {
   private persistentListValue<T extends string | number>(
     path: string, fallback: ReadonlyArray<T>, itemType: 'string' | 'number',
   ): ReadonlyArray<T> {
+    const pending = this.pendingDraftValue(path);
+    if (Array.isArray(pending) && pending.every(item => typeof item === itemType)) {
+      return pending as ReadonlyArray<T>;
+    }
     const value = this.valueOrigin(path)?.persistentValue;
     return Array.isArray(value) && value.every(item => typeof item === itemType)
       ? value as ReadonlyArray<T>
@@ -4572,13 +4588,13 @@ export class SmithproxyApp extends LitElement {
         <div class="reference-stack">
           <input id="policy-sources-${entry.id}" .value=${sourceValues.join(', ')}
             .readOnly=${this.originReadOnly(`${policyBase}.src`, liveReadOnly)} />
-          ${this.renderAddressReferences(policy.sources)}</div>
+          ${this.renderAddressReferences(sourceValues)}</div>
         <label for="destination-${entry.id}">Destinations</label>
         <div class="reference-stack">
           <input id="destination-${entry.id}"
             .value=${destinationValues.join(', ')}
             .readOnly=${this.originReadOnly(`${policyBase}.dst`, liveReadOnly)} />
-          ${this.renderAddressReferences(policy.destinations)}
+          ${this.renderAddressReferences(destinationValues)}
         </div>
         <label for="action-${entry.id}">Action</label>
         <input id="action-${entry.id}" .value=${this.persistentValue(`${policyBase}.action`, policy.action)}
@@ -4596,11 +4612,11 @@ export class SmithproxyApp extends LitElement {
           <label for="policy-source-ports-${entry.id}">Source ports</label>
           <div class="reference-stack"><input id="policy-source-ports-${entry.id}"
             .value=${sourcePortValues.join(', ')}
-            .readOnly=${this.originReadOnly(`${policyBase}.sport`, liveReadOnly)} />${this.renderPortReferences(policy.sourcePorts)}</div>
+            .readOnly=${this.originReadOnly(`${policyBase}.sport`, liveReadOnly)} />${this.renderPortReferences(sourcePortValues)}</div>
           <label for="policy-destination-ports-${entry.id}">Destination ports</label>
           <div class="reference-stack"><input id="policy-destination-ports-${entry.id}"
             .value=${destinationPortValues.join(', ')}
-            .readOnly=${this.originReadOnly(`${policyBase}.dport`, liveReadOnly)} />${this.renderPortReferences(policy.destinationPorts)}</div>
+            .readOnly=${this.originReadOnly(`${policyBase}.dport`, liveReadOnly)} />${this.renderPortReferences(destinationPortValues)}</div>
           ${this.renderPolicyProfileField(entry, 'tls', 'TLS profile', 'tls', policy.tlsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'routing', 'Routing profile', 'routing', policy.routing, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'detection', 'Detection profile', 'detection', policy.detectionProfile, liveReadOnly)}
@@ -4620,13 +4636,16 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
-  private renderAddressReferences(references: ReadonlyArray<ConfigReference>) {
-    return html`${references.map(reference => reference.id ? html`
-      <button class="reference" type="button"
-        @click=${(event: MouseEvent) => this.openAddress(reference.id!, event.currentTarget as HTMLElement)}>
-        <span>${reference.name}</span><span aria-hidden="true">→</span>
-      </button>
-    ` : nothing)}`;
+  private renderAddressReferences(names: ReadonlyArray<string>) {
+    return html`${names.map(name => {
+      const reference = this.snapshot?.addresses.find(item => item.name === name);
+      return reference ? html`
+        <button class="reference" type="button"
+          @click=${(event: MouseEvent) => this.openAddress(reference.id, event.currentTarget as HTMLElement)}>
+          <span>${reference.name}</span><span aria-hidden="true">→</span>
+        </button>
+      ` : html`<span>${name}</span>`;
+    })}`;
   }
 
   private renderPortReferences(names: ReadonlyArray<string>) {
