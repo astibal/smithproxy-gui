@@ -871,6 +871,10 @@ test('shows live Smithproxy status transitions', async ({page}) => {
 
   await expect(page.getByText('Core: Online')).toBeVisible();
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Alerts: Clear');
+  await expect(statusbar).toContainText('Freshness: Fresh');
+  await expect(statusbar).toContainText('Events: Live');
   await expect(page.getByText('Probe latency').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
   const activeAlerts = page.getByRole('region', {name: 'Active operational alerts'});
@@ -898,11 +902,13 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   state.smithproxy = 'unreachable';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Unreachable')).toBeVisible();
+  await expect(statusbar).toContainText('Alerts: 1 active');
   await expect(activeAlerts.getByText('Control plane is unavailable', {exact: true})).toBeVisible();
 
   state.smithproxy = 'ready';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
+  await expect(statusbar).toContainText('Alerts: Clear');
   await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
   const health = page.getByRole('region', {name: 'Operational health matrix'});
   await expect(health.getByRole('heading', {name: 'Control plane'})).toBeVisible();

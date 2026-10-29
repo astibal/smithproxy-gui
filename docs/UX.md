@@ -14,12 +14,16 @@
 │ Logs         │                                                         │
 │ System       │                                                         │
 ├──────────────┴─────────────────────────────────────────────────────────┤
-│ health │ config/draft │ backend jobs │ alerts │ connection freshness │
+│ core/proxy │ alerts │ probe freshness │ event stream │ config/draft │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 Navigace je záměrně doménová, ne kopií struktury konfiguračního souboru.
 Konkrétní položky se mohou během coverage mapování změnit.
+
+Provozní položky ve stavové liště používají stejné severity barvy jako monitoring
+a slouží jako zkratky do detailu. Na úzkém viewportu zůstává viditelný pouze
+stav GUI core a Smithproxy; fronta úloh se zobrazí až s reálným backend API.
 
 ## Drawer chain
 

@@ -41,6 +41,7 @@ import {
 } from './state/system-status';
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
+type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid';
 
 const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
   state: 'starting',
@@ -121,6 +122,7 @@ export class SmithproxyApp extends LitElement {
   @state() private operationalEvents: EventSnapshot = initialEvents;
   @state() private operationalAlerts: AlertSnapshot = initialAlerts;
   @state() private managementAudit: AuditSnapshot = initialAudit;
+  @state() private eventStreamState: EventStreamState = 'connecting';
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
   @state() private auditError: string | undefined;
@@ -391,12 +393,15 @@ export class SmithproxyApp extends LitElement {
     .usage { margin: 12px 0 0; padding: 0; list-style: none; }
     .usage li { padding: 7px 0; border-bottom: 1px solid var(--app-border); }
 
-    .statusbar { grid-column: 1 / -1; display: flex; gap: 20px; align-items: center; padding: 0 12px; border-top: 1px solid var(--app-border); background: var(--app-raised); color: var(--app-muted); font-size: 12px; }
+    .statusbar { grid-column: 1 / -1; display: flex; gap: 14px; align-items: center; overflow: hidden; padding: 0 12px; border-top: 1px solid var(--app-border); background: var(--app-raised); color: var(--app-muted); font-size: 12px; white-space: nowrap; }
     .system-state { color: var(--app-muted); }
     .system-state.success { color: var(--app-success); }
     .system-state.warning { color: var(--app-warning); }
     .system-state.danger { color: var(--app-danger); }
     .draft { color: var(--app-warning); }
+    .status-action { overflow: hidden; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+    .status-action:hover { color: var(--app-text); }
+    .status-action:focus-visible { outline: 2px solid var(--app-focus); outline-offset: 3px; }
     .spacer { flex: 1; }
 
     .error { margin: 24px; padding: 16px; border: 1px solid var(--app-danger); border-radius: 3px; color: var(--app-danger); }
@@ -423,6 +428,7 @@ export class SmithproxyApp extends LitElement {
       .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
       .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .35fr) minmax(220px, 1fr); max-width: 920px; }
+      .status-tertiary { display: none; }
     }
 
     @media (max-width: 620px) {
@@ -445,7 +451,7 @@ export class SmithproxyApp extends LitElement {
       .form-grid > *, .reference-edit { min-width: 0; }
       .form-grid label:not(:first-child) { margin-top: 10px; }
       .statusbar { grid-row: 3; }
-      .statusbar span:nth-of-type(n + 3) { display: none; }
+      .status-secondary { display: none; }
       .metric-grid { grid-template-columns: 1fr; }
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
@@ -497,6 +503,7 @@ export class SmithproxyApp extends LitElement {
     if (document.visibilityState === 'hidden') {
       this.clearSystemProbe();
       this.disconnectEventStream();
+      this.eventStreamState = 'paused';
     } else {
       this.connectEventStream();
       void this.probeSystem();
@@ -515,10 +522,12 @@ export class SmithproxyApp extends LitElement {
 
   private connectEventStream(): void {
     if (this.closeEventStream || !this.systemClient || document.visibilityState === 'hidden') return;
+    this.eventStreamState = 'connecting';
     this.closeEventStream = this.systemClient.subscribeEvents({
       snapshot: snapshot => {
         this.operationalEvents = snapshot;
         this.eventsError = undefined;
+        this.eventStreamState = 'live';
       },
       event: event => {
         const withoutDuplicate = this.operationalEvents.events.filter(item => item.id !== event.id);
@@ -527,10 +536,12 @@ export class SmithproxyApp extends LitElement {
           events: [...withoutDuplicate, event].slice(-60),
         };
         this.eventsError = undefined;
+        this.eventStreamState = 'live';
       },
       invalid: error => {
         this.disconnectEventStream();
         this.eventsError = error.message;
+        this.eventStreamState = 'invalid';
       },
     });
   }
@@ -4285,6 +4296,12 @@ export class SmithproxyApp extends LitElement {
 
   protected render() {
     if (this.loadingError) return html`<div class="error" role="alert">${this.loadingError}</div>`;
+    const controlFreshness = classifyFreshness(this.systemStatus.lastSuccessAtUnixMs, 5_000);
+    const activeAlertCount = this.operationalAlerts.alerts.length;
+    const hasCriticalAlert = this.operationalAlerts.alerts.some(alert => alert.severity === 'critical');
+    const alertTone = this.alertsError || hasCriticalAlert ? 'danger' : activeAlertCount > 0 ? 'warning' : 'success';
+    const streamTone = this.eventsError || this.eventStreamState === 'invalid' ? 'danger' :
+      this.eventStreamState === 'live' ? 'success' : 'warning';
     return html`
       <div class="shell" @keydown=${this.handleKeydown}>
         <aside class="sidebar">
@@ -4319,22 +4336,38 @@ export class SmithproxyApp extends LitElement {
             ${this.drawers.map((entry, index) => this.renderDrawer(entry, index))}
           </div>
         </main>
-        <footer class="statusbar">
+        <footer class="statusbar" aria-label="System status">
           <span class="system-state ${this.systemStatus.core === 'online' ? 'success' : this.systemStatus.core === 'offline' ? 'danger' : 'warning'}">
             ● Core: ${displayState(this.systemStatus.core)}
           </span>
           <span class="system-state ${statusTone(this.systemStatus)}" title=${this.systemStatusTitle()} aria-live="polite">
             ● Smithproxy: ${displayState(this.systemStatus.smithproxy)}
           </span>
-          <span class=${this.draftChangeCount ? 'draft' : ''}>Draft: ${this.draftChangeCount} changes</span>
-          <span title=${this.configError ?? this.snapshot?.detail ?? ''}>
+          <button class="status-action status-secondary system-state ${alertTone}" type="button"
+            title=${this.alertsError ?? (activeAlertCount ? 'Open active operational alerts' : 'No active operational alerts')}
+            aria-live="polite"
+            @click=${() => { this.activeSection = 'Dashboard'; }}>
+            ● Alerts: ${this.alertsError ? 'Unavailable' : activeAlertCount ? `${activeAlertCount} active` : 'Clear'}
+          </button>
+          <button class="status-action status-secondary system-state ${this.freshnessTone(controlFreshness.state)}" type="button"
+            title="Last successful authenticated control-plane probe: ${this.sampleAgeLabel(this.systemStatus.lastSuccessAtUnixMs)}"
+            @click=${() => { this.activeSection = 'Monitoring'; }}>
+            ● Freshness: ${freshnessLabel(controlFreshness.state)}
+          </button>
+          <button class="status-action status-secondary system-state ${streamTone}" type="button"
+            title=${this.eventsError ?? 'Open operational events'}
+            @click=${() => { this.activeSection = 'Monitoring'; }}>
+            ● Events: ${displayState(this.eventStreamState)}
+          </button>
+          <span class="status-secondary ${this.draftChangeCount ? 'draft' : ''}">Draft: ${this.draftChangeCount} changes</span>
+          <span class="status-secondary" title=${this.configError ?? this.snapshot?.detail ?? ''}>
             Config: ${this.snapshot?.source === 'live'
               ? `${displayState(this.snapshot.state)}${this.configError ? ' · refresh failed' : ''}`
               : this.configError ? 'Preview · live unavailable' : this.snapshot ? 'Preview' : 'Loading'}
             ${this.configRefreshDeferred ? ' · refresh paused' : ''}
           </span>
-          <span>API: ${this.apiVersion}</span><span class="spacer"></span>
-          <span>Revision ${this.snapshot?.revision ?? 'runtime'}</span>
+          <span class="status-tertiary">API: ${this.apiVersion}</span><span class="spacer"></span>
+          <span class="status-tertiary">Revision ${this.snapshot?.revision ?? 'runtime'}</span>
         </footer>
       </div>
     `;
