@@ -2073,6 +2073,51 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   await expect(editor.getByLabel('Placement')).toHaveValue('before:policy-0');
 });
 
+test('links policy references to objects created earlier in the same draft', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('button', {name: 'New address'}).click();
+  let addressEditor = page.getByRole('dialog', {name: 'Create address object'});
+  await addressEditor.getByLabel('Name').fill('pending-branch');
+  await addressEditor.getByLabel('Address', {exact: true}).fill('198.51.100.0/24');
+  await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(addressEditor.getByText('Saved to draft')).toBeVisible();
+  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: 'New policy'}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Create policy'});
+  await policyEditor.getByLabel('Name').fill('pending-branch-policy');
+  await policyEditor.getByLabel('Sources').fill('pending-branch');
+  await policyEditor.getByLabel('Destinations').fill('internet');
+  const pendingReference = policyEditor.getByRole('button', {name: /pending-branch pending draft/u});
+  await expect(pendingReference).toBeVisible();
+  await pendingReference.click();
+  addressEditor = page.getByRole('dialog', {name: 'Create address object'});
+  await expect(addressEditor.getByLabel('Name')).toHaveValue('pending-branch');
+  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(policyEditor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(2);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {op: 'create', collection: 'address_objects', fields: {name: 'pending-branch'}},
+  });
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 1,
+    operation: {
+      op: 'create', collection: 'policy', fields: {src: ['pending-branch'], dst: ['internet']},
+    },
+  });
+  await expectNoWcagViolations(page);
+});
+
 test('confirms policy deletion and blocks removal of referenced objects', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
