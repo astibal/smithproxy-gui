@@ -38,7 +38,9 @@ to the canonical base revision and a core-generated idempotency UUID and rejects
 the encoded body when the negotiated or hard 1 MiB limit is exceeded. Upstream
 responses are reduced to fixed outcome states and aggregate metadata before any
 browser-facing endpoint can consume them. The explicit validation endpoint uses
-this adapter; commit has no browser-facing endpoint yet.
+this adapter. The internal commit transport accepts an idempotency UUID supplied
+by its coordinator so an uncertain attempt can be retried with the same key;
+commit still has no browser-facing endpoint.
 
 A validation success must echo the canonical base revision as both `revision`
 and `previous_revision`. A commit success must echo that base as
@@ -155,6 +157,12 @@ loaded an older or unbound draft cannot submit changes under a new revision.
 Once the draft contains a change, its base revision is immutable until discard
 or a future successful atomic commit; live revision changes are never silently
 rebased.
+
+The draft store has a separate atomic commit-finalization operation. It requires
+the exact draft version, a non-empty draft, a canonical new revision different
+from the base, and then clears the changes, advances the base, and increments
+the version under one lock. A concurrent local edit therefore cannot be erased
+by a delayed upstream response.
 
 Validation accepts only `expected_version`; draft values are loaded inside the
 GUI core and are never echoed by the browser. The mutation requires the same

@@ -131,13 +131,24 @@ SmithproxyStatus SmithproxyMonitor::status() const {
 }
 
 TransactionResponse SmithproxyMonitor::validate_transaction(const DraftSnapshot& draft) const {
+    const auto idempotency_key = generate_transaction_idempotency_key();
+    if (!idempotency_key) return transaction_failure("unavailable");
+    return execute_transaction(draft, TransactionMode::Validate, *idempotency_key);
+}
+
+TransactionResponse SmithproxyMonitor::commit_transaction(
+    const DraftSnapshot& draft, const std::string_view idempotency_key) const {
+    return execute_transaction(draft, TransactionMode::Commit, idempotency_key);
+}
+
+TransactionResponse SmithproxyMonitor::execute_transaction(
+    const DraftSnapshot& draft, const TransactionMode mode,
+    const std::string_view idempotency_key) const {
     if (!config_ || !config_enabled_) return transaction_failure("unavailable");
     if (!draft.base_revision) return transaction_failure("unavailable");
     const auto capabilities = status().transaction_capabilities;
-    const auto idempotency_key = generate_transaction_idempotency_key();
-    if (!idempotency_key) return transaction_failure("unavailable");
     const auto envelope = build_transaction_envelope(
-        draft, TransactionMode::Validate, *idempotency_key, capabilities);
+        draft, mode, idempotency_key, capabilities);
     if (!envelope.body) {
         return transaction_failure(
             envelope.error_code == "transaction.request_too_large" ||
@@ -185,7 +196,7 @@ TransactionResponse SmithproxyMonitor::validate_transaction(const DraftSnapshot&
     long status_code{};
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
     return parse_transaction_response(
-        status_code, response.body, TransactionMode::Validate, *draft.base_revision,
+        status_code, response.body, mode, *draft.base_revision,
         draft.changes.size());
 }
 

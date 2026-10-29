@@ -92,7 +92,10 @@ values generated inside the GUI core directly from the operating-system CSPRNG.
 The response parser discards upstream messages and warning contents; it retains
 only a fixed terminal state, validated revisions, operation and warning counts,
 and a bounded restart enum. The adapter is connected only to the explicit
-browser validation endpoint; no browser commit endpoint exists yet.
+browser validation endpoint; no browser commit endpoint exists yet. Its internal
+commit mode does not generate a fresh key implicitly: the future coordinator
+must retain and reuse one validated UUID for every uncertain retry of the same
+draft version and base revision.
 
 The explicit draft-validation endpoint accepts only an optimistic draft version;
 it obtains every value from the server-side snapshot after gateway and CSRF
@@ -105,6 +108,11 @@ The browser treats validation as a versioned, ephemeral result rather than an
 authorization token. It requires an exact match on draft version, base revision,
 and operation count, and discards the result whenever the draft version changes.
 Commit must repeat authoritative validation inside the upstream transaction.
+
+After a successful commit response, draft finalization compares the optimistic
+version again under the draft lock and requires a different canonical revision.
+If another local writer changed the draft while the request was in flight, the
+newer draft is preserved rather than cleared.
 
 Draft preflight serializes only bounded aggregate counts and stable blocker
 codes. It does not return paths, values, diffs, or validation payloads and uses

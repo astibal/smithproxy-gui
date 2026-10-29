@@ -121,6 +121,22 @@ DraftMutationResult DraftStore::clear(const std::uint64_t expected_version) {
     return DraftMutationResult::Applied;
 }
 
+DraftMutationResult DraftStore::complete_commit(
+    const std::uint64_t expected_version, const std::string& committed_revision) {
+    if (!is_canonical_revision(committed_revision)) return DraftMutationResult::InvalidValue;
+    std::scoped_lock lock(mutex_);
+    if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
+    if (draft_.changes.empty()) return DraftMutationResult::Missing;
+    if (!draft_.base_revision || !is_canonical_revision(*draft_.base_revision) ||
+        *draft_.base_revision == committed_revision) {
+        return DraftMutationResult::InvalidValue;
+    }
+    draft_.changes.clear();
+    draft_.base_revision = committed_revision;
+    ++draft_.version;
+    return DraftMutationResult::Applied;
+}
+
 bool DraftStore::valid_path(const std::string& path) {
     if (path.empty() || path.size() > maximum_path_length) return false;
     return std::all_of(path.begin(), path.end(), [](const unsigned char character) {

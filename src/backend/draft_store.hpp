@@ -43,6 +43,8 @@ public:
     DraftMutationResult upsert_many(std::uint64_t expected_version, std::vector<DraftChange> changes);
     DraftMutationResult remove(std::uint64_t expected_version, const std::string& path);
     DraftMutationResult clear(std::uint64_t expected_version);
+    DraftMutationResult complete_commit(
+        std::uint64_t expected_version, const std::string& committed_revision);
 
 private:
     static bool valid_path(const std::string& path);

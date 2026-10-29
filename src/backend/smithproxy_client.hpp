@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -55,6 +56,8 @@ public:
     void stop();
     [[nodiscard]] SmithproxyStatus status() const;
     [[nodiscard]] TransactionResponse validate_transaction(const DraftSnapshot& draft) const;
+    [[nodiscard]] TransactionResponse commit_transaction(
+        const DraftSnapshot& draft, std::string_view idempotency_key) const;
     [[nodiscard]] bool configured() const noexcept { return config_.has_value(); }
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 
@@ -67,6 +70,9 @@ private:
     NeighborMetrics fetch_neighbor_metrics() const;
     ConfigSnapshot fetch_config_snapshot() const;
     TransactionCapabilities fetch_transaction_capabilities() const;
+    TransactionResponse execute_transaction(
+        const DraftSnapshot& draft, TransactionMode mode,
+        std::string_view idempotency_key) const;
 
     std::optional<SmithproxyConfig> config_;
     bool config_enabled_{};

@@ -273,7 +273,11 @@ and per-layer values without flattening provenance.
 The browser continues to communicate only with the same-origin GUI core. The GUI
 core owns the Smithproxy credential, generates the idempotency key, forwards the
 bounded transaction, and redacts upstream details before returning a result.
-The commit button remains unavailable until Smithproxy advertises this capability.
+A commit coordinator retains the same key across an uncertain retry; the
+transport never silently substitutes a new key. Draft finalization checks the
+version again and advances its base revision under one lock, so a concurrent
+local edit is never erased by a delayed response. The commit button remains
+unavailable until Smithproxy advertises this capability.
 Structural controls additionally remain unavailable until the capability reports
 the matching operation version, stable entity IDs, and the relevant collection
 schema. A generic `config_write` boolean is not sufficient evidence.

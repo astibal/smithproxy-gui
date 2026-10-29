@@ -129,7 +129,10 @@ fixed `review-required` diagnostic state but cannot enable configuration writes.
 The internal transaction envelope and response parser are also implemented:
 they bind typed changes to a canonical revision and OS-generated idempotency
 UUID while discarding free-form upstream response text. No browser commit path
-is enabled yet. Draft preflight reports the exact fixed blocker category instead
+is enabled yet. The internal commit transport now requires a caller-owned stable
+idempotency UUID, and draft finalization atomically verifies the draft version,
+clears changes, and advances the canonical base revision only after a bound
+success response. Draft preflight reports the exact fixed blocker category instead
 of collapsing missing advertisement, schema review, compatibility, revision,
 and transport readiness into one generic error.
 The CSRF-protected validation endpoint is present as well and sends no draft

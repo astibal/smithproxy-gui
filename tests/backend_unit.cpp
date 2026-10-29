@@ -94,6 +94,24 @@ int main() {
     assert(revision_draft.snapshot().version == 4U);
     assert(revision_draft.snapshot().base_revision == canonical_revision_b);
 
+    DraftStore commit_draft{"commit-draft", canonical_revision_a};
+    assert(commit_draft.upsert(0U, {"policy.[0].action", std::string("reject")}) ==
+           DraftMutationResult::Applied);
+    assert(commit_draft.complete_commit(0U, canonical_revision_b) ==
+           DraftMutationResult::VersionConflict);
+    assert(commit_draft.complete_commit(1U, "revision-8") ==
+           DraftMutationResult::InvalidValue);
+    assert(commit_draft.complete_commit(1U, canonical_revision_a) ==
+           DraftMutationResult::InvalidValue);
+    assert(commit_draft.snapshot().changes.size() == 1U);
+    assert(commit_draft.complete_commit(1U, canonical_revision_b) ==
+           DraftMutationResult::Applied);
+    assert(commit_draft.snapshot().version == 2U);
+    assert(commit_draft.snapshot().base_revision == canonical_revision_b);
+    assert(commit_draft.snapshot().changes.empty());
+    assert(commit_draft.complete_commit(2U, canonical_revision_a) ==
+           DraftMutationResult::Missing);
+
     const auto parsed_revision = parse_config_revision(
         "{\"success\":{\"revision\":\"" + canonical_revision_a + "\"}}");
     assert(parsed_revision.revision == canonical_revision_a);
@@ -280,6 +298,10 @@ int main() {
     assert(validation_document["operations"][0] == nlohmann::json({
         {"op", "set"}, {"path", "policy.[0].action"}, {"value", "reject"},
     }));
+    const auto commit_envelope = build_transaction_envelope(
+        transaction_draft, TransactionMode::Commit, idempotency_key, ready_transaction);
+    assert(commit_envelope.body);
+    assert(nlohmann::json::parse(*commit_envelope.body)["mode"] == "commit");
     assert(build_transaction_envelope(
         transaction_draft, TransactionMode::Commit, "invalid", ready_transaction).error_code ==
         "transaction.unavailable");
@@ -321,12 +343,16 @@ int main() {
 
     SmithproxyMonitor unconfigured_monitor{std::nullopt, true};
     assert(unconfigured_monitor.validate_transaction(transaction_draft).state == "unavailable");
+    assert(unconfigured_monitor.commit_transaction(transaction_draft, idempotency_key).state ==
+           "unavailable");
     SmithproxyMonitor undiscovered_monitor{SmithproxyConfig{
         .api_url = "https://127.0.0.1:1",
         .api_key = "not-sent-before-capability-readiness",
         .ca_cert = "/nonexistent",
     }, true};
     assert(undiscovered_monitor.validate_transaction(transaction_draft).state == "unavailable");
+    assert(undiscovered_monitor.commit_transaction(transaction_draft, idempotency_key).state ==
+           "unavailable");
 
     const auto metrics = parse_listener_metrics(R"({"listeners":[
         {"name":"tcp","workers":2,"sessions_total":12,"sessions_active":3,
