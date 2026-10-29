@@ -177,6 +177,61 @@ int main() {
     assert(structural_store.clear(3U) == DraftMutationResult::Applied);
     assert(structural_store.snapshot().empty());
 
+    DraftStore signature_store{"signature-draft"};
+    const DraftCreateOperation create_signature{
+        .local_id = "create-signature-1",
+        .collection = "starttls_signatures",
+        .client_id = "new-starttls-signature",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {
+            {"cat", std::string("mail")},
+            {"name", std::string("smtp-starttls")},
+            {"side", std::string("server")},
+            {"severity", std::int64_t{5}},
+            {"group", std::string{}},
+            {"enables", std::string{}},
+            {"engine", std::string{}},
+        },
+    };
+    const DraftCreateOperation create_signature_flow{
+        .local_id = "create-signature-flow-1",
+        .collection = "starttls_signatures.flow",
+        .client_id = "new-starttls-signature-flow",
+        .parent_id = "new-starttls-signature",
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {
+            {"side", std::string("w")},
+            {"type", std::string("regex")},
+            {"bytes_start", std::int64_t{0}},
+            {"bytes_max", std::int64_t{4096}},
+            {"signature", std::string("STARTTLS")},
+        },
+    };
+    assert(signature_store.upsert_structural(0U, create_signature) ==
+           DraftMutationResult::InvalidValue);
+    assert(signature_store.snapshot().version == 0U);
+    assert(signature_store.upsert_structural_many(
+               0U, {create_signature, create_signature_flow}) == DraftMutationResult::Applied);
+    const auto atomic_signature = signature_store.snapshot();
+    assert(atomic_signature.version == 1U);
+    assert(atomic_signature.structural_operations.size() == 2U);
+    auto invalid_flow = create_signature_flow;
+    invalid_flow.local_id = "create-signature-flow-2";
+    invalid_flow.client_id = "new-starttls-signature-flow-2";
+    std::get<std::string>(invalid_flow.fields["side"]) = "invalid";
+    assert(signature_store.upsert_structural_many(
+               1U, {create_signature, invalid_flow}) == DraftMutationResult::InvalidValue);
+    assert(signature_store.snapshot().version == 1U);
+    assert(signature_store.snapshot().structural_operations.size() == 2U);
+    assert(signature_store.upsert_structural_many(
+               0U, {create_signature, create_signature_flow}) ==
+           DraftMutationResult::VersionConflict);
+    assert(signature_store.remove_structural(1U, "create-signature-flow-1") ==
+           DraftMutationResult::Applied);
+    assert(signature_store.snapshot().version == 2U);
+    assert(signature_store.snapshot().structural_operations.empty());
+
     const std::string canonical_revision_a = "sha256:" + std::string(64U, 'a');
     const std::string canonical_revision_b = "sha256:" + std::string(64U, 'b');
     const auto revision_observation = std::chrono::steady_clock::now();

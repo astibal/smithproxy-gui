@@ -978,6 +978,13 @@ def main() -> int:
             assert request(
                 configured_port, "/api/v1/config/draft/operations", "POST",
                 body=json.dumps(structural_operation))[0] == 401
+            structural_batch = {
+                "expected_version": 1,
+                "operations": [structural_operation["operation"]],
+            }
+            assert request(
+                configured_port, "/api/v1/config/draft/operations/batch", "POST",
+                body=json.dumps(structural_batch))[0] == 401
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/operations", "POST",
                 headers=mutation_headers, body=json.dumps(structural_operation),
@@ -987,6 +994,11 @@ def main() -> int:
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/operations", "POST",
                 headers=mutation_headers, body=json.dumps(malformed_structural),
+            ), 400, "draft.invalid_request")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/operations/batch", "POST",
+                headers=mutation_headers,
+                body=json.dumps({"expected_version": 1, "operations": []}),
             ), 400, "draft.invalid_request")
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/operations/remove", "POST",
@@ -1034,7 +1046,7 @@ def main() -> int:
             ), 400, "draft.invalid_request")
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
-                headers=mutation_headers, body="x" * (64 * 1024 + 1),
+                headers=mutation_headers, body="x" * (128 * 1024 + 1),
             ), 413, "request.body_too_large")
             unchanged_after_rejections = json.loads(request(
                 configured_port, "/api/v1/config/draft", headers=gateway_headers)[2])

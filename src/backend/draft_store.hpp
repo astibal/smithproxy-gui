@@ -95,6 +95,8 @@ public:
     DraftMutationResult remove_many(std::uint64_t expected_version, std::vector<std::string> paths);
     DraftMutationResult upsert_structural(
         std::uint64_t expected_version, DraftStructuralOperation operation);
+    DraftMutationResult upsert_structural_many(
+        std::uint64_t expected_version, std::vector<DraftStructuralOperation> operations);
     DraftMutationResult remove_structural(
         std::uint64_t expected_version, const std::string& local_id);
     DraftMutationResult clear(std::uint64_t expected_version);

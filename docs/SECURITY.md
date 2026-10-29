@@ -270,6 +270,10 @@ autentizace a nejvýše 32 validovaných konfiguračních cest. Neobsahuje hodno
 request body, credentials ani secrets a po restartu core se ztratí. Endpoint
 vyžaduje stejné gateway ověření jako ostatní management monitoring.
 
+Tělo každého HTTP requestu je omezené na 128 KiB. Hranice ponechává prostor pro
+největší povolený 65 536znakový write-only matcher v atomické strukturální JSON
+obálce; první byte za hranicí vede k HTTP 413 ještě před parsováním dokumentu.
+
 Současný Saslik handoff neposkytuje prověřenou identitu uživatele. Core proto
 explicitně vrací nedostupnou actor attribution a nedůvěřuje klientem dodaným
 identity hlavičkám. Persistentní audit po schválení identity kontraktu musí pro

@@ -95,6 +95,11 @@ type MockState = {
     operation: Record<string, unknown>;
     csrf: string | null;
   }>;
+  structuralBatchMutationRequests?: Array<{
+    expectedVersion: number;
+    operations: Array<Record<string, unknown>>;
+    csrf: string | null;
+  }>;
   validationReady?: boolean;
   commitReady?: boolean;
   structuralDraftsReady?: boolean;
@@ -470,6 +475,34 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     draft = {...draft, version: draft.version + 1, changes: [], structural_operations: []};
     await route.fulfill({json: draft});
   });
+  await page.route('**/api/v1/config/draft/operations/batch', async route => {
+    const request = route.request();
+    const body = request.postDataJSON() as {
+      expected_version: number;
+      operations: Array<{local_id: string; collection: string; op: string; fields?: Record<string, unknown>}>
+    };
+    state.structuralBatchMutationRequests?.push({
+      expectedVersion: body.expected_version,
+      operations: body.operations,
+      csrf: await request.headerValue('X-Smithproxy-GUI-CSRF'),
+    });
+    if (body.expected_version !== draft.version || body.operations.length === 0) {
+      await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
+      return;
+    }
+    const operations = [...draft.structural_operations];
+    for (const operation of body.operations) {
+      const storedOperation = operation.op === 'create' && operation.collection.endsWith('_signatures.flow') &&
+          operation.fields
+        ? {...operation, fields: {...operation.fields, signature: '[redacted:replace]'}}
+        : operation;
+      const existing = operations.findIndex(item => item.local_id === operation.local_id);
+      if (existing < 0) operations.push(storedOperation);
+      else operations[existing] = storedOperation;
+    }
+    draft = {...draft, version: draft.version + 1, structural_operations: operations};
+    await route.fulfill({json: draft});
+  });
   await page.route('**/api/v1/config/draft/operations', async route => {
     const request = route.request();
     const body = request.postDataJSON() as {
@@ -538,11 +571,20 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       await route.fulfill({status: 404, json: {error: 'draft change not found'}});
       return;
     }
+    const removed = draft.structural_operations.find(operation => operation.local_id === body.local_id);
+    const linkedParentId = removed?.op === 'create' &&
+      (removed.collection === 'starttls_signatures' || removed.collection === 'detection_signatures')
+      ? removed.client_id
+      : removed?.op === 'create' && (removed.collection === 'starttls_signatures.flow' ||
+          removed.collection === 'detection_signatures.flow')
+        ? removed.parent_id : undefined;
     draft = {
       ...draft,
       version: draft.version + 1,
       structural_operations: draft.structural_operations.filter(
-        operation => operation.local_id !== body.local_id,
+        operation => operation.local_id !== body.local_id &&
+          (linkedParentId === undefined || (operation.client_id !== linkedParentId &&
+            operation.parent_id !== linkedParentId)),
       ),
     };
     await route.fulfill({json: draft});
@@ -2445,6 +2487,93 @@ test('creates and safely reopens a signature flow step', async ({page}) => {
   await expect(createEditor.getByLabel('Byte window')).toHaveValue('64');
   await expect(createEditor.getByLabel('New signature flow expression')).toHaveValue('');
   await expect(createEditor.locator('.privacy-note')).toContainText('re-entering the write-only expression');
+});
+
+test('creates and removes a signature with its first flow step atomically', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, structuralBatchMutationRequests: [], structuralRemovalRequests: [],
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trustPosture = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trustPosture.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await trustPosture.getByRole('button', {name: 'New STARTTLS signature'}).click();
+
+  let editor = page.getByRole('dialog', {name: 'Create signature'});
+  await editor.getByLabel('Category').fill('mail');
+  await editor.getByLabel('Name').fill('imap-starttls');
+  await editor.getByLabel('Connection side').selectOption('server');
+  await editor.getByLabel('Severity').fill('7');
+  await editor.getByLabel('Group').fill('mail-upgrades');
+  await editor.getByLabel('Enables').fill('tls');
+  await editor.getByLabel('Engine').fill('builtin');
+  await editor.getByLabel('Direction').selectOption('w');
+  await editor.getByLabel('Matcher').selectOption('simple');
+  await editor.getByLabel('Byte offset').fill('4');
+  await editor.getByLabel('Byte window').fill('256');
+  await editor.getByLabel('New signature first flow expression').fill('PRIVATE-STARTTLS');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor.getByLabel('New signature first flow expression')).toHaveValue('');
+
+  expect(state.structuralBatchMutationRequests).toHaveLength(1);
+  const request = state.structuralBatchMutationRequests![0]!;
+  expect(request).toMatchObject({expectedVersion: 0, csrf: '1'});
+  expect(request.operations).toHaveLength(2);
+  expect(request.operations[0]).toMatchObject({
+    op: 'create', collection: 'starttls_signatures', position: {last: true},
+    fields: {
+      cat: 'mail', name: 'imap-starttls', side: 'server', severity: 7,
+      group: 'mail-upgrades', enables: 'tls', engine: 'builtin',
+    },
+  });
+  expect(request.operations[1]).toMatchObject({
+    op: 'create', collection: 'starttls_signatures.flow', position: {last: true},
+    fields: {side: 'w', type: 'simple', bytes_start: 4, bytes_max: 256, signature: 'PRIVATE-STARTTLS'},
+  });
+  expect(request.operations[1]!.parent_id).toBe(request.operations[0]!.client_id);
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 2'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(table).not.toContainText('PRIVATE-STARTTLS');
+  const parentRow = table.getByRole('row').filter({hasText: 'starttls_signatures · create'});
+  const flowRow = table.getByRole('row').filter({hasText: 'starttls_signatures.flow · create'});
+  await parentRow.getByRole('button', {name: 'Edit'}).click();
+  editor = page.getByRole('dialog', {name: 'Create signature'});
+  await expect(editor.getByLabel('Name')).toHaveValue('imap-starttls');
+  await expect(editor.getByLabel('Direction')).toHaveValue('w');
+  await expect(editor.getByLabel('New signature first flow expression')).toHaveValue('');
+  await editor.getByLabel('Name').fill('imap-starttls-updated');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('A matcher expression from 1 to 65536 characters is required.')).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toHaveLength(1);
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await editor.getByRole('button', {name: 'Discard changes'}).click();
+  await flowRow.getByRole('button', {name: /Remove .* from draft/u}).click();
+  expect(state.structuralRemovalRequests).toHaveLength(1);
+  await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
+  await expect(page.getByText('No pending changes', {exact: false})).toBeVisible();
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trustAfterRemoval = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trustAfterRemoval.getByText('Detection signatures', {exact: true}).last().click();
+  await trustAfterRemoval.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const existingEditor = page.getByRole('dialog', {name: 'Edit http/request'});
+  await existingEditor.getByRole('button', {name: 'Delete detection signature'}).click();
+  await existingEditor.getByRole('button', {name: 'Confirm delete detection signature'}).click();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 2, csrf: '1',
+    operation: {op: 'delete', collection: 'detection_signatures', entity_id: 'detection-signature-0'},
+  });
+  await expectNoWcagViolations(page);
 });
 
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {

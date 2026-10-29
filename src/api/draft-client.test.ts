@@ -115,6 +115,45 @@ describe('DraftClient', () => {
     await expect(client.removeOperation(-1, 'delete-address-1')).rejects.toThrow('Invalid draft version');
   });
 
+  it('serializes bounded structural operation batches atomically', async () => {
+    const snapshot = {
+      id: 'workspace-draft', base_revision: null, version: 1,
+      changes: [], structural_operations: [],
+    };
+    const fetcher = vi.fn().mockImplementation(async () => response(snapshot));
+    const client = new DraftClient('/api/v1', fetcher);
+    await client.upsertOperations(0, [{
+      op: 'create', localId: 'create-signature-1', collection: 'starttls_signatures',
+      clientId: 'new-starttls-signature', parentId: null,
+      position: {kind: 'last', reference: null},
+      fields: {name: 'smtp-starttls', cat: 'mail', side: 'server', severity: 5},
+    }, {
+      op: 'create', localId: 'create-signature-flow-1', collection: 'starttls_signatures.flow',
+      clientId: 'new-starttls-signature-flow', parentId: 'new-starttls-signature',
+      position: {kind: 'last', reference: null},
+      fields: {side: 'w', type: 'regex', bytes_start: 0, bytes_max: 4096, signature: 'STARTTLS'},
+    }]);
+    expect(fetcher).toHaveBeenLastCalledWith('/api/v1/config/draft/operations/batch',
+      expect.objectContaining({
+        method: 'POST', headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+      }));
+    expect(JSON.parse(String((fetcher.mock.calls.at(-1)?.[1] as RequestInit).body))).toEqual({
+      expected_version: 0,
+      operations: [{
+        op: 'create', local_id: 'create-signature-1', collection: 'starttls_signatures',
+        client_id: 'new-starttls-signature', position: {last: true},
+        fields: {name: 'smtp-starttls', cat: 'mail', side: 'server', severity: 5},
+      }, {
+        op: 'create', local_id: 'create-signature-flow-1', collection: 'starttls_signatures.flow',
+        client_id: 'new-starttls-signature-flow', parent_id: 'new-starttls-signature',
+        position: {last: true},
+        fields: {side: 'w', type: 'regex', bytes_start: 0, bytes_max: 4096, signature: 'STARTTLS'},
+      }],
+    });
+    await expect(client.upsertOperations(0, [])).rejects.toThrow('Invalid structural draft batch');
+    await expect(client.upsertOperations(-1, [])).rejects.toThrow('Invalid draft version');
+  });
+
   it.each([
     [{id: 'workspace-draft', base_revision: null, version: 0, changes: []}, 'Invalid draft response'],
     [{

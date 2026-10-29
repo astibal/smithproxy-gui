@@ -171,6 +171,14 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/config/draft/operations/batch",
+      "methods": ["POST"],
+      "authentication": "gateway",
+      "csrf": true,
+      "feature": "drafts",
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/config/draft/operations/remove",
       "methods": ["POST"],
       "authentication": "gateway",

@@ -94,6 +94,22 @@ bool valid_structural_set(const std::vector<DraftStructuralOperation>& operation
             }
         }
     }
+    for (std::size_t index = 0; index < operations.size(); ++index) {
+        const auto* parent = std::get_if<DraftCreateOperation>(&operations[index]);
+        if (parent == nullptr || (parent->collection != "starttls_signatures" &&
+                                  parent->collection != "detection_signatures")) {
+            continue;
+        }
+        const auto expected_flow_collection = parent->collection + ".flow";
+        const auto child = std::find_if(
+            operations.begin() + static_cast<std::ptrdiff_t>(index + 1U), operations.end(),
+            [&](const auto& candidate) {
+                const auto* create = std::get_if<DraftCreateOperation>(&candidate);
+                return create != nullptr && create->collection == expected_flow_collection &&
+                       create->parent_id == parent->client_id;
+            });
+        if (child == operations.end()) return false;
+    }
     return true;
 }
 
@@ -225,16 +241,32 @@ DraftMutationResult DraftStore::remove_many(
 
 DraftMutationResult DraftStore::upsert_structural(
     const std::uint64_t expected_version, DraftStructuralOperation operation) {
-    if (!valid_draft_structural_operation(operation)) return DraftMutationResult::InvalidValue;
+    std::vector<DraftStructuralOperation> operations;
+    operations.push_back(std::move(operation));
+    return upsert_structural_many(expected_version, std::move(operations));
+}
+
+DraftMutationResult DraftStore::upsert_structural_many(
+    const std::uint64_t expected_version, std::vector<DraftStructuralOperation> operations) {
+    if (operations.empty() || operations.size() > maximum_changes) {
+        return DraftMutationResult::InvalidValue;
+    }
+    if (!std::all_of(operations.begin(), operations.end(), [](const auto& operation) {
+            return valid_draft_structural_operation(operation);
+        })) {
+        return DraftMutationResult::InvalidValue;
+    }
     std::scoped_lock lock(mutex_);
     if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
     auto proposed = draft_.structural_operations;
-    const auto local_id = draft_structural_local_id(operation);
-    const auto found = std::find_if(proposed.begin(), proposed.end(), [local_id](const auto& item) {
-        return draft_structural_local_id(item) == local_id;
-    });
-    if (found == proposed.end()) proposed.push_back(std::move(operation));
-    else *found = std::move(operation);
+    for (auto& operation : operations) {
+        const auto local_id = draft_structural_local_id(operation);
+        const auto found = std::find_if(proposed.begin(), proposed.end(), [local_id](const auto& item) {
+            return draft_structural_local_id(item) == local_id;
+        });
+        if (found == proposed.end()) proposed.push_back(std::move(operation));
+        else *found = std::move(operation);
+    }
     if (draft_.changes.size() + proposed.size() > maximum_changes) {
         return DraftMutationResult::CapacityExceeded;
     }
@@ -263,6 +295,39 @@ DraftMutationResult DraftStore::remove_structural(
         draft_.structural_operations.begin(), draft_.structural_operations.end(),
         [&local_id](const auto& item) { return draft_structural_local_id(item) == local_id; });
     if (found == draft_.structural_operations.end()) return DraftMutationResult::Missing;
+    const auto linked_signature_parent = [&]() -> std::optional<std::string> {
+        const auto* create = std::get_if<DraftCreateOperation>(&*found);
+        if (create == nullptr) return std::nullopt;
+        if (create->collection == "starttls_signatures" ||
+            create->collection == "detection_signatures") {
+            return create->client_id;
+        }
+        if (create->collection != "starttls_signatures.flow" &&
+            create->collection != "detection_signatures.flow") {
+            return std::nullopt;
+        }
+        const auto parent = std::find_if(
+            draft_.structural_operations.begin(), draft_.structural_operations.end(),
+            [&](const auto& candidate) {
+                const auto* parent_create = std::get_if<DraftCreateOperation>(&candidate);
+                return parent_create != nullptr &&
+                       (parent_create->collection == "starttls_signatures" ||
+                        parent_create->collection == "detection_signatures") &&
+                       parent_create->client_id == create->parent_id;
+            });
+        if (parent == draft_.structural_operations.end()) return std::nullopt;
+        return std::get<DraftCreateOperation>(*parent).client_id;
+    }();
+    if (linked_signature_parent) {
+        std::erase_if(draft_.structural_operations, [&](const auto& candidate) {
+            const auto* create = std::get_if<DraftCreateOperation>(&candidate);
+            return create != nullptr &&
+                   (create->client_id == *linked_signature_parent ||
+                    create->parent_id == linked_signature_parent);
+        });
+        ++draft_.version;
+        return DraftMutationResult::Applied;
+    }
     draft_.structural_operations.erase(found);
     ++draft_.version;
     return DraftMutationResult::Applied;

@@ -178,8 +178,14 @@ The GUI core currently exposes one workspace-scoped foundation draft at
 `POST /api/v1/config/draft/clear`; one pending path or a bounded unique path
 group can be removed atomically with `POST /api/v1/config/draft/changes/remove`.
 Reviewed create, delete, and move operations use
-`POST /api/v1/config/draft/operations`; one operation is removed by its bounded
+`POST /api/v1/config/draft/operations`. A non-empty bounded group of related
+operations can be retained with one version increment through
+`POST /api/v1/config/draft/operations/batch`; validation or capacity failure
+rejects the complete group. One operation is removed by its bounded
 client-local identifier through `POST /api/v1/config/draft/operations/remove`.
+Removing either operation from a pending signature-plus-first-flow group removes
+the complete group with one version increment, so draft review cannot leave an
+orphan signature or flow step.
 The core accepts structural writes only while Smithproxy advertises the exact
 reviewed collection schema and compatible nesting and ordering semantics, and
 the current configuration snapshot carries opaque stable entity IDs bound to

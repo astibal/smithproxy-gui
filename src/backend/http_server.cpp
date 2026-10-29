@@ -59,7 +59,7 @@ struct Response {
     std::vector<std::pair<std::string, std::string>> headers;
 };
 
-constexpr std::size_t maximum_request_body = 64U * 1024U;
+constexpr std::size_t maximum_request_body = 128U * 1024U;
 
 std::string request_id_prefix() {
     std::random_device source;
@@ -127,6 +127,9 @@ MutationAuditMetadata mutation_audit_metadata(
     else if (relative == "/api/v1/config/draft/operations") {
         metadata.operation = "config.draft.operation.upsert";
     }
+    else if (relative == "/api/v1/config/draft/operations/batch") {
+        metadata.operation = "config.draft.operation.batch";
+    }
     else if (relative == "/api/v1/config/draft/operations/remove") {
         metadata.operation = "config.draft.operation.remove";
     }
@@ -152,7 +155,17 @@ MutationAuditMetadata mutation_audit_metadata(
         }
         metadata.targets.push_back(path);
     };
-    if (metadata.operation == "config.draft.operation.upsert" &&
+    if (metadata.operation == "config.draft.operation.batch" &&
+        document.contains("operations") && document["operations"].is_array()) {
+        for (const auto& operation : document["operations"]) {
+            if (operation.is_object() && operation.contains("local_id")) {
+                append_target(operation["local_id"]);
+            } else {
+                ++metadata.target_count;
+                metadata.targets_truncated = true;
+            }
+        }
+    } else if (metadata.operation == "config.draft.operation.upsert" &&
         document.contains("operation") && document["operation"].is_object() &&
         document["operation"].contains("local_id")) {
         append_target(document["operation"]["local_id"]);
@@ -538,6 +551,7 @@ private:
         if (*relative != "/api/v1/config/draft/changes" &&
             *relative != "/api/v1/config/draft/changes/remove" &&
             *relative != "/api/v1/config/draft/operations" &&
+            *relative != "/api/v1/config/draft/operations/batch" &&
             *relative != "/api/v1/config/draft/operations/remove" &&
             *relative != "/api/v1/config/draft/clear" &&
             *relative != "/api/v1/config/draft/validate" &&
@@ -770,6 +784,58 @@ private:
             const auto result = commit_coordinator_.mutate([&] {
                 return draft_.upsert_structural(
                     document["expected_version"].get<std::uint64_t>(), std::move(*operation));
+            });
+            if (result == DraftMutationResult::Busy) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"transaction commit in progress\"}"};
+            }
+            if (result == DraftMutationResult::VersionConflict) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"draft version conflict\"}"};
+            }
+            if (result != DraftMutationResult::Applied) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"draft change rejected\"}"};
+            }
+            return draft_snapshot();
+        }
+        if (*relative == "/api/v1/config/draft/operations/batch") {
+            if (document.is_discarded() || !document.is_object() || document.size() != 2U ||
+                !document.contains("expected_version") ||
+                !document["expected_version"].is_number_unsigned() ||
+                !document.contains("operations") || !document["operations"].is_array() ||
+                document["operations"].empty() || document["operations"].size() > 256U) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid structural draft batch request\"}"};
+            }
+            std::vector<DraftStructuralOperation> operations;
+            operations.reserve(document["operations"].size());
+            for (const auto& raw_operation : document["operations"]) {
+                auto operation = parse_draft_structural_operation(raw_operation);
+                if (!operation) {
+                    return {400, "application/json; charset=utf-8",
+                            "{\"error\":\"invalid structural draft batch request\"}"};
+                }
+                operations.push_back(std::move(*operation));
+            }
+            const auto status = monitor_.status();
+            const auto& capabilities = status.transaction_capabilities;
+            const auto current_draft = draft_.snapshot();
+            if (capabilities.state != "ready" || !status.config_snapshot.stable_entity_ids ||
+                !status.config_snapshot.revision || !current_draft.base_revision ||
+                *status.config_snapshot.revision != *current_draft.base_revision) {
+                return {503, "application/json; charset=utf-8",
+                        "{\"error\":\"structural draft unavailable\"}"};
+            }
+            if (!std::all_of(operations.begin(), operations.end(), [&](const auto& operation) {
+                    return structural_operation_supported(operation, capabilities);
+                })) {
+                return {422, "application/json; charset=utf-8",
+                        "{\"error\":\"draft change rejected\"}"};
+            }
+            const auto result = commit_coordinator_.mutate([&] {
+                return draft_.upsert_structural_many(
+                    document["expected_version"].get<std::uint64_t>(), std::move(operations));
             });
             if (result == DraftMutationResult::Busy) {
                 return {409, "application/json; charset=utf-8",

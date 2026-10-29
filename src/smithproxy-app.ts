@@ -344,6 +344,8 @@ export class SmithproxyApp extends LitElement {
   private readonly referencePreviewValues = new Map<string, string>();
   private readonly contentRuleCreateParents = new Map<string, string>();
   private readonly signatureFlowCreateParents = new Map<string, string>();
+  private readonly signatureCreateKinds = new Map<string, 'starttls' | 'detection'>();
+  private readonly signatureCreateFlowIds = new Map<string, string>();
   private readonly profileCreateTypes = new Map<string, ProfileCreateType>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
@@ -390,6 +392,7 @@ export class SmithproxyApp extends LitElement {
     button, input, select, textarea { font: inherit; }
     button, a, input, select, textarea { outline-color: var(--app-focus); }
     button { color: inherit; }
+    summary { min-height: 24px; cursor: pointer; }
 
     .shell {
       display: grid;
@@ -1125,6 +1128,8 @@ export class SmithproxyApp extends LitElement {
     this.drawerInitialChanges.clear();
     this.contentRuleCreateParents.clear();
     this.signatureFlowCreateParents.clear();
+    this.signatureCreateKinds.clear();
+    this.signatureCreateFlowIds.clear();
     this.profileCreateTypes.clear();
     this.drawers = [];
     this.drawerOrigins = [];
@@ -1656,8 +1661,24 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && operation.collection === 'content_profiles.content_rules') {
         objects.add(`content-rule-create:${operation.localId}`);
       }
+      if (operation.op === 'create' &&
+          (operation.collection === 'starttls_signatures' || operation.collection === 'detection_signatures')) {
+        objects.add(`signature-create:${operation.localId}`);
+        this.signatureCreateKinds.set(
+          operation.localId,
+          operation.collection === 'starttls_signatures' ? 'starttls' : 'detection',
+        );
+        const flow = snapshot.structuralOperations.find(candidate =>
+          candidate.op === 'create' && candidate.collection === `${operation.collection}.flow` &&
+          candidate.parentId === operation.clientId);
+        if (flow?.op === 'create') this.signatureCreateFlowIds.set(operation.localId, flow.localId);
+      }
       if (operation.op === 'create' && operation.collection.endsWith('_signatures.flow')) {
-        objects.add(`signature-flow-create:${operation.localId}`);
+        const pendingParent = snapshot.structuralOperations.some(candidate =>
+          candidate.op === 'create' &&
+          (candidate.collection === 'starttls_signatures' || candidate.collection === 'detection_signatures') &&
+          candidate.clientId === operation.parentId);
+        if (!pendingParent) objects.add(`signature-flow-create:${operation.localId}`);
       }
       if (operation.op === 'delete') {
         const kind = operation.collection === 'policy' ? 'policy'
@@ -1666,6 +1687,8 @@ export class SmithproxyApp extends LitElement {
               : operation.collection === 'proto_objects' ? 'protocol'
                 : operation.collection === 'content_profiles.content_rules' ? 'content-rule'
                 : operation.collection.endsWith('_signatures.flow') ? 'signature-flow'
+                  : operation.collection === 'starttls_signatures' ||
+                    operation.collection === 'detection_signatures' ? 'signature'
                   : operation.collection === 'tls_ca' ? 'authority'
                     : operation.collection === 'routing' || operation.collection.endsWith('_profiles')
                       ? 'profile' : undefined;
@@ -1958,6 +1981,16 @@ export class SmithproxyApp extends LitElement {
 
   private openDraftStructuralOperation(localId: string, origin: HTMLElement): void {
     const operation = this.workspaceDraft?.structuralOperations.find(item => item.localId === localId);
+    if (operation?.op === 'create' && operation.collection.endsWith('_signatures.flow')) {
+      const parent = this.workspaceDraft?.structuralOperations.find(candidate =>
+        candidate.op === 'create' &&
+        (candidate.collection === 'starttls_signatures' || candidate.collection === 'detection_signatures') &&
+        candidate.clientId === operation.parentId);
+      if (parent?.op === 'create') {
+        this.openDraftStructuralOperation(parent.localId, origin);
+        return;
+      }
+    }
     if (operation?.op === 'move' && operation.collection === 'policy') {
       const policy = this.snapshot?.policies.find(item => item.id === operation.entityId);
       if (policy) this.openPolicy(policy, origin);
@@ -1973,6 +2006,7 @@ export class SmithproxyApp extends LitElement {
     }
     if (operation?.op !== 'create' || ![
       'address_objects', 'port_objects', 'proto_objects', 'policy', 'content_profiles.content_rules',
+      'starttls_signatures', 'detection_signatures',
       'starttls_signatures.flow', 'detection_signatures.flow',
       ...Object.values(profileCreateCollections),
       'tls_ca',
@@ -1983,6 +2017,8 @@ export class SmithproxyApp extends LitElement {
           : operation.collection === 'proto_objects' ? 'protocol-create'
             : Object.values(profileCreateCollections).includes(operation.collection) ? 'profile-create'
               : operation.collection === 'tls_ca' ? 'authority-create'
+                : operation.collection === 'starttls_signatures' ||
+                  operation.collection === 'detection_signatures' ? 'signature-create'
                 : operation.collection === 'content_profiles.content_rules'
                   ? 'content-rule-create' : 'signature-flow-create';
     const fallback = operation.collection === 'policy' ? 'New policy'
@@ -1991,6 +2027,8 @@ export class SmithproxyApp extends LitElement {
           : operation.collection === 'proto_objects' ? 'New protocol object'
             : Object.values(profileCreateCollections).includes(operation.collection) ? 'New profile'
               : operation.collection === 'tls_ca' ? 'New certificate authority'
+                : operation.collection === 'starttls_signatures' ||
+                  operation.collection === 'detection_signatures' ? 'New signature'
                 : operation.collection === 'content_profiles.content_rules'
                   ? 'New content rule' : 'New signature flow step';
     this.openObjectDrawer({
@@ -2109,6 +2147,13 @@ export class SmithproxyApp extends LitElement {
       return authority
         ? {collection: 'tls_ca', entityId: authority.id,
           label: 'certificate authority', usageCount: 0}
+        : undefined;
+    }
+    if (entry.kind === 'signature') {
+      const signature = this.snapshot.securityAssets?.signatures.find(item => item.id === entry.id);
+      return signature
+        ? {collection: `${signature.kind}_signatures`, entityId: signature.id,
+          label: `${signature.kind === 'starttls' ? 'STARTTLS' : 'detection'} signature`, usageCount: 0}
         : undefined;
     }
     if (entry.kind === 'content-rule') {
@@ -2722,6 +2767,17 @@ export class SmithproxyApp extends LitElement {
     }, origin);
   }
 
+  private openNewSignature(kind: 'starttls' | 'detection', origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable) return;
+    const localId = `create-signature-${crypto.randomUUID()}`;
+    this.signatureCreateKinds.set(localId, kind);
+    this.signatureCreateFlowIds.set(localId, `create-sigflow-${crypto.randomUUID()}`);
+    this.openObjectDrawer({
+      kind: 'signature-create', id: localId,
+      title: `New ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signature`,
+    }, origin);
+  }
+
   private openSignatureFlow(id: string, origin?: HTMLElement): void {
     const step = this.snapshot?.securityAssets?.signatures
       .flatMap(item => item.flow).find(item => item.id === id);
@@ -2869,6 +2925,10 @@ export class SmithproxyApp extends LitElement {
       this.clearReferencePreviews(entry);
       if (entry.kind === 'content-rule-create') this.contentRuleCreateParents.delete(entry.id);
       if (entry.kind === 'signature-flow-create') this.signatureFlowCreateParents.delete(entry.id);
+      if (entry.kind === 'signature-create') {
+        this.signatureCreateKinds.delete(entry.id);
+        this.signatureCreateFlowIds.delete(entry.id);
+      }
       if (entry.kind === 'profile-create') this.profileCreateTypes.delete(entry.id);
     }
     this.dirtyDrawerKeys = remainingDirty;
@@ -2947,7 +3007,7 @@ export class SmithproxyApp extends LitElement {
     if (this.drawers[0]?.kind === 'policy') this.activeSection = 'Policy';
     if (this.drawers[0] && [
       'settings', 'captures', 'authority', 'authority-create',
-      'signature', 'signature-flow', 'signature-flow-create',
+      'signature', 'signature-create', 'signature-flow', 'signature-flow-create',
     ]
       .includes(this.drawers[0].kind)) {
       this.activeSection = 'System';
@@ -3023,6 +3083,23 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'signature') {
       return this.snapshot.securityAssets?.signatures.find(item => item.id === entry.id);
+    }
+    if (entry.kind === 'signature-create') {
+      const operation = this.workspaceDraft?.structuralOperations.find(item =>
+        item.op === 'create' &&
+        (item.collection === 'starttls_signatures' || item.collection === 'detection_signatures') &&
+        item.localId === entry.id);
+      if (operation?.op !== 'create') {
+        return this.signatureCreateKinds.has(entry.id)
+          ? {id: entry.id, name: 'New signature'} : undefined;
+      }
+      const kind = operation.collection === 'starttls_signatures' ? 'starttls' : 'detection';
+      this.signatureCreateKinds.set(entry.id, kind);
+      const flow = this.workspaceDraft?.structuralOperations.find(item =>
+        item.op === 'create' && item.collection === `${operation.collection}.flow` &&
+        item.parentId === operation.clientId);
+      if (flow?.op === 'create') this.signatureCreateFlowIds.set(entry.id, flow.localId);
+      return {id: operation.localId, name: String(operation.fields['name'] ?? 'New signature')};
     }
     if (entry.kind === 'signature-flow') {
       const step = this.snapshot.securityAssets?.signatures.flatMap(item => item.flow)
@@ -3295,6 +3372,125 @@ export class SmithproxyApp extends LitElement {
       item.op === 'create' && item.collection.endsWith('_signatures.flow') &&
       item.localId === entry.id);
     return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private pendingSignatureCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'create' &&
+      (item.collection === 'starttls_signatures' || item.collection === 'detection_signatures') &&
+      item.localId === entry.id);
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private pendingSignatureCreateFlow(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const parent = this.pendingSignatureCreate(entry);
+    const flowId = this.signatureCreateFlowIds.get(entry.id);
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'create' && item.collection.endsWith('_signatures.flow') &&
+      ((flowId !== undefined && item.localId === flowId) ||
+        (parent !== undefined && item.parentId === parent.clientId)));
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private async saveSignatureCreate(entry: DrawerEntry): Promise<void> {
+    if (entry.kind !== 'signature-create' || !this.structuralDraftsAvailable || !this.draftClient ||
+        this.draftCommitting) return;
+    const parent = this.pendingSignatureCreate(entry);
+    const flow = this.pendingSignatureCreateFlow(entry);
+    const kind = parent
+      ? parent.collection === 'starttls_signatures' ? 'starttls' : 'detection'
+      : this.signatureCreateKinds.get(entry.id);
+    const input = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
+      `#signature-create-${field}-${entry.id}`,
+    );
+    const category = input('category');
+    const name = input('name');
+    const connectionSide = this.renderRoot.querySelector<HTMLSelectElement>(
+      `#signature-create-connection-side-${entry.id}`,
+    );
+    const severity = input('severity');
+    const group = input('group');
+    const enables = input('enables');
+    const engine = input('engine');
+    const side = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-create-flow-side-${entry.id}`);
+    const type = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-create-flow-type-${entry.id}`);
+    const start = input('flow-start');
+    const maximum = input('flow-maximum');
+    const expression = this.renderRoot.querySelector<HTMLTextAreaElement>(
+      `#signature-create-flow-expression-${entry.id}`,
+    );
+    if (!kind || !category || !name || !connectionSide || !severity || !group || !enables || !engine ||
+        !side || !type || !start || !maximum || !expression ||
+        !['client', 'server'].includes(connectionSide.value) || !['r', 'w'].includes(side.value) ||
+        !['regex', 'simple'].includes(type.value)) return;
+    const metadata = [category.value.trim(), name.value.trim(), group.value.trim(),
+      enables.value.trim(), engine.value.trim()] as const;
+    const severityValue = severity.valueAsNumber;
+    if (!Number.isInteger(severityValue) || severityValue < -2147483648 || severityValue > 2147483647 ||
+        metadata[1].length === 0 || metadata.some(value => value.length > 128 ||
+          /[\u0000-\u001f\u007f]/u.test(value))) {
+      this.drawerError = 'Signature metadata must use bounded printable values and include a name.';
+      return;
+    }
+    const duplicateLive = this.snapshot?.securityAssets?.signatures.some(item =>
+      item.kind === kind && item.name === metadata[1]);
+    const duplicatePending = this.workspaceDraft?.structuralOperations.some(item =>
+      item.op === 'create' && item.localId !== entry.id && item.collection === `${kind}_signatures` &&
+      item.fields['name'] === metadata[1]);
+    if (duplicateLive || duplicatePending) {
+      this.drawerError = `A ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signature with this name already exists.`;
+      return;
+    }
+    const bytesStart = start.valueAsNumber;
+    const bytesMax = maximum.valueAsNumber;
+    if (![bytesStart, bytesMax].every(value => Number.isSafeInteger(value) && value >= 0)) {
+      this.drawerError = 'Signature byte positions must be non-negative safe integers.';
+      return;
+    }
+    if (expression.value.length === 0 || expression.value.length > 65536 || expression.value.includes('\0')) {
+      this.drawerError = 'A matcher expression from 1 to 65536 characters is required.';
+      return;
+    }
+    const parentClientId = parent?.clientId ?? entry.id;
+    const flowLocalId = flow?.localId ?? this.signatureCreateFlowIds.get(entry.id) ??
+      `create-sigflow-${crypto.randomUUID()}`;
+    const flowClientId = flow?.clientId ?? flowLocalId;
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperations(this.draftVersion, [{
+        op: 'create', localId: entry.id, collection: `${kind}_signatures`,
+        clientId: parentClientId, parentId: null, position: parent?.position ?? {kind: 'last', reference: null},
+        fields: {
+          cat: metadata[0], name: metadata[1], side: connectionSide.value,
+          severity: severityValue, group: metadata[2], enables: metadata[3], engine: metadata[4],
+        },
+      }, {
+        op: 'create', localId: flowLocalId, collection: `${kind}_signatures.flow`,
+        clientId: flowClientId, parentId: parentClientId,
+        position: flow?.position ?? {kind: 'last', reference: null},
+        fields: {
+          side: side.value, type: type.value, bytes_start: bytesStart,
+          bytes_max: bytesMax, signature: expression.value,
+        },
+      }]);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.signatureCreateKinds.set(entry.id, kind);
+      this.signatureCreateFlowIds.set(entry.id, flowLocalId);
+      this.applyDraft(draft);
+      expression.value = '';
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Signature could not be added to the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
   }
 
   private signatureFlowCreateSignature(entry: DrawerEntry) {
@@ -3873,6 +4069,10 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveToDraft(entry: DrawerEntry): Promise<void> {
+    if (entry.kind === 'signature-create') {
+      await this.saveSignatureCreate(entry);
+      return;
+    }
     if (entry.kind === 'policy-create') {
       await this.savePolicyCreate(entry);
       return;
@@ -5240,6 +5440,7 @@ export class SmithproxyApp extends LitElement {
                   ${(operation.op === 'create' && [
                     'address_objects', 'port_objects', 'proto_objects', 'policy',
                     'content_profiles.content_rules',
+                    'starttls_signatures', 'detection_signatures',
                     'starttls_signatures.flow', 'detection_signatures.flow',
                     ...Object.values(profileCreateCollections),
                     'tls_ca',
@@ -6874,7 +7075,18 @@ export class SmithproxyApp extends LitElement {
                   <summary>${kind === 'starttls' ? 'STARTTLS' : 'Detection'} signatures</summary>
                   <div class="reference-stack" role="group"
                     aria-label="${kind === 'starttls' ? 'STARTTLS' : 'Detection'} signatures">
-                    ${securityAssets.signatures.filter(item => item.kind === kind).map(signature => html`
+                    <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                      title=${this.structuralDraftsAvailable
+                        ? `Add a ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signature and first flow step`
+                        : 'Requires reviewed structural transactions and stable entity IDs.'}
+                      @click=${(event: MouseEvent) => this.openNewSignature(
+                        kind, event.currentTarget as HTMLElement,
+                      )}>
+                      New ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signature
+                    </button>
+                    ${securityAssets.signatures.filter(item => item.kind === kind).length === 0
+                      ? html`<span>No ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signatures configured.</span>`
+                      : securityAssets.signatures.filter(item => item.kind === kind).map(signature => html`
                       <button class="reference" type="button"
                         @click=${(event: MouseEvent) => this.openSignature(
                           signature.id, event.currentTarget as HTMLElement,
@@ -8727,6 +8939,85 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderSignatureCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingSignatureCreate(entry);
+    const flow = this.pendingSignatureCreateFlow(entry);
+    const kind = operation
+      ? operation.collection === 'starttls_signatures' ? 'starttls' : 'detection'
+      : this.signatureCreateKinds.get(entry.id);
+    if (!kind) return nothing;
+    const readOnly = !this.structuralDraftsAvailable;
+    const text = (field: string) => typeof operation?.fields[field] === 'string'
+      ? String(operation.fields[field]) : '';
+    const severity = operation?.fields['severity'];
+    const connectionSide = operation?.fields['side'];
+    const flowSide = flow?.fields['side'];
+    const flowType = flow?.fields['type'];
+    const start = flow?.fields['bytes_start'];
+    const maximum = flow?.fields['bytes_max'];
+    return html`
+      <div class="privacy-note">
+        The signature and its required first flow step are saved as one atomic draft operation group.
+      </div>
+      <div class="form-grid wide-form-grid section">
+        <label>Signature kind</label><span>${kind === 'starttls' ? 'STARTTLS' : 'Detection'}</span>
+        <label for="signature-create-category-${entry.id}">Category</label>
+        <input id="signature-create-category-${entry.id}" maxlength="128" .value=${text('cat')}
+          .readOnly=${readOnly} />
+        <label for="signature-create-name-${entry.id}">Name</label>
+        <input id="signature-create-name-${entry.id}" maxlength="128" required .value=${text('name')}
+          .readOnly=${readOnly} />
+        <label for="signature-create-connection-side-${entry.id}">Connection side</label>
+        <select id="signature-create-connection-side-${entry.id}"
+          .value=${typeof connectionSide === 'string' ? connectionSide : 'server'} ?disabled=${readOnly}>
+          <option value="client">Client</option><option value="server">Server</option>
+        </select>
+        <label for="signature-create-severity-${entry.id}">Severity</label>
+        <input id="signature-create-severity-${entry.id}" type="number" min="-2147483648" max="2147483647"
+          step="1" .value=${String(typeof severity === 'number' ? severity : 0)} .readOnly=${readOnly} />
+        <label for="signature-create-group-${entry.id}">Group</label>
+        <input id="signature-create-group-${entry.id}" maxlength="128" .value=${text('group')}
+          .readOnly=${readOnly} />
+        <label for="signature-create-enables-${entry.id}">Enables</label>
+        <input id="signature-create-enables-${entry.id}" maxlength="128" .value=${text('enables')}
+          .readOnly=${readOnly} />
+        <label for="signature-create-engine-${entry.id}">Engine</label>
+        <input id="signature-create-engine-${entry.id}" maxlength="128" .value=${text('engine')}
+          .readOnly=${readOnly} />
+      </div>
+      <div class="section">
+        <h3>Required first flow step</h3>
+        <div class="form-grid wide-form-grid">
+          <label for="signature-create-flow-side-${entry.id}">Direction</label>
+          <select id="signature-create-flow-side-${entry.id}"
+            .value=${typeof flowSide === 'string' ? flowSide : 'r'} ?disabled=${readOnly}>
+            <option value="r">Read</option><option value="w">Write</option>
+          </select>
+          <label for="signature-create-flow-type-${entry.id}">Matcher</label>
+          <select id="signature-create-flow-type-${entry.id}"
+            .value=${typeof flowType === 'string' ? flowType : 'regex'} ?disabled=${readOnly}>
+            <option value="regex">Regular expression</option><option value="simple">Simple bytes</option>
+          </select>
+          <label for="signature-create-flow-start-${entry.id}">Byte offset</label>
+          <input id="signature-create-flow-start-${entry.id}" type="number" min="0" step="1"
+            .value=${String(typeof start === 'number' ? start : 0)} .readOnly=${readOnly} />
+          <label for="signature-create-flow-maximum-${entry.id}">Byte window</label>
+          <input id="signature-create-flow-maximum-${entry.id}" type="number" min="0" step="1"
+            .value=${String(typeof maximum === 'number' ? maximum : 0)} .readOnly=${readOnly} />
+          <label for="signature-create-flow-expression-${entry.id}">Expression</label>
+          <textarea id="signature-create-flow-expression-${entry.id}" maxlength="65536" required
+            aria-label="New signature first flow expression" autocomplete="off"
+            placeholder=${flow ? 'Re-enter matcher expression (write-only)' : 'Matcher expression (write-only)'}
+            .readOnly=${readOnly}></textarea>
+        </div>
+      </div>
+      <div class="privacy-note section">
+        The matcher expression stays inside the GUI core and is redacted in draft review.
+        Reopening this pending signature requires re-entering it before another update.
+      </div>
+    `;
+  }
+
   private renderSignatureFlowCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingSignatureFlowCreate(entry);
     const signature = this.signatureFlowCreateSignature(entry);
@@ -8959,6 +9250,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'content-rule') return this.renderContentRuleEditor(entry);
     if (entry.kind === 'content-rule-create') return this.renderContentRuleCreateEditor(entry);
     if (entry.kind === 'signature') return this.renderSignatureEditor(entry);
+    if (entry.kind === 'signature-create') return this.renderSignatureCreateEditor(entry);
     if (entry.kind === 'signature-flow') return this.renderSignatureFlowEditor(entry);
     if (entry.kind === 'signature-flow-create') return this.renderSignatureFlowCreateEditor(entry);
     return this.renderProfileEditor(entry);
@@ -8973,6 +9265,7 @@ export class SmithproxyApp extends LitElement {
             : entry.kind === 'authority-create' ? 'Create certificate authority'
               : entry.kind === 'policy-create' ? 'Create policy'
                 : entry.kind === 'content-rule-create' ? 'Create content rule'
+                  : entry.kind === 'signature-create' ? 'Create signature'
                   : entry.kind === 'signature-flow-create' ? 'Create signature flow step' : `Edit ${entry.title}`;
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
@@ -8991,7 +9284,7 @@ export class SmithproxyApp extends LitElement {
     );
     const draftable = [
       'address-create', 'port-create', 'protocol-create', 'policy-create', 'content-rule-create',
-      'signature-flow-create', 'profile-create',
+      'signature-create', 'signature-flow-create', 'profile-create',
       'authority-create',
     ].includes(entry.kind)
       ? this.structuralDraftsAvailable
@@ -9022,7 +9315,8 @@ export class SmithproxyApp extends LitElement {
                     ? 'Create profile' : entry.kind === 'authority-create'
                       ? 'Create certificate authority' : entry.kind === 'content-rule-create'
                         ? 'Create content rule' : entry.kind === 'signature-flow-create'
-                          ? 'Create signature flow step' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+                          ? 'Create signature flow step' : entry.kind === 'signature-create'
+                            ? 'Create signature' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}

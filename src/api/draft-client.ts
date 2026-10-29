@@ -557,6 +557,28 @@ export class DraftClient {
     }));
   }
 
+  async upsertOperations(
+    expectedVersion: number,
+    operations: ReadonlyArray<DraftStructuralOperation>,
+  ): Promise<DraftSnapshot> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+      throw new Error('Invalid draft version.');
+    }
+    if (operations.length === 0 || operations.length > 256) {
+      throw new Error('Invalid structural draft batch.');
+    }
+    const validated = operations.map(operation =>
+      structuralOperation(wireStructuralOperation(operation)));
+    return parseDraft(await this.#request(`${this.#endpoint}/operations/batch`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({
+        expected_version: expectedVersion,
+        operations: validated.map(operation => wireStructuralOperation(operation)),
+      }),
+    }));
+  }
+
   async removeOperation(expectedVersion: number, localId: string): Promise<DraftSnapshot> {
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
       throw new Error('Invalid draft version.');
