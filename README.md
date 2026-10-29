@@ -201,7 +201,7 @@ draft revision. The review surface already counts, displays, removes, validates,
 and commits scalar and structural operations as one transaction.
 When the core advertises `structural_drafts`, the Objects and Policy views enable
 typed right-side creation drawers for address, port, protocol, policy, routing,
-detection, DNS ALG, authentication, content, SSH, and script entries.
+TLS, detection, DNS ALG, authentication, content, SSH, and script entries.
 They reject duplicate identities and invalid ranges locally, store ordered create
 operations under optimistic draft concurrency, and reopen pending items from draft
 review. A policy can be placed first, last, or immediately before an existing stable
@@ -213,7 +213,7 @@ same draft as confirmed delete operations; active references and conflicting pen
 field edits block the delete locally before the authoritative Smithproxy validation.
 Stable routing, TLS, detection, content, SSH, DNS, script, and authentication
 profiles use the same confirmed deletion path and cannot be deleted while referenced.
-New routing, detection, DNS ALG, authentication, content, SSH, and script profiles
+New routing, TLS, detection, DNS ALG, authentication, content, SSH, and script profiles
 submit complete typed payloads, reject duplicate names and invalid bounded values
 locally, and reopen from draft review under stable optimistic identifiers. Sensitive
 session filters, host-key paths, and script paths are cleared after acceptance and

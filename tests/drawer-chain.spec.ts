@@ -495,6 +495,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         ? new Set(['signature'])
         : body.operation.collection === 'content_profiles'
           ? new Set(['rules_session_filter'])
+          : body.operation.collection === 'tls_profiles'
+            ? new Set(['sni_filter_bypass'])
           : body.operation.collection === 'ssh_profiles'
             ? new Set(['host_key'])
             : body.operation.collection === 'script_profiles'
@@ -1845,6 +1847,70 @@ test('creates sensitive content SSH and script profiles without reflecting write
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText(/Re-enter the write-only session filter/u)).toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(3);
+  await expectNoWcagViolations(page);
+});
+
+test('creates a complete fail-closed TLS profile with a redacted SNI bypass list', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('button', {name: 'New profile'}).click();
+  let editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Profile type').selectOption('tls');
+  await editor.getByLabel('Name').fill('branch-tls');
+  await editor.getByLabel('OCSP certificate checks').selectOption('2');
+  await editor.getByLabel('Certificate warning ports').fill('443, 8443');
+  await editor.getByLabel('Override timeout', {exact: true}).fill('900');
+  await editor.getByLabel('SNI bypass list', {exact: true}).selectOption('replace');
+  await editor.getByLabel('New SNI bypass list').fill('["private.example"]');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor.getByLabel('New SNI bypass list')).toHaveValue('');
+
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0, csrf: '1', operation: {
+      op: 'create', collection: 'tls_profiles', position: {last: true},
+      fields: {
+        name: 'branch-tls', inspect: true, use_pfs: true, left_use_pfs: true, right_use_pfs: true,
+        left_disable_reuse: false, right_disable_reuse: false,
+        allow_untrusted_issuers: false, allow_invalid_certs: false, allow_self_signed: false,
+        ct_enable: true, ocsp_mode: 2, ocsp_stapling: true, ocsp_stapling_mode: 1,
+        alpn_block: false, sni_based_cert: true, ip_based_cert: true, only_custom_certs: false,
+        no_fallback_bypass: true, sni_filter_use_dns_cache: true,
+        sni_filter_use_dns_domain_tree: true, redirect_warning_ports: [443, 8443],
+        failed_certcheck_replacement: true, failed_certcheck_override: false,
+        failed_certcheck_override_timeout: 900, failed_certcheck_override_timeout_type: 0,
+        sslkeylog: false, client_hello_timeout: 3000, handshake_timeout: 10000,
+        client_cert_action: 'block_or_replacement', alerts: 'unusual',
+        sni_filter_bypass: ['private.example'],
+      },
+    },
+  });
+  expect(state.structuralMutationRequests![0]!.operation.local_id)
+    .toMatch(/^create-profile-[0-9a-f-]{36}$/u);
+  expect(Object.keys(state.structuralMutationRequests![0]!.operation.fields as object)).toHaveLength(32);
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(table).toContainText('tls_profiles · create');
+  await expect(table).not.toContainText('private.example');
+  await table.getByRole('row').filter({hasText: 'tls_profiles · create'})
+    .getByRole('button', {name: 'Edit'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(editor.getByLabel('Profile type')).toHaveValue('tls');
+  await expect(editor.getByLabel('OCSP certificate checks')).toHaveValue('2');
+  await expect(editor.getByLabel('Certificate warning ports')).toHaveValue('443, 8443');
+  await expect(editor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('unchanged');
+  await editor.getByLabel('Name').fill('branch-tls-updated');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(/Re-enter the write-only SNI bypass list/u)).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(1);
   await expectNoWcagViolations(page);
 });
 

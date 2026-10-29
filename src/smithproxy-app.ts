@@ -146,10 +146,11 @@ const captureBooleanFields = [
 ] as const;
 
 type ProfileCreateType =
-  'routing' | 'detection' | 'dns' | 'authentication' | 'content' | 'ssh' | 'script';
+  'routing' | 'tls' | 'detection' | 'dns' | 'authentication' | 'content' | 'ssh' | 'script';
 
 const profileCreateCollections: Readonly<Record<ProfileCreateType, DraftCreateOperation['collection']>> = {
   routing: 'routing',
+  tls: 'tls_profiles',
   detection: 'detection_profiles',
   dns: 'alg_dns_profiles',
   authentication: 'auth_profiles',
@@ -3532,7 +3533,8 @@ export class SmithproxyApp extends LitElement {
     }
     const collection = profileCreateCollections[type];
     const sameProfileType = (profile: ProfileObject): boolean => type === 'routing' ? profile.routing !== null
-      : type === 'detection' ? profile.detection !== null
+      : type === 'tls' ? profile.tls !== null
+        : type === 'detection' ? profile.detection !== null
         : type === 'dns' ? profile.dns !== null
           : type === 'authentication' ? profile.authentication !== null
             : type === 'content' ? profile.content !== null
@@ -3570,6 +3572,83 @@ export class SmithproxyApp extends LitElement {
       fields = {
         name, dnat_address: addressValues, dnat_port: portValues, dnat_lb_method: method.value,
         rewrite_sni: rewriteSni.value.trim(), rewrite_sni_to: rewriteSniTo.value.trim(),
+      };
+    } else if (type === 'tls') {
+      const booleanNames = [
+        ['tls-inspect', 'inspect'], ['tls-use-pfs', 'use_pfs'],
+        ['tls-left-use-pfs', 'left_use_pfs'], ['tls-right-use-pfs', 'right_use_pfs'],
+        ['tls-left-disable-reuse', 'left_disable_reuse'],
+        ['tls-right-disable-reuse', 'right_disable_reuse'],
+        ['tls-allow-untrusted', 'allow_untrusted_issuers'],
+        ['tls-allow-invalid', 'allow_invalid_certs'], ['tls-allow-self-signed', 'allow_self_signed'],
+        ['tls-ct', 'ct_enable'], ['tls-ocsp-stapling', 'ocsp_stapling'],
+        ['tls-alpn-block', 'alpn_block'], ['tls-sni-cert', 'sni_based_cert'],
+        ['tls-ip-cert', 'ip_based_cert'], ['tls-custom-only', 'only_custom_certs'],
+        ['tls-no-fallback', 'no_fallback_bypass'],
+        ['tls-dns-cache', 'sni_filter_use_dns_cache'],
+        ['tls-dns-tree', 'sni_filter_use_dns_domain_tree'],
+        ['tls-failed-replacement', 'failed_certcheck_replacement'],
+        ['tls-failed-override', 'failed_certcheck_override'], ['tls-key-log', 'sslkeylog'],
+      ] as const;
+      const booleanValues: Record<string, boolean> = {};
+      for (const [id, fieldName] of booleanNames) {
+        const input = element<HTMLSelectElement>(id);
+        if (!input || !['true', 'false'].includes(input.value)) return;
+        booleanValues[fieldName] = input.value === 'true';
+      }
+      const ocspMode = element<HTMLSelectElement>('tls-ocsp-mode');
+      const staplingMode = element<HTMLSelectElement>('tls-stapling-mode');
+      const warningPorts = element<HTMLInputElement>('tls-warning-ports');
+      const overrideTimeout = element<HTMLInputElement>('tls-override-timeout');
+      const overrideTimeoutType = element<HTMLSelectElement>('tls-override-timeout-type');
+      const helloTimeout = element<HTMLInputElement>('tls-hello-timeout');
+      const handshakeTimeout = element<HTMLInputElement>('tls-handshake-timeout');
+      const clientAction = element<HTMLSelectElement>('tls-client-action');
+      const alerts = element<HTMLSelectElement>('tls-alerts');
+      const bypassMode = element<HTMLSelectElement>('tls-bypass-mode');
+      const bypass = this.renderRoot.querySelector<HTMLTextAreaElement>(
+        `#profile-create-tls-bypass-${entry.id}`,
+      );
+      const ports = (warningPorts?.value ?? '').split(',').map(value => value.trim())
+        .filter(Boolean).map(Number);
+      const validPositiveInteger = (input: HTMLInputElement | null): input is HTMLInputElement =>
+        input !== null && Number.isInteger(input.valueAsNumber) && input.valueAsNumber >= 1 &&
+        input.valueAsNumber <= 2147483647;
+      let bypassValues: ReadonlyArray<string> = [];
+      if (bypassMode?.value === 'replace') {
+        let parsed: unknown;
+        try { parsed = JSON.parse(bypass?.value ?? ''); } catch { parsed = undefined; }
+        if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 256 ||
+            !parsed.every(item => typeof item === 'string' && printable(item, 1024)) ||
+            new Set(parsed).size !== parsed.length) {
+          this.drawerError = 'SNI bypass must be a unique non-empty JSON string array with at most 256 entries.';
+          return;
+        }
+        bypassValues = parsed;
+      }
+      if (!ocspMode || !staplingMode || !warningPorts || !overrideTimeoutType || !clientAction || !alerts ||
+          !bypassMode || !bypass || !['0', '1', '2'].includes(ocspMode.value) ||
+          !['0', '1', '2'].includes(staplingMode.value) || !['0', '1'].includes(overrideTimeoutType.value) ||
+          !validPositiveInteger(overrideTimeout) || !validPositiveInteger(helloTimeout) ||
+          !validPositiveInteger(handshakeTimeout) || ports.length > 256 ||
+          !ports.every(port => Number.isInteger(port) && port >= 0 && port <= 65535) ||
+          new Set(ports).size !== ports.length ||
+          !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
+          !['all', 'unusual', 'mute'].includes(alerts.value) || !['empty', 'replace'].includes(bypassMode.value)) {
+        this.drawerError = operation
+          ? 'Re-enter the write-only SNI bypass list or explicitly select an empty list before updating.'
+          : 'TLS timeouts, policy selections, warning ports, and the SNI bypass list must be valid.';
+        return;
+      }
+      fields = {
+        name, ...booleanValues, ocsp_mode: Number(ocspMode.value),
+        ocsp_stapling_mode: Number(staplingMode.value), redirect_warning_ports: ports,
+        failed_certcheck_override_timeout: overrideTimeout.valueAsNumber,
+        failed_certcheck_override_timeout_type: Number(overrideTimeoutType.value),
+        client_hello_timeout: helloTimeout.valueAsNumber,
+        handshake_timeout: handshakeTimeout.valueAsNumber,
+        client_cert_action: clientAction.value, alerts: alerts.value,
+        sni_filter_bypass: bypassMode.value === 'replace' ? bypassValues : [],
       };
     } else if (type === 'detection') {
       const mode = element<HTMLSelectElement>('mode');
@@ -3691,6 +3770,7 @@ export class SmithproxyApp extends LitElement {
         `#profile-create-content-filter-${entry.id}`,
         `#profile-create-ssh-host-key-${entry.id}`,
         `#profile-create-script-module-${entry.id}`,
+        `#profile-create-tls-bypass-${entry.id}`,
       ]) {
         const secret = this.renderRoot.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
         if (secret) secret.value = '';
@@ -7249,6 +7329,10 @@ export class SmithproxyApp extends LitElement {
       const value = field(name, []);
       return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
     };
+    const numberList = (name: string): ReadonlyArray<number> => {
+      const value = field(name, []);
+      return Array.isArray(value) && value.every(item => typeof item === 'number') ? value : [];
+    };
     const booleanField = (name: string, fallback: boolean): boolean => {
       const value = field(name, fallback);
       return typeof value === 'boolean' ? value : fallback;
@@ -7296,6 +7380,7 @@ export class SmithproxyApp extends LitElement {
             }
           }}>
           <option value="routing">Routing</option>
+          <option value="tls">TLS</option>
           <option value="detection">Detection</option>
           <option value="dns">DNS ALG</option>
           <option value="authentication">Authentication</option>
@@ -7327,6 +7412,85 @@ export class SmithproxyApp extends LitElement {
           <label for="profile-create-rewrite-sni-to-${entry.id}">Rewrite SNI target</label>
           <input id="profile-create-rewrite-sni-to-${entry.id}" .value=${String(field('rewrite_sni_to', ''))}
             maxlength="1024" autocomplete="off" .readOnly=${readOnly} />
+        ` : type === 'tls' ? html`
+          ${booleanSelect('tls-inspect', 'TLS inspection', booleanField('inspect', true))}
+          ${booleanSelect('tls-use-pfs', 'Perfect forward secrecy', booleanField('use_pfs', true))}
+          ${booleanSelect('tls-left-use-pfs', 'Downstream PFS', booleanField('left_use_pfs', true))}
+          ${booleanSelect('tls-right-use-pfs', 'Upstream PFS', booleanField('right_use_pfs', true))}
+          ${booleanSelect('tls-left-disable-reuse', 'Disable downstream session reuse',
+            booleanField('left_disable_reuse', false))}
+          ${booleanSelect('tls-right-disable-reuse', 'Disable upstream session reuse',
+            booleanField('right_disable_reuse', false))}
+          ${booleanSelect('tls-allow-untrusted', 'Allow untrusted issuers',
+            booleanField('allow_untrusted_issuers', false))}
+          ${booleanSelect('tls-allow-invalid', 'Allow invalid certificates',
+            booleanField('allow_invalid_certs', false))}
+          ${booleanSelect('tls-allow-self-signed', 'Allow self-signed certificates',
+            booleanField('allow_self_signed', false))}
+          ${booleanSelect('tls-ct', 'Certificate transparency', booleanField('ct_enable', true))}
+          <label for="profile-create-tls-ocsp-mode-${entry.id}">OCSP certificate checks</label>
+          <select id="profile-create-tls-ocsp-mode-${entry.id}"
+            .value=${String(field('ocsp_mode', 1))} ?disabled=${readOnly}>
+            <option value="0">Disabled</option><option value="1">Leaf certificate</option>
+            <option value="2">Full chain</option>
+          </select>
+          ${booleanSelect('tls-ocsp-stapling', 'OCSP stapling', booleanField('ocsp_stapling', true))}
+          <label for="profile-create-tls-stapling-mode-${entry.id}">OCSP stapling policy</label>
+          <select id="profile-create-tls-stapling-mode-${entry.id}"
+            .value=${String(field('ocsp_stapling_mode', 1))} ?disabled=${readOnly}>
+            <option value="0">Loose</option><option value="1">Strict</option><option value="2">Required</option>
+          </select>
+          ${booleanSelect('tls-alpn-block', 'Block ALPN negotiation', booleanField('alpn_block', false))}
+          ${booleanSelect('tls-sni-cert', 'SNI certificate lookup', booleanField('sni_based_cert', true))}
+          ${booleanSelect('tls-ip-cert', 'IP certificate lookup', booleanField('ip_based_cert', true))}
+          ${booleanSelect('tls-custom-only', 'Custom certificates only',
+            booleanField('only_custom_certs', false))}
+          ${booleanSelect('tls-no-fallback', 'Block fallback bypass',
+            booleanField('no_fallback_bypass', true))}
+          ${booleanSelect('tls-dns-cache', 'SNI filter DNS cache',
+            booleanField('sni_filter_use_dns_cache', true))}
+          ${booleanSelect('tls-dns-tree', 'SNI filter DNS tree',
+            booleanField('sni_filter_use_dns_domain_tree', true))}
+          <label for="profile-create-tls-warning-ports-${entry.id}">Certificate warning ports</label>
+          <input id="profile-create-tls-warning-ports-${entry.id}"
+            .value=${operation ? numberList('redirect_warning_ports').join(', ') : '443'}
+            placeholder="443, 44443" .readOnly=${readOnly} />
+          ${booleanSelect('tls-failed-replacement', 'Certificate failure replacement',
+            booleanField('failed_certcheck_replacement', true))}
+          ${booleanSelect('tls-failed-override', 'Certificate failure override',
+            booleanField('failed_certcheck_override', false))}
+          <label for="profile-create-tls-override-timeout-${entry.id}">Override timeout</label>
+          <input id="profile-create-tls-override-timeout-${entry.id}" type="number" min="1" max="2147483647"
+            .value=${String(field('failed_certcheck_override_timeout', 600))} .readOnly=${readOnly} />
+          <label for="profile-create-tls-override-timeout-type-${entry.id}">Override timeout behavior</label>
+          <select id="profile-create-tls-override-timeout-type-${entry.id}"
+            .value=${String(field('failed_certcheck_override_timeout_type', 0))} ?disabled=${readOnly}>
+            <option value="0">Absolute expiry</option><option value="1">Idle expiry</option>
+          </select>
+          ${booleanSelect('tls-key-log', 'SSL key logging', booleanField('sslkeylog', false))}
+          <label for="profile-create-tls-hello-timeout-${entry.id}">Client hello timeout</label>
+          <input id="profile-create-tls-hello-timeout-${entry.id}" type="number" min="1" max="2147483647"
+            .value=${String(field('client_hello_timeout', 3000))} .readOnly=${readOnly} />
+          <label for="profile-create-tls-handshake-timeout-${entry.id}">Handshake timeout</label>
+          <input id="profile-create-tls-handshake-timeout-${entry.id}" type="number" min="1" max="2147483647"
+            .value=${String(field('handshake_timeout', 10000))} .readOnly=${readOnly} />
+          <label for="profile-create-tls-client-action-${entry.id}">Client certificate action</label>
+          <select id="profile-create-tls-client-action-${entry.id}"
+            .value=${stringField('client_cert_action', 'block_or_replacement')} ?disabled=${readOnly}>
+            <option value="block_or_replacement">Block or replacement</option>
+            <option value="empty_client_cert">Empty client certificate</option>
+            <option value="tls_bypass">TLS bypass</option><option value="use_configured">Use configured</option>
+          </select>
+          <label for="profile-create-tls-alerts-${entry.id}">Alerts</label>
+          <select id="profile-create-tls-alerts-${entry.id}"
+            .value=${stringField('alerts', 'unusual')} ?disabled=${readOnly}>
+            <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
+          </select>
+          ${writeOnlyMode('tls-bypass', 'SNI bypass list')}
+          <label for="profile-create-tls-bypass-${entry.id}">Bypass value</label>
+          <textarea id="profile-create-tls-bypass-${entry.id}" maxlength="65536"
+            aria-label="New SNI bypass list" autocomplete="off" placeholder='["private.example"] (write-only)'
+            .readOnly=${readOnly}></textarea>
         ` : type === 'detection' ? html`
           <label for="profile-create-mode-${entry.id}">Detection mode</label>
           <select id="profile-create-mode-${entry.id}" .value=${String(field('mode', 0))} ?disabled=${readOnly}>
@@ -7402,7 +7566,7 @@ export class SmithproxyApp extends LitElement {
       </div>
       ${type === 'authentication' ? html`<div class="privacy-note section">
         Identity mappings remain managed by their dedicated API surface and are never inferred by this editor.
-      </div>` : ['content', 'ssh', 'script'].includes(type) ? html`<div class="privacy-note section">
+      </div>` : ['tls', 'content', 'ssh', 'script'].includes(type) ? html`<div class="privacy-note section">
         Write-only values are accepted by the GUI core, redacted from draft responses, and cleared from this editor.
         Reopening a pending profile requires explicit re-entry before it can be updated.
       </div>` : nothing}

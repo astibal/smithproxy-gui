@@ -133,7 +133,7 @@
         "sni_filter_bypass", "sni_filter_use_dns_cache", "sni_filter_use_dns_domain_tree",
         "redirect_warning_ports", "sslkeylog", "alerts"
       ],
-      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed. SNI bypass expressions support write-only replace or clear and never cross the browser boundary. Stable unreferenced profiles support confirmed structural deletion."
+      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed, editable, and structurally creatable with conservative defaults. SNI bypass expressions support write-only replace or clear, are cleared after acceptance, and never cross the browser boundary. Updating a pending create requires explicit bypass-list re-entry. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "ssh_profiles",
