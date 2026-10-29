@@ -1738,6 +1738,95 @@ test('renders pending policy creates and moves in effective draft order', async 
   await expect(editor.getByLabel('Draft order')).toHaveValue('last');
 });
 
+test('chains ordered creates through earlier client identifiers', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true, structuralDraftsReady: true,
+    structuralMutationRequests: [],
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'chain-policy', client_id: 'chain-policy', collection: 'policy',
+      position: {last: true},
+      fields: {
+        name: 'pending-anchor', disabled: false, proto: 'tcp', src: ['office'], sport: [],
+        dst: ['internet'], dport: [], features: [], action: 'accept', nat: '', routing: '',
+        tls_profile: '', ssh_profile: '', detection_profile: '', content_profile: '',
+        auth_profile: '', alg_dns_profile: '', script_profile: '',
+      },
+    }, {
+      op: 'create', local_id: 'chain-policy-later', client_id: 'chain-policy-later', collection: 'policy',
+      position: {last: true},
+      fields: {
+        name: 'pending-later', disabled: false, proto: 'tcp', src: ['office'], sport: [],
+        dst: ['internet'], dport: [], features: [], action: 'accept', nat: '', routing: '',
+        tls_profile: '', ssh_profile: '', detection_profile: '', content_profile: '',
+        auth_profile: '', alg_dns_profile: '', script_profile: '',
+      },
+    }, {
+      op: 'create', local_id: 'chain-rule', client_id: 'chain-rule',
+      collection: 'content_profiles.content_rules', parent_id: 'content-0', position: {last: true},
+      fields: {
+        match: '[redacted:replace]', fill_length: false, replace_each_nth: 0,
+      },
+    }, {
+      op: 'create', local_id: 'chain-flow', client_id: 'chain-flow',
+      collection: 'starttls_signatures.flow', parent_id: 'starttls-signature-0', position: {last: true},
+      fields: {
+        side: 'r', type: 'regex', bytes_start: 0, bytes_max: 32, signature: '[redacted:replace]',
+      },
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('group', {name: 'Policies'}).getByRole('button')
+    .filter({hasText: 'pending-anchor'}).click();
+  let editor = page.getByRole('dialog', {name: 'Create policy'});
+  await expect(editor.getByLabel('Placement').locator('option[value="before:client:chain-policy-later"]'))
+    .toHaveCount(0);
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'New policy'}).click();
+  editor = page.getByRole('dialog', {name: 'Create policy'});
+  await editor.getByLabel('Name').fill('before-pending-policy');
+  await editor.getByLabel('Placement').selectOption('before:client:chain-policy');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /capture content/i}).click();
+  let parent = page.getByRole('dialog', {name: 'Edit capture'});
+  await parent.getByRole('button', {name: 'New content rule'}).click();
+  editor = page.getByRole('dialog', {name: 'Create content rule'});
+  await editor.getByLabel('Placement', {exact: true}).selectOption('before:client:chain-rule');
+  await editor.getByLabel('New content match expression').fill('CHAIN-RULE');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await parent.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trust = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await trust.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  parent = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
+  await parent.getByRole('button', {name: 'New flow step'}).click();
+  editor = page.getByRole('dialog', {name: 'Create signature flow step'});
+  await editor.getByLabel('Placement', {exact: true}).selectOption('before:client:chain-flow');
+  await editor.getByLabel('New signature flow expression').fill('CHAIN-FLOW');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+
+  expect(state.structuralMutationRequests).toHaveLength(3);
+  expect(state.structuralMutationRequests!.map(request => request.operation.position)).toEqual([
+    {before: 'client:chain-policy'},
+    {before: 'client:chain-rule'},
+    {before: 'client:chain-flow'},
+  ]);
+});
+
 test('shows and reopens pending security rules and flow creates in context', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready', validationReady: true, commitReady: true, structuralDraftsReady: true,

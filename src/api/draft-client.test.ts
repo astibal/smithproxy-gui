@@ -85,7 +85,7 @@ describe('DraftClient', () => {
     await client.upsertOperation(1, {
       op: 'create', localId: 'create-rule-1', collection: 'content_profiles.content_rules',
       clientId: 'new-rule', parentId: 'cfg:content:parent',
-      position: {kind: 'after', reference: 'cfg:rule:previous'},
+      position: {kind: 'after', reference: 'client:previous-rule'},
       fields: {match: '[redacted:replace]', fill_length: true},
     });
     expect(JSON.parse(String((fetcher.mock.calls.at(-1)?.[1] as RequestInit).body))).toEqual({
@@ -93,7 +93,7 @@ describe('DraftClient', () => {
       operation: {
         op: 'create', local_id: 'create-rule-1', collection: 'content_profiles.content_rules',
         client_id: 'new-rule', parent_id: 'cfg:content:parent',
-        position: {after: 'cfg:rule:previous'},
+        position: {after: 'client:previous-rule'},
         fields: {match: '[redacted:replace]', fill_length: true},
       },
     });

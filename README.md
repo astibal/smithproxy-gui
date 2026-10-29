@@ -213,8 +213,8 @@ TLS, detection, DNS ALG, authentication, content, SSH, and script entries.
 They reject duplicate identities and invalid ranges locally, store ordered create
 operations under optimistic draft concurrency, and reopen pending items from draft
 review. A policy can be placed first, last, or immediately before an existing stable
-policy and can open referenced objects in another nested drawer. Existing policies
-can also be reordered first, last, or before another stable policy. Reordering updates
+or earlier pending policy and can open referenced objects in another nested drawer.
+Existing policies can also be reordered first, last, or before another stable policy. Reordering updates
 one optimistic move operation, while restoring the original position removes that
 operation. The primary Policy list presents pending creates and moves in their effective
 draft order while retaining live config indexes for field edits. Existing policies and
@@ -222,7 +222,9 @@ unreferenced reusable objects can be placed into the
 same draft as confirmed delete operations; active references and conflicting pending
 field edits block the delete locally before the authoritative Smithproxy validation.
 Nested content rules and signature flow steps likewise present pending creates and moves
-in their effective draft order inside the parent editor.
+in their effective draft order inside the parent editor. A new ordered item can target an
+earlier pending create through its transaction-scoped client identifier; later operations
+are excluded to prevent use-before-create drafts.
 References introduced by pending policy or routing edits and structural creates are
 included in that blocker, so an internally contradictory draft is not offered as a
 valid local workflow. Draft review applies the same dependency ordering to pending

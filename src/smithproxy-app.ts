@@ -3310,7 +3310,9 @@ export class SmithproxyApp extends LitElement {
       position = {kind: placement.value, reference: null};
     } else if (placement.value.startsWith('before:')) {
       const reference = placement.value.slice('before:'.length);
-      if (!this.snapshot?.policies.some(policy => policy.id === reference)) {
+      const pendingReference = this.precedingDraftCreates(entry.id, 'policy', null)
+        .some(operation => `client:${operation.clientId}` === reference);
+      if (!this.snapshot?.policies.some(policy => policy.id === reference) && !pendingReference) {
         this.drawerError = 'The selected policy placement is no longer available.';
         return;
       }
@@ -3431,7 +3433,10 @@ export class SmithproxyApp extends LitElement {
       position = {kind: placement.value, reference: null};
     } else if (placement.value.startsWith('before:')) {
       const reference = placement.value.slice('before:'.length);
-      if (!profile.content.rules.some(rule => rule.id === reference)) {
+      const pendingReference = this.precedingDraftCreates(
+        entry.id, 'content_profiles.content_rules', profile.id,
+      ).some(operation => `client:${operation.clientId}` === reference);
+      if (!profile.content.rules.some(rule => rule.id === reference) && !pendingReference) {
         this.drawerError = 'The selected content-rule placement is no longer available.';
         return;
       }
@@ -3631,12 +3636,16 @@ export class SmithproxyApp extends LitElement {
       this.drawerError = 'A matcher expression from 1 to 65536 characters is required.';
       return;
     }
+    const collection: DraftCreateOperation['collection'] = signature.kind === 'starttls'
+      ? 'starttls_signatures.flow' : 'detection_signatures.flow';
     let position: DraftCreateOperation['position'];
     if (placement.value === 'first' || placement.value === 'last') {
       position = {kind: placement.value, reference: null};
     } else if (placement.value.startsWith('before:')) {
       const reference = placement.value.slice('before:'.length);
-      if (!signature.flow.some(step => step.id === reference)) {
+      const pendingReference = this.precedingDraftCreates(entry.id, collection, signature.id)
+        .some(operation => `client:${operation.clientId}` === reference);
+      if (!signature.flow.some(step => step.id === reference) && !pendingReference) {
         this.drawerError = 'The selected flow-step placement is no longer available.';
         return;
       }
@@ -3645,8 +3654,6 @@ export class SmithproxyApp extends LitElement {
       this.drawerError = 'A valid flow-step placement is required.';
       return;
     }
-    const collection: DraftCreateOperation['collection'] = signature.kind === 'starttls'
-      ? 'starttls_signatures.flow' : 'detection_signatures.flow';
     this.draftSaving = true;
     this.drawerError = undefined;
     this.draftError = undefined;
@@ -5583,6 +5590,18 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private precedingDraftCreates(
+    localId: string, collection: DraftCreateOperation['collection'], parentId: string | null,
+  ): ReadonlyArray<DraftCreateOperation> {
+    const operations = this.workspaceDraft?.structuralOperations ?? [];
+    const currentIndex = operations.findIndex(operation => operation.localId === localId);
+    const boundary = currentIndex < 0 ? operations.length : currentIndex;
+    return operations.slice(0, boundary).filter(
+      (operation): operation is DraftCreateOperation => operation.op === 'create' &&
+        operation.collection === collection && operation.parentId === parentId,
+    );
+  }
+
   private draftOrderedRows<T extends {id: string}>(
     liveItems: ReadonlyArray<T>, creates: ReadonlyArray<DraftCreateOperation>,
     moves: ReadonlyArray<DraftMoveOperation>,
@@ -5591,7 +5610,7 @@ export class SmithproxyApp extends LitElement {
       kind: 'live', id: item.id, item, configIndex,
     }));
     rows.push(...creates.map(operation => ({
-      kind: 'create' as const, id: operation.clientId, operation,
+      kind: 'create' as const, id: `client:${operation.clientId}`, operation,
     })));
     const placeRow = (id: string, position: DraftCreateOperation['position']): void => {
       const currentIndex = rows.findIndex(row => row.id === id);
@@ -5613,7 +5632,7 @@ export class SmithproxyApp extends LitElement {
       }
       rows.splice(position.kind === 'before' ? referenceIndex : referenceIndex + 1, 0, row);
     };
-    creates.forEach(operation => placeRow(operation.clientId, operation.position));
+    creates.forEach(operation => placeRow(`client:${operation.clientId}`, operation.position));
     moves.forEach(operation => placeRow(operation.entityId, operation.position));
     return rows;
   }
@@ -7635,6 +7654,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderPolicyCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingPolicyCreate(entry);
+    const precedingPolicies = this.precedingDraftCreates(entry.id, 'policy', null);
     const scalar = (name: string, fallback: DraftScalar): DraftScalar => operation?.fields[name] ?? fallback;
     const text = (name: string, fallback = '') => String(scalar(name, fallback));
     const list = (name: string, fallback: ReadonlyArray<string> = []) => {
@@ -7671,6 +7691,14 @@ export class SmithproxyApp extends LitElement {
               Before ${policy.name}
             </option>
           `)}
+          ${precedingPolicies.map(policy => {
+            const reference = `client:${policy.clientId}`;
+            const name = typeof policy.fields['name'] === 'string' ? policy.fields['name'] : 'pending policy';
+            return html`<option value=${`before:${reference}`}
+              ?selected=${placement === `before:${reference}`}>
+              Before ${name} (pending)
+            </option>`;
+          })}
           <option value="last" ?selected=${placement === 'last'}>Last policy</option>
         </select>
         <label>Enabled</label>
@@ -9189,6 +9217,9 @@ export class SmithproxyApp extends LitElement {
     const operation = this.pendingContentRuleCreate(entry);
     const profile = this.contentRuleCreateProfile(entry);
     if (!profile?.content) return nothing;
+    const precedingRules = this.precedingDraftCreates(
+      entry.id, 'content_profiles.content_rules', profile.id,
+    );
     const readOnly = !this.structuralDraftsAvailable;
     const position = operation
       ? operation.position.reference === null
@@ -9210,6 +9241,13 @@ export class SmithproxyApp extends LitElement {
               Before rule ${index + 1}
             </option>
           `)}
+          ${precedingRules.map((rule, index) => {
+            const reference = `client:${rule.clientId}`;
+            return html`<option value=${`before:${reference}`}
+              ?selected=${position === `before:${reference}`}>
+              Before pending rule ${index + 1}
+            </option>`;
+          })}
           <option value="last" ?selected=${position === 'last'}>Last rule</option>
         </select>
         <label for="content-rule-create-fill-length-${entry.id}">Preserve matched length</label>
@@ -9501,6 +9539,9 @@ export class SmithproxyApp extends LitElement {
     const operation = this.pendingSignatureFlowCreate(entry);
     const signature = this.signatureFlowCreateSignature(entry);
     if (!signature) return nothing;
+    const collection: DraftCreateOperation['collection'] = signature.kind === 'starttls'
+      ? 'starttls_signatures.flow' : 'detection_signatures.flow';
+    const precedingSteps = this.precedingDraftCreates(entry.id, collection, signature.id);
     const readOnly = !this.structuralDraftsAvailable;
     const position = operation
       ? operation.position.reference === null
@@ -9521,6 +9562,13 @@ export class SmithproxyApp extends LitElement {
               Before step ${index + 1}
             </option>
           `)}
+          ${precedingSteps.map((step, index) => {
+            const reference = `client:${step.clientId}`;
+            return html`<option value=${`before:${reference}`}
+              ?selected=${position === `before:${reference}`}>
+              Before pending step ${index + 1}
+            </option>`;
+          })}
           <option value="last" ?selected=${position === 'last'}>Last step</option>
         </select>
         <label for="signature-flow-create-side-${entry.id}">Direction</label>
