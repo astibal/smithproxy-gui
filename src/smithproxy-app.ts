@@ -11,6 +11,7 @@ import {
 import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
+  ConfigScalar,
   ConfigSnapshot,
   PolicySummary,
   PortObject,
@@ -1232,8 +1233,10 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     if (!this.draftAvailable || !this.draftClient) return;
-    const changes = this.draftChanges(entry);
-    if (!changes) return;
+    const proposedChanges = this.draftChanges(entry);
+    if (!proposedChanges) return;
+    const changes = this.writableDraftChanges(proposedChanges);
+    if (!changes || changes.length === 0) return;
     this.draftSaving = true;
     this.draftError = undefined;
     try {
@@ -1256,6 +1259,33 @@ export class SmithproxyApp extends LitElement {
     } finally {
       this.draftSaving = false;
     }
+  }
+
+  private valueOrigin(path: string) {
+    return this.snapshot?.valueOrigins.find(item => item.path === path);
+  }
+
+  private persistentValue<T extends ConfigScalar>(path: string, fallback: T): T {
+    const value = this.valueOrigin(path)?.persistentValue;
+    return value !== undefined && typeof value === typeof fallback ? value as T : fallback;
+  }
+
+  private originReadOnly(path: string, otherwiseReadOnly: boolean): boolean {
+    return otherwiseReadOnly || this.valueOrigin(path)?.editable === false;
+  }
+
+  private writableDraftChanges(changes: ReadonlyArray<DraftChange>): ReadonlyArray<DraftChange> | undefined {
+    const changedLockedValue = changes.find(change => {
+      const origin = this.valueOrigin(change.path);
+      return origin?.editable === false &&
+        !Object.is(change.value, origin.persistentValue) &&
+        !Object.is(change.value, origin.effectiveValue);
+    });
+    if (changedLockedValue) {
+      this.draftError = `${changedLockedValue.path} is owned by an active augment layer and cannot be changed here.`;
+      return undefined;
+    }
+    return changes.filter(change => this.valueOrigin(change.path)?.editable !== false);
   }
 
   private draftChanges(entry: DrawerEntry): ReadonlyArray<DraftChange> | undefined {
@@ -1470,8 +1500,7 @@ export class SmithproxyApp extends LitElement {
         {path: `policy.[${index}].dst`, value: destinations},
         {path: `policy.[${index}].dport`, value: destinationPortValues},
         {path: `policy.[${index}].features`, value: featureValues},
-        ...(this.snapshot.valueOrigins.find(item => item.path === `policy.[${index}].action`)?.editable === false
-          ? [] : [{path: `policy.[${index}].action`, value: action.value.trim()}]),
+        {path: `policy.[${index}].action`, value: action.value.trim()},
         {path: `policy.[${index}].nat`, value: nat.value.trim()},
         {path: `policy.[${index}].routing`, value: references.get('routing')!.value.trim()},
         {path: `policy.[${index}].tls_profile`, value: references.get('tls')!.value.trim()},
@@ -3274,18 +3303,19 @@ export class SmithproxyApp extends LitElement {
     const policy = this.snapshot?.policies.find(item => item.id === entry.id);
     if (!policy) return nothing;
     const policyIndex = this.snapshot?.policies.findIndex(item => item.id === entry.id) ?? -1;
-    const actionOrigin = this.snapshot?.valueOrigins.find(
-      item => item.path === `policy.[${policyIndex}].action`,
-    );
+    const policyBase = `policy.[${policyIndex}]`;
     const liveReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
-    const protocol = this.snapshot?.protocols.find(item => item.name === policy.protocol);
+    const protocolValue = this.persistentValue(`${policyBase}.proto`, policy.protocol);
+    const protocol = this.snapshot?.protocols.find(item => item.name === protocolValue);
     return html`
       <div class="form-grid">
         <label for="policy-name-${entry.id}">Name</label>
-        <input id="policy-name-${entry.id}" .value=${policy.name} .readOnly=${liveReadOnly} />
+        <input id="policy-name-${entry.id}" .value=${this.persistentValue(`${policyBase}.name`, policy.name)}
+          .readOnly=${this.originReadOnly(`${policyBase}.name`, liveReadOnly)} />
         <label>Enabled</label>
         <label><input id="policy-enabled-${entry.id}" type="checkbox"
-          .checked=${policy.enabled} ?disabled=${liveReadOnly} /> Accept traffic for evaluation</label>
+          .checked=${!this.persistentValue(`${policyBase}.disabled`, !policy.enabled)}
+          ?disabled=${this.originReadOnly(`${policyBase}.disabled`, liveReadOnly)} /> Accept traffic for evaluation</label>
         <label for="policy-sources-${entry.id}">Sources</label>
         <div class="reference-stack">
           <input id="policy-sources-${entry.id}" .value=${policy.sources.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
@@ -3299,14 +3329,15 @@ export class SmithproxyApp extends LitElement {
         <input id="destination-${entry.id}"
           .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
         <label for="action-${entry.id}">Action</label>
-        <input id="action-${entry.id}" .value=${String(actionOrigin?.persistentValue ?? policy.action)}
-          .readOnly=${liveReadOnly || actionOrigin?.editable === false} />
+        <input id="action-${entry.id}" .value=${this.persistentValue(`${policyBase}.action`, policy.action)}
+          .readOnly=${this.originReadOnly(`${policyBase}.action`, liveReadOnly)} />
       </div>
       <div class="section">
         <h3>Advanced</h3>
         <div class="form-grid">
           <label for="policy-protocol-${entry.id}">Protocol</label>
-          <div class="reference-edit"><input id="policy-protocol-${entry.id}" .value=${policy.protocol} .readOnly=${liveReadOnly} />
+          <div class="reference-edit"><input id="policy-protocol-${entry.id}" .value=${protocolValue}
+            .readOnly=${this.originReadOnly(`${policyBase}.proto`, liveReadOnly)} />
             ${protocol ? html`<button class="reference" type="button"
               @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
               <span>${protocol.name}</span><span aria-hidden="true">→</span></button>` : nothing}</div>
@@ -3325,7 +3356,8 @@ export class SmithproxyApp extends LitElement {
           <label for="policy-features-${entry.id}">Features</label>
           <input id="policy-features-${entry.id}" .value=${policy.features.join(', ')} .readOnly=${liveReadOnly} />
           <label for="policy-nat-${entry.id}">NAT</label>
-          <input id="policy-nat-${entry.id}" .value=${policy.nat} .readOnly=${liveReadOnly} />
+          <input id="policy-nat-${entry.id}" .value=${this.persistentValue(`${policyBase}.nat`, policy.nat)}
+            .readOnly=${this.originReadOnly(`${policyBase}.nat`, liveReadOnly)} />
         </div>
       </div>
     `;
@@ -3353,25 +3385,38 @@ export class SmithproxyApp extends LitElement {
   private renderPolicyProfileField(
     entry: DrawerEntry, id: string, label: string, type: string, value: string, readOnly: boolean,
   ) {
+    const policyIndex = this.snapshot?.policies.findIndex(item => item.id === entry.id) ?? -1;
+    const fields: Readonly<Record<string, string>> = {
+      tls: 'tls_profile', routing: 'routing', detection: 'detection_profile', content: 'content_profile',
+      ssh: 'ssh_profile', auth: 'auth_profile', dns: 'alg_dns_profile', script: 'script_profile',
+    };
+    const path = `policy.[${policyIndex}].${fields[id] ?? id}`;
+    const persistent = this.persistentValue(path, value);
     return html`<label for="policy-${id}-${entry.id}">${label}</label>
-      <div class="reference-edit"><input id="policy-${id}-${entry.id}" .value=${value} .readOnly=${readOnly} />
-        ${this.renderProfileReference(type, value)}</div>`;
+      <div class="reference-edit"><input id="policy-${id}-${entry.id}" .value=${persistent}
+        .readOnly=${this.originReadOnly(path, readOnly)} />
+        ${this.renderProfileReference(type, persistent)}</div>`;
   }
 
   private renderAddressEditor(entry: DrawerEntry) {
     const address = this.snapshot?.addresses.find(item => item.id === entry.id);
     if (!address) return nothing;
+    const index = this.snapshot?.addresses.findIndex(item => item.id === entry.id) ?? -1;
+    const base = `address_objects.[${index}]`;
     const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="address-name-${entry.id}">Name</label>
-        <input id="address-name-${entry.id}" .value=${address.name} .readOnly=${readOnly} />
+        <input id="address-name-${entry.id}" .value=${this.persistentValue(`${base}.name`, address.name)}
+          .readOnly=${this.originReadOnly(`${base}.name`, readOnly)} />
         <label for="address-type-${entry.id}">Type</label>
-        <select id="address-type-${entry.id}" .value=${address.type} ?disabled=${readOnly}>
+        <select id="address-type-${entry.id}" .value=${this.persistentValue(`${base}.type`, address.type)}
+          ?disabled=${this.originReadOnly(`${base}.type`, readOnly)}>
           <option value="cidr">CIDR</option><option value="fqdn">FQDN</option><option value="host">Host</option><option value="subnet">Subnet</option><option value="range">Range</option>
         </select>
         <label for="address-value-${entry.id}">Address</label>
-        <input id="address-value-${entry.id}" .value=${address.value} .readOnly=${readOnly} />
+        <input id="address-value-${entry.id}" .value=${this.persistentValue(`${base}.value`, address.value)}
+          .readOnly=${this.originReadOnly(`${base}.value`, readOnly)} />
       </div>
       ${this.renderImpact(address)}
     `;
@@ -3392,17 +3437,22 @@ export class SmithproxyApp extends LitElement {
   private renderPortEditor(entry: DrawerEntry) {
     const port = this.snapshot?.ports.find(item => item.id === entry.id);
     if (!port) return nothing;
+    const index = this.snapshot?.ports.findIndex(item => item.id === entry.id) ?? -1;
+    const base = `port_objects.[${index}]`;
     const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="port-name-${entry.id}">Name</label>
-        <input id="port-name-${entry.id}" .value=${port.name} .readOnly=${readOnly} />
+        <input id="port-name-${entry.id}" .value=${this.persistentValue(`${base}.name`, port.name)}
+          .readOnly=${this.originReadOnly(`${base}.name`, readOnly)} />
         <label for="port-start-${entry.id}">Start</label>
         <input id="port-start-${entry.id}" type="number" min="0" max="65535"
-          .value=${String(port.start)} .readOnly=${readOnly} />
+          .value=${String(this.persistentValue(`${base}.start`, port.start))}
+          .readOnly=${this.originReadOnly(`${base}.start`, readOnly)} />
         <label for="port-end-${entry.id}">End</label>
         <input id="port-end-${entry.id}" type="number" min="0" max="65535"
-          .value=${String(port.end)} .readOnly=${readOnly} />
+          .value=${String(this.persistentValue(`${base}.end`, port.end))}
+          .readOnly=${this.originReadOnly(`${base}.end`, readOnly)} />
       </div>
       ${this.renderObjectUsage(port)}
     `;
@@ -3411,14 +3461,18 @@ export class SmithproxyApp extends LitElement {
   private renderProtocolEditor(entry: DrawerEntry) {
     const protocol = this.snapshot?.protocols.find(item => item.id === entry.id);
     if (!protocol) return nothing;
+    const index = this.snapshot?.protocols.findIndex(item => item.id === entry.id) ?? -1;
+    const base = `proto_objects.[${index}]`;
     const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="protocol-name-${entry.id}">Name</label>
-        <input id="protocol-name-${entry.id}" .value=${protocol.name} .readOnly=${readOnly} />
+        <input id="protocol-name-${entry.id}" .value=${this.persistentValue(`${base}.name`, protocol.name)}
+          .readOnly=${this.originReadOnly(`${base}.name`, readOnly)} />
         <label for="protocol-number-${entry.id}">IP protocol number</label>
         <input id="protocol-number-${entry.id}" type="number" min="0" max="255"
-          .value=${String(protocol.number)} .readOnly=${readOnly} />
+          .value=${String(this.persistentValue(`${base}.id`, protocol.number))}
+          .readOnly=${this.originReadOnly(`${base}.id`, readOnly)} />
       </div>
       ${this.renderObjectUsage(protocol)}
     `;

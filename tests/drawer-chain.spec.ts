@@ -53,6 +53,13 @@ type MockState = {
   configFetches?: number;
   conflictNextDraftWrite?: boolean;
   draftMutationVersions?: number[];
+  valueOrigins?: Array<{
+    path: string;
+    persistent_value: boolean | number | string;
+    effective_value: boolean | number | string;
+    layers: Array<{id: string; priority: number | null; value: boolean | number | string; active: boolean}>;
+    editable: boolean;
+  }>;
 };
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
@@ -433,8 +440,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           },
         ],
       },
-      augment_support: false,
-      value_origins: [],
+      augment_support: Boolean(state.valueOrigins),
+      value_origins: state.valueOrigins ?? [],
       }});
     });
   }
@@ -751,6 +758,11 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await page.getByRole('button', {name: 'office-net', exact: true}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});
   await expect(addressEditor).toBeVisible();
+  await expect(addressEditor.locator('#address-value-address-office-net')).toHaveValue('10.20.0.0/16');
+  await expect(addressEditor.locator('#address-value-address-office-net')).toHaveAttribute('readonly', '');
+  const addressOverlay = addressEditor.getByRole('region', {name: 'Effective value overlays'});
+  await expect(addressOverlay).toContainText('maintenance-segment (priority 50)');
+  await expect(addressOverlay).toContainText('effective 10.20.32.0/20');
   await expect(page.getByText('This shared object is used by 4 configuration entries.')).toBeVisible();
 
   const policyEditor = page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true});
@@ -772,6 +784,38 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+});
+
+test('rejects tampering with augment-owned persistent values', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    draftMutationVersions: [],
+    valueOrigins: [{
+      path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+      layers: [{id: 'incident-response', priority: 200, value: 'accept', active: true}],
+      editable: false,
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /^Policy 1 /u}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const action = editor.locator('#action-policy-0');
+  await expect(action).toHaveValue('reject');
+  await expect(action).toHaveAttribute('readonly', '');
+  await action.evaluate(input => {
+    input.removeAttribute('readonly');
+    input.value = 'bypass';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+  });
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect(editor.getByRole('status')).toContainText(
+    'policy.[0].action is owned by an active augment layer',
+  );
+  expect(state.draftMutationVersions).toEqual([]);
 });
 
 test('restores drawer routes and manages focus across the chain', async ({page}) => {

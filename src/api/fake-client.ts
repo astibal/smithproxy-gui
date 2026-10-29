@@ -292,16 +292,27 @@ const snapshot: ConfigSnapshot = {
     ],
   },
   augmentSupport: true,
-  valueOrigins: [{
-    path: 'policy.[0].action',
-    persistentValue: 'reject',
-    effectiveValue: 'accept',
-    layers: [
-      {id: 'temporary-office-access', priority: 100, value: 'reject', active: false},
-      {id: 'incident-response', priority: 200, value: 'accept', active: true},
-    ],
-    editable: false,
-  }],
+  valueOrigins: [
+    {
+      path: 'policy.[0].action',
+      persistentValue: 'reject',
+      effectiveValue: 'accept',
+      layers: [
+        {id: 'temporary-office-access', priority: 100, value: 'reject', active: false},
+        {id: 'incident-response', priority: 200, value: 'accept', active: true},
+      ],
+      editable: false,
+    },
+    {
+      path: 'address_objects.[0].value',
+      persistentValue: '10.20.0.0/16',
+      effectiveValue: '10.20.32.0/20',
+      layers: [
+        {id: 'maintenance-segment', priority: 50, value: '10.20.32.0/20', active: true},
+      ],
+      editable: false,
+    },
+  ],
 };
 
 export class FakeConfigClient implements ConfigClient {
