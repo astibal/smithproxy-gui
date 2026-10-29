@@ -219,7 +219,11 @@ Requests are limited to 64 KiB, the accumulated draft payload is limited to
 1 MiB, paths and values are bounded, and an expected draft version is mandatory;
 stale writers receive HTTP 409. The browser also rejects draft responses above
 8 MiB before JSON parsing, leaving room for worst-case JSON escaping of the
-bounded raw draft. This store cannot mutate Smithproxy configuration by itself;
+bounded raw draft. Sensitive change paths and structural fields must contain a
+bounded `[redacted:clear]`, `[redacted:replace]`, or
+`[redacted:replace:N]` sentinel in every draft response. The browser rejects the
+entire response if raw sensitive material or an invalid sentinel is present.
+This store cannot mutate Smithproxy configuration by itself;
 mutation is possible only through the separate capability-gated atomic commit
 endpoint.
 

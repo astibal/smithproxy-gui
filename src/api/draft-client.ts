@@ -150,6 +150,50 @@ function scalar(value: unknown): DraftScalar {
   throw new Error('Invalid draft scalar.');
 }
 
+const sensitiveDraftPaths = new Set([
+  'settings.webhook.url', 'settings.syslog_server', 'settings.write_payload_dir',
+  'settings.log_file', 'settings.sslkeylog_file', 'settings.certs_path',
+  'settings.certs_ca_key_password', 'settings.certs_ctlog', 'settings.ca_bundle_path',
+  'settings.ca_bundle_file', 'settings.admin.group', 'settings.messages_dir',
+  'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
+  'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
+  'settings.http_api.bind_address', 'settings.http_api.bind_interface',
+  'settings.webhook.sift_url', 'settings.webhook.sift_tenant_id',
+  'settings.webhook.sift_instance_id', 'settings.webhook.hostid',
+  'settings.webhook.bind_interface', 'captures.local.dir', 'captures.local.file_prefix',
+  'captures.local.file_suffix', 'captures.remote.tun_dst', 'captures.remote.bind_interface',
+]);
+
+function sensitiveDraftPath(path: string): boolean {
+  return sensitiveDraftPaths.has(path) ||
+    (path.startsWith('ssh_profiles.[') && path.endsWith('].host_key')) ||
+    (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
+    (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
+    (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
+    (path.startsWith('content_profiles.[') && path.includes('].content_rules.[') &&
+      (path.endsWith('].match') || path.endsWith('].replace'))) ||
+    (path.startsWith('tls_ca.[') && path.endsWith('].path')) ||
+    ((path.startsWith('starttls_signatures.[') || path.startsWith('detection_signatures.[')) &&
+      path.endsWith('].signature'));
+}
+
+function sensitiveStructuralField(collection: DraftStructuralCollection, field: string): boolean {
+  return (collection === 'ssh_profiles' && field === 'host_key') ||
+    (collection === 'script_profiles' && field === 'script-file') ||
+    (collection === 'tls_profiles' && field === 'sni_filter_bypass') ||
+    (collection === 'content_profiles' && field === 'rules_session_filter') ||
+    (collection === 'content_profiles.content_rules' && (field === 'match' || field === 'replace')) ||
+    (collection === 'tls_ca' && field === 'path') ||
+    (collection.endsWith('_signatures.flow') && field === 'signature');
+}
+
+function redactedDraftValue(value: unknown): boolean {
+  if (value === '[redacted:clear]' || value === '[redacted:replace]') return true;
+  if (typeof value !== 'string') return false;
+  const count = /^\[redacted:replace:([1-9][0-9]{0,2})\]$/u.exec(value);
+  return count !== null && Number(count[1]) <= 256;
+}
+
 const structuralCollections = new Set<DraftStructuralCollection>([
   'policy', 'address_objects', 'port_objects', 'proto_objects', 'routing',
   'tls_profiles', 'content_profiles', 'content_profiles.content_rules',
@@ -195,7 +239,7 @@ function position(value: unknown): DraftPosition {
   throw new Error('Invalid structural draft position.');
 }
 
-function structuralOperation(value: unknown): DraftStructuralOperation {
+function structuralOperation(value: unknown, response = false): DraftStructuralOperation {
   if (!isObject(value) || typeof value.op !== 'string') {
     throw new Error('Invalid structural draft operation.');
   }
@@ -213,6 +257,9 @@ function structuralOperation(value: unknown): DraftStructuralOperation {
     for (const [name, raw] of Object.entries(value.fields)) {
       if (!/^[a-z][a-z0-9_-]{0,95}$/u.test(name)) {
         throw new Error('Invalid structural create field.');
+      }
+      if (response && sensitiveStructuralField(collection, name) && !redactedDraftValue(raw)) {
+        throw new Error('Unredacted sensitive structural draft field.');
       }
       fields[name] = scalar(raw);
     }
@@ -272,13 +319,16 @@ function parseDraft(value: unknown): DraftSnapshot {
       throw new Error('Invalid draft change.');
     }
     paths.add(item.path);
+    if (sensitiveDraftPath(item.path) && !redactedDraftValue(item.value)) {
+      throw new Error('Unredacted sensitive draft change.');
+    }
     return {path: item.path, value: scalar(item.value)};
   });
   const localIds = new Set<string>();
   const createIds = new Set<string>();
   const structuralTargets = new Set<string>();
   const structuralOperations = value.structural_operations.map(item => {
-    const parsed = structuralOperation(item);
+    const parsed = structuralOperation(item, true);
     if (localIds.has(parsed.localId)) throw new Error('Duplicate structural draft identifier.');
     localIds.add(parsed.localId);
     if (parsed.op === 'create') {

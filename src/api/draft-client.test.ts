@@ -192,6 +192,49 @@ describe('DraftClient', () => {
     await expect(client.load()).rejects.toThrow(message);
   });
 
+  it.each([
+    [{
+      id: 'workspace-draft', base_revision: null, version: 1,
+      changes: [{path: 'settings.certs_ca_key_password', value: 'private-password'}],
+      structural_operations: [],
+    }, 'Unredacted sensitive draft change'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 1, changes: [],
+      structural_operations: [{
+        op: 'create', local_id: 'create-ca', collection: 'tls_ca', client_id: 'create-ca',
+        position: {last: true}, fields: {name: 'private-ca', path: '/private/ca.pem'},
+      }],
+    }, 'Unredacted sensitive structural draft field'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 1,
+      changes: [{path: 'tls_profiles.[0].sni_filter_bypass', value: ['private.example']}],
+      structural_operations: [],
+    }, 'Unredacted sensitive draft change'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 1,
+      changes: [{path: 'settings.http_api.keys', value: '[redacted:replace:257]'}],
+      structural_operations: [],
+    }, 'Unredacted sensitive draft change'],
+  ])('rejects unredacted sensitive draft responses %#', async (payload, message) => {
+    const client = new DraftClient('/api/v1', async () => response(payload));
+    await expect(client.load()).rejects.toThrow(message);
+  });
+
+  it('accepts bounded redaction sentinels in sensitive draft responses', async () => {
+    const client = new DraftClient('/api/v1', async () => response({
+      id: 'workspace-draft', base_revision: null, version: 1,
+      changes: [
+        {path: 'settings.certs_ca_key_password', value: '[redacted:replace]'},
+        {path: 'settings.http_api.keys', value: '[redacted:replace:2]'},
+      ],
+      structural_operations: [{
+        op: 'create', local_id: 'create-ca', collection: 'tls_ca', client_id: 'create-ca',
+        position: {last: true}, fields: {name: 'private-ca', path: '[redacted:replace]'},
+      }],
+    }));
+    await expect(client.load()).resolves.toMatchObject({version: 1});
+  });
+
   it('validates and sends atomic batches including typed arrays', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       id: 'workspace-draft', base_revision: null, version: 1,

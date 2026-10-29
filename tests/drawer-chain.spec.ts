@@ -135,12 +135,42 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   const now = (): number => state.now ?? Date.now();
   const collectorLastSuccess = (sampledAt: number): number =>
     sampledAt - (state.collectorLastSuccessAgeMs ?? 5_000);
+  const fixedSensitiveDraftPaths = new Set([
+    'settings.webhook.url', 'settings.syslog_server', 'settings.write_payload_dir',
+    'settings.log_file', 'settings.sslkeylog_file', 'settings.certs_path',
+    'settings.certs_ca_key_password', 'settings.certs_ctlog', 'settings.ca_bundle_path',
+    'settings.ca_bundle_file', 'settings.admin.group', 'settings.messages_dir',
+    'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
+    'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
+    'settings.http_api.bind_address', 'settings.http_api.bind_interface',
+    'settings.webhook.sift_url', 'settings.webhook.sift_tenant_id',
+    'settings.webhook.sift_instance_id', 'settings.webhook.hostid',
+    'settings.webhook.bind_interface', 'captures.local.dir', 'captures.local.file_prefix',
+    'captures.local.file_suffix', 'captures.remote.tun_dst', 'captures.remote.bind_interface',
+  ]);
+  const sensitiveDraftPath = (path: string): boolean => fixedSensitiveDraftPaths.has(path) ||
+    (path.startsWith('ssh_profiles.[') && path.endsWith('].host_key')) ||
+    (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
+    (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
+    (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
+    (path.startsWith('content_profiles.[') && path.includes('].content_rules.[') &&
+      (path.endsWith('].match') || path.endsWith('].replace'))) ||
+    (path.startsWith('tls_ca.[') && path.endsWith('].path')) ||
+    ((path.startsWith('starttls_signatures.[') || path.startsWith('detection_signatures.[')) &&
+      path.endsWith('].signature'));
+  const redactDraftChange = (change: {path: string; value: unknown}): {path: string; value: unknown} => {
+    if (!sensitiveDraftPath(change.path)) return change;
+    const empty = change.value === '' || (Array.isArray(change.value) && change.value.length === 0);
+    const value = empty ? '[redacted:clear]' : Array.isArray(change.value)
+      ? `[redacted:replace:${change.value.length}]` : '[redacted:replace]';
+    return {path: change.path, value};
+  };
   const baseRevision = state.validationReady || state.commitReady ? `sha256:${'1'.repeat(64)}` : null;
   let draft = {
     id: 'workspace-draft',
     base_revision: baseRevision,
     version: state.initialDraftChanges?.length || state.initialStructuralOperations?.length ? 1 : 0,
-    changes: state.initialDraftChanges ?? [] as Array<{path: string; value: unknown}>,
+    changes: state.initialDraftChanges?.map(redactDraftChange) ?? [] as Array<{path: string; value: unknown}>,
     structural_operations: state.initialStructuralOperations ?? [],
   };
   await page.route('**/api/v1/capabilities', async route => {
@@ -648,6 +678,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
       return;
     }
+    const responseChanges = body.changes.map(redactDraftChange);
     draft = {
       ...draft,
       version: draft.version + 1,
@@ -655,7 +686,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         ...draft.changes.filter(item =>
           !body.changes.some(change => change.path === item.path) &&
           !body.remove_paths?.includes(item.path)),
-        ...body.changes,
+        ...responseChanges,
       ],
     };
     await route.fulfill({json: draft});
@@ -4411,6 +4442,99 @@ test('searches the complete readable configuration without unsafe markup', async
   await expect(page.locator('smithproxy-gui script')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading', {name: 'Control plane', level: 2})).toBeVisible();
+});
+
+test('finds pending structural creates without indexing write-only values', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'search-address', client_id: 'search-address',
+      collection: 'address_objects', position: {last: true},
+      fields: {name: 'pending-branch', type: 'cidr', value: '198.51.100.0/24'},
+    }, {
+      op: 'create', local_id: 'search-ca', client_id: 'search-ca',
+      collection: 'tls_ca', position: {last: true},
+      fields: {name: 'pending-ca', path: '[redacted:replace]'},
+    }, {
+      op: 'create', local_id: 'search-script', client_id: 'search-script',
+      collection: 'script_profiles', position: {last: true},
+      fields: {name: 'pending-script', type: '0', 'script-file': '[redacted:replace]'},
+    }, {
+      op: 'create', local_id: 'search-tls', client_id: 'search-tls',
+      collection: 'tls_profiles', position: {last: true},
+      fields: {name: 'pending-tls', sni_filter_bypass: '[redacted:replace:1]'},
+    }, {
+      op: 'create', local_id: 'search-ssh', client_id: 'search-ssh',
+      collection: 'ssh_profiles', position: {last: true},
+      fields: {name: 'pending-ssh', host_key: '[redacted:replace]'},
+    }, {
+      op: 'create', local_id: 'search-rule', client_id: 'search-rule',
+      collection: 'content_profiles.content_rules', parent_id: 'content-0', position: {last: true},
+      fields: {
+        match: '[redacted:replace]', replace: '[redacted:replace]',
+        fill_length: false, replace_each_nth: 4,
+      },
+    }, {
+      op: 'create', local_id: 'search-signature', client_id: 'search-signature',
+      collection: 'starttls_signatures', position: {last: true},
+      fields: {
+        cat: 'mail', name: 'pending-starttls', side: 'server', severity: 3,
+        group: 'mail', enables: 'tls', engine: 'builtin',
+      },
+    }, {
+      op: 'create', local_id: 'search-signature-flow', client_id: 'search-signature-flow',
+      collection: 'starttls_signatures.flow', parent_id: 'search-signature', position: {last: true},
+      fields: {
+        side: 'r', type: 'regex', bytes_start: 0, bytes_max: 64,
+        signature: '[redacted:replace]',
+      },
+    }],
+  }, true);
+  await page.goto('/');
+  const search = page.getByRole('searchbox', {name: 'Search'});
+  const results = page.getByRole('group', {name: 'Search results'});
+
+  await search.fill('pending-branch');
+  const address = results.getByRole('button').filter({hasText: 'pending-branch'});
+  await expect(address).toContainText('Address');
+  await expect(address).toContainText('pending draft');
+  await address.click();
+  let editor = page.getByRole('dialog', {name: 'Create address object'});
+  await expect(editor.getByLabel('Name')).toHaveValue('pending-branch');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await search.fill('pending-script');
+  const script = results.getByRole('button').filter({hasText: 'pending-script'});
+  await expect(script).toContainText('Profile');
+  await script.click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(editor.getByLabel('Name')).toHaveValue('pending-script');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await search.fill('pending rule');
+  const rule = results.getByRole('button').filter({hasText: 'capture · pending rule'});
+  await expect(rule).toContainText('Expression configured · redacted');
+  await rule.click();
+  editor = page.getByRole('dialog', {name: 'Create content rule'});
+  await expect(editor.getByLabel('Replace every Nth match')).toHaveValue('4');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await search.fill('pending-starttls');
+  const signature = results.getByRole('button').filter({hasText: 'pending-starttls'});
+  await expect(signature).toContainText('Signature');
+  await signature.click();
+  editor = page.getByRole('dialog', {name: 'Create signature'});
+  await expect(editor.getByLabel('Name')).toHaveValue('pending-starttls');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  for (const secret of [
+    'PRIVATE-CA-PATH', 'PRIVATE-MODULE-PATH', 'PRIVATE-SNI-BYPASS', 'PRIVATE-HOST-KEY',
+    'PRIVATE-CONTENT-MATCH', 'PRIVATE-CONTENT-REPLACE', 'PRIVATE-SIGNATURE-EXPRESSION',
+    '[redacted:replace]',
+  ]) {
+    await search.fill(secret);
+    await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
+  }
 });
 
 test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {

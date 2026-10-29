@@ -5862,6 +5862,111 @@ export class SmithproxyApp extends LitElement {
     ];
   }
 
+  private pendingCreateSearchEntries(query: string): ReadonlyArray<{
+    operation: DraftCreateOperation;
+    kind: string;
+    name: string;
+    detail: string;
+  }> {
+    const operations = this.workspaceDraft?.structuralOperations ?? [];
+    const profileTypes = new Map(
+      (Object.entries(profileCreateCollections) as Array<[
+        ProfileCreateType, DraftCreateOperation['collection']
+      ]>).map(([type, collection]) => [collection, type]),
+    );
+    const fieldText = (operation: DraftCreateOperation, field: string): string => {
+      const value = operation.fields[field];
+      return typeof value === 'string' ? value : '';
+    };
+    const safeValues = (
+      operation: DraftCreateOperation, fields: ReadonlyArray<string>, labels: ReadonlyArray<string>,
+    ): Array<string | number> => {
+      const values: Array<string | number> = [...labels];
+      for (const field of fields) {
+        const value = operation.fields[field];
+        if (Array.isArray(value)) values.push(...value);
+        else if (typeof value === 'boolean') values.push(Number(value));
+        else if (typeof value === 'string' || typeof value === 'number') values.push(value);
+      }
+      return values;
+    };
+    return operations.flatMap(operation => {
+      if (operation.op !== 'create') return [];
+      const pending = 'pending draft';
+      let kind = '';
+      let name = fieldText(operation, 'name');
+      let detail = pending;
+      let values: Array<string | number> = [];
+      if (operation.collection === 'address_objects') {
+        kind = 'Address';
+        detail = `${fieldText(operation, 'type') || 'address'} · ${pending}`;
+        values = safeValues(operation, ['name', 'type', 'value'], ['address', pending]);
+      } else if (operation.collection === 'port_objects') {
+        kind = 'Port';
+        detail = `Port range · ${pending}`;
+        values = safeValues(operation, ['name', 'start', 'end'], ['port', 'port range', pending]);
+      } else if (operation.collection === 'proto_objects') {
+        kind = 'Protocol';
+        detail = `IP protocol · ${pending}`;
+        values = safeValues(operation, ['name', 'id'], ['protocol', 'ip protocol', pending]);
+      } else if (operation.collection === 'policy') {
+        kind = 'Policy';
+        detail = `${fieldText(operation, 'action') || 'policy'} · ${pending}`;
+        values = safeValues(operation, [
+          'name', 'action', 'proto', 'src', 'sport', 'dst', 'dport', 'tls_profile',
+          'ssh_profile', 'detection_profile', 'content_profile', 'alg_dns_profile',
+          'script_profile', 'auth_profile', 'nat', 'routing', 'features', 'disabled',
+        ], ['policy', pending]);
+      } else if (profileTypes.has(operation.collection)) {
+        const type = profileTypes.get(operation.collection)!;
+        kind = 'Profile';
+        detail = `${type} · ${pending}`;
+        values = [name, type, 'profile', pending];
+      } else if (operation.collection === 'tls_ca') {
+        kind = 'Certificate authority';
+        detail = `Path configured · redacted · ${pending}`;
+        values = [name, 'certificate authority', 'ca', 'path configured', pending];
+      } else if (operation.collection === 'starttls_signatures' ||
+          operation.collection === 'detection_signatures') {
+        const signatureKind = operation.collection === 'starttls_signatures' ? 'STARTTLS' : 'Detection';
+        kind = 'Signature';
+        detail = `${signatureKind} · ${pending}`;
+        values = safeValues(operation, [
+          'cat', 'name', 'side', 'severity', 'group', 'enables', 'engine',
+        ], ['signature', signatureKind, pending]);
+      } else if (operation.collection === 'content_profiles.content_rules') {
+        const parent = this.snapshot?.profiles.find(item => item.id === operation.parentId);
+        const pendingParent = operations.find(candidate => candidate.op === 'create' &&
+          candidate.clientId === operation.parentId && candidate.collection === 'content_profiles');
+        const parentName = parent ? this.profileDisplayName(parent)
+          : pendingParent?.op === 'create' ? fieldText(pendingParent, 'name') : 'Content profile';
+        name = `${parentName} · pending rule`;
+        kind = 'Content rule';
+        detail = `Expression configured · redacted · ${pending}`;
+        values = safeValues(operation, ['fill_length', 'replace_each_nth'], [
+          parentName, 'content rule', 'expression configured', pending,
+        ]);
+      } else if (operation.collection.endsWith('_signatures.flow')) {
+        const pendingParent = operations.find(candidate => candidate.op === 'create' &&
+          candidate.clientId === operation.parentId &&
+          (candidate.collection === 'starttls_signatures' ||
+            candidate.collection === 'detection_signatures'));
+        if (pendingParent?.op === 'create') return [];
+        const parent = this.snapshot?.securityAssets?.signatures.find(item => item.id === operation.parentId);
+        const parentName = parent ? this.signatureDisplayName(parent.id, parent.name) : 'Signature';
+        name = `${parentName} · pending flow`;
+        kind = 'Signature flow';
+        detail = `Expression configured · redacted · ${pending}`;
+        values = safeValues(operation, ['side', 'type', 'bytes_start', 'bytes_max'], [
+          parentName, 'signature flow', 'expression configured', pending,
+        ]);
+      } else {
+        return [];
+      }
+      return this.searchMatches([name, ...values], query) ? [{operation, kind, name, detail}] : [];
+    });
+  }
+
   private renderSearchResults() {
     const query = this.searchQuery.trim().toLocaleLowerCase();
     if (!query || !this.snapshot) return html`<div class="empty-state"><h2>Search</h2><p>Enter a configuration name, type, value, or field.</p></div>`;
@@ -5985,8 +6090,10 @@ export class SmithproxyApp extends LitElement {
     const capturesMatch = captures
       ? this.searchMatches(this.captureSearchValues(captures), query)
       : false;
+    const pendingCreates = this.pendingCreateSearchEntries(query);
     const count = policies.length + addresses.length + ports.length + protocols.length + profiles.length +
-      authorities.length + signatures.length + contentRules.length + Number(systemMatches) + Number(capturesMatch);
+      authorities.length + signatures.length + contentRules.length + pendingCreates.length +
+      Number(systemMatches) + Number(capturesMatch);
     const row = (kind: string, name: string, detail: string, open: (origin: HTMLElement) => void) => html`
       <button class="row object-row" type="button"
         @click=${(event: MouseEvent) => open(event.currentTarget as HTMLElement)}>
@@ -6006,6 +6113,8 @@ export class SmithproxyApp extends LitElement {
             ${contentRules.map(result => row('Content rule', result.name, result.detail, origin => this.openContentRule(result.item.id, origin)))}
             ${authorities.map(result => row('Certificate authority', result.name, result.detail, origin => this.openAuthority(result.item.id, origin)))}
             ${signatures.map(result => row('Signature', result.name, result.detail, origin => this.openSignature(result.item.id, origin)))}
+            ${pendingCreates.map(result => row(result.kind, result.name, result.detail,
+              origin => this.openDraftStructuralOperation(result.operation.localId, origin)))}
             ${systemMatches ? row('System', 'System settings', 'Typed runtime configuration', origin => this.openSystemDrawer('settings', origin)) : nothing}
             ${capturesMatch ? row('Captures', 'Capture settings', 'Local and remote capture', origin => this.openSystemDrawer('captures', origin)) : nothing}
           </div>`}

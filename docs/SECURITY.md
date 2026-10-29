@@ -90,6 +90,13 @@ path group, or the complete draft uses the same authentication, CSRF, and
 optimistic-concurrency checks as an upsert. Group removal rejects duplicates or
 missing paths without partially changing the draft.
 
+Draft responses preserve the write-only browser boundary as well as draft
+requests. The browser accepts sensitive scalar and structural fields only as
+bounded GUI-core redaction sentinels; a raw value or an invalid list-count
+sentinel rejects the complete snapshot before it reaches application state.
+Global search indexes pending structural creates through an explicit safe-field
+allowlist and never indexes redaction sentinels.
+
 Browser validation is never authoritative. The core accepts only pinned schema
 paths emitted by the typed editors and independently checks canonical indexes,
 types, enums, ranges, bounded unique collections, and opaque secret limits.
