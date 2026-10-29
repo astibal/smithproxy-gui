@@ -237,7 +237,7 @@ int main() {
     assert(detection_profiles.profiles->front().detection->mode == 2U);
     assert(!detection_profiles.profiles->front().detection->knowledge_base_enabled);
     const auto content_profiles = parse_config_profiles(
-        R"({"success":{"content_profiles":{"capture":{"write_payload":"false","write_format":"pcap_single","webhook_enable":"true","rules_session_filter":"sensitive regex","content_rules":[{"match":"secret","replace":"redacted"}]}}}})",
+        R"({"success":{"content_profiles":{"capture":{"write_payload":"false","write_format":"pcap_single","webhook_enable":"true","rules_session_filter":"sensitive regex","content_rules":[{"match":"secret","replace":"redacted","fill_length":"true","replace_each_nth":"3"}]}}}})",
         "content_profiles", "content");
     assert(content_profiles.profiles);
     assert(content_profiles.profiles->front().content);
@@ -245,8 +245,13 @@ int main() {
     assert(content_profiles.profiles->front().content->rule_count == 1U);
     assert(content_profiles.profiles->front().content->rules.front().match_configured);
     assert(content_profiles.profiles->front().content->rules.front().replacement_has_value);
+    assert(content_profiles.profiles->front().content->rules.front().fill_length);
+    assert(content_profiles.profiles->front().content->rules.front().replace_each_nth == 3);
     assert(!parse_config_profiles(
         R"({"success":{"content_profiles":{"bad":{"write_payload":"false","content_rules":[{"replace":"missing match"}]}}}})",
+        "content_profiles", "content").profiles);
+    assert(!parse_config_profiles(
+        R"({"success":{"content_profiles":{"bad":{"write_payload":"false","content_rules":[{"match":"ok","replace":"value","replace_each_nth":"2147483648"}]}}}})",
         "content_profiles", "content").profiles);
     assert(!parse_config_profiles(
         R"({"success":{"content_profiles":{"bad":{"write_payload":"false","write_format":"raw"}}}})",

@@ -205,9 +205,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
             ja4_http: false, session_filter_configured: true, rule_count: 2,
             rules: [
               {id: 'content-rule-0-0', match_configured: true, replacement_configured: true,
-               replacement_has_value: false},
+               replacement_has_value: false, fill_length: true, replace_each_nth: 0},
               {id: 'content-rule-0-1', match_configured: true, replacement_configured: true,
-               replacement_has_value: true},
+               replacement_has_value: true, fill_length: false, replace_each_nth: 3},
             ],
           },
           ssh: null, dns: null, script: null, authentication: null,
@@ -849,19 +849,25 @@ test('rotates nested content rules without exposing expressions', async ({page})
   await contentEditor.getByRole('group', {name: 'Content rules'})
     .getByRole('button', {name: /Rule 1/}).click();
   const ruleEditor = page.getByRole('dialog', {name: 'Edit Content rule 1'});
+  await expect(ruleEditor.getByLabel('Preserve matched length')).toHaveValue('true');
+  await ruleEditor.getByLabel('Preserve matched length').selectOption('false');
+  await ruleEditor.getByLabel('Replace every Nth match').fill('5');
   await ruleEditor.getByLabel('Match expression').selectOption('replace');
   await ruleEditor.getByLabel('Content match replacement').fill('PRIVATE-MATCH-[0-9]+');
   await ruleEditor.getByLabel('Replacement expression').selectOption('clear');
   await ruleEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(page.getByText('Draft: 2 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 4 changes')).toBeVisible();
   await expect(ruleEditor.getByLabel('Content match replacement')).toHaveValue('');
   await ruleEditor.getByRole('button', {name: 'Cancel'}).click();
   await contentEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 2'}).click();
+  await page.getByRole('button', {name: 'Review draft · 4'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('content_profiles.[0].content_rules.[0].match');
   await expect(changes).toContainText('content_profiles.[0].content_rules.[0].replace');
+  await expect(changes).toContainText('content_profiles.[0].content_rules.[0].fill_length');
+  await expect(changes).toContainText('content_profiles.[0].content_rules.[0].replace_each_nth');
+  await expect(changes).toContainText('5');
   await expect(changes).toContainText('Replaced · redacted');
   await expect(changes).toContainText('Cleared · redacted');
   await expect(changes).not.toContainText('PRIVATE-MATCH');

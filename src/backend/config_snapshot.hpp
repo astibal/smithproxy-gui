@@ -82,6 +82,8 @@ struct ConfigContentRule {
     bool match_configured{};
     bool replacement_configured{};
     bool replacement_has_value{};
+    bool fill_length{};
+    std::int64_t replace_each_nth{};
 };
 
 struct ConfigContentProfile {

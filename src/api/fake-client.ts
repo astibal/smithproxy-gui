@@ -152,9 +152,9 @@ const snapshot: ConfigSnapshot = {
         ja4TlsServerHello: false, ja4Http: true, sessionFilterConfigured: true, ruleCount: 2,
         rules: [
           {id: 'content-rule-0-0', matchConfigured: true, replacementConfigured: true,
-           replacementHasValue: false},
+           replacementHasValue: false, fillLength: true, replaceEachNth: 0},
           {id: 'content-rule-0-1', matchConfigured: true, replacementConfigured: true,
-           replacementHasValue: true},
+           replacementHasValue: true, fillLength: false, replaceEachNth: 3},
         ],
       },
       ssh: null,

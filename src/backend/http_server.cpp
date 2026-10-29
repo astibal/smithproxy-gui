@@ -550,7 +550,9 @@ private:
                              ",\"replacement_configured\":" +
                              (rule.replacement_configured ? "true" : "false") +
                              ",\"replacement_has_value\":" +
-                             (rule.replacement_has_value ? "true" : "false") + "}";
+                             (rule.replacement_has_value ? "true" : "false") +
+                             ",\"fill_length\":" + (rule.fill_length ? "true" : "false") +
+                             ",\"replace_each_nth\":" + std::to_string(rule.replace_each_nth) + "}";
                 }
                 rules += ']';
                 profiles += "{\"write_payload\":" + std::string(content.write_payload ? "true" : "false") +

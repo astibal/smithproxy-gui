@@ -107,6 +107,8 @@ export interface ContentRuleSummary {
   matchConfigured: true;
   replacementConfigured: boolean;
   replacementHasValue: boolean;
+  fillLength: boolean;
+  replaceEachNth: number;
 }
 
 export interface ContentProfileDetails {

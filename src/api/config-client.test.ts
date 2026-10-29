@@ -75,9 +75,9 @@ const liveSnapshot = {
         ja4_http: true, session_filter_configured: true, rule_count: 2,
         rules: [
           {id: 'content-rule-0-0', match_configured: true, replacement_configured: true,
-           replacement_has_value: false},
+           replacement_has_value: false, fill_length: true, replace_each_nth: 0},
           {id: 'content-rule-0-1', match_configured: true, replacement_configured: true,
-           replacement_has_value: true},
+           replacement_has_value: true, fill_length: false, replace_each_nth: 3},
         ],
       },
       ssh: null,
@@ -194,7 +194,13 @@ describe('ApiConfigClient', () => {
     expect(snapshot.addresses[1]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
     expect(snapshot.ports[0]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
     expect(snapshot.profiles[2]?.detection).toMatchObject({mode: 2, knowledgeBaseEnabled: false});
-    expect(snapshot.profiles[3]?.content).toMatchObject({ruleCount: 2, sessionFilterConfigured: true});
+    expect(snapshot.profiles[3]?.content).toMatchObject({
+      ruleCount: 2, sessionFilterConfigured: true,
+      rules: [
+        {fillLength: true, replaceEachNth: 0},
+        {fillLength: false, replaceEachNth: 3},
+      ],
+    });
     expect(snapshot.settings).toMatchObject({
       policyFailOpen: false,
       workers: {tls: 4, quic: -1, socks: -1},
@@ -247,6 +253,15 @@ describe('ApiConfigClient', () => {
         ? {...profile, content: {...profile.content, rule_count: 3}}
         : profile),
     })).toThrow('Invalid content rule count');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      profiles: liveSnapshot.profiles.map(profile => profile.type === 'content'
+        ? {...profile, content: {
+            ...profile.content,
+            rules: profile.content!.rules.map(rule => ({...rule, replace_each_nth: 2147483648})),
+          }}
+        : profile),
+    })).toThrow('Invalid content rule replacement interval');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,
       profiles: liveSnapshot.profiles.map(profile => profile.type === 'tls'

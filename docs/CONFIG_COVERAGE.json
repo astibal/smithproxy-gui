@@ -93,11 +93,11 @@
     {
       "name": "content_profiles",
       "origin": "reference_config",
-      "read": "partial",
+      "read": "full",
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["name", "write_payload", "write_format", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http", "rules_session_filter", "content_rules"],
-      "notes": "Content controls are typed. Session filters and nested rule match/replacement expressions remain server-side and use write-only rotation; structural rule add and remove operations still require a transaction schema."
+      "notes": "Content controls and nested rule action metadata are typed. Session filters and rule match/replacement expressions remain server-side and use write-only rotation; structural rule add and remove operations still require a transaction schema."
     },
     {
       "name": "tls_ca",

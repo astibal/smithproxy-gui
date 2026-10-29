@@ -51,7 +51,10 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         "detection_profiles": {"default-detection": {"mode": "1"}},
         "content_profiles": {"safe-content": {
             "write_payload": "false",
-            "content_rules": [{"match": "private-content-match", "replace": "private-content-replacement"}],
+            "content_rules": [{
+                "match": "private-content-match", "replace": "private-content-replacement",
+                "fill_length": "true", "replace_each_nth": "3",
+            }],
         }},
         "tls_profiles": {"inspect": {}},
         "ssh_profiles": {"default-ssh": {"host_key": "/redacted/test-key"}},
@@ -522,6 +525,16 @@ def main() -> int:
             assert {item["type"] for item in config_snapshot["profiles"]} == {
                 "detection", "content", "tls", "ssh", "script", "routing",
             }
+            content_profile = next(
+                item for item in config_snapshot["profiles"] if item["type"] == "content")
+            assert content_profile["content"]["rules"] == [{
+                "id": "content-rule-0-0",
+                "match_configured": True,
+                "replacement_configured": True,
+                "replacement_has_value": True,
+                "fill_length": True,
+                "replace_each_nth": 3,
+            }]
             assert secret.encode() not in config_body
             assert gateway_secret.encode() not in config_body
             assert b"backend-secret-value" not in config_body

@@ -995,11 +995,20 @@ export class SmithproxyApp extends LitElement {
       const replacement = this.renderRoot.querySelector<HTMLTextAreaElement>(
         `#content-rule-write-replacement-${entry.id}-value`,
       );
+      const fillLength = this.renderRoot.querySelector<HTMLSelectElement>(
+        `#content-rule-fill-length-${entry.id}`,
+      );
+      const replaceEachNth = this.renderRoot.querySelector<HTMLInputElement>(
+        `#content-rule-replace-each-${entry.id}`,
+      );
       if (profileIndex < 0 || ruleIndex < 0 || !matchMode || !match || !replacementMode || !replacement ||
+          !fillLength || !replaceEachNth || !['true', 'false'].includes(fillLength.value) ||
           !['unchanged', 'replace'].includes(matchMode.value) ||
           !['unchanged', 'replace', 'clear'].includes(replacementMode.value)) return undefined;
-      if (matchMode.value === 'unchanged' && replacementMode.value === 'unchanged') {
-        this.draftError = 'Choose a match or replacement change for this content rule.';
+      const replaceEachValue = replaceEachNth.valueAsNumber;
+      if (!Number.isInteger(replaceEachValue) || replaceEachValue < -2147483648 ||
+          replaceEachValue > 2147483647) {
+        this.draftError = 'The replacement interval must be a signed 32-bit integer.';
         return undefined;
       }
       const validExpression = (value: string) =>
@@ -1011,6 +1020,8 @@ export class SmithproxyApp extends LitElement {
       }
       const base = `content_profiles.[${profileIndex}].content_rules.[${ruleIndex}]`;
       return [
+        {path: `${base}.fill_length`, value: fillLength.value === 'true'},
+        {path: `${base}.replace_each_nth`, value: replaceEachValue},
         ...(matchMode.value === 'replace' ? [{path: `${base}.match`, value: match.value}] : []),
         ...(replacementMode.value === 'replace'
           ? [{path: `${base}.replace`, value: replacement.value}]
@@ -3130,7 +3141,8 @@ export class SmithproxyApp extends LitElement {
                   <span><strong>Rule ${index + 1}</strong> · match configured ·
                     ${rule.replacementConfigured
                       ? rule.replacementHasValue ? 'replacement configured' : 'empty replacement'
-                      : 'no replacement'}</span>
+                      : 'no replacement'} · ${rule.fillLength ? 'length preserved' : 'length may change'} ·
+                    ${rule.replaceEachNth <= 1 ? 'every match' : `every ${rule.replaceEachNth}th match`}</span>
                   <span aria-hidden="true">→</span>
                 </button>
               `)}
@@ -3458,6 +3470,12 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="form-grid wide-form-grid">
         <label>Content profile</label><span>${profile.name}</span>
+        <label for="content-rule-fill-length-${entry.id}">Preserve matched length</label>
+        ${this.renderBooleanSelect(`content-rule-fill-length-${entry.id}`, rule.fillLength, disabled, 'Yes', 'No')}
+        <label for="content-rule-replace-each-${entry.id}">Replace every Nth match</label>
+        <input id="content-rule-replace-each-${entry.id}" type="number"
+          min="-2147483648" max="2147483647" .value=${String(rule.replaceEachNth)}
+          .readOnly=${disabled} />
         <label for="content-rule-write-match-${entry.id}-mode">Match expression</label>
         <div class="write-only-control">
           <select id="content-rule-write-match-${entry.id}-mode" ?disabled=${disabled}>

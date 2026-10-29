@@ -133,9 +133,10 @@ failure replacement and override policy, SNI/DNS matching, bounded warning ports
 timeouts, client certificates, alerts, and diagnostics. Redacted SNI bypass
 collections support write-only replacement and clearing. Content profile
 batches cover capture, webhook, JA4 controls, write-only session-filter
-replacement, and nested write-only content-rule match/replacement rotation. SSH
-profile batches cover the host-key policy and channel, forwarding, X11, agent
-actions, and write-only private host-key path rotation.
+replacement, and nested content-rule fill-length/interval actions plus
+write-only match/replacement rotation. SSH profile batches cover the host-key
+policy and channel, forwarding, X11, agent actions, and write-only private
+host-key path rotation.
 Script profile batches cover the runtime and write-only module-path rotation.
 Certificate-authority batches cover names and write-only path rotation.
 Deprecated authentication profile batches cover authentication

@@ -461,13 +461,20 @@ ConfigProfileParseResult parse_config_profiles(
                     }
                     const auto match = bounded_string(rule, "match", maximum_rule_length);
                     const auto replacement = bounded_string(rule, "replace", maximum_rule_length, true);
+                    const auto fill_length = boolean_scalar(rule, "fill_length", false);
+                    const auto replace_each_nth = optional_signed_decimal(
+                        rule, "replace_each_nth", 0,
+                        std::numeric_limits<std::int32_t>::min(),
+                        std::numeric_limits<std::int32_t>::max());
                     if (!match || match->empty() || match->find('\0') != std::string::npos ||
-                        !replacement || replacement->find('\0') != std::string::npos) {
+                        !replacement || replacement->find('\0') != std::string::npos ||
+                        !fill_length || !replace_each_nth) {
                         return {std::nullopt, "Smithproxy returned invalid content rule"};
                     }
                     const auto replacement_configured = rule.find("replace") != rule.end();
                     rules.push_back({stable_id(("content-rule-" + std::to_string(index)).c_str(), rule_index++), true,
-                                     replacement_configured, !replacement->empty()});
+                                     replacement_configured, !replacement->empty(),
+                                     *fill_length, *replace_each_nth});
                 }
             }
             if (!write_payload || !write_format ||

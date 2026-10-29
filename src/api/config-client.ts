@@ -354,11 +354,18 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         const replacementHasValue = safeBoolean(
           rule.replacement_has_value, 'content rule replacement value state',
         );
+        const fillLength = safeBoolean(rule.fill_length, 'content rule fill-length state');
+        const replaceEachNth = rangedInteger(
+          rule.replace_each_nth, 'content rule replacement interval', -2147483648, 2147483647,
+        );
         if (contentRuleIds.has(id) || !matchConfigured || (replacementHasValue && !replacementConfigured)) {
           throw new Error('Invalid content rule posture.');
         }
         contentRuleIds.add(id);
-        return {id, matchConfigured: true as const, replacementConfigured, replacementHasValue};
+        return {
+          id, matchConfigured: true as const, replacementConfigured, replacementHasValue,
+          fillLength, replaceEachNth,
+        };
       });
       const ruleCount = safeInteger(item.content.rule_count, 'content rule count', MAX_REFERENCES);
       if (ruleCount !== rules.length) throw new Error('Invalid content rule count.');
