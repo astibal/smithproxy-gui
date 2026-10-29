@@ -45,6 +45,12 @@ and `previous_revision`. A commit success must echo that base as
 `previous_revision` and return a different canonical `revision`; the GUI core
 rejects any response that does not preserve this binding.
 
+The GUI core obtains the persistent revision from the authenticated upstream
+`GET /api/config/v2/revision` endpoint. It brackets the current multi-section
+configuration read with two bounded revision requests and exposes a revision
+only when both exact lowercase SHA-256 values match. Legacy Smithproxy versions
+without the endpoint remain readable but cannot produce a revision-bound draft.
+
 ## Authenticated runtime snapshot
 
 ```text
@@ -142,6 +148,13 @@ stale writers receive HTTP 409. The browser also rejects draft responses above
 8 MiB before JSON parsing, leaving room for worst-case JSON escaping of the
 bounded raw draft. This store is not yet a commit path and cannot mutate
 Smithproxy configuration.
+
+When the draft is empty, the core binds it to the latest verified configuration
+revision. Changing that binding increments the draft version, so a browser that
+loaded an older or unbound draft cannot submit changes under a new revision.
+Once the draft contains a change, its base revision is immutable until discard
+or a future successful atomic commit; live revision changes are never silently
+rebased.
 
 Validation accepts only `expected_version`; draft values are loaded inside the
 GUI core and are never echoed by the browser. The mutation requires the same

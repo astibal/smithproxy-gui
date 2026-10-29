@@ -79,6 +79,11 @@ Draft obsahuje base revision. Pokud se persistentní config mezitím změní, se
 commit odmítne jako konflikt a vrátí strukturovaný rozdíl. GUI nesmí změny tiše
 rebasovat ani přepsat.
 
+Base revision se získává dvěma ohraničujícími čteními kanonické SHA-256 revize
+před a po načtení všech config sekcí. Draft se na ni naváže pouze při shodě obou
+čtení. Změna revize prázdného draftu zvýší jeho verzi; neprázdný draft se nikdy
+automaticky nerebasuje.
+
 Aktuální foundation draft poskytuje serverový preflight bez hodnot: ověřenou
 verzi draftu, počet změn, počet write-only změn a počty podle config sekcí.
 Lokální schema validace je zobrazena odděleně od Smithproxy doménové validace.

@@ -339,6 +339,7 @@ struct ConfigSecurityAssets {
 struct ConfigSnapshot {
     std::string state{"unconfigured"};
     std::string detail{"Smithproxy configuration is not configured"};
+    std::optional<std::string> revision;
     std::chrono::system_clock::time_point checked_at{};
     std::chrono::system_clock::time_point last_success_at{};
     std::vector<ConfigPolicy> policies;
@@ -351,6 +352,13 @@ struct ConfigSnapshot {
     std::optional<ConfigCaptureSettings> captures;
     std::optional<ConfigSecurityAssets> security_assets;
 };
+
+struct ConfigRevisionParseResult {
+    std::optional<std::string> revision;
+    std::string error;
+};
+
+ConfigRevisionParseResult parse_config_revision(std::string_view payload);
 
 struct ConfigSnapshotParseResult {
     std::optional<ConfigSnapshot> snapshot;

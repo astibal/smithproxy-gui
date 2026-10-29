@@ -77,6 +77,31 @@ int main() {
     assert(draft.clear(4U) == DraftMutationResult::Applied);
     assert(draft.snapshot().version == 5U);
 
+    const std::string canonical_revision_a = "sha256:" + std::string(64U, 'a');
+    const std::string canonical_revision_b = "sha256:" + std::string(64U, 'b');
+    DraftStore revision_draft{"revision-draft"};
+    assert(!revision_draft.bind_base_revision("revision-7"));
+    assert(revision_draft.bind_base_revision(canonical_revision_a));
+    assert(revision_draft.snapshot().version == 1U);
+    assert(revision_draft.bind_base_revision(canonical_revision_a));
+    assert(revision_draft.snapshot().version == 1U);
+    assert(revision_draft.upsert(1U, {"policy.[0].action", std::string("accept")}) ==
+           DraftMutationResult::Applied);
+    assert(!revision_draft.bind_base_revision(canonical_revision_b));
+    assert(revision_draft.snapshot().base_revision == canonical_revision_a);
+    assert(revision_draft.clear(2U) == DraftMutationResult::Applied);
+    assert(revision_draft.bind_base_revision(canonical_revision_b));
+    assert(revision_draft.snapshot().version == 4U);
+    assert(revision_draft.snapshot().base_revision == canonical_revision_b);
+
+    const auto parsed_revision = parse_config_revision(
+        "{\"success\":{\"revision\":\"" + canonical_revision_a + "\"}}");
+    assert(parsed_revision.revision == canonical_revision_a);
+    assert(!parse_config_revision(R"({"success":{"revision":"sha256:ABC"}})").revision);
+    assert(!parse_config_revision(
+        "{\"success\":{\"revision\":\"" + canonical_revision_a + "\",\"extra\":true}}")
+                .revision);
+
     DraftStore schema_draft{"schema"};
     assert(schema_draft.upsert(0U, {"settings.enabled", true}) ==
            DraftMutationResult::InvalidPath);

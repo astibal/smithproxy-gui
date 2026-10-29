@@ -1,4 +1,5 @@
 import {httpStatusError} from './http-error';
+import {isCanonicalRevisionOrNull} from './revision';
 
 export type DraftScalar = boolean | number | string | ReadonlyArray<string> | ReadonlyArray<number>;
 
@@ -81,10 +82,6 @@ function normalizedPath(value: string): string {
   return segments.length === 0 ? '/' : `/${segments.join('/')}`;
 }
 
-function isCanonicalRevision(value: unknown): value is string | null {
-  return value === null || (typeof value === 'string' && /^sha256:[0-9a-f]{64}$/u.test(value));
-}
-
 function scalar(value: unknown): DraftScalar {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -134,7 +131,7 @@ async function boundedJson(response: Response): Promise<unknown> {
 
 function parseDraft(value: unknown): DraftSnapshot {
   if (!isObject(value) || value.id !== 'workspace-draft' ||
-      !isCanonicalRevision(value.base_revision) ||
+      !isCanonicalRevisionOrNull(value.base_revision) ||
       typeof value.version !== 'number' || !Number.isSafeInteger(value.version) || value.version < 0 ||
       !Array.isArray(value.changes) || value.changes.length > 4096) {
     throw new Error('Invalid draft response.');
@@ -169,7 +166,7 @@ const availabilityBlockerCodes = new Set<DraftPreflightBlocker['code']>([
 function parsePreflight(value: unknown): DraftPreflight {
   if (!isObject(value) || value.source !== 'gui-core' || value.draft_id !== 'workspace-draft' ||
       !Number.isSafeInteger(value.draft_version) || Number(value.draft_version) < 0 ||
-      !isCanonicalRevision(value.base_revision) ||
+      !isCanonicalRevisionOrNull(value.base_revision) ||
       !Number.isSafeInteger(value.change_count) || Number(value.change_count) < 0 ||
       Number(value.change_count) > 4096 || !Number.isSafeInteger(value.sensitive_change_count) ||
       Number(value.sensitive_change_count) < 0 ||
@@ -233,7 +230,7 @@ function parsePreflight(value: unknown): DraftPreflight {
 function parseValidation(value: unknown): DraftValidation {
   if (!isObject(value) || value.source !== 'gui-core' || value.draft_id !== 'workspace-draft' ||
       !Number.isSafeInteger(value.draft_version) || Number(value.draft_version) < 0 ||
-      !isCanonicalRevision(value.base_revision) || value.base_revision === null ||
+      !isCanonicalRevisionOrNull(value.base_revision) || value.base_revision === null ||
       value.upstream_validation !== 'valid' || !Number.isSafeInteger(value.validated_operations) ||
       Number(value.validated_operations) <= 0 || Number(value.validated_operations) > 4096 ||
       !Number.isSafeInteger(value.warning_count) || Number(value.warning_count) < 0 ||

@@ -106,7 +106,10 @@ secret. It is rejected when the current secret is absent or identical and should
 be removed after the ingress has switched to the new value.
 
 The C++ backend can now retrieve a bounded, validated runtime configuration
-snapshot through the authenticated Smithproxy API. Frontend activation remains
+snapshot through the authenticated Smithproxy API. When Smithproxy exposes its
+canonical revision endpoint, the core brackets the multi-section read and binds
+an empty workspace draft only to an unchanged lowercase SHA-256 revision.
+Frontend activation remains
 capability-gated until the trusted gateway handoff is configured. Configuration
 writes remain disabled while the atomic upstream commit contract is being
 completed. The server-side draft boundary accepts only pinned typed schema paths

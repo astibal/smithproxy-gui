@@ -661,6 +661,55 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     snapshot.state = "unavailable";
     snapshot.checked_at = std::chrono::system_clock::now();
 
+    struct RevisionResponse {
+        bool advertised{};
+        std::optional<std::string> revision;
+        std::string error;
+    };
+    const auto fetch_revision = [this]() -> RevisionResponse {
+        std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+        if (!curl) return {};
+        auto* raw_headers = curl_slist_append(
+            nullptr, ("X-API-Key: " + config_->api_key).c_str());
+        if (!raw_headers) return {};
+        auto* updated_headers = curl_slist_append(raw_headers, "Accept: application/json");
+        if (!updated_headers) {
+            curl_slist_free_all(raw_headers);
+            return {};
+        }
+        std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
+        ResponseBuffer response{
+            .limit = 4096U,
+            .body = {},
+            .exceeded = false,
+        };
+        configure_request(
+            curl.get(), *config_, config_->api_url + "/api/config/v2/revision", headers.get());
+        curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+        curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+        const auto result = curl_easy_perform(curl.get());
+        if (response.exceeded) {
+            return {true, std::nullopt,
+                    "Smithproxy configuration revision response exceeded the limit"};
+        }
+        if (result != CURLE_OK) return {};
+        long status_code{};
+        curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+        if (status_code == 404L) return {};
+        if (status_code != 200L) {
+            return {true, std::nullopt,
+                    "Smithproxy configuration revision endpoint is unavailable"};
+        }
+        auto parsed = parse_config_revision(response.body);
+        return {true, std::move(parsed.revision), std::move(parsed.error)};
+    };
+
+    const auto initial_revision = fetch_revision();
+    if (initial_revision.advertised && !initial_revision.revision) {
+        snapshot.detail = initial_revision.error;
+        return snapshot;
+    }
+
     struct SectionResponse {
         std::optional<std::string> body;
         std::string error;
@@ -744,6 +793,14 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
             return snapshot;
         }
     }
+    if (initial_revision.advertised) {
+        const auto final_revision = fetch_revision();
+        if (!final_revision.advertised || !final_revision.revision ||
+            final_revision.revision != initial_revision.revision) {
+            snapshot.detail = "Smithproxy configuration changed while the snapshot was collected";
+            return snapshot;
+        }
+    }
     const auto& policies = responses[0];
     const auto& addresses = responses[1];
     const auto& ports = responses[2];
@@ -799,6 +856,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
             std::make_move_iterator(profiles.profiles->end()));
     }
     parsed.snapshot->checked_at = snapshot.checked_at;
+    parsed.snapshot->revision = initial_revision.revision;
     return std::move(*parsed.snapshot);
 }
 

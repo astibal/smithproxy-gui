@@ -78,6 +78,13 @@ unreviewed collection revisions. Discovery never enables `config_write`; that
 flag remains false until the complete validate, commit, idempotency, rollback,
 and audit path is implemented and reviewed.
 
+Canonical revision acquisition is also fail-closed. The core accepts only an
+exact `sha256:` prefix followed by 64 lowercase hexadecimal characters in a
+strict bounded response envelope. It reads the revision before and after the
+legacy multi-section snapshot and binds a draft only if the values match. A
+revision change on an empty draft increments its optimistic version; a non-empty
+draft is never rebound.
+
 The transaction envelope builder accepts only the already pinned draft schema,
 requires a canonical `sha256:` base revision and a reviewed ready capability,
 and rechecks operation and encoded-request limits. Idempotency keys are UUIDv4

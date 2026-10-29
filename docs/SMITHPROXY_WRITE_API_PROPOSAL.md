@@ -52,6 +52,32 @@ Smithproxy endpoint or sees the Smithproxy credential. Capability discovery is
 advisory and every transaction request is still checked again under the
 configuration lock.
 
+## Canonical snapshot revision
+
+The GUI must obtain the same canonical persistent revision used by the
+transaction lock. The proposed authenticated endpoint is:
+
+```text
+GET /api/config/v2/revision
+```
+
+```json
+{
+  "success": {
+    "revision": "sha256:..."
+  }
+}
+```
+
+The response contains exactly one lowercase SHA-256 revision and no
+configuration values. While the legacy configuration reader still retrieves
+multiple sections, the GUI reads this endpoint immediately before and after
+the section batch. It accepts a revision-bound snapshot only when both values
+are identical. A missing endpoint permits a read-only legacy snapshot with no
+revision; a malformed, oversized, or changing advertised revision fails the
+snapshot closed. A future single-request snapshot endpoint may replace this
+bracketing protocol while preserving the same revision semantics.
+
 The endpoint accepts both validation and commit requests:
 
 ```json

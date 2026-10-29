@@ -190,6 +190,10 @@ describe('ApiConfigClient', () => {
     const snapshot = await client.loadSnapshot();
 
     expect(snapshot).toMatchObject({source: 'live', state: 'ready', revision: null});
+    expect(parseConfigSnapshot({
+      ...liveSnapshot,
+      revision: `sha256:${'a'.repeat(64)}`,
+    }).revision).toBe(`sha256:${'a'.repeat(64)}`);
     expect(snapshot.policies[0]).toMatchObject({
       protocol: 'tcp', action: 'accept',
       sources: [{id: 'address-0', name: 'office'}],
@@ -269,6 +273,8 @@ describe('ApiConfigClient', () => {
       {id: 'bad', name: 'bad', start: 10, end: 1},
     ]})).toThrow('Invalid port range');
     expect(() => parseConfigSnapshot({...liveSnapshot, state: {toString: () => 'ready'}}))
+      .toThrow('Invalid configuration snapshot');
+    expect(() => parseConfigSnapshot({...liveSnapshot, revision: 'revision-7'}))
       .toThrow('Invalid configuration snapshot');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,

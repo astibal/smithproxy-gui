@@ -49,6 +49,8 @@ def assert_error_response(result, expected_status: int, expected_code: str) -> s
 class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     api_key = None
     response_status = 200
+    config_revision = "sha256:" + "c" * 64
+    revision_requests = 0
     transaction_capabilities = {
         "success": {
             "transaction_version": 1,
@@ -192,6 +194,16 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(FakeSmithproxy.transaction_capabilities).encode())
+            return
+        if self.path == "/api/config/v2/revision":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            FakeSmithproxy.revision_requests += 1
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "success": {"revision": FakeSmithproxy.config_revision},
+            }).encode())
             return
         if self.path == "/api/diag/proxy/listener/stats":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
@@ -615,7 +627,8 @@ def main() -> int:
             )[0] == 401
             config_snapshot, config_body = wait_for_config(configured_port, gateway_secret)
             assert config_snapshot["view"] == "runtime"
-            assert config_snapshot["revision"] is None
+            assert config_snapshot["revision"] == FakeSmithproxy.config_revision
+            assert FakeSmithproxy.revision_requests >= 2
             assert len(config_snapshot["policies"]) == 1
             assert config_snapshot["policies"][0]["name"] == "office policy"
             assert config_snapshot["policies"][0]["enabled"] is True
@@ -840,14 +853,15 @@ def main() -> int:
                 configured_port, "/api/v1/config/draft", headers=gateway_headers)
             assert status == 200
             assert json.loads(body) == {
-                "id": "workspace-draft", "base_revision": None, "version": 0, "changes": []}
+                "id": "workspace-draft", "base_revision": FakeSmithproxy.config_revision,
+                "version": 1, "changes": []}
             assert request(configured_port, "/api/v1/config/draft/preflight")[0] == 401
             status, _, body = request(
                 configured_port, "/api/v1/config/draft/preflight", headers=gateway_headers)
             assert status == 200
             empty_preflight = json.loads(body)
             assert empty_preflight["source"] == "gui-core"
-            assert empty_preflight["draft_version"] == 0
+            assert empty_preflight["draft_version"] == 1
             assert empty_preflight["change_count"] == 0
             assert empty_preflight["sensitive_change_count"] == 0
             assert empty_preflight["schema_validation"] == "valid"
@@ -858,7 +872,7 @@ def main() -> int:
             assert [item["code"] for item in empty_preflight["blockers"]] == [
                 "draft.empty", "upstream.schema_review_required"]
             draft_change = json.dumps({
-                "expected_version": 0, "path": "policy.[0].action", "value": "accept"})
+                "expected_version": 1, "path": "policy.[0].action", "value": "accept"})
             csrf_failure = request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers={**gateway_headers, "Content-Type": "application/json"}, body=draft_change)
@@ -873,15 +887,15 @@ def main() -> int:
             }
             assert request(
                 configured_port, "/api/v1/config/draft/validate", "POST",
-                body=json.dumps({"expected_version": 0}))[0] == 401
+                body=json.dumps({"expected_version": 1}))[0] == 401
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/validate", "POST",
                 headers={**mutation_headers, "Origin": "https://attacker.invalid"},
-                body=json.dumps({"expected_version": 0}),
+                body=json.dumps({"expected_version": 1}),
             ), 403, "auth.csrf_failed")
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/validate", "POST",
-                headers=mutation_headers, body=json.dumps({"expected_version": 0}),
+                headers=mutation_headers, body=json.dumps({"expected_version": 1}),
             ), 422, "config.validation_rejected")
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
@@ -908,7 +922,7 @@ def main() -> int:
             ), 413, "request.body_too_large")
             unchanged_after_rejections = json.loads(request(
                 configured_port, "/api/v1/config/draft", headers=gateway_headers)[2])
-            assert unchanged_after_rejections["version"] == 0
+            assert unchanged_after_rejections["version"] == 1
             assert unchanged_after_rejections["changes"] == []
             status, _, body = request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
@@ -916,7 +930,7 @@ def main() -> int:
             assert status == 200
             assert json.loads(body)["changes"] == [
                 {"path": "policy.[0].action", "value": "accept"}]
-            assert json.loads(body)["version"] == 1
+            assert json.loads(body)["version"] == 2
             conflict = request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers, body=draft_change)
@@ -944,23 +958,23 @@ def main() -> int:
             assert request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=cross_origin_headers,
-                body=json.dumps({"expected_version": 1, "path": "settings.enabled", "value": True}),
+                body=json.dumps({"expected_version": 2, "path": "settings.enabled", "value": True}),
             )[0] == 403
             assert request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers,
-                body=json.dumps({"expected_version": 1, "path": "../unsafe", "value": True}),
+                body=json.dumps({"expected_version": 2, "path": "../unsafe", "value": True}),
             )[0] == 400
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers,
-                body=json.dumps({"expected_version": 1, "path": "settings.enabled", "value": True}),
+                body=json.dumps({"expected_version": 2, "path": "settings.enabled", "value": True}),
             ), 400, "draft.change_rejected")
             assert_error_response(request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers,
                 body=json.dumps({
-                    "expected_version": 1,
+                    "expected_version": 2,
                     "changes": [
                         {"path": "policy.[0].name", "value": "must-not-apply"},
                         {"path": "settings.http_api.port", "value": 22},
@@ -971,19 +985,19 @@ def main() -> int:
                 configured_port, "/api/v1/config/draft", headers=gateway_headers)
             assert status == 200
             rejected_snapshot = json.loads(body)
-            assert rejected_snapshot["version"] == 1
+            assert rejected_snapshot["version"] == 2
             assert all(change["path"] != "policy.[0].name" for change in rejected_snapshot["changes"])
             assert request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers,
                 body=json.dumps({
-                    "expected_version": 1,
+                    "expected_version": 2,
                     "path": "tls_profiles.[0].redirect_warning_ports",
                     "value": [443, "8443"],
                 }),
             )[0] == 400
             batch_change = json.dumps({
-                "expected_version": 1,
+                "expected_version": 2,
                 "changes": [
                     {"path": "policy.[0].name", "value": "Office outbound"},
                     {"path": "policy.[0].disabled", "value": True},
@@ -1021,7 +1035,7 @@ def main() -> int:
                 headers=mutation_headers, body=batch_change)
             assert status == 200
             batch_snapshot = json.loads(body)
-            assert batch_snapshot["version"] == 2
+            assert batch_snapshot["version"] == 3
             changes_by_path = {item["path"]: item["value"] for item in batch_snapshot["changes"]}
             assert changes_by_path["policy.[0].dst"] == ["internet", "backup"]
             assert changes_by_path["tls_profiles.[0].redirect_warning_ports"] == [443, 44443]
@@ -1032,7 +1046,7 @@ def main() -> int:
                 configured_port, "/api/v1/config/draft/preflight", headers=gateway_headers)
             assert status == 200
             preflight = json.loads(preflight_body)
-            assert preflight["draft_version"] == 2
+            assert preflight["draft_version"] == 3
             assert preflight["change_count"] == len(batch_snapshot["changes"])
             assert sum(section["change_count"] for section in preflight["sections"]) == preflight["change_count"]
             assert preflight["sensitive_change_count"] > 0
@@ -1052,7 +1066,7 @@ def main() -> int:
             assert b"secret content replacement" not in audit_body
             validation_result = request(
                 configured_port, "/api/v1/config/draft/validate", "POST",
-                headers=mutation_headers, body=json.dumps({"expected_version": 2}))
+                headers=mutation_headers, body=json.dumps({"expected_version": 3}))
             assert_error_response(validation_result, 503, "config.validation_unavailable")
             status, _, validation_audit_body = request(
                 configured_port, "/api/v1/audit/recent", headers=gateway_headers)
@@ -1111,7 +1125,7 @@ def main() -> int:
             assert b"secret content replacement" not in body
             assert b"/new/private/ca/default" not in body
             assert b"secret replacement regex" not in body
-            clear_change = json.dumps({"expected_version": 2})
+            clear_change = json.dumps({"expected_version": 3})
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",
                 headers={**mutation_headers, "Origin": "https://attacker.invalid"},
@@ -1122,7 +1136,7 @@ def main() -> int:
                 headers=mutation_headers, body=clear_change)
             assert status == 200
             cleared_snapshot = json.loads(body)
-            assert cleared_snapshot["version"] == 3
+            assert cleared_snapshot["version"] == 4
             assert cleared_snapshot["changes"] == []
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",

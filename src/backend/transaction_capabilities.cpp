@@ -1,5 +1,7 @@
 #include "transaction_capabilities.hpp"
 
+#include "revision.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -48,16 +50,6 @@ bool valid_collection_id(const std::string_view value) {
         const auto code = static_cast<unsigned char>(character);
         return std::islower(code) || std::isdigit(code) || character == '_' || character == '.';
     });
-}
-
-bool valid_schema_revision(const std::string_view value) {
-    constexpr std::string_view prefix{"sha256:"};
-    if (!value.starts_with(prefix) || value.size() != prefix.size() + 64U) return false;
-    return std::all_of(value.begin() + static_cast<std::ptrdiff_t>(prefix.size()), value.end(),
-                       [](const char character) {
-                           return std::isdigit(static_cast<unsigned char>(character)) ||
-                                  (character >= 'a' && character <= 'f');
-                       });
 }
 
 } // namespace
@@ -114,7 +106,7 @@ TransactionCapabilities parse_transaction_capabilities(
         }
         const auto id = collection["id"].get<std::string>();
         const auto revision = collection["schema_revision"].get<std::string>();
-        if (!valid_collection_id(id) || !valid_schema_revision(revision) ||
+        if (!valid_collection_id(id) || !is_canonical_revision(revision) ||
             !collection_ids.emplace(id).second) {
             return incompatible();
         }

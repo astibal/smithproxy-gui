@@ -1,10 +1,11 @@
 #include "config_snapshot.hpp"
 
+#include "revision.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <charconv>
-#include <cctype>
 #include <limits>
 
 namespace smithproxy::gui {
@@ -299,6 +300,22 @@ bool parse_policies(const Json& section, ConfigSnapshot& snapshot, std::string& 
 }
 
 } // namespace
+
+ConfigRevisionParseResult parse_config_revision(const std::string_view payload) {
+    const auto document = Json::parse(payload, nullptr, false);
+    if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
+        !document.contains("success") || !document["success"].is_object() ||
+        document["success"].size() != 1U ||
+        !document["success"].contains("revision") ||
+        !document["success"]["revision"].is_string()) {
+        return {std::nullopt, "Smithproxy returned an invalid configuration revision envelope"};
+    }
+    auto revision = document["success"]["revision"].get<std::string>();
+    if (!is_canonical_revision(revision)) {
+        return {std::nullopt, "Smithproxy returned an invalid canonical configuration revision"};
+    }
+    return {std::move(revision), {}};
+}
 
 ConfigSnapshotParseResult parse_config_snapshot(
     const std::string_view policy_payload,

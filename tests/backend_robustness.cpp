@@ -102,6 +102,7 @@ void exercise_json_parsers(const std::string_view payload) {
     static_cast<void>(parse_tls_cache_metrics(payload));
     static_cast<void>(parse_neighbor_metrics(payload));
     static_cast<void>(parse_live_sessions(payload));
+    static_cast<void>(parse_config_revision(payload));
     static_cast<void>(parse_config_snapshot(payload, payload, payload, payload));
     static_cast<void>(parse_config_profiles(payload, "tls_profiles", "tls"));
     static_cast<void>(parse_config_settings(payload));

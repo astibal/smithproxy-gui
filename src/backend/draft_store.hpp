@@ -38,6 +38,7 @@ public:
     explicit DraftStore(std::string id, std::optional<std::string> base_revision = std::nullopt);
 
     [[nodiscard]] DraftSnapshot snapshot() const;
+    bool bind_base_revision(const std::string& revision);
     DraftMutationResult upsert(std::uint64_t expected_version, DraftChange change);
     DraftMutationResult upsert_many(std::uint64_t expected_version, std::vector<DraftChange> changes);
     DraftMutationResult remove(std::uint64_t expected_version, const std::string& path);

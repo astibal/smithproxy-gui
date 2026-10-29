@@ -1,6 +1,7 @@
 #include "draft_store.hpp"
 
 #include "draft_schema.hpp"
+#include "revision.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -40,6 +41,16 @@ DraftStore::DraftStore(std::string id, std::optional<std::string> base_revision)
 DraftSnapshot DraftStore::snapshot() const {
     std::scoped_lock lock(mutex_);
     return draft_;
+}
+
+bool DraftStore::bind_base_revision(const std::string& revision) {
+    if (!is_canonical_revision(revision)) return false;
+    std::scoped_lock lock(mutex_);
+    if (!draft_.changes.empty()) return draft_.base_revision == revision;
+    if (draft_.base_revision == revision) return true;
+    draft_.base_revision = revision;
+    ++draft_.version;
+    return true;
 }
 
 DraftMutationResult DraftStore::upsert(const std::uint64_t expected_version, DraftChange change) {

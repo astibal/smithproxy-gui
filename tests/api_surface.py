@@ -22,13 +22,13 @@ def function_body(source: str, start: str, end: str) -> str:
 def implemented_routes(source: str) -> dict[str, tuple[str, ...]]:
     read_router = function_body(
         source,
-        "Response route(MHD_Connection* connection, const std::string_view url) const",
+        "Response route(MHD_Connection* connection, const std::string_view url)",
         "Response health() const",
     )
     mutation_router = function_body(
         source,
         "Response route_mutation(MHD_Connection* connection, const std::string_view url,",
-        "Response route(MHD_Connection* connection, const std::string_view url) const",
+        "Response route(MHD_Connection* connection, const std::string_view url)",
     )
 
     read_paths = set(re.findall(r'\*relative\s*==\s*"([^"]+)"', read_router))

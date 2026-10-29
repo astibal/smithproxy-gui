@@ -1,6 +1,7 @@
 #include "transaction_envelope.hpp"
 
 #include "draft_schema.hpp"
+#include "revision.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -21,16 +22,6 @@ constexpr std::size_t hard_maximum_operations = 4096U;
 constexpr std::size_t hard_maximum_request_bytes = 1024U * 1024U;
 constexpr std::size_t maximum_warnings = 64U;
 constexpr std::size_t maximum_warning_bytes = 256U;
-
-bool valid_revision(const std::string_view value) {
-    constexpr std::string_view prefix{"sha256:"};
-    if (!value.starts_with(prefix) || value.size() != prefix.size() + 64U) return false;
-    return std::all_of(value.begin() + static_cast<std::ptrdiff_t>(prefix.size()), value.end(),
-                       [](const char character) {
-                           return std::isdigit(static_cast<unsigned char>(character)) ||
-                                  (character >= 'a' && character <= 'f');
-                       });
-}
 
 bool valid_idempotency_key(const std::string_view value) {
     constexpr std::array<std::size_t, 4U> separators{8U, 13U, 18U, 23U};
@@ -110,7 +101,7 @@ TransactionEnvelope build_transaction_envelope(
     const DraftSnapshot& draft, const TransactionMode mode, const std::string_view idempotency_key,
     const TransactionCapabilities& capabilities) {
     if (capabilities.state != "ready" || !draft.base_revision ||
-        !valid_revision(*draft.base_revision) || !valid_idempotency_key(idempotency_key) ||
+        !is_canonical_revision(*draft.base_revision) || !valid_idempotency_key(idempotency_key) ||
         draft.changes.empty() || draft.changes.size() > hard_maximum_operations ||
         capabilities.maximum_operations == 0U ||
         draft.changes.size() > capabilities.maximum_operations ||
@@ -158,7 +149,7 @@ TransactionResponse parse_transaction_response(
     if (payload.size() > hard_maximum_request_bytes || expected_operations > hard_maximum_operations) {
         return invalid_response();
     }
-    if (!valid_revision(expected_base_revision)) return invalid_response();
+    if (!is_canonical_revision(expected_base_revision)) return invalid_response();
     const auto document = nlohmann::json::parse(payload, nullptr, false);
     if (document.is_discarded() || !document.is_object()) return invalid_response();
 
@@ -183,7 +174,7 @@ TransactionResponse parse_transaction_response(
         const bool revisions_match_mode = mode == TransactionMode::Validate
             ? revision == expected_base_revision && previous_revision == expected_base_revision
             : revision != expected_base_revision && previous_revision == expected_base_revision;
-        if (!valid_revision(revision) || !valid_revision(previous_revision) ||
+        if (!is_canonical_revision(revision) || !is_canonical_revision(previous_revision) ||
             !revisions_match_mode || validated != expected_operations ||
             (restart != "not-required" && restart != "required" && restart != "scheduled")) {
             return invalid_response();

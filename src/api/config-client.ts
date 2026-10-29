@@ -15,6 +15,7 @@ import type {
   ValueOrigin,
 } from './models';
 import {httpStatusError} from './http-error';
+import {isCanonicalRevisionOrNull} from './revision';
 
 type JsonObject = Record<string, unknown>;
 type Usage = ConfigUsage;
@@ -163,7 +164,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       !['ready', 'starting', 'unavailable', 'unconfigured'].includes(value.state) ||
       typeof value.detail !== 'string' || value.detail.length > 1024 ||
       /[\u0000-\u001f\u007f]/u.test(value.detail) || value.view !== 'runtime' ||
-      !(value.revision === null || (typeof value.revision === 'string' && value.revision.length <= 128))) {
+      !isCanonicalRevisionOrNull(value.revision)) {
     throw new Error('Invalid configuration snapshot.');
   }
 

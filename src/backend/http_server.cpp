@@ -394,6 +394,7 @@ private:
         if (!same_origin_mutation(connection)) {
             return {403, "application/json; charset=utf-8", "{\"error\":\"same-origin CSRF check failed\"}"};
         }
+        bind_empty_draft_revision();
         const auto document = nlohmann::json::parse(body, nullptr, false);
         if (*relative == "/api/v1/config/draft/validate") {
             if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
@@ -532,7 +533,7 @@ private:
         return draft_snapshot();
     }
 
-    Response route(MHD_Connection* connection, const std::string_view url) const {
+    Response route(MHD_Connection* connection, const std::string_view url) {
         if (url == "/healthz") return health();
         const auto relative = path_below_base(url, config_.base_path);
         if (!relative) return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
@@ -633,7 +634,15 @@ private:
                     ",\"authenticated\":" + (authenticated ? "true" : "false") + "}"};
     }
 
-    Response draft_snapshot() const {
+    void bind_empty_draft_revision() {
+        const auto snapshot = monitor_.status().config_snapshot;
+        if (snapshot.state == "ready" && snapshot.revision) {
+            draft_.bind_base_revision(*snapshot.revision);
+        }
+    }
+
+    Response draft_snapshot() {
+        bind_empty_draft_revision();
         const auto draft = draft_.snapshot();
         nlohmann::json document{
             {"id", draft.id},
@@ -663,7 +672,8 @@ private:
         return {200, "application/json; charset=utf-8", document.dump()};
     }
 
-    Response draft_preflight() const {
+    Response draft_preflight() {
+        bind_empty_draft_revision();
         const auto draft = draft_.snapshot();
         const auto transaction = monitor_.status().transaction_capabilities;
         std::map<std::string, std::pair<std::size_t, std::size_t>> sections;
@@ -1183,7 +1193,9 @@ private:
                     ",\"detail\":" + json_string(snapshot.detail) +
                     ",\"checked_at_unix_ms\":" + timestamp_json(snapshot.checked_at) +
                     ",\"last_success_at_unix_ms\":" + timestamp_json(snapshot.last_success_at) +
-                    ",\"view\":\"runtime\",\"revision\":null,\"policies\":" + policies +
+                    ",\"view\":\"runtime\",\"revision\":" +
+                    (snapshot.revision ? json_string(*snapshot.revision) : "null") +
+                    ",\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +
                     ",\"settings\":" + settings + ",\"debug\":" + debug +
