@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 type MockState = {smithproxy: 'ready' | 'unreachable'; configFetches?: number};
 
@@ -336,6 +337,16 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       }});
     });
   }
+}
+
+async function expectNoWcagViolations(page: Page): Promise<void> {
+  const result = await new AxeBuilder({page})
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'])
+    .analyze();
+  const summary = result.violations.map(violation =>
+    `${violation.id}: ${violation.help} (${violation.nodes.length} node${violation.nodes.length === 1 ? '' : 's'})`,
+  ).join('\n');
+  expect(result.violations, summary).toEqual([]);
 }
 
 test('loads authenticated runtime configuration and saves an atomic policy draft', async ({page}) => {
@@ -1123,4 +1134,28 @@ test('derives the system API from a workspace mount', async ({page}) => {
 
   await expect(page.getByText('Core: Online')).toBeVisible();
   await expect.poll(() => requests).toContain('/ws001/smithproxy-gui/api/v1/status');
+});
+
+test('meets automated WCAG rules across primary and nested views', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
+  await expectNoWcagViolations(page);
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Policies'})).toBeVisible();
+  await expectNoWcagViolations(page);
+
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(policyEditor).toBeVisible();
+  await expectNoWcagViolations(page);
+
+  await policyEditor.getByRole('button', {name: 'office', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+  await expectNoWcagViolations(page);
+
+  await page.setViewportSize({width: 390, height: 844});
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toHaveCSS('left', '0px');
+  await expectNoWcagViolations(page);
 });

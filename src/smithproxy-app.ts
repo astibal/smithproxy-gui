@@ -208,6 +208,7 @@ export class SmithproxyApp extends LitElement {
     .workspace { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
     .content-layer { height: 100%; }
     .content { height: 100%; overflow: auto; padding: 22px; }
+    .content:focus-visible { outline: 2px solid var(--app-focus); outline-offset: -2px; }
     .section-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 16px; }
     .section-head h2 { margin: 0 0 3px; font-size: 20px; }
     .section-head p { margin: 0; color: var(--app-muted); }
@@ -1981,7 +1982,7 @@ export class SmithproxyApp extends LitElement {
   private renderDraftReview() {
     const changes = this.workspaceDraft?.changes ?? [];
     return html`
-      <div class="content">
+      <div class="content" tabindex="0">
         <div class="section-head">
           <div>
             <h2>Workspace draft</h2>
@@ -2026,7 +2027,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderPolicyList() {
     return html`
-      <div class="content">
+      <div class="content" tabindex="0">
         <div class="section-head">
           <div><h2>Policies</h2><p>Traffic decisions and inspection behavior</p></div>
           <button class="primary" type="button"
@@ -2083,7 +2084,7 @@ export class SmithproxyApp extends LitElement {
         <strong>${name}</strong><span class="action">${kind}</span><span class="object-value">${detail}</span><span>Open</span>
       </button>`;
     return html`
-      <div class="content">
+      <div class="content" tabindex="0">
         <div class="section-head"><div><h2>Search results</h2><p>${count} matches for “${this.searchQuery.trim()}”</p></div></div>
         ${count === 0 ? html`<div class="empty-state"><h2>No matches</h2><p>Try a name, type, value, action, or reference.</p></div>` : html`
           <div class="table" role="group" aria-label="Search results">
@@ -2105,7 +2106,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderObjects() {
     return html`
-      <div class="content">
+      <div class="content" tabindex="0">
         <div class="section-head">
           <div><h2>Configuration objects</h2><p>Reusable values referenced by policy</p></div>
           <button class="primary" type="button"
@@ -2183,7 +2184,7 @@ export class SmithproxyApp extends LitElement {
   private renderNetwork() {
     const metrics = this.runtimeMetrics;
     return html`
-      <div class="content dashboard">
+      <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div><h2>Listener workload</h2><p>Runtime view of Smithproxy network entry points</p></div>
         </div>
@@ -2530,7 +2531,7 @@ export class SmithproxyApp extends LitElement {
     const history = this.systemStatus.history;
     const emptySlots = Math.max(0, 60 - history.length);
     return html`
-      <div class="content dashboard">
+      <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div><h2>Control plane</h2><p>Live reachability of the Smithproxy API</p></div>
         </div>
@@ -2563,7 +2564,7 @@ export class SmithproxyApp extends LitElement {
         <section class="monitor-panel" aria-label="Probe history">
           <h3>Recent probe history</h3>
           <p>Up to five minutes at the current five-second sampling interval. Last success: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}.</p>
-          <div class="probe-history" aria-label="${history.length} probe samples">
+          <div class="probe-history" role="img" aria-label="${history.length} probe samples">
             ${Array.from({length: emptySlots}, () => html`<span class="probe" aria-hidden="true"></span>`)}
             ${history.map(sample => html`
               <span class="probe ${sample.state}" title="${displayState(sample.state)} · ${sample.latencyMs ?? '—'} ms · ${this.timeLabel(sample.checkedAtUnixMs)}" aria-hidden="true"></span>
@@ -2581,7 +2582,7 @@ export class SmithproxyApp extends LitElement {
   private renderMonitoring() {
     const metrics = this.runtimeMetrics;
     return html`
-      <div class="content dashboard">
+      <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
         </div>
@@ -2679,7 +2680,7 @@ export class SmithproxyApp extends LitElement {
     const securityAssets = this.snapshot?.securityAssets;
     const workers = (value: number) => value === -1 ? 'Disabled' : String(value);
     return html`
-      <div class="content dashboard">
+      <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div><h2>System integration</h2><p>Non-sensitive diagnostics for this GUI instance</p></div>
         </div>
@@ -2902,7 +2903,7 @@ export class SmithproxyApp extends LitElement {
   private renderLogs() {
     const events = [...this.operationalEvents.events].reverse();
     return html`
-      <div class="content dashboard">
+      <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div>
             <h2>Operational events</h2>

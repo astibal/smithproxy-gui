@@ -38,9 +38,9 @@ documentation:
 
 Every push and pull request runs the frontend unit suite and the complete
 Chromium, Firefox, and WebKit end-to-end matrix, a production TypeScript build,
-a production dependency audit, and the C++ unit/integration suite under
-AddressSanitizer and UndefinedBehaviorSanitizer. Compiler warnings fail the
-backend quality gate.
+automated WCAG A/AA checks across primary, nested, and mobile views, a production
+dependency audit, and the C++ unit/integration suite under AddressSanitizer and
+UndefinedBehaviorSanitizer. Compiler warnings fail the backend quality gate.
 
 Node.js 22.12 or newer and pnpm 11.25 are required.
 

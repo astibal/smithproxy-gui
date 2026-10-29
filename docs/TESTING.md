@@ -34,6 +34,10 @@ CI spouští celý Playwright scénář nad Chromium, Firefox a WebKit. Lokáln�
 vývojový příkaz používá pro rychlost Chromium; shodný tříbrowserový matrix se
 zapíná proměnnou `PLAYWRIGHT_ALL_BROWSERS=1`.
 
+Axe automaticky kontroluje WCAG A/AA pravidla na dashboardu, policy listu,
+prvním i vnořeném editoru a mobilním layoutu. Nález se opravuje v UI; test
+neobsahuje výjimky ani vypnutá pravidla.
+
 Unit coverage gate měří importovanou API, config, monitoring a state logiku přes
 V8. Aktuální nepodkročitelné globální prahy jsou 83 % statements, 82 % branches,
 94 % functions a 88 % lines. Prahy jsou baseline proti regresi, nikoliv tvrzení,
