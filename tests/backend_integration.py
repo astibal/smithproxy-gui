@@ -843,6 +843,33 @@ def main() -> int:
                 "X-Smithproxy-GUI-CSRF": "1",
                 "Content-Type": "application/json",
             }
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers={key: value for key, value in mutation_headers.items() if key != "Origin"},
+                body=draft_change,
+            ), 403, "auth.csrf_failed")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers={**mutation_headers, "Sec-Fetch-Site": "cross-site"},
+                body=draft_change,
+            ), 403, "auth.csrf_failed")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers={**mutation_headers, "Content-Type": "text/plain"},
+                body=draft_change,
+            ), 403, "auth.csrf_failed")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers, body="{",
+            ), 400, "draft.invalid_request")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers, body="x" * (64 * 1024 + 1),
+            ), 413, "request.body_too_large")
+            unchanged_after_rejections = json.loads(request(
+                configured_port, "/api/v1/config/draft", headers=gateway_headers)[2])
+            assert unchanged_after_rejections["version"] == 0
+            assert unchanged_after_rejections["changes"] == []
             status, _, body = request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers, body=draft_change)
