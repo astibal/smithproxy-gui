@@ -1632,6 +1632,72 @@ test('shows pending policy and object values in their configuration lists', asyn
     .getByRole('button', {name: /pending-office Address fqdn · pending.example/i})).toBeVisible();
 });
 
+test('shows and reopens structural creates from primary policy and object lists', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true, structuralDraftsReady: true,
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'list-policy', client_id: 'list-policy',
+      collection: 'policy', position: {last: true},
+      fields: {
+        name: 'pending-policy', disabled: false, proto: 'pending-protocol', src: ['pending-address'],
+        sport: [], dst: ['internet'], dport: ['pending-port'], features: [], action: 'accept', nat: '',
+        routing: 'pending-routing', tls_profile: '', ssh_profile: '', detection_profile: '',
+        content_profile: '', auth_profile: '', alg_dns_profile: '', script_profile: '',
+      },
+    }, {
+      op: 'create', local_id: 'list-address', client_id: 'list-address',
+      collection: 'address_objects', position: {last: true},
+      fields: {name: 'pending-address', type: 'cidr', value: '203.0.113.0/24'},
+    }, {
+      op: 'create', local_id: 'list-port', client_id: 'list-port',
+      collection: 'port_objects', position: {last: true},
+      fields: {name: 'pending-port', start: 8443, end: 8444},
+    }, {
+      op: 'create', local_id: 'list-protocol', client_id: 'list-protocol',
+      collection: 'proto_objects', position: {last: true},
+      fields: {name: 'pending-protocol', id: 143},
+    }, {
+      op: 'create', local_id: 'list-routing', client_id: 'list-routing',
+      collection: 'routing', position: {last: true},
+      fields: {
+        name: 'pending-routing', dnat_address: ['pending-address'], dnat_port: ['pending-port'],
+        dnat_lb_method: 'round-robin', rewrite_sni: '', rewrite_sni_to: '',
+      },
+    }],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  const policies = page.getByRole('group', {name: 'Policies'});
+  const pendingPolicy = policies.getByRole('button').filter({hasText: 'pending-policy'});
+  await expect(pendingPolicy).toContainText('Pending create');
+  await expect(pendingPolicy).toContainText('pending-address');
+  await pendingPolicy.click();
+  let editor = page.getByRole('dialog', {name: 'Create policy'});
+  await expect(editor.getByLabel('Name')).toHaveValue('pending-policy');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  for (const [groupName, itemName] of [
+    ['Address objects', 'pending-address'],
+    ['Port objects', 'pending-port'],
+    ['Protocol objects', 'pending-protocol'],
+    ['Profiles and routing', 'pending-routing'],
+  ] as const) {
+    const row = page.getByRole('group', {name: groupName})
+      .getByRole('button').filter({hasText: itemName});
+    await expect(row).toContainText('Pending create');
+  }
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button').filter({hasText: 'pending-address'}).click();
+  editor = page.getByRole('dialog', {name: 'Create address object'});
+  await expect(editor.getByLabel('Address', {exact: true})).toHaveValue('203.0.113.0/24');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button').filter({hasText: 'pending-routing'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(editor.getByLabel('Name')).toHaveValue('pending-routing');
+});
+
 test('requires bound validation and explicit confirmation before atomic commit', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',

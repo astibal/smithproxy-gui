@@ -5581,6 +5581,10 @@ export class SmithproxyApp extends LitElement {
 
   private renderPolicyList() {
     const overlayCounts = this.overlayCounts();
+    const pendingPolicies = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation =>
+        operation.op === 'create' && operation.collection === 'policy',
+    );
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -5621,6 +5625,30 @@ export class SmithproxyApp extends LitElement {
                 <span class="status ${enabled ? '' : 'disabled'}">${enabled ? 'Enabled' : 'Disabled'}</span>
                 ${this.renderPendingBadge('policy', policy.id)}
                 ${this.renderOverlayBadge(`policy.[${index}].`, overlayCounts)}
+              </span>
+            </button>`;
+          })}
+          ${pendingPolicies.map(operation => {
+            const text = (field: string, fallback = '') => {
+              const value = operation.fields[field];
+              return typeof value === 'string' ? value : fallback;
+            };
+            const list = (field: string) => {
+              const value = operation.fields[field];
+              return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
+            };
+            const disabled = operation.fields['disabled'] === true;
+            return html`<button class="row" type="button"
+              @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                operation.localId, event.currentTarget as HTMLElement,
+              )}>
+              <strong>${text('name', 'New policy')}</strong>
+              <span>${this.referenceNameSummary(list('src'))}</span>
+              <span>${this.referenceNameSummary(list('dst'))}</span>
+              <span class="action">${text('action', 'unknown')}</span>
+              <span class="row-meta">
+                <span class="status ${disabled ? 'disabled' : ''}">${disabled ? 'Disabled' : 'Enabled'}</span>
+                <span class="pending-badge" title="This policy is a pending structural create">Pending create</span>
               </span>
             </button>`;
           })}
@@ -6130,6 +6158,29 @@ export class SmithproxyApp extends LitElement {
   private renderObjects() {
     const overlayCounts = this.overlayCounts();
     const profilePrefixes = this.profileOriginPrefixes();
+    const pendingCreates = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation => operation.op === 'create',
+    );
+    const pendingAddresses = pendingCreates.filter(operation => operation.collection === 'address_objects');
+    const pendingPorts = pendingCreates.filter(operation => operation.collection === 'port_objects');
+    const pendingProtocols = pendingCreates.filter(operation => operation.collection === 'proto_objects');
+    const pendingProfiles = pendingCreates.filter(operation =>
+      Object.values(profileCreateCollections).includes(operation.collection));
+    const fieldText = (operation: DraftCreateOperation, field: string, fallback = '') => {
+      const value = operation.fields[field];
+      return typeof value === 'string' ? value : fallback;
+    };
+    const fieldNumber = (operation: DraftCreateOperation, field: string): number | undefined => {
+      const value = operation.fields[field];
+      return typeof value === 'number' ? value : undefined;
+    };
+    const profileTypes = new Map(
+      (Object.entries(profileCreateCollections) as Array<[
+        ProfileCreateType, DraftCreateOperation['collection']
+      ]>).map(([type, collection]) => [collection, type]),
+    );
+    const openPending = (operation: DraftCreateOperation, origin: HTMLElement) =>
+      this.openDraftStructuralOperation(operation.localId, origin);
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -6178,6 +6229,14 @@ export class SmithproxyApp extends LitElement {
                 <span class="row-meta"><span>${address.usedBy.length}</span>${this.renderPendingBadge('address', address.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
               </button>`;
             })}
+            ${pendingAddresses.map(operation => html`<button class="row object-row" type="button"
+              @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
+              <strong>${fieldText(operation, 'name', 'New address object')}</strong>
+              <span class="action">${fieldText(operation, 'type', 'address')}</span>
+              <span class="object-value">${fieldText(operation, 'value')}</span>
+              <span class="row-meta"><span>0</span><span class="pending-badge"
+                title="This address object is a pending structural create">Pending create</span></span>
+            </button>`)}
           </div>
         </section>
         <section class="object-section">
@@ -6197,6 +6256,19 @@ export class SmithproxyApp extends LitElement {
                 <span class="row-meta"><span>${port.usedBy.length}</span>${this.renderPendingBadge('port', port.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
               </button>`;
             })}
+            ${pendingPorts.map(operation => {
+              const start = fieldNumber(operation, 'start');
+              const end = fieldNumber(operation, 'end');
+              const range = start === undefined || end === undefined ? 'Unknown'
+                : start === end ? String(start) : `${start}–${end}`;
+              return html`<button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
+                <strong>${fieldText(operation, 'name', 'New port object')}</strong><span>Port range</span>
+                <span class="object-value">${range}</span>
+                <span class="row-meta"><span>0</span><span class="pending-badge"
+                  title="This port object is a pending structural create">Pending create</span></span>
+              </button>`;
+            })}
           </div>
         </section>
         <section class="object-section">
@@ -6214,6 +6286,13 @@ export class SmithproxyApp extends LitElement {
                 <span class="row-meta"><span>${protocol.usedBy.length}</span>${this.renderPendingBadge('protocol', protocol.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
               </button>`;
             })}
+            ${pendingProtocols.map(operation => html`<button class="row object-row" type="button"
+              @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
+              <strong>${fieldText(operation, 'name', 'New protocol object')}</strong><span>IP protocol</span>
+              <span class="object-value">${fieldNumber(operation, 'id') ?? 'Unknown'}</span>
+              <span class="row-meta"><span>0</span><span class="pending-badge"
+                title="This protocol object is a pending structural create">Pending create</span></span>
+            </button>`)}
           </div>
         </section>
         <section class="object-section">
@@ -6234,6 +6313,14 @@ export class SmithproxyApp extends LitElement {
                 <span>${profile.usedBy.length}</span>
               </button>`;
             })}
+            ${pendingProfiles.map(operation => html`<button class="row object-row" type="button"
+              @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
+              <strong>${fieldText(operation, 'name', 'New profile')}</strong>
+              <span class="action">${profileTypes.get(operation.collection) ?? 'profile'}</span>
+              <span class="row-meta"><span>Typed details</span><span class="pending-badge"
+                title="This profile is a pending structural create">Pending create</span></span>
+              <span>0</span>
+            </button>`)}
           </div>
         </section>
       </div>
