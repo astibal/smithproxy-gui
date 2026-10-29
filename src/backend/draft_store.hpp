@@ -10,10 +10,27 @@
 #include <variant>
 #include <vector>
 
+#include <nlohmann/json_fwd.hpp>
+
 namespace smithproxy::gui {
 
+struct DraftAuthIdentity {
+    std::string name;
+    std::string detection_profile;
+    std::string content_profile;
+    std::string tls_profile;
+    std::string alg_dns_profile;
+
+    bool operator==(const DraftAuthIdentity&) const = default;
+};
+
+using DraftAuthIdentities = std::vector<DraftAuthIdentity>;
+
+void to_json(nlohmann::json& output, const DraftAuthIdentity& identity);
+
 using DraftScalar = std::variant<bool, std::int64_t, double, std::string,
-                                 std::vector<std::string>, std::vector<std::int64_t>>;
+                                 std::vector<std::string>, std::vector<std::int64_t>,
+                                 DraftAuthIdentities>;
 
 struct DraftChange {
     std::string path;

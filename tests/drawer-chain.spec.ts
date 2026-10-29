@@ -151,6 +151,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   const sensitiveDraftPath = (path: string): boolean => fixedSensitiveDraftPaths.has(path) ||
     (path.startsWith('ssh_profiles.[') && path.endsWith('].host_key')) ||
     (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
+    (path.startsWith('auth_profiles.[') && path.endsWith('].identities')) ||
     (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
     (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
     (path.startsWith('content_profiles.[') && path.includes('].content_rules.[') &&
@@ -1034,7 +1035,19 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await scriptEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'legacy-auth', exact: true}).click();
   const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
-  await expect(authenticationEditor.getByText('2 redacted entries · unchanged')).toBeVisible();
+  await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeVisible();
+  await authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i}).click();
+  const identityEditor = page.getByRole('dialog', {name: 'Edit legacy-auth identities'});
+  await identityEditor.getByLabel('Identity name').fill('private-user');
+  await identityEditor.getByLabel('Detection').selectOption('detect');
+  await identityEditor.getByRole('button', {name: 'Add identity'}).click();
+  await identityEditor.getByLabel('Identity name').nth(1).fill('private-admin');
+  await identityEditor.getByLabel('TLS').nth(1).selectOption('inspect');
+  await identityEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(identityEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(identityEditor.getByLabel('Identity name')).toHaveValue('');
+  await expect(identityEditor.getByText(/pending replacement exists; re-enter every value/i)).toBeVisible();
+  await identityEditor.getByRole('button', {name: 'Cancel'}).click();
   await authenticationEditor.getByLabel('Authenticate').selectOption('false');
   await authenticationEditor.getByLabel('Resolve identities').selectOption('false');
   await authenticationEditor.getByRole('button', {name: 'Save to draft'}).click();
@@ -1143,6 +1156,10 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('tls_ca.[0].path');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/etc/smithproxy/private/new-default-ca');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('auth_profiles.[0].authenticate');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('auth_profiles.[0].identities');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('Replaced · redacted · 2 items');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('private-user');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('private-admin');
   await expect(page.getByRole('button', {name: 'Edit policy.[0].action'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Edit address_objects.[0].value'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Edit routing.[0].dnat_lb_method'})).toBeVisible();
@@ -1157,6 +1174,32 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await confirmDiscard.click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
+});
+
+test('validates and clears write-only authentication identities', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', draftMutationBatches: []};
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /legacy-auth authentication Typed details/i}).click();
+  const profileEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
+  await profileEditor.getByRole('button', {name: /2 redacted entries Edit/i}).click();
+  const identityEditor = page.getByRole('dialog', {name: 'Edit legacy-auth identities'});
+
+  await identityEditor.getByLabel('Identity name').fill('unbound-user');
+  await identityEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(identityEditor.getByText(/bind every identity to at least one profile/i)).toBeVisible();
+  expect(state.draftMutationBatches).toEqual([]);
+
+  await identityEditor.getByLabel('Draft action').selectOption('clear');
+  await identityEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches).toEqual([[
+    {path: 'auth_profiles.[0].identities', value: []},
+  ]]);
+  await expect(identityEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(identityEditor.getByLabel('Draft action')).toHaveValue('replace');
+  await expect(identityEditor.getByText(/pending replacement exists; re-enter every value/i)).toBeVisible();
 });
 
 test('saves only fields changed since the editor opened', async ({page}) => {
@@ -4411,7 +4454,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await profiles.getByRole('button', {name: /legacy-auth authentication Typed details/i}).click();
   const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
   await expect(authenticationEditor.getByText('Deprecated compatibility profile')).toBeVisible();
-  await expect(authenticationEditor.getByText('2 redacted entries · unchanged')).toBeVisible();
+  await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeEnabled();
   await expect(authenticationEditor.getByLabel('Authenticate')).toHaveValue('true');
   await page.keyboard.press('Escape');
 

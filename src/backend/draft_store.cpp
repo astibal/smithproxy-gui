@@ -8,6 +8,8 @@
 #include <cmath>
 #include <type_traits>
 
+#include <nlohmann/json.hpp>
+
 namespace smithproxy::gui {
 namespace {
 
@@ -28,6 +30,14 @@ std::size_t value_size(const DraftScalar& value) {
             return total;
         } else if constexpr (std::is_same_v<Value, std::vector<std::int64_t>>) {
             return item.size() * sizeof(std::int64_t);
+        } else if constexpr (std::is_same_v<Value, DraftAuthIdentities>) {
+            std::size_t total{};
+            for (const auto& identity : item) {
+                total += identity.name.size() + identity.detection_profile.size() +
+                         identity.content_profile.size() + identity.tls_profile.size() +
+                         identity.alg_dns_profile.size();
+            }
+            return total;
         } else {
             return sizeof(item);
         }
@@ -414,12 +424,36 @@ bool DraftStore::valid_value(const DraftScalar& value) {
             });
         } else if constexpr (std::is_same_v<Value, std::vector<std::int64_t>>) {
             return item.size() <= maximum_array_items;
+        } else if constexpr (std::is_same_v<Value, DraftAuthIdentities>) {
+            if (item.empty() || item.size() > maximum_array_items) return false;
+            const auto valid_text = [](const std::string& text) {
+                return text.size() <= maximum_string_length &&
+                       std::none_of(text.begin(), text.end(), [](const unsigned char character) {
+                           return character == 0U;
+                       });
+            };
+            return std::all_of(item.begin(), item.end(), [&](const DraftAuthIdentity& identity) {
+                return !identity.name.empty() && valid_text(identity.name) &&
+                       valid_text(identity.detection_profile) &&
+                       valid_text(identity.content_profile) && valid_text(identity.tls_profile) &&
+                       valid_text(identity.alg_dns_profile);
+            });
         } else if constexpr (std::is_same_v<Value, double>) {
             return std::isfinite(item);
         } else {
             return true;
         }
     }, value);
+}
+
+void to_json(nlohmann::json& output, const DraftAuthIdentity& identity) {
+    output = {{"name", identity.name}};
+    if (!identity.detection_profile.empty()) {
+        output["detection_profile"] = identity.detection_profile;
+    }
+    if (!identity.content_profile.empty()) output["content_profile"] = identity.content_profile;
+    if (!identity.tls_profile.empty()) output["tls_profile"] = identity.tls_profile;
+    if (!identity.alg_dns_profile.empty()) output["alg_dns_profile"] = identity.alg_dns_profile;
 }
 
 } // namespace smithproxy::gui

@@ -2,7 +2,16 @@ import {httpStatusError} from './http-error';
 import {isCanonicalRevisionOrNull} from './revision';
 import {boundedJson} from './bounded-json';
 
-export type DraftScalar = boolean | number | string | ReadonlyArray<string> | ReadonlyArray<number>;
+export interface DraftAuthIdentity {
+  name: string;
+  detection_profile?: string;
+  content_profile?: string;
+  tls_profile?: string;
+  alg_dns_profile?: string;
+}
+
+export type DraftScalar = boolean | number | string | ReadonlyArray<string> | ReadonlyArray<number> |
+  ReadonlyArray<DraftAuthIdentity>;
 
 export interface DraftChange {
   path: string;
@@ -147,6 +156,25 @@ function scalar(value: unknown): DraftScalar {
     typeof item === 'number' && Number.isSafeInteger(item))) {
     return value;
   }
+  if (Array.isArray(value) && value.length > 0 && value.length <= 256 && value.every(item => {
+    if (!isObject(item)) return false;
+    const allowed = new Set([
+      'name', 'detection_profile', 'content_profile', 'tls_profile', 'alg_dns_profile',
+    ]);
+    const keys = Object.keys(item);
+    if (keys.length < 2 || keys.some(key => !allowed.has(key)) ||
+        typeof item.name !== 'string' || !/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(item.name)) {
+      return false;
+    }
+    return keys.filter(key => key !== 'name').every(key =>
+      typeof item[key] === 'string' && String(item[key]).length > 0 && String(item[key]).length <= 128);
+  })) {
+    const identities = value as ReadonlyArray<DraftAuthIdentity>;
+    if (new Set(identities.map(identity => identity.name)).size !== identities.length) {
+      throw new Error('Invalid draft scalar.');
+    }
+    return identities;
+  }
   throw new Error('Invalid draft scalar.');
 }
 
@@ -172,6 +200,7 @@ function sensitiveDraftPath(path: string): boolean {
     (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
     (path.startsWith('content_profiles.[') && path.includes('].content_rules.[') &&
       (path.endsWith('].match') || path.endsWith('].replace'))) ||
+    (path.startsWith('auth_profiles.[') && path.endsWith('].identities')) ||
     (path.startsWith('tls_ca.[') && path.endsWith('].path')) ||
     ((path.startsWith('starttls_signatures.[') || path.startsWith('detection_signatures.[')) &&
       path.endsWith('].signature'));
@@ -183,6 +212,7 @@ function sensitiveStructuralField(collection: DraftStructuralCollection, field: 
     (collection === 'tls_profiles' && field === 'sni_filter_bypass') ||
     (collection === 'content_profiles' && field === 'rules_session_filter') ||
     (collection === 'content_profiles.content_rules' && (field === 'match' || field === 'replace')) ||
+    (collection === 'auth_profiles' && field === 'identities') ||
     (collection === 'tls_ca' && field === 'path') ||
     (collection.endsWith('_signatures.flow') && field === 'signature');
 }

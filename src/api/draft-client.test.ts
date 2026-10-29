@@ -212,6 +212,14 @@ describe('DraftClient', () => {
     }, 'Unredacted sensitive draft change'],
     [{
       id: 'workspace-draft', base_revision: null, version: 1,
+      changes: [{
+        path: 'auth_profiles.[0].identities',
+        value: [{name: 'private-user', tls_profile: 'inspect'}],
+      }],
+      structural_operations: [],
+    }, 'Unredacted sensitive draft change'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 1,
       changes: [{path: 'settings.http_api.keys', value: '[redacted:replace:257]'}],
       structural_operations: [],
     }, 'Unredacted sensitive draft change'],
@@ -226,6 +234,7 @@ describe('DraftClient', () => {
       changes: [
         {path: 'settings.certs_ca_key_password', value: '[redacted:replace]'},
         {path: 'settings.http_api.keys', value: '[redacted:replace:2]'},
+        {path: 'auth_profiles.[0].identities', value: '[redacted:replace:2]'},
       ],
       structural_operations: [{
         op: 'create', local_id: 'create-ca', collection: 'tls_ca', client_id: 'create-ca',
@@ -242,6 +251,7 @@ describe('DraftClient', () => {
         {path: 'policy.[0].name', value: 'office'},
         {path: 'policy.[0].dst', value: ['internet', 'backup']},
         {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, 44443]},
+        {path: 'auth_profiles.[0].identities', value: '[redacted:replace:1]'},
       ],
       structural_operations: [],
     }));
@@ -250,7 +260,17 @@ describe('DraftClient', () => {
       {path: 'policy.[0].name', value: 'office'},
       {path: 'policy.[0].dst', value: ['internet', 'backup']},
       {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, 44443]},
+      {path: 'auth_profiles.[0].identities', value: [{name: 'alice', tls_profile: 'inspect'}]},
     ])).resolves.toMatchObject({version: 1});
+    expect(JSON.parse(String((fetcher.mock.calls.at(-1)?.[1] as RequestInit).body))).toEqual({
+      expected_version: 0,
+      changes: [
+        {path: 'policy.[0].name', value: 'office'},
+        {path: 'policy.[0].dst', value: ['internet', 'backup']},
+        {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, 44443]},
+        {path: 'auth_profiles.[0].identities', value: [{name: 'alice', tls_profile: 'inspect'}]},
+      ],
+    });
     await expect(client.upsertMany(1, [])).rejects.toThrow('Invalid draft changes');
     await expect(client.upsertMany(1, [
       {path: 'policy.[0].name', value: 'one'},
@@ -259,6 +279,13 @@ describe('DraftClient', () => {
     await expect(client.upsertMany(1, [
       {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, '8443'] as never},
     ])).rejects.toThrow('Invalid draft scalar');
+    await expect(client.upsertMany(1, [{
+      path: 'auth_profiles.[0].identities',
+      value: [
+        {name: 'duplicate', tls_profile: 'inspect'},
+        {name: 'duplicate', content_profile: 'capture'},
+      ],
+    }])).rejects.toThrow('Invalid draft scalar');
   });
 
   it('atomically reconciles changed and reverted draft paths', async () => {

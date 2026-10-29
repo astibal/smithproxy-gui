@@ -52,6 +52,40 @@ std::optional<DraftPosition> parse_position(const nlohmann::json& value) {
     return std::nullopt;
 }
 
+std::optional<DraftAuthIdentities> parse_auth_identities(const nlohmann::json& value) {
+    if (!value.is_array() || value.empty() || value.size() > 256U) return std::nullopt;
+    DraftAuthIdentities identities;
+    identities.reserve(value.size());
+    for (const auto& item : value) {
+        if (!exact_keys(item, {"name"}, {"detection_profile", "content_profile", "tls_profile",
+                                         "alg_dns_profile"}) ||
+            !item["name"].is_string()) {
+            return std::nullopt;
+        }
+        DraftAuthIdentity identity{
+            .name = item["name"].get<std::string>(),
+            .detection_profile = {},
+            .content_profile = {},
+            .tls_profile = {},
+            .alg_dns_profile = {},
+        };
+        const auto profile = [&](const std::string_view field, std::string& output) {
+            if (!item.contains(field)) return true;
+            if (!item[field].is_string()) return false;
+            output = item[field].get<std::string>();
+            return true;
+        };
+        if (!profile("detection_profile", identity.detection_profile) ||
+            !profile("content_profile", identity.content_profile) ||
+            !profile("tls_profile", identity.tls_profile) ||
+            !profile("alg_dns_profile", identity.alg_dns_profile)) {
+            return std::nullopt;
+        }
+        identities.push_back(std::move(identity));
+    }
+    return identities;
+}
+
 } // namespace
 
 std::optional<DraftScalar> parse_draft_scalar(const nlohmann::json& value) {
@@ -68,6 +102,11 @@ std::optional<DraftScalar> parse_draft_scalar(const nlohmann::json& value) {
     if (value.is_string()) return DraftScalar{value.get<std::string>()};
     if (!value.is_array()) return std::nullopt;
     if (value.empty()) return DraftScalar{std::vector<std::string>{}};
+    if (value.front().is_object()) {
+        auto identities = parse_auth_identities(value);
+        return identities
+            ? std::optional<DraftScalar>{DraftScalar{std::move(*identities)}} : std::nullopt;
+    }
     if (value.front().is_number_integer() || value.front().is_number_unsigned()) {
         std::vector<std::int64_t> values;
         values.reserve(value.size());

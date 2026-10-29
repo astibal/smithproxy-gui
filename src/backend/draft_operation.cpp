@@ -107,6 +107,8 @@ bool valid_scalar(const DraftScalar& value) {
                    });
         } else if constexpr (std::is_same_v<Value, std::vector<std::int64_t>>) {
             return item.size() <= maximum_array_items;
+        } else if constexpr (std::is_same_v<Value, DraftAuthIdentities>) {
+            return !item.empty() && item.size() <= maximum_array_items;
         } else if constexpr (std::is_same_v<Value, double>) {
             return std::isfinite(item);
         } else {

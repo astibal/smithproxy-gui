@@ -4,6 +4,7 @@
 #include "config_snapshot.hpp"
 #include "draft_operation.hpp"
 #include "draft_operation_json.hpp"
+#include "draft_schema.hpp"
 #include "draft_store.hpp"
 #include "json.hpp"
 #include "job_store.hpp"
@@ -552,12 +553,49 @@ int main() {
         {"ssh_profiles.[0].hostkey_policy", std::string("strict")},
         {"script_profiles.[0].type", std::string("0")},
         {"auth_profiles.[0].authenticate", true},
+        {"auth_profiles.[0].identities", DraftAuthIdentities{{
+            .name = "integration_user",
+            .detection_profile = "detect",
+            .content_profile = "capture",
+            .tls_profile = "inspect",
+            .alg_dns_profile = "dns-default",
+        }}},
         {"detection_profiles.[0].mode", std::int64_t{2}},
         {"alg_dns_profiles.[0].randomize_id", true},
         {"tls_ca.[0].path", std::string("/etc/smithproxy/ca.pem")},
         {"starttls_signatures.[0].severity", std::int64_t{3}},
         {"detection_signatures.[0].flow.[0].signature", std::string("^TLS")},
     }) == DraftMutationResult::Applied);
+    assert(validate_draft_schema({
+        "auth_profiles.[0].identities", DraftAuthIdentities{{
+            .name = "empty",
+            .detection_profile = {},
+            .content_profile = {},
+            .tls_profile = {},
+            .alg_dns_profile = {},
+        }},
+    }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
+        "auth_profiles.[0].identities", DraftAuthIdentities{
+            {
+                .name = "duplicate", .detection_profile = "detect", .content_profile = {},
+                .tls_profile = {}, .alg_dns_profile = {},
+            },
+            {
+                .name = "duplicate", .detection_profile = {}, .content_profile = {},
+                .tls_profile = "inspect", .alg_dns_profile = {},
+            },
+        },
+    }) == DraftSchemaResult::InvalidValue);
+    const auto parsed_identities = parse_draft_scalar(nlohmann::json::array({
+        {{"name", "alice"}, {"tls_profile", "inspect"}},
+        {{"name", "bob"}, {"content_profile", "capture"}},
+    }));
+    assert(parsed_identities);
+    assert(std::get<DraftAuthIdentities>(*parsed_identities).size() == 2U);
+    assert(!parse_draft_scalar(nlohmann::json::array({
+        {{"name", "alice"}, {"unknown_profile", "inspect"}},
+    })));
 
     DraftStore bounded_draft{"bounded"};
     std::vector<DraftChange> oversized_changes;
@@ -703,6 +741,25 @@ int main() {
     assert(validation_document["operations"][0] == nlohmann::json({
         {"op", "set"}, {"path", "policy.[0].action"}, {"value", "reject"},
     }));
+    auto identity_transaction_draft = transaction_draft;
+    identity_transaction_draft.changes = {{
+        "auth_profiles.[0].identities", DraftAuthIdentities{{
+            .name = "integration_user",
+            .detection_profile = "detect",
+            .content_profile = "capture",
+            .tls_profile = "inspect",
+            .alg_dns_profile = "dns-default",
+        }},
+    }};
+    const auto identity_envelope = build_transaction_envelope(
+        identity_transaction_draft, TransactionMode::Validate, idempotency_key, ready_transaction);
+    assert(identity_envelope.body);
+    const auto identity_document = nlohmann::json::parse(*identity_envelope.body);
+    assert(identity_document["operations"][0]["value"] == nlohmann::json::array({{
+        {"name", "integration_user"}, {"detection_profile", "detect"},
+        {"content_profile", "capture"}, {"tls_profile", "inspect"},
+        {"alg_dns_profile", "dns-default"},
+    }}));
     DraftSnapshot structural_draft{
         .id = "workspace-draft",
         .base_revision = transaction_draft.base_revision,

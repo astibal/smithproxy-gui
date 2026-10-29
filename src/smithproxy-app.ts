@@ -4,6 +4,7 @@ import {ApiConfigClient} from './api/config-client';
 import {
   DraftClient,
   draftOperationCount,
+  type DraftAuthIdentity,
   type DraftChange,
   type DraftCommit,
   type DraftCreateOperation,
@@ -253,6 +254,11 @@ const initialJobs: JobSnapshot = {
   jobs: [],
 };
 
+interface AuthIdentityEditorState {
+  mode: 'replace' | 'clear';
+  rows: ReadonlyArray<DraftAuthIdentity>;
+}
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -320,6 +326,7 @@ export class SmithproxyApp extends LitElement {
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
   @state() private searchQuery = '';
+  @state() private authIdentityEditors = new Map<string, AuthIdentityEditorState>();
 
   private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
@@ -621,6 +628,14 @@ export class SmithproxyApp extends LitElement {
     .form-grid label { align-self: center; color: var(--app-muted); }
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
     .write-only-control { display: grid; grid-template-columns: minmax(150px, .35fr) minmax(180px, 1fr); gap: 8px; }
+    .identity-editor { display: grid; gap: 16px; }
+    .identity-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; justify-content: space-between; }
+    .identity-toolbar label { display: grid; min-width: 220px; gap: 6px; color: var(--app-muted); }
+    .identity-toolbar select, .identity-row input, .identity-row select { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
+    .identity-list { display: grid; gap: 10px; }
+    .identity-row { display: grid; grid-template-columns: minmax(150px, 1.2fr) repeat(4, minmax(130px, 1fr)) auto; gap: 8px; align-items: end; padding: 12px; border: 1px solid var(--app-border); background: var(--app-canvas); }
+    .identity-field { display: grid; gap: 5px; }
+    .identity-field small { color: var(--app-muted); }
     .form-grid input[readonly], .form-grid select:disabled { border-style: dashed; opacity: .8; }
     .reference-stack { display: grid; gap: 7px; }
     .reference-edit { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 7px; align-items: center; }
@@ -675,6 +690,7 @@ export class SmithproxyApp extends LitElement {
       .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
       .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .35fr) minmax(220px, 1fr); max-width: 920px; }
+      .identity-row { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
       .status-tertiary { display: none; }
     }
 
@@ -697,6 +713,7 @@ export class SmithproxyApp extends LitElement {
       .form-grid { grid-template-columns: 1fr; gap: 7px; }
       .form-grid.wide-form-grid { grid-template-columns: 1fr; }
       .write-only-control { grid-template-columns: 1fr; }
+      .identity-row { grid-template-columns: 1fr; }
       .form-grid > *, .reference-edit { min-width: 0; }
       .form-grid label:not(:first-child) { margin-top: 10px; }
       .statusbar { grid-row: 3; }
@@ -1770,6 +1787,9 @@ export class SmithproxyApp extends LitElement {
       if (!match) continue;
       const profile = this.snapshot?.profiles.filter(section.matches)[Number(match[1])];
       if (!profile) return undefined;
+      if (/^auth_profiles\.\[\d+\]\.identities$/u.test(path)) {
+        return {kind: 'auth-identities', id: profile.id, title: `${profile.name} identities`};
+      }
       const ruleMatch = /^content_profiles\.\[\d+\]\.content_rules\.\[(\d+)\]\./u.exec(path);
       const rule = ruleMatch ? profile.content?.rules[Number(ruleMatch[1])] : undefined;
       return rule
@@ -2064,9 +2084,15 @@ export class SmithproxyApp extends LitElement {
   }
 
   private draftPathsForDrawer(entry: Pick<DrawerEntry, 'kind' | 'id'>): ReadonlyArray<string> {
+    if (entry.kind === 'auth-identities') {
+      const prefix = this.profileOriginPrefixes().get(entry.id);
+      const path = prefix ? `${prefix}identities` : undefined;
+      return path && this.workspaceDraft?.changes.some(change => change.path === path) ? [path] : [];
+    }
     const key = this.drawerKey(entry);
     return (this.workspaceDraft?.changes ?? [])
       .filter(change => {
+        if (entry.kind === 'profile' && change.path.endsWith('.identities')) return false;
         const target = this.draftTargetForPath(change.path);
         return target !== undefined && this.drawerKey(target) === key;
       })
@@ -2865,6 +2891,18 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({kind: 'profile', id: profile.id, title: this.profileDisplayName(profile)}, origin);
   }
 
+  private openAuthIdentities(profile: ProfileObject, origin?: HTMLElement): void {
+    if (!profile.authentication || !this.draftAvailable) return;
+    if (!this.authIdentityEditors.has(profile.id)) {
+      this.authIdentityEditors = new Map(this.authIdentityEditors).set(profile.id, {
+        mode: 'replace', rows: [{name: ''}],
+      });
+    }
+    this.openObjectDrawer({
+      kind: 'auth-identities', id: profile.id, title: `${profile.name} identities`,
+    }, origin);
+  }
+
   private openUsage(reference: ConfigUsage, origin?: HTMLElement): void {
     if (reference.kind === 'policy') {
       const policy = this.snapshot?.policies.find(item => item.id === reference.id);
@@ -2979,8 +3017,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private draftScalarsEqual(left: DraftScalar, right: DraftScalar): boolean {
-    if (!Array.isArray(left) || !Array.isArray(right)) return Object.is(left, right);
-    return left.length === right.length && left.every((item, index) => Object.is(item, right[index]));
+    return this.configValuesEqual(left, right);
   }
 
   private captureDrawerInitialChanges(entry: DrawerEntry): void {
@@ -3054,7 +3091,13 @@ export class SmithproxyApp extends LitElement {
 
   private discardDrawerChanges(index: number): void {
     const remaining = new Set(this.dirtyDrawerKeys);
-    for (const entry of this.drawerStore.entries.slice(index)) remaining.delete(this.drawerKey(entry));
+    const discarded = this.drawerStore.entries.slice(index);
+    for (const entry of discarded) remaining.delete(this.drawerKey(entry));
+    const identityEditors = new Map(this.authIdentityEditors);
+    for (const entry of discarded) {
+      if (entry.kind === 'auth-identities') identityEditors.delete(entry.id);
+    }
+    this.authIdentityEditors = identityEditors;
     this.dirtyDrawerKeys = remaining;
     this.pendingCloseIndex = undefined;
     this.closeDrawer(index);
@@ -3167,6 +3210,10 @@ export class SmithproxyApp extends LitElement {
 
   private drawerCandidate(entry: Pick<DrawerEntry, 'kind' | 'id'>) {
     if (!this.snapshot) return undefined;
+    if (entry.kind === 'auth-identities') {
+      const profile = this.snapshot.profiles.find(item => item.id === entry.id && item.authentication !== null);
+      return profile ? {id: profile.id, name: `${profile.name} identities`} : undefined;
+    }
     if (entry.kind === 'policy') return this.snapshot.policies.find(item => item.id === entry.id);
     if (entry.kind === 'policy-create') {
       const operation = this.workspaceDraft?.structuralOperations.find(
@@ -4220,7 +4267,67 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private updateAuthIdentityEditor(id: string, update: AuthIdentityEditorState): void {
+    this.authIdentityEditors = new Map(this.authIdentityEditors).set(id, update);
+  }
+
+  private updateAuthIdentityRow(id: string, index: number, field: keyof DraftAuthIdentity, value: string): void {
+    const editor = this.authIdentityEditors.get(id) ?? {mode: 'replace' as const, rows: [{name: ''}]};
+    const rows = editor.rows.map((row, rowIndex) => rowIndex === index ? {...row, [field]: value} : row);
+    this.updateAuthIdentityEditor(id, {...editor, rows});
+  }
+
+  private async saveAuthIdentities(entry: DrawerEntry): Promise<void> {
+    if (!this.draftAvailable || !this.draftClient || this.draftCommitting) return;
+    const prefix = this.profileOriginPrefixes().get(entry.id);
+    const editor = this.authIdentityEditors.get(entry.id);
+    if (!prefix || !editor) return;
+    const normalized: DraftAuthIdentity[] = editor.rows.map(row => ({
+      name: row.name.trim(),
+      ...(row.detection_profile?.trim() ? {detection_profile: row.detection_profile.trim()} : {}),
+      ...(row.content_profile?.trim() ? {content_profile: row.content_profile.trim()} : {}),
+      ...(row.tls_profile?.trim() ? {tls_profile: row.tls_profile.trim()} : {}),
+      ...(row.alg_dns_profile?.trim() ? {alg_dns_profile: row.alg_dns_profile.trim()} : {}),
+    }));
+    const validName = (value: string) => /^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(value);
+    const references = (row: DraftAuthIdentity) => [
+      row.detection_profile, row.content_profile, row.tls_profile, row.alg_dns_profile,
+    ].filter((value): value is string => Boolean(value));
+    if (editor.mode === 'replace' && (normalized.length === 0 || normalized.length > 256 ||
+        normalized.some(row => !validName(row.name) || references(row).length === 0 ||
+          references(row).some(value => value.length > 128)) ||
+        new Set(normalized.map(row => row.name)).size !== normalized.length)) {
+      this.drawerError = 'Use 1–256 unique identity names and bind every identity to at least one profile.';
+      return;
+    }
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertMany(this.draftVersion, [{
+        path: `${prefix}identities`, value: editor.mode === 'clear' ? [] : normalized,
+      }]);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.updateAuthIdentityEditor(entry.id, {mode: 'replace', rows: [{name: ''}]});
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Identity mappings could not be saved to the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private async saveToDraft(entry: DrawerEntry): Promise<void> {
+    if (entry.kind === 'auth-identities') {
+      await this.saveAuthIdentities(entry);
+      return;
+    }
     if (entry.kind === 'signature-create') {
       await this.saveSignatureCreate(entry);
       return;
@@ -4371,9 +4478,17 @@ export class SmithproxyApp extends LitElement {
       : fallback;
   }
 
-  private configValuesEqual(left: ConfigValue, right: DraftScalar): boolean {
+  private configValuesEqual(left: DraftScalar, right: DraftScalar): boolean {
     if (!Array.isArray(left) || !Array.isArray(right)) return Object.is(left, right);
-    return left.length === right.length && left.every((item, index) => Object.is(item, right[index]));
+    return left.length === right.length && left.every((item, index) => {
+      const candidate = right[index];
+      if (typeof item !== 'object' || item === null || typeof candidate !== 'object' || candidate === null) {
+        return Object.is(item, candidate);
+      }
+      const keys = Object.keys(item) as Array<keyof DraftAuthIdentity>;
+      const candidateKeys = Object.keys(candidate);
+      return keys.length === candidateKeys.length && keys.every(key => item[key] === candidate[key]);
+    });
   }
 
   private formatConfigValue(value: ConfigValue): string {
@@ -8427,6 +8542,99 @@ export class SmithproxyApp extends LitElement {
     </select>`;
   }
 
+  private renderAuthIdentityEditor(entry: DrawerEntry) {
+    const profile = this.snapshot?.profiles.find(item => item.id === entry.id);
+    if (!profile?.authentication) return nothing;
+    const editor = this.authIdentityEditors.get(entry.id) ?? {mode: 'replace' as const, rows: [{name: ''}]};
+    const profileOptions = (kind: 'detection' | 'content' | 'tls' | 'dns') =>
+      this.snapshot?.profiles.filter(item => item[kind] !== null) ?? [];
+    const prefixes = this.profileOriginPrefixes();
+    const optionName = (item: ProfileObject) => {
+      const prefix = prefixes.get(item.id);
+      return prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
+    };
+    const pending = this.draftPathsForDrawer(entry).length > 0;
+    const markDirty = () => {
+      const key = this.drawerKey(entry);
+      if (!this.dirtyDrawerKeys.has(key)) this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
+    };
+    const updateEditor = (next: AuthIdentityEditorState) => {
+      this.updateAuthIdentityEditor(entry.id, next);
+      markDirty();
+    };
+    const renderOptions = (kind: 'detection' | 'content' | 'tls' | 'dns') => html`
+      <option value="">None</option>
+      ${profileOptions(kind).map(item => html`<option value=${optionName(item)}>${optionName(item)}</option>`)}
+    `;
+    return html`
+      <div class="identity-editor">
+        <div class="privacy-note">
+          Existing names and bindings are write-only. ${profile.authentication.identityCount} mappings are configured.
+          ${pending ? 'A pending replacement exists; re-enter every value to replace it.' : ''}
+        </div>
+        <div class="identity-toolbar">
+          <label for="auth-identities-mode-${entry.id}">Draft action
+            <select id="auth-identities-mode-${entry.id}" .value=${editor.mode}
+              @change=${(event: Event) => updateEditor({
+                ...editor, mode: (event.currentTarget as HTMLSelectElement).value as 'replace' | 'clear',
+              })}>
+              <option value="replace">Replace all mappings</option>
+              <option value="clear">Clear all mappings</option>
+            </select>
+          </label>
+          ${editor.mode === 'replace' ? html`<button class="secondary" type="button"
+            ?disabled=${editor.rows.length >= 256}
+            @click=${() => updateEditor({...editor, rows: [...editor.rows, {name: ''}]})}>Add identity</button>` : nothing}
+        </div>
+        ${editor.mode === 'clear' ? html`
+          <div class="impact">Saving will remove every identity mapping from this authentication profile.</div>
+        ` : html`
+          <div class="identity-list">
+            ${editor.rows.map((row, index) => html`
+              <div class="identity-row">
+                <label class="identity-field" for="auth-identity-name-${entry.id}-${index}"><small>Identity name</small>
+                  <input id="auth-identity-name-${entry.id}-${index}" maxlength="128" autocomplete="off"
+                    .value=${row.name} @input=${(event: InputEvent) => this.updateAuthIdentityRow(
+                      entry.id, index, 'name', (event.currentTarget as HTMLInputElement).value,
+                    )} />
+                </label>
+                <label class="identity-field" for="auth-identity-detection-${entry.id}-${index}"><small>Detection</small>
+                  <select id="auth-identity-detection-${entry.id}-${index}" .value=${row.detection_profile ?? ''}
+                    @change=${(event: Event) => this.updateAuthIdentityRow(
+                      entry.id, index, 'detection_profile', (event.currentTarget as HTMLSelectElement).value,
+                    )}>${renderOptions('detection')}</select>
+                </label>
+                <label class="identity-field" for="auth-identity-content-${entry.id}-${index}"><small>Content</small>
+                  <select id="auth-identity-content-${entry.id}-${index}" .value=${row.content_profile ?? ''}
+                    @change=${(event: Event) => this.updateAuthIdentityRow(
+                      entry.id, index, 'content_profile', (event.currentTarget as HTMLSelectElement).value,
+                    )}>${renderOptions('content')}</select>
+                </label>
+                <label class="identity-field" for="auth-identity-tls-${entry.id}-${index}"><small>TLS</small>
+                  <select id="auth-identity-tls-${entry.id}-${index}" .value=${row.tls_profile ?? ''}
+                    @change=${(event: Event) => this.updateAuthIdentityRow(
+                      entry.id, index, 'tls_profile', (event.currentTarget as HTMLSelectElement).value,
+                    )}>${renderOptions('tls')}</select>
+                </label>
+                <label class="identity-field" for="auth-identity-dns-${entry.id}-${index}"><small>DNS</small>
+                  <select id="auth-identity-dns-${entry.id}-${index}" .value=${row.alg_dns_profile ?? ''}
+                    @change=${(event: Event) => this.updateAuthIdentityRow(
+                      entry.id, index, 'alg_dns_profile', (event.currentTarget as HTMLSelectElement).value,
+                    )}>${renderOptions('dns')}</select>
+                </label>
+                <button class="secondary danger-button" type="button" aria-label="Remove identity ${index + 1}"
+                  ?disabled=${editor.rows.length === 1}
+                  @click=${() => updateEditor({...editor, rows: editor.rows.filter((_, rowIndex) => rowIndex !== index)})}>
+                  Remove
+                </button>
+              </div>
+            `)}
+          </div>
+        `}
+      </div>
+    `;
+  }
+
   private renderProfileEditor(entry: DrawerEntry) {
     const profile = this.snapshot?.profiles.find(item => item.id === entry.id);
     if (!profile) return nothing;
@@ -8782,7 +8990,13 @@ export class SmithproxyApp extends LitElement {
           ${booleanSelect(`auth-authenticate-${entry.id}`, 'authenticate', authentication.authenticate)}
           <label for="auth-resolve-${entry.id}">Resolve identities</label>
           ${booleanSelect(`auth-resolve-${entry.id}`, 'resolve', authentication.resolve)}
-          <label>Identity mappings</label><span>${authentication.identityCount} redacted entries · unchanged</span>
+          <label>Identity mappings</label>
+          <button class="reference" type="button" ?disabled=${mappedReadOnly}
+            @click=${(event: MouseEvent) => this.openAuthIdentities(
+              profile, event.currentTarget as HTMLElement,
+            )}>
+            <span>${authentication.identityCount} redacted entries</span><span>Edit →</span>
+          </button>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
       ${routing || tls || detection || content || ssh || dns || script || authentication ? nothing : html`<div class="privacy-note section">
@@ -9814,6 +10028,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderDrawerBody(entry: DrawerEntry) {
+    if (entry.kind === 'auth-identities') return this.renderAuthIdentityEditor(entry);
     if (entry.kind === 'policy') return this.renderPolicyEditor(entry);
     if (entry.kind === 'policy-create') return this.renderPolicyCreateEditor(entry);
     if (entry.kind === 'address') return this.renderAddressEditor(entry);
@@ -9837,7 +10052,8 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderDrawer(entry: DrawerEntry, index: number) {
-    const saved = this.draftObjects.has(`${entry.kind}:${entry.id}`);
+    const saved = this.draftObjects.has(`${entry.kind}:${entry.id}`) ||
+      (entry.kind === 'auth-identities' && this.draftPathsForDrawer(entry).length > 0);
     const editLabel = entry.kind === 'address-create' ? 'Create address object'
       : entry.kind === 'port-create' ? 'Create port object'
         : entry.kind === 'protocol-create' ? 'Create protocol object'
@@ -9853,7 +10069,7 @@ export class SmithproxyApp extends LitElement {
     const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = [
       'policy', 'address', 'port', 'protocol', 'settings', 'captures', 'authority',
       'signature', 'signature-flow',
-      'content-rule',
+      'content-rule', 'auth-identities',
     ];
     const profile = entry.kind === 'profile'
       ? this.snapshot?.profiles.find(item => item.id === entry.id)
@@ -9908,7 +10124,7 @@ export class SmithproxyApp extends LitElement {
         </header>
         <div class="drawer-body">
           ${this.renderDrawerBody(entry)}
-          ${this.renderAugmentOrigins(entry)}
+          ${entry.kind === 'auth-identities' ? nothing : this.renderAugmentOrigins(entry)}
         </div>
         <footer class="drawer-foot">
           ${closePending ? html`

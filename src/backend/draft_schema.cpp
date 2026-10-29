@@ -53,6 +53,10 @@ const std::vector<std::int64_t>* integers(const DraftScalar& value) {
     return std::get_if<std::vector<std::int64_t>>(&value);
 }
 
+const DraftAuthIdentities* auth_identities(const DraftScalar& value) {
+    return std::get_if<DraftAuthIdentities>(&value);
+}
+
 const std::int64_t* integer(const DraftScalar& value) {
     return std::get_if<std::int64_t>(&value);
 }
@@ -66,6 +70,48 @@ bool printable(const std::string_view value, const std::size_t maximum, const bo
     return std::none_of(value.begin(), value.end(), [](const unsigned char character) {
         return character < 0x20U || character == 0x7fU;
     });
+}
+
+bool safe_identity_name(const std::string_view value) {
+    const auto ascii_alpha = [](const unsigned char character) {
+        return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
+    };
+    if (value.empty() || value.size() > 128U ||
+        !(ascii_alpha(static_cast<unsigned char>(value.front())) || value.front() == '_')) {
+        return false;
+    }
+    return std::all_of(value.begin(), value.end(), [&](const unsigned char character) {
+        return ascii_alpha(character) || (character >= '0' && character <= '9') ||
+               character == '_' || character == '-';
+    });
+}
+
+bool valid_auth_identities(const DraftScalar& value) {
+    if (const auto* cleared = strings(value); cleared != nullptr && cleared->empty()) return true;
+    const auto* identities = auth_identities(value);
+    if (identities == nullptr || identities->empty() || identities->size() > 256U) return false;
+    for (std::size_t index = 0; index < identities->size(); ++index) {
+        const auto& identity = (*identities)[index];
+        const auto duplicate = std::find_if(
+            identities->begin(), identities->begin() + static_cast<std::ptrdiff_t>(index),
+            [&](const DraftAuthIdentity& candidate) { return candidate.name == identity.name; });
+        if (!safe_identity_name(identity.name) ||
+            duplicate != identities->begin() + static_cast<std::ptrdiff_t>(index)) {
+            return false;
+        }
+        const std::array references{
+            std::string_view{identity.detection_profile}, std::string_view{identity.content_profile},
+            std::string_view{identity.tls_profile}, std::string_view{identity.alg_dns_profile},
+        };
+        if (std::all_of(references.begin(), references.end(), [](const auto reference) {
+                return reference.empty();
+            }) || std::any_of(references.begin(), references.end(), [](const auto reference) {
+                return !reference.empty() && !printable(reference, 128U);
+            })) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool bounded_text(const DraftScalar& value, const std::size_t maximum, const bool empty = false) {
@@ -281,6 +327,7 @@ Result validate_indexed(const std::string_view path, const DraftScalar& value) {
     if (const auto field = indexed_suffix(path, "auth_profiles")) {
         if (*field == "name") return valid(bounded_text(value, 128U));
         if (*field == "authenticate" || *field == "resolve") return valid(boolean(value));
+        if (*field == "identities") return valid(valid_auth_identities(value));
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "detection_profiles")) {

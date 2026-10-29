@@ -363,6 +363,7 @@ bool sensitive_draft_path(const std::string_view path) {
            (path.starts_with("content_profiles.[") &&
             path.find("].content_rules.[") != std::string_view::npos &&
             (path.ends_with("].match") || path.ends_with("].replace"))) ||
+           (path.starts_with("auth_profiles.[") && path.ends_with("].identities")) ||
            (path.starts_with("tls_ca.[") && path.ends_with("].path")) ||
            ((path.starts_with("starttls_signatures.[") ||
              path.starts_with("detection_signatures.[")) && path.ends_with("].signature"));
@@ -379,6 +380,9 @@ nlohmann::json draft_value_json(const std::string_view path, const DraftScalar& 
         return items->empty() ? nlohmann::json("[redacted:clear]")
                               : nlohmann::json("[redacted:replace:" +
                                                std::to_string(items->size()) + "]");
+    }
+    if (const auto* identities = std::get_if<DraftAuthIdentities>(&value); identities != nullptr) {
+        return "[redacted:replace:" + std::to_string(identities->size()) + "]";
     }
     return "[redacted:replace]";
 }

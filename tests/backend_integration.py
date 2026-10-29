@@ -1150,6 +1150,10 @@ def main() -> int:
                     {"path": "content_profiles.[0].rules_session_filter", "value": "secret session expression"},
                     {"path": "content_profiles.[0].content_rules.[0].match", "value": "secret content match"},
                     {"path": "content_profiles.[0].content_rules.[0].replace", "value": "secret content replacement"},
+                    {"path": "auth_profiles.[0].identities", "value": [
+                        {"name": "private-user", "tls_profile": "inspect"},
+                        {"name": "private-auditor", "content_profile": "capture"},
+                    ]},
                     {"path": "tls_ca.[0].path", "value": "/new/private/ca/default"},
                     {"path": "detection_signatures.[0].flow.[0].signature", "value": "secret replacement regex"},
                 ],
@@ -1236,6 +1240,7 @@ def main() -> int:
                 "tls_ca.[0].path": "[redacted:replace]",
                 "content_profiles.[0].content_rules.[0].match": "[redacted:replace]",
                 "content_profiles.[0].content_rules.[0].replace": "[redacted:replace]",
+                "auth_profiles.[0].identities": "[redacted:replace:2]",
                 "detection_signatures.[0].flow.[0].signature": "[redacted:replace]",
             }
             for sensitive_path, expected_redaction in expected_redactions.items():
@@ -1243,6 +1248,7 @@ def main() -> int:
             assert b"new-private-password" not in body
             assert b"new-api-key" not in body
             assert b"overlap-api-key" not in body
+            assert b"private-user" not in body
             assert b"192.0.2.88" not in body
             assert b"private-api1" not in body
             assert b"new-private-sift" not in body
