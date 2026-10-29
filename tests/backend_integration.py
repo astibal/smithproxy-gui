@@ -352,6 +352,7 @@ def main() -> int:
         assert capabilities["features"]["drafts"] is False
         assert capabilities["features"]["events"] is True
         assert capabilities["features"]["alerts"] is True
+        assert capabilities["features"]["audit"] is True
         assert capabilities["features"]["smithproxy_events"] is False
         assert capabilities["features"]["metrics"] is True
         assert capabilities["features"]["session_activity"] is True
@@ -400,6 +401,10 @@ def main() -> int:
         alerts = json.loads(body)
         assert alerts["source"] == "gui-core"
         assert alerts["alerts"][0]["id"] == "control-plane-unconfigured"
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/audit/recent")
+        assert status == 200
+        assert json.loads(body) == {
+            "source": "gui-core", "actor_available": False, "entries": []}
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/auth/session")
         assert status == 200
@@ -461,6 +466,7 @@ def main() -> int:
             assert isinstance(json.loads(health_body)["smithproxy"]["checked_at_unix_ms"], int)
             protected_paths = (
                 "/api/v1/status", "/api/v1/events/recent", "/api/v1/events", "/api/v1/alerts",
+                "/api/v1/audit/recent",
                 "/api/v1/metrics/summary", "/api/v1/tls/cache/summary",
                 "/api/v1/network/neighbors/summary", "/api/v1/sessions/activity",
             )
@@ -828,7 +834,26 @@ def main() -> int:
             conflict = request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers, body=draft_change)
-            assert_error_response(conflict, 409, "draft.version_conflict")
+            conflict_request_id = assert_error_response(
+                conflict, 409, "draft.version_conflict")
+            status, _, audit_body = request(
+                configured_port, "/api/v1/audit/recent", headers=gateway_headers)
+            assert status == 200
+            audit = json.loads(audit_body)
+            assert audit["actor_available"] is False
+            assert audit["entries"][-1] == {
+                "id": audit["entries"][-1]["id"],
+                "occurred_at_unix_ms": audit["entries"][-1]["occurred_at_unix_ms"],
+                "request_id": conflict_request_id,
+                "operation": "config.draft.upsert",
+                "outcome": "conflict",
+                "authentication": "gateway",
+                "actor": None,
+                "target_count": 1,
+                "targets": ["policy.[0].action"],
+                "targets_truncated": False,
+            }
+            assert b'"accept"' not in audit_body
             cross_origin_headers = {**mutation_headers, "Origin": "https://attacker.invalid"}
             assert request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
@@ -895,6 +920,14 @@ def main() -> int:
             assert changes_by_path["settings.http_api.key_timeout"] == 900
             assert changes_by_path["settings.http_api.port"] == 55580
             assert changes_by_path["settings.http_api.key_extend_on_access"] is False
+            status, _, audit_body = request(
+                configured_port, "/api/v1/audit/recent", headers=gateway_headers)
+            assert status == 200
+            latest_audit = json.loads(audit_body)["entries"][-1]
+            assert latest_audit["outcome"] == "succeeded"
+            assert latest_audit["target_count"] == len(json.loads(batch_change)["changes"])
+            assert b"new-private-password" not in audit_body
+            assert b"secret content replacement" not in audit_body
             expected_redactions = {
                 "settings.certs_ca_key_password": "[redacted:replace]",
                 "settings.http_api.keys": "[redacted:replace:2]",

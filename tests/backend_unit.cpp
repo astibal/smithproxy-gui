@@ -1,3 +1,4 @@
+#include "audit_store.hpp"
 #include "config.hpp"
 #include "config_snapshot.hpp"
 #include "draft_store.hpp"
@@ -83,6 +84,40 @@ int main() {
            DraftMutationResult::CapacityExceeded);
     assert(bounded_draft.snapshot().changes.empty());
     assert(bounded_draft.snapshot().version == 0U);
+
+    AuditStore audit;
+    audit.record("request-1", "config.draft.upsert", "succeeded", "gateway", 1U,
+                 {"policy.[0].action"}, false);
+    audit.record("request-2", "config.draft.clear", "conflict", "gateway", 0U, {}, false);
+    const auto audit_entries = audit.snapshot();
+    assert(audit_entries.size() == 2U);
+    assert(audit_entries.front().sequence == 1U);
+    assert(audit_entries.front().targets == std::vector<std::string>{"policy.[0].action"});
+    assert(audit_entries.back().sequence == 2U);
+    assert(audit_entries.back().outcome == "conflict");
+
+    AuditStore bounded_audit;
+    std::vector<std::string> audit_targets;
+    for (std::size_t index = 0U; index < 40U; ++index) {
+        audit_targets.push_back("policy.[" + std::to_string(index) + "].action");
+    }
+    bounded_audit.record("request-1", "config.draft.upsert", "succeeded", "gateway",
+                         audit_targets.size(), audit_targets, false);
+    for (std::size_t index = 1U; index < 260U; ++index) {
+        bounded_audit.record("request-" + std::to_string(index + 1U), "api.mutation",
+                             "rejected", "none", 0U, {}, false);
+    }
+    const auto bounded_entries = bounded_audit.snapshot();
+    assert(bounded_entries.size() == 256U);
+    assert(bounded_entries.front().sequence == 5U);
+    assert(bounded_entries.back().sequence == 260U);
+
+    AuditStore target_bounded_audit;
+    target_bounded_audit.record("request-targets", "config.draft.upsert", "succeeded",
+                                "gateway", audit_targets.size(), std::move(audit_targets), false);
+    const auto target_bounded_entry = target_bounded_audit.snapshot().front();
+    assert(target_bounded_entry.targets.size() == 32U);
+    assert(target_bounded_entry.targets_truncated);
 
     assert(path_below_base("/ws001/gui", "/ws001/gui") == "/");
     assert(path_below_base("/ws001/gui/assets/a.js", "/ws001/gui") == "/assets/a.js");

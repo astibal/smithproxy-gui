@@ -29,6 +29,7 @@ export interface SystemCapabilities {
     jobs: boolean;
     events: boolean;
     alerts: boolean;
+    audit: boolean;
     smithproxyEvents: boolean;
     metrics: boolean;
     sessionActivity: boolean;
@@ -177,6 +178,27 @@ export interface AlertSnapshot {
   alerts: ReadonlyArray<OperationalAlert>;
 }
 
+export type AuditOutcome = 'succeeded' | 'conflict' | 'rejected';
+export type AuditAuthentication = 'gateway' | 'disabled' | 'none';
+
+export interface AuditEntry {
+  id: string;
+  occurredAtUnixMs: number;
+  requestId: string;
+  operation: 'config.draft.upsert' | 'config.draft.clear' | 'api.mutation';
+  outcome: AuditOutcome;
+  authentication: AuditAuthentication;
+  targetCount: number;
+  targets: ReadonlyArray<string>;
+  targetsTruncated: boolean;
+}
+
+export interface AuditSnapshot {
+  source: 'gui-core';
+  actorAvailable: false;
+  entries: ReadonlyArray<AuditEntry>;
+}
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -238,6 +260,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof features.drafts !== 'boolean' || typeof features.jobs !== 'boolean' ||
       typeof features.events !== 'boolean' || typeof features.alerts !== 'boolean' ||
+      typeof features.audit !== 'boolean' ||
       typeof features.smithproxy_events !== 'boolean' ||
       typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean' ||
       typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean') {
@@ -255,6 +278,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       jobs: features.jobs,
       events: features.events,
       alerts: features.alerts,
+      audit: features.audit,
       smithproxyEvents: features.smithproxy_events,
       metrics: features.metrics,
       sessionActivity: features.session_activity,
@@ -519,6 +543,42 @@ function parseAlerts(value: unknown): AlertSnapshot {
   return {source: 'gui-core', generatedAtUnixMs: value.generated_at_unix_ms, alerts};
 }
 
+function parseAudit(value: unknown): AuditSnapshot {
+  if (!isObject(value) || value.source !== 'gui-core' || value.actor_available !== false ||
+      !Array.isArray(value.entries) || value.entries.length > 256) {
+    throw new Error('Invalid management audit response.');
+  }
+  const ids = new Set<string>();
+  const entries = value.entries.map((item): AuditEntry => {
+    if (!isObject(item) || typeof item.id !== 'string' || !/^audit-[1-9][0-9]{0,19}$/u.test(item.id) ||
+        ids.has(item.id) || !isNonNegativeInteger(item.occurred_at_unix_ms) ||
+        typeof item.request_id !== 'string' || !/^[0-9a-f]{1,32}-[1-9][0-9]{0,19}$/u.test(item.request_id) ||
+        !['config.draft.upsert', 'config.draft.clear', 'api.mutation'].includes(String(item.operation)) ||
+        !['succeeded', 'conflict', 'rejected'].includes(String(item.outcome)) ||
+        !['gateway', 'disabled', 'none'].includes(String(item.authentication)) || item.actor !== null ||
+        !isNonNegativeInteger(item.target_count) || item.target_count > 4096 ||
+        !Array.isArray(item.targets) || item.targets.length > 32 ||
+        !item.targets.every(target => typeof target === 'string' && target.length > 0 && target.length <= 512 &&
+          /^[A-Za-z0-9_.\[\]-]+$/u.test(target)) || typeof item.targets_truncated !== 'boolean' ||
+        item.targets.length > item.target_count || item.targets_truncated !== (item.targets.length < item.target_count)) {
+      throw new Error('Invalid management audit entry.');
+    }
+    ids.add(item.id);
+    return {
+      id: item.id,
+      occurredAtUnixMs: item.occurred_at_unix_ms,
+      requestId: item.request_id,
+      operation: item.operation as AuditEntry['operation'],
+      outcome: item.outcome as AuditOutcome,
+      authentication: item.authentication as AuditAuthentication,
+      targetCount: item.target_count,
+      targets: item.targets as string[],
+      targetsTruncated: item.targets_truncated,
+    };
+  });
+  return {source: 'gui-core', actorAvailable: false, entries};
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -619,6 +679,10 @@ export class SystemClient {
 
   async activeAlerts(): Promise<AlertSnapshot> {
     return parseAlerts(await this.#request(joinedPath(this.#apiBase, '/alerts')));
+  }
+
+  async recentAudit(): Promise<AuditSnapshot> {
+    return parseAudit(await this.#request(joinedPath(this.#apiBase, '/audit/recent')));
   }
 
   async #request(path: string): Promise<unknown> {

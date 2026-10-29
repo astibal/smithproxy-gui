@@ -65,6 +65,11 @@ ID mimo omezenou historii vrací událost `reset` s autoritativním snapshotem.
 SSE endpoint má stejné management ověření jako REST monitoring a zakazuje
 proxy buffering.
 
+Management mutace se současně korelují pomocí request ID a omezeného in-memory
+audit store. Store zaznamenává pouze validované cílové cesty, nikoli hodnoty.
+Persistentní uložení a actor attribution se přidají až s prověřeným identity
+kontraktem Saslik gateway.
+
 WebSocket se přidá jen tehdy, pokud se prokáže potřeba plně duplexního kanálu.
 
 ## Deploy

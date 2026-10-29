@@ -14,6 +14,7 @@ import type {
 import {
   SystemClient,
   type AlertSnapshot,
+  type AuditSnapshot,
   type EventSnapshot,
   type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
@@ -91,6 +92,12 @@ const initialAlerts: AlertSnapshot = {
   alerts: [],
 };
 
+const initialAudit: AuditSnapshot = {
+  source: 'gui-core',
+  actorAvailable: false,
+  entries: [],
+};
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -107,8 +114,10 @@ export class SmithproxyApp extends LitElement {
   @state() private neighbors: NeighborSnapshot = initialNeighbors;
   @state() private operationalEvents: EventSnapshot = initialEvents;
   @state() private operationalAlerts: AlertSnapshot = initialAlerts;
+  @state() private managementAudit: AuditSnapshot = initialAudit;
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
+  @state() private auditError: string | undefined;
   @state() private focusMode = false;
   @state() private configReadAvailable = false;
   @state() private configWriteAvailable = false;
@@ -273,6 +282,11 @@ export class SmithproxyApp extends LitElement {
     .event-severity.info { color: var(--app-success); }
     .event-severity.notice, .event-severity.warning { color: var(--app-warning); }
     .event-severity.error, .event-severity.critical { color: var(--app-danger); }
+    .audit-row { display: grid; grid-template-columns: 150px 82px minmax(180px, 1fr) minmax(130px, .7fr); gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
+    .audit-row:last-child { border-bottom: 0; }
+    .audit-operation { min-width: 0; }
+    .audit-operation small { display: block; overflow: hidden; color: var(--app-muted); text-overflow: ellipsis; white-space: nowrap; }
+    .audit-request { overflow: hidden; color: var(--app-muted); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
     .alert-list { display: grid; margin-top: 14px; border: 1px solid var(--app-border); background: var(--app-surface); }
     .alert-row { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 14px; padding: 12px 14px; border-left: 3px solid var(--app-warning); border-bottom: 1px solid var(--app-border); }
     .alert-row:last-child { border-bottom: 0; }
@@ -418,6 +432,8 @@ export class SmithproxyApp extends LitElement {
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
       .event-row { grid-template-columns: 110px 66px minmax(120px, 1fr); }
+      .audit-row { grid-template-columns: 72px minmax(0, 1fr); }
+      .audit-row .event-time, .audit-request { display: none; }
       .draft-row { grid-template-columns: 1fr; gap: 5px; }
       .event-source { display: none; }
       .probe-history { gap: 2px; }
@@ -542,13 +558,14 @@ export class SmithproxyApp extends LitElement {
     try {
       const systemClient = this.systemClient;
       this.systemStatus = statusFromSnapshot(await systemClient.status());
-      const [metrics, sessions, tlsCache, neighbors, events, alerts] = await Promise.allSettled([
+      const [metrics, sessions, tlsCache, neighbors, events, alerts, audit] = await Promise.allSettled([
         systemClient.metricsSummary(),
         systemClient.sessionActivity(),
         systemClient.tlsCacheSummary(),
         systemClient.neighborSummary(),
         systemClient.recentEvents(),
         systemClient.activeAlerts(),
+        systemClient.recentAudit(),
       ] as const);
       if (metrics.status === 'fulfilled') {
         this.runtimeMetrics = metrics.value;
@@ -598,6 +615,12 @@ export class SmithproxyApp extends LitElement {
       } else {
         this.alertsError = alerts.reason instanceof Error ? alerts.reason.message : 'Operational alerts are unavailable.';
       }
+      if (audit.status === 'fulfilled') {
+        this.managementAudit = audit.value;
+        this.auditError = undefined;
+      } else {
+        this.auditError = audit.reason instanceof Error ? audit.reason.message : 'Management audit is unavailable.';
+      }
       await this.refreshConfiguration();
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
@@ -622,6 +645,7 @@ export class SmithproxyApp extends LitElement {
         state: 'unavailable',
         detail: 'Neighborhood metrics are unavailable while the GUI core is offline.',
       };
+      this.auditError = 'Management audit is unavailable while the GUI core is offline.';
     } finally {
       this.systemProbeInFlight = false;
       if (this.systemProbePending) {
@@ -3012,6 +3036,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderLogs() {
     const events = [...this.operationalEvents.events].reverse();
+    const auditEntries = [...this.managementAudit.entries].reverse();
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
@@ -3042,6 +3067,45 @@ export class SmithproxyApp extends LitElement {
                 <span class="event-source">${event.source}</span>
               </article>
             `)}
+          </div>
+        `}
+
+        <div class="section-head section">
+          <div>
+            <h2>Management audit</h2>
+            <p>Bounded, redacted GUI-core records for management mutation attempts.</p>
+          </div>
+          <span class="runtime-state ${this.auditError ? 'danger' : 'success'}">
+            ${this.auditError ? 'Unavailable' : `${auditEntries.length} records`}
+          </span>
+        </div>
+        <div class="origin-note">
+          <strong>Actor attribution unavailable.</strong>
+          The current Saslik gateway contract authenticates the request but does not yet provide a reviewed user identity header.
+          Request IDs, operation names and configuration paths are recorded; values and secrets are never included.
+        </div>
+        ${this.auditError ? html`<div class="metrics-message">${this.auditError}</div>` : nothing}
+        ${auditEntries.length === 0 ? html`
+          <div class="metrics-message">No management mutation has been observed since the GUI core started.</div>
+        ` : html`
+          <div class="event-list" role="list" aria-label="Management audit">
+            ${auditEntries.map(entry => {
+              const tone = entry.outcome === 'succeeded' ? 'info' : entry.outcome === 'conflict' ? 'warning' : 'error';
+              const remainingTargets = Math.max(0, entry.targetCount - entry.targets.length);
+              const targets = entry.targets.length === 0
+                ? 'No accepted target path'
+                : `${entry.targets.join(', ')}${remainingTargets > 0 ? ` · +${remainingTargets} omitted` : ''}`;
+              return html`
+                <article class="audit-row" role="listitem">
+                  <time class="event-time" datetime=${new Date(entry.occurredAtUnixMs).toISOString()}>
+                    ${new Date(entry.occurredAtUnixMs).toLocaleString()}
+                  </time>
+                  <span class="event-severity ${tone}">${entry.outcome}</span>
+                  <div class="audit-operation"><strong>${entry.operation}</strong><small title=${targets}>${targets}</small></div>
+                  <code class="audit-request" title=${entry.requestId}>${entry.requestId}</code>
+                </article>
+              `;
+            })}
           </div>
         `}
       </div>

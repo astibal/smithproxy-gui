@@ -1,5 +1,6 @@
 #include "http_server.hpp"
 
+#include "audit_store.hpp"
 #include "draft_store.hpp"
 #include "json.hpp"
 #include "operational_alerts.hpp"
@@ -79,6 +80,59 @@ std::string error_code(const std::string_view message) {
     if (message == "draft change rejected") return "draft.change_rejected";
     if (message.starts_with("invalid draft")) return "draft.invalid_request";
     return "request.failed";
+}
+
+bool safe_audit_target(const std::string_view path) {
+    if (path.empty() || path.size() > 512U) return false;
+    return std::all_of(path.begin(), path.end(), [](const unsigned char character) {
+        return (character >= 'a' && character <= 'z') ||
+               (character >= 'A' && character <= 'Z') ||
+               (character >= '0' && character <= '9') || character == '_' || character == '-' ||
+               character == '.' || character == '[' || character == ']';
+    });
+}
+
+struct MutationAuditMetadata {
+    std::string operation{"api.mutation"};
+    std::size_t target_count{};
+    std::vector<std::string> targets;
+    bool targets_truncated{};
+};
+
+MutationAuditMetadata mutation_audit_metadata(
+    const std::string_view relative, const std::string_view body) {
+    MutationAuditMetadata metadata;
+    if (relative == "/api/v1/config/draft/changes") metadata.operation = "config.draft.upsert";
+    else if (relative == "/api/v1/config/draft/clear") metadata.operation = "config.draft.clear";
+    else return metadata;
+
+    const auto document = nlohmann::json::parse(body, nullptr, false);
+    if (!document.is_object() || metadata.operation == "config.draft.clear") return metadata;
+    const auto append_target = [&](const nlohmann::json& raw) {
+        ++metadata.target_count;
+        if (!raw.is_string()) {
+            metadata.targets_truncated = true;
+            return;
+        }
+        const auto path = raw.get<std::string>();
+        if (!safe_audit_target(path) || metadata.targets.size() >= 32U) {
+            metadata.targets_truncated = true;
+            return;
+        }
+        metadata.targets.push_back(path);
+    };
+    if (document.contains("path")) {
+        append_target(document["path"]);
+    } else if (document.contains("changes") && document["changes"].is_array()) {
+        for (const auto& change : document["changes"]) {
+            if (change.is_object() && change.contains("path")) append_target(change["path"]);
+            else {
+                ++metadata.target_count;
+                metadata.targets_truncated = true;
+            }
+        }
+    }
+    return metadata;
 }
 
 std::string mime_type(const std::filesystem::path& path) {
@@ -255,15 +309,33 @@ public:
             response = {413, "application/json; charset=utf-8", "{\"error\":\"request body too large\"}"};
         } else if (std::string_view(method) == "POST") {
             response = route_mutation(connection, url, state.request_data);
+            record_mutation_audit(connection, url, state.request_data, response.status, state.request_id);
         } else if (std::string_view(method) != "GET" && !head) {
             response = {405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
         } else {
             response = route(connection, url);
         }
+        if (state.body_too_large && std::string_view(method) == "POST") {
+            record_mutation_audit(connection, url, state.request_data, response.status, state.request_id);
+        }
         return send(connection, state, std::move(response), head);
     }
 
 private:
+    void record_mutation_audit(MHD_Connection* connection, const std::string_view url,
+                               const std::string_view body, const unsigned status,
+                               const std::string& request_id) {
+        const auto relative = path_below_base(url, config_.base_path);
+        if (!relative || !relative->starts_with("/api/")) return;
+        auto metadata = mutation_audit_metadata(*relative, body);
+        const auto outcome = status >= 200U && status < 300U ? "succeeded" :
+                             status == 409U ? "conflict" : "rejected";
+        const auto authentication = !config_.gateway_secret ? "disabled" :
+                                    gateway_authenticated(connection) ? "gateway" : "none";
+        audit_.record(request_id, std::move(metadata.operation), outcome, authentication,
+                      metadata.target_count, std::move(metadata.targets), metadata.targets_truncated);
+    }
+
     bool same_origin_mutation(MHD_Connection* connection) const {
         const auto* origin = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, "Origin");
         const auto* host = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, "Host");
@@ -421,6 +493,7 @@ private:
         if (*relative == "/api/v1/events/recent") return recent_events();
         if (*relative == "/api/v1/events") return event_stream(connection);
         if (*relative == "/api/v1/alerts") return alerts();
+        if (*relative == "/api/v1/audit/recent") return recent_audit();
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
         if (*relative == "/api/v1/config/draft") {
@@ -461,6 +534,7 @@ private:
                     "\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":false,\"events\":" + (monitoring ? "true" : "false") +
                     ",\"alerts\":" + (monitoring ? "true" : "false") +
+                    ",\"audit\":" + (monitoring ? "true" : "false") +
                     ",\"smithproxy_events\":false,\"metrics\":" + (monitoring ? "true" : "false") +
                     ",\"session_activity\":" + (monitoring ? "true" : "false") +
                     ",\"tls_monitoring\":" + (monitoring ? "true" : "false") +
@@ -1070,6 +1144,30 @@ private:
                     timestamp_json(generated_at) + ",\"alerts\":" + alerts + "}"};
     }
 
+    Response recent_audit() const {
+        nlohmann::json document{
+            {"source", "gui-core"},
+            {"actor_available", false},
+            {"entries", nlohmann::json::array()},
+        };
+        for (const auto& entry : audit_.snapshot()) {
+            document["entries"].push_back({
+                {"id", "audit-" + std::to_string(entry.sequence)},
+                {"occurred_at_unix_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+                    entry.occurred_at.time_since_epoch()).count()},
+                {"request_id", entry.request_id},
+                {"operation", entry.operation},
+                {"outcome", entry.outcome},
+                {"authentication", entry.authentication},
+                {"actor", nullptr},
+                {"target_count", entry.target_count},
+                {"targets", entry.targets},
+                {"targets_truncated", entry.targets_truncated},
+            });
+        }
+        return {200, "application/json; charset=utf-8", document.dump()};
+    }
+
     Response metrics_summary() const {
         const auto metrics = monitor_.status().runtime_metrics;
         std::string history = "[";
@@ -1237,6 +1335,7 @@ private:
     const std::string request_id_prefix_;
     std::atomic<std::uint64_t> request_sequence_{};
     DraftStore draft_;
+    AuditStore audit_;
 };
 
 } // namespace

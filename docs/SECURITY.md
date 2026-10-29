@@ -107,9 +107,18 @@ terminator because the GUI core itself serves internal HTTP.
 Všechny současné HTTP odpovědi dostávají korelační `X-Request-ID`; error envelope
 obsahuje stejnou hodnotu a stabilní strojový kód. ID neobsahuje uživatelský vstup
 a browser ho reflektuje jen po striktní syntaktické validaci. To poskytuje
-bezpečnou korelaci provozních chyb ještě před zavedením persistentního audit logu.
+bezpečnou korelaci provozních chyb.
 
-Každá mutace zaznamená:
+GUI core nyní udržuje nejvýše 256 in-memory záznamů pokusů o management
+mutaci. Záznam obsahuje čas, request ID, typ operace, výsledek, mechanismus
+autentizace a nejvýše 32 validovaných konfiguračních cest. Neobsahuje hodnoty,
+request body, credentials ani secrets a po restartu core se ztratí. Endpoint
+vyžaduje stejné gateway ověření jako ostatní management monitoring.
+
+Současný Saslik handoff neposkytuje prověřenou identitu uživatele. Core proto
+explicitně vrací nedostupnou actor attribution a nedůvěřuje klientem dodaným
+identity hlavičkám. Persistentní audit po schválení identity kontraktu musí pro
+každou mutaci zaznamenat:
 
 - identitu uživatele a session;
 - čas a request ID;

@@ -26,7 +26,7 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
       features: {
-        config_read: false, config_write: false, drafts: false, jobs: false, events: true, alerts: true,
+        config_read: false, config_write: false, drafts: false, jobs: false, events: true, alerts: true, audit: true,
         smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
       },
@@ -35,7 +35,7 @@ describe('SystemClient', () => {
 
     await expect(client.capabilities()).resolves.toMatchObject({
       apiVersion: 'v1', smithproxyState: 'unconfigured',
-      features: {configWrite: false, drafts: false, events: true, alerts: true, smithproxyEvents: false, metrics: true},
+      features: {configWrite: false, drafts: false, events: true, alerts: true, audit: true, smithproxyEvents: false, metrics: true},
     });
   });
 
@@ -247,6 +247,38 @@ describe('SystemClient', () => {
       }],
     }));
     await expect(client.recentEvents()).rejects.toThrow('Invalid operational event entry');
+  });
+
+  it('loads bounded and redacted management audit records', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      source: 'gui-core', actor_available: false,
+      entries: [{
+        id: 'audit-3', occurred_at_unix_ms: 100, request_id: 'abc123-9',
+        operation: 'config.draft.upsert', outcome: 'succeeded', authentication: 'gateway', actor: null,
+        target_count: 2, targets: ['policy.[0].action', 'settings.enabled'], targets_truncated: false,
+      }],
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.recentAudit()).resolves.toMatchObject({
+      actorAvailable: false,
+      entries: [{id: 'audit-3', requestId: 'abc123-9', targetCount: 2}],
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/audit/recent', expect.anything(),
+    );
+  });
+
+  it('rejects management audit records that claim incomplete targets without a marker', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', actor_available: false,
+      entries: [{
+        id: 'audit-1', occurred_at_unix_ms: 1, request_id: 'abc-1',
+        operation: 'config.draft.clear', outcome: 'rejected', authentication: 'none', actor: null,
+        target_count: 1, targets: [], targets_truncated: false,
+      }],
+    }));
+    await expect(client.recentAudit()).rejects.toThrow('Invalid management audit entry');
   });
 
   it('subscribes to workspace-scoped operational event streams', () => {

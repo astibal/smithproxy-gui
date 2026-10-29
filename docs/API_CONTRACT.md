@@ -179,6 +179,7 @@ GET /api/v1/tls/cache/summary
 GET /api/v1/network/neighbors/summary
 GET /api/v1/events/recent
 GET /api/v1/alerts
+GET /api/v1/audit/recent
 GET /api/v1/logs
 GET /api/v1/events
 ```
@@ -216,6 +217,18 @@ reachability and rolling availability, collector health and freshness, and TLS
 cache capacity. Disabling local explicit-proxy destination protection emits a
 configuration-posture warning. A control-plane outage suppresses derivative collector alerts
 to avoid an alert storm.
+
+`/audit/recent` exposes at most 256 in-memory GUI-core records for management
+mutation attempts. Each record contains a monotonic audit ID, time, request ID,
+operation, outcome, authentication mechanism, and at most 32 validated
+configuration paths. Values, request bodies, credentials, and secrets are never
+included. The history is reset when the GUI core restarts.
+
+The current Saslik gateway handoff proves that a request crossed the trusted
+authentication boundary but does not provide a reviewed user identity. The
+response therefore reports `actor_available: false` and `actor: null` rather
+than inferring identity from an untrusted header. Persistent, actor-attributed
+audit remains part of the production API design.
 
 `/events` používá autentizované same-origin SSE. První odpověď nese událost
 `snapshot`; další požadavky posílají `Last-Event-ID` a dostanou pouze novější

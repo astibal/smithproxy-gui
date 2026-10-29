@@ -64,7 +64,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     base_path: '/',
     smithproxy_state: state.smithproxy,
     features: {
-      config_read: configRead, config_write: false, drafts: configRead, jobs: false, events: true, alerts: true,
+      config_read: configRead, config_write: false, drafts: configRead, jobs: false, events: true, alerts: true, audit: true,
       smithproxy_events: false,
       metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
     },
@@ -166,6 +166,14 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     alerts: state.smithproxy === 'ready' ? [] : [{
       id: 'control-plane-unavailable', severity: 'critical', title: 'Control plane is unavailable',
       detail: 'The GUI core cannot currently reach the authenticated Smithproxy API.',
+    }],
+  }}));
+  await page.route('**/api/v1/audit/recent', async route => route.fulfill({json: {
+    source: 'gui-core', actor_available: false,
+    entries: [{
+      id: 'audit-1', occurred_at_unix_ms: now() - 1000, request_id: 'abc123-7',
+      operation: 'config.draft.upsert', outcome: 'succeeded', authentication: 'gateway', actor: null,
+      target_count: 1, targets: ['policy.[0].action'], targets_truncated: false,
     }],
   }}));
   await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
@@ -967,6 +975,11 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const events = page.getByRole('list', {name: 'Operational events'});
   await expect(events.getByText('Smithproxy control plane is reachable')).toBeVisible();
   await expect(page.getByText(/does not parse the administrative CLI/i)).toBeVisible();
+  const audit = page.getByRole('list', {name: 'Management audit'});
+  await expect(audit.getByText('config.draft.upsert')).toBeVisible();
+  await expect(audit.getByText('policy.[0].action')).toBeVisible();
+  await expect(audit.getByText('abc123-7')).toBeVisible();
+  await expect(page.getByText('Actor attribution unavailable.')).toBeVisible();
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();
