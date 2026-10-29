@@ -243,8 +243,12 @@ submit complete typed payloads, reject duplicate names and invalid bounded value
 locally, and reopen from draft review under stable optimistic identifiers. Sensitive
 session filters, host-key paths, and script paths are cleared after acceptance and
 redacted from every draft response. Updating such a pending create requires explicit
-write-only re-entry. Authentication identity mappings remain outside this editor and
-are never inferred from redacted posture data.
+write-only re-entry. Stable and pending-created authentication profiles expose identity
+mappings through a nested write-only editor. Compatible profiles created earlier in the
+same draft can be selected as identity bindings. Accepted mappings are cleared locally,
+redacted from every draft response, and require complete re-entry before a pending
+authentication create can be updated. The GUI core retains their dependency metadata
+privately so a referenced pending profile cannot be removed through a direct API call.
 Content profiles expose nested creation, confirmed deletion, and first/before/last
 ordering for stable content rules. New write-only match and replacement expressions
 are cleared from the editor after the GUI core accepts them and must be re-entered

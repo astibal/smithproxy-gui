@@ -146,6 +146,71 @@ int main() {
     assert(valid_draft_structural_operation(auth_create));
     assert(std::get<DraftAuthIdentities>(auth_create.fields.at("identities")).front().name ==
            "branch_user");
+    const DraftCreateOperation create_detection{
+        .local_id = "create-detection-1",
+        .collection = "detection_profiles",
+        .client_id = "create-detection-1",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {
+            {"name", std::string("branch-detect")}, {"mode", std::int64_t{2}},
+            {"engines_enabled", true}, {"kb_enabled", true},
+        },
+    };
+    DraftStore identity_dependency_store{"identity-dependencies"};
+    assert(identity_dependency_store.upsert_structural_many(0U, {
+        create_detection,
+        auth_create,
+    }) == DraftMutationResult::Applied);
+    assert(identity_dependency_store.remove_structural(1U, "create-detection-1") ==
+           DraftMutationResult::InvalidValue);
+    assert(identity_dependency_store.remove_structural(1U, "create-auth-1") ==
+           DraftMutationResult::Applied);
+    assert(identity_dependency_store.remove_structural(2U, "create-detection-1") ==
+           DraftMutationResult::Applied);
+    DraftStore identity_change_dependency_store{"identity-change-dependencies"};
+    assert(identity_change_dependency_store.upsert_structural(0U, create_detection) ==
+           DraftMutationResult::Applied);
+    assert(identity_change_dependency_store.upsert(1U, {
+        "auth_profiles.[0].identities", DraftAuthIdentities{{
+            .name = "draft_user", .detection_profile = "branch-detect", .content_profile = {},
+            .tls_profile = {}, .alg_dns_profile = {},
+        }},
+    }) == DraftMutationResult::Applied);
+    assert(identity_change_dependency_store.remove_structural(2U, "create-detection-1") ==
+           DraftMutationResult::InvalidValue);
+    const DraftCreateOperation create_policy{
+        .local_id = "create-policy-1",
+        .collection = "policy",
+        .client_id = "create-policy-1",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {
+            {"name", std::string("branch-policy")}, {"src", std::vector<std::string>{"branch-net"}},
+            {"dst", std::vector<std::string>{"internet"}},
+            {"sport", std::vector<std::string>{}}, {"dport", std::vector<std::string>{}},
+            {"proto", std::string("tcp")}, {"action", std::string("accept")},
+            {"disabled", false},
+        },
+    };
+    const DraftCreateOperation create_address_dependency{
+        .local_id = "create-address-dependency-1",
+        .collection = "address_objects",
+        .client_id = "create-address-dependency-1",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {
+            {"name", std::string("branch-net")}, {"type", std::string("cidr")},
+            {"value", std::string("192.0.2.0/24")},
+        },
+    };
+    DraftStore policy_dependency_store{"policy-dependencies"};
+    assert(policy_dependency_store.upsert_structural_many(0U, {
+        create_address_dependency,
+        create_policy,
+    }) == DraftMutationResult::Applied);
+    assert(policy_dependency_store.remove_structural(1U, "create-address-dependency-1") ==
+           DraftMutationResult::InvalidValue);
     assert(!parse_draft_structural_operation(nlohmann::json{
         {"op", "create"}, {"local_id", "create-address-1"},
         {"collection", "address_objects"}, {"client_id", "new-office-network"},

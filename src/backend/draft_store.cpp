@@ -123,6 +123,59 @@ bool valid_structural_set(const std::vector<DraftStructuralOperation>& operation
     return true;
 }
 
+bool scalar_references_name(const DraftScalar& value, const std::string_view name) {
+    if (const auto* scalar = std::get_if<std::string>(&value)) return *scalar == name;
+    const auto* values = std::get_if<std::vector<std::string>>(&value);
+    return values != nullptr && std::find(values->begin(), values->end(), name) != values->end();
+}
+
+bool identity_references_name(
+    const DraftScalar& value, const std::string_view target_collection, const std::string_view name) {
+    const auto* identities = std::get_if<DraftAuthIdentities>(&value);
+    if (identities == nullptr) return false;
+    return std::any_of(identities->begin(), identities->end(), [&](const DraftAuthIdentity& identity) {
+        if (target_collection == "detection_profiles") return identity.detection_profile == name;
+        if (target_collection == "content_profiles") return identity.content_profile == name;
+        if (target_collection == "tls_profiles") return identity.tls_profile == name;
+        if (target_collection == "alg_dns_profiles") return identity.alg_dns_profile == name;
+        return false;
+    });
+}
+
+bool field_references_created_entity(
+    const std::string_view target_collection, const std::string_view target_name,
+    const std::string_view consumer_collection, const std::string_view field,
+    const DraftScalar& value) {
+    if (consumer_collection == "auth_profiles" && field == "identities" &&
+        identity_references_name(value, target_collection, target_name)) {
+        return true;
+    }
+    const auto policy_reference = [&](const std::string_view expected_field) {
+        return consumer_collection == "policy" && field == expected_field &&
+               scalar_references_name(value, target_name);
+    };
+    if (target_collection == "address_objects") {
+        return ((consumer_collection == "policy" && (field == "src" || field == "dst")) ||
+                (consumer_collection == "routing" && field == "dnat_address")) &&
+               scalar_references_name(value, target_name);
+    }
+    if (target_collection == "port_objects") {
+        return ((consumer_collection == "policy" && (field == "sport" || field == "dport")) ||
+                (consumer_collection == "routing" && field == "dnat_port")) &&
+               scalar_references_name(value, target_name);
+    }
+    if (target_collection == "proto_objects") return policy_reference("proto");
+    if (target_collection == "routing") return policy_reference("routing");
+    if (target_collection == "tls_profiles") return policy_reference("tls_profile");
+    if (target_collection == "ssh_profiles") return policy_reference("ssh_profile");
+    if (target_collection == "detection_profiles") return policy_reference("detection_profile");
+    if (target_collection == "content_profiles") return policy_reference("content_profile");
+    if (target_collection == "auth_profiles") return policy_reference("auth_profile");
+    if (target_collection == "alg_dns_profiles") return policy_reference("alg_dns_profile");
+    if (target_collection == "script_profiles") return policy_reference("script_profile");
+    return false;
+}
+
 } // namespace
 
 DraftStore::DraftStore(std::string id, std::optional<std::string> base_revision)
@@ -359,6 +412,44 @@ DraftMutationResult DraftStore::remove_structural(
                 removed_references.begin(), removed_references.end(), *reference) != removed_references.end();
         });
     if (has_ordered_dependent) return DraftMutationResult::InvalidValue;
+    const auto has_semantic_dependent = std::any_of(
+        draft_.structural_operations.begin(), draft_.structural_operations.end(),
+        [&](const auto& removed_candidate) {
+            if (!removed_by_request(removed_candidate)) return false;
+            const auto* removed_create = std::get_if<DraftCreateOperation>(&removed_candidate);
+            if (removed_create == nullptr) return false;
+            const auto name = removed_create->fields.find("name");
+            if (name == removed_create->fields.end()) return false;
+            const auto* target_name = std::get_if<std::string>(&name->second);
+            if (target_name == nullptr) return false;
+            const auto structural_reference = std::any_of(
+                draft_.structural_operations.begin(), draft_.structural_operations.end(),
+                [&](const auto& consumer_candidate) {
+                    if (removed_by_request(consumer_candidate)) return false;
+                    const auto* consumer = std::get_if<DraftCreateOperation>(&consumer_candidate);
+                    if (consumer == nullptr) return false;
+                    return std::any_of(consumer->fields.begin(), consumer->fields.end(),
+                        [&](const auto& field) {
+                            return field_references_created_entity(
+                                removed_create->collection, *target_name,
+                                consumer->collection, field.first, field.second);
+                        });
+                });
+            if (structural_reference) return true;
+            return std::any_of(draft_.changes.begin(), draft_.changes.end(), [&](const DraftChange& change) {
+                const auto collection_end = change.path.find(".[");
+                const auto field_start = change.path.rfind("].");
+                if (collection_end == std::string::npos || field_start == std::string::npos ||
+                    field_start <= collection_end + 1U) {
+                    return false;
+                }
+                return field_references_created_entity(
+                    removed_create->collection, *target_name,
+                    std::string_view(change.path).substr(0U, collection_end),
+                    std::string_view(change.path).substr(field_start + 2U), change.value);
+            });
+        });
+    if (has_semantic_dependent) return DraftMutationResult::InvalidValue;
     if (linked_signature_parent) {
         std::erase_if(draft_.structural_operations, removed_by_request);
         ++draft_.version;
