@@ -161,8 +161,12 @@ to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The
 Network neighborhood monitoring follows the same rule: only endpoint counts,
 activity windows, observations, and traffic totals reach the browser; hostnames,
-tags, labels, and individual timelines do not. Every aggregate surface combines
-collector state with interval-aware freshness; delayed values are marked stale
+tags, labels, and individual timelines do not. The Network view also consumes
+the proposed bounded interface-summary API when Smithproxy advertises it. It
+shows synchronization health and aggregate interface/address counts while names,
+indexes, addresses, namespaces, routes, and raw kernel errors remain server-side.
+Every aggregate surface combines collector state with interval-aware freshness;
+delayed values are marked stale
 and rendered as last-known data instead of appearing live. Monitoring and
 operational timelines also reject excessive future clock skew and contradictory
 sample ordering. A unified collector matrix shows reported state, freshness,

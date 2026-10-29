@@ -31,6 +31,7 @@ describe('SystemClient', () => {
         jobs: false, events: true, alerts: true, audit: true,
         smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
+        interface_monitoring: true,
       },
     }));
     const client = new SystemClient('/api/v1', '/', fetcher);
@@ -49,6 +50,7 @@ describe('SystemClient', () => {
         config_read: false, config_write: false, drafts: true, draft_preflight: true,
         jobs: false, events: true, alerts: true, audit: true, smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
+        interface_monitoring: true,
       },
     }));
     await expect(client.capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
@@ -62,6 +64,7 @@ describe('SystemClient', () => {
         config_read: false, config_write: false, drafts: false, draft_preflight: false,
         jobs: false, events: true, alerts: true, audit: true, smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
+        interface_monitoring: true,
       },
     }));
     await expect(client.capabilities()).rejects.toThrow('Invalid transaction capability state');
@@ -140,6 +143,12 @@ describe('SystemClient', () => {
         last_success_at_unix_ms: future, hosts_total: 0, active_today: 0, active_week: 0,
         tagged_hosts: 0, observations: 0, bytes_up: 0, bytes_down: 0,
       }).neighborSummary(),
+      () => client({state: 'ready', detail: 'Current', checked_at_unix_ms: future,
+        last_success_at_unix_ms: future, generation: 1, synchronization_running: true,
+        synchronization_attempts: 1, synchronization_successes: 1, synchronization_errors: 0,
+        event_datagrams: 1, changed_event_datagrams: 1, interfaces: 1, addresses: 1,
+        ipv4_addresses: 1, ipv6_addresses: 0, last_error_code: null,
+      }).interfaceSummary(),
       () => client({source: 'gui-core', smithproxy_events_available: false, events: [{
         id: 'event-1', source_revision: 1, occurred_at_unix_ms: future,
         category: 'control-plane', code: 'control-plane.ready', severity: 'info',
@@ -378,6 +387,39 @@ describe('SystemClient', () => {
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/network/neighbors/summary', expect.anything(),
     );
+  });
+
+  it('loads and validates privacy-safe interface synchronization aggregates', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 100,
+      last_success_at_unix_ms: 100, generation: 42, synchronization_running: true,
+      synchronization_attempts: 3, synchronization_successes: 3, synchronization_errors: 0,
+      event_datagrams: 15, changed_event_datagrams: 4, interfaces: 3, addresses: 5,
+      ipv4_addresses: 3, ipv6_addresses: 2, last_error_code: null,
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.interfaceSummary()).resolves.toMatchObject({
+      state: 'ready', generation: 42, interfaces: 3, addresses: 5,
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/network/interfaces/summary', expect.anything(),
+    );
+  });
+
+  it('accepts an explicitly unavailable interface capability without fabricating a sample', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'not-advertised', detail: 'Capability not advertised',
+      checked_at_unix_ms: 100, last_success_at_unix_ms: null,
+      generation: 0, synchronization_running: false,
+      synchronization_attempts: 0, synchronization_successes: 0, synchronization_errors: 0,
+      event_datagrams: 0, changed_event_datagrams: 0, interfaces: 0, addresses: 0,
+      ipv4_addresses: 0, ipv6_addresses: 0, last_error_code: null,
+    }));
+
+    await expect(client.interfaceSummary()).resolves.toMatchObject({
+      state: 'not-advertised', lastSuccessAtUnixMs: null, interfaces: 0,
+    });
   });
 
   it('loads bounded operational events', async () => {
@@ -647,6 +689,17 @@ describe('SystemClient', () => {
       active_week: 1, tagged_hosts: 0, observations: 0, bytes_up: 0, bytes_down: 0,
     }));
     await expect(client.neighborSummary()).rejects.toThrow('Invalid neighborhood response');
+  });
+
+  it('rejects inconsistent interface synchronization aggregates', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', detail: 'Invalid', checked_at_unix_ms: 1,
+      last_success_at_unix_ms: 1, generation: 1, synchronization_running: true,
+      synchronization_attempts: 1, synchronization_successes: 2, synchronization_errors: 0,
+      event_datagrams: 1, changed_event_datagrams: 0, interfaces: 1, addresses: 1,
+      ipv4_addresses: 1, ipv6_addresses: 0, last_error_code: null,
+    }));
+    await expect(client.interfaceSummary()).rejects.toThrow('Invalid interface monitoring response');
   });
 
   it('rejects inconsistent session activity totals', async () => {

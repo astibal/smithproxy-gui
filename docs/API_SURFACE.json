@@ -59,6 +59,14 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/network/interfaces/summary",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "interface_monitoring",
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/sessions/activity",
       "methods": ["GET", "HEAD"],
       "authentication": "management",

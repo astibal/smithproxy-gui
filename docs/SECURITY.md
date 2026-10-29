@@ -199,6 +199,12 @@ and base-path identifiers, free-form upstream details, listener and protocol
 names, event and alert text, audit targets and request IDs, credentials, and
 tokens.
 
+Interface monitoring follows a stricter topology boundary. Only synchronization
+state, bounded counters, generation, address-family totals, and a validated
+stable error code are accepted. Interface names and indexes, IP and link-layer
+addresses, namespaces, routes, raw netlink flags, and kernel error text are
+rejected upstream of the browser and omitted from diagnostics.
+
 ## Audit
 
 Všechny současné HTTP odpovědi dostávají korelační `X-Request-ID`; error envelope

@@ -98,6 +98,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       draft_preflight: configRead, jobs: true, events: true, alerts: true, audit: true,
       smithproxy_events: false,
       metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
+      interface_monitoring: true,
     },
   }}));
   await page.route('**/api/v1/auth/session', async route => {
@@ -196,6 +197,28 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       last_success_at_unix_ms: collectorLastSuccess(sampledAt),
       hosts_total: 8, active_today: 3, active_week: 6, tagged_hosts: 4,
       observations: 20, bytes_up: 1000, bytes_down: 2000,
+    }});
+  });
+  await page.route('**/api/v1/network/interfaces/summary', async route => {
+    const sampledAt = now();
+    await route.fulfill({json: {
+      state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+      detail: state.smithproxy === 'ready'
+        ? 'Current interface synchronization summary' : 'Interface synchronization is stale',
+      checked_at_unix_ms: sampledAt,
+      last_success_at_unix_ms: collectorLastSuccess(sampledAt),
+      generation: 42,
+      synchronization_running: true,
+      synchronization_attempts: 3,
+      synchronization_successes: 3,
+      synchronization_errors: 0,
+      event_datagrams: 15,
+      changed_event_datagrams: 4,
+      interfaces: 3,
+      addresses: 5,
+      ipv4_addresses: 3,
+      ipv6_addresses: 2,
+      last_error_code: null,
     }});
   });
   await page.route('**/api/v1/events/recent', async route => route.fulfill({json: {
@@ -1440,6 +1463,7 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
     '/api/v1/sessions/activity',
     '/api/v1/tls/cache/summary',
     '/api/v1/network/neighbors/summary',
+    '/api/v1/network/interfaces/summary',
     '/api/v1/events/recent',
     '/api/v1/alerts',
   ];
@@ -1462,12 +1486,14 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   const collectorHealth = page.getByRole('table', {name: 'Collector health'});
-  await expect(collectorHealth.getByRole('row')).toHaveCount(5);
+  await expect(collectorHealth.getByRole('row')).toHaveCount(6);
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Runtime metrics'}))
     .toContainText('Ready');
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Runtime metrics'}))
     .toContainText('Fresh');
-  await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('4/4 current');
+  await expect(collectorHealth.getByRole('row').filter({hasText: 'Network interfaces'}))
+    .toContainText('Fresh');
+  await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('5/5 current');
 });
 
 test('marks delayed aggregate collectors and retained values as stale', async ({page}) => {
@@ -1487,13 +1513,14 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toContainText('Ready · Stale');
+  await expect(page.getByRole('region', {name: 'Interface synchronization'})).toContainText('Ready · Stale');
   await expect(page.getByLabel('Network listeners').getByText('Last known')).toHaveCount(2);
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Session activity'})).toContainText('Ready · Stale');
   const collectorHealth = page.getByRole('table', {name: 'Collector health'});
-  await expect(collectorHealth.getByRole('row').filter({hasText: 'Stale'})).toHaveCount(4);
-  await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('0/4 current');
+  await expect(collectorHealth.getByRole('row').filter({hasText: 'Stale'})).toHaveCount(5);
+  await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('0/5 current');
 });
 
 test('surfaces active backend work in the status bar and System view', async ({page}) => {
@@ -1972,6 +1999,14 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
   await search.fill('office-net');
   await expect(page.getByRole('heading', {name: 'Search results'})).toBeVisible();
   await page.keyboard.press('Escape');
+
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
+  await expect(interfaceSummary).toBeVisible();
+  await expect.poll(() => interfaceSummary.evaluate(element =>
+    element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /office office-net/i}).click();

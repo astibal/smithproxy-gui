@@ -104,6 +104,8 @@ SmithproxyMonitor::SmithproxyMonitor(std::optional<SmithproxyConfig> config, con
         status_.live_sessions.detail = "Waiting for the first Smithproxy session activity sample";
         status_.neighbor_metrics.state = "starting";
         status_.neighbor_metrics.detail = "Waiting for the first Smithproxy neighborhood sample";
+        status_.interface_metrics.state = "starting";
+        status_.interface_metrics.detail = "Waiting for Smithproxy interface capability discovery";
         if (config_enabled_) {
             status_.config_snapshot.state = "starting";
             status_.config_snapshot.detail = "Waiting for the first Smithproxy configuration sample";
@@ -224,6 +226,7 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
 void SmithproxyMonitor::run(const std::stop_token stop_token) {
     auto next_session_sample = std::chrono::steady_clock::time_point{};
     auto next_neighbor_sample = std::chrono::steady_clock::time_point{};
+    auto next_interface_sample = std::chrono::steady_clock::time_point{};
     auto next_config_sample = std::chrono::steady_clock::time_point{};
     while (!stop_token.stop_requested()) {
         auto latest = ping();
@@ -231,6 +234,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
         std::optional<TlsCacheMetrics> sampled_tls_cache;
         std::optional<LiveSessions> sampled_sessions;
         std::optional<NeighborMetrics> sampled_neighbors;
+        std::optional<InterfaceMetrics> sampled_interfaces;
         std::optional<ConfigSnapshot> sampled_config;
         std::optional<TransactionCapabilities> sampled_transaction_capabilities;
         const bool refresh_requested =
@@ -240,6 +244,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             const auto now = std::chrono::steady_clock::now();
             const bool sample_sessions = now >= next_session_sample;
             const bool sample_neighbors = now >= next_neighbor_sample;
+            const bool sample_interfaces = now >= next_interface_sample;
             const bool sample_config = config_enabled_ &&
                                        (refresh_requested || now >= next_config_sample);
             auto metrics_future = std::async(
@@ -249,6 +254,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             std::optional<std::future<ConfigSnapshot>> config_future;
             std::optional<std::future<TransactionCapabilities>> transaction_capabilities_future;
             std::optional<std::future<NeighborMetrics>> neighbor_future;
+            std::optional<std::future<InterfaceMetrics>> interface_future;
             if (sample_config) {
                 config_future.emplace(std::async(
                     std::launch::async, [this] { return fetch_config_snapshot(); }));
@@ -259,10 +265,15 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 neighbor_future.emplace(std::async(
                     std::launch::async, [this] { return fetch_neighbor_metrics(); }));
             }
+            if (sample_interfaces) {
+                interface_future.emplace(std::async(
+                    std::launch::async, [this] { return fetch_interface_metrics(); }));
+            }
             if (sample_sessions) sampled_sessions = fetch_live_sessions();
             sampled_metrics = metrics_future.get();
             sampled_tls_cache = tls_cache_future.get();
             if (neighbor_future) sampled_neighbors = neighbor_future->get();
+            if (interface_future) sampled_interfaces = interface_future->get();
             if (config_future) sampled_config = config_future->get();
             if (transaction_capabilities_future) {
                 sampled_transaction_capabilities = transaction_capabilities_future->get();
@@ -272,6 +283,9 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             }
             if (sample_neighbors) {
                 next_neighbor_sample = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+            }
+            if (sample_interfaces) {
+                next_interface_sample = std::chrono::steady_clock::now() + std::chrono::seconds(30);
             }
             if (sample_config) {
                 next_config_sample = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -287,6 +301,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             auto previous_tls_cache = std::move(status_.tls_cache_metrics);
             auto previous_sessions = std::move(status_.live_sessions);
             auto previous_neighbors = std::move(status_.neighbor_metrics);
+            auto previous_interfaces = std::move(status_.interface_metrics);
             auto previous_config = std::move(status_.config_snapshot);
             auto previous_transaction_capabilities = std::move(status_.transaction_capabilities);
             if (latest.state == "ready") {
@@ -353,6 +368,38 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 } else {
                     latest.neighbor_metrics = std::move(previous_neighbors);
                 }
+                if (sampled_interfaces) {
+                    auto interfaces = std::move(*sampled_interfaces);
+                    interfaces.last_success_at = previous_interfaces.last_success_at;
+                    const bool successful = interfaces.state == "ready" ||
+                                            interfaces.state == "degraded";
+                    const bool monotonic_sample =
+                        previous_interfaces.last_success_at.time_since_epoch().count() == 0 ||
+                        interfaces.sampled_at >= previous_interfaces.last_success_at;
+                    if (successful && monotonic_sample) {
+                        interfaces.last_success_at = interfaces.sampled_at;
+                    } else {
+                        if (successful) {
+                            interfaces.state = "unavailable";
+                            interfaces.detail =
+                                "Smithproxy interface sample predates the last accepted sample";
+                        }
+                        interfaces.generation = previous_interfaces.generation;
+                        interfaces.synchronization_running = previous_interfaces.synchronization_running;
+                        interfaces.synchronization_attempts = previous_interfaces.synchronization_attempts;
+                        interfaces.synchronization_successes = previous_interfaces.synchronization_successes;
+                        interfaces.synchronization_errors = previous_interfaces.synchronization_errors;
+                        interfaces.event_datagrams = previous_interfaces.event_datagrams;
+                        interfaces.changed_event_datagrams = previous_interfaces.changed_event_datagrams;
+                        interfaces.interfaces = previous_interfaces.interfaces;
+                        interfaces.addresses = previous_interfaces.addresses;
+                        interfaces.ipv4_addresses = previous_interfaces.ipv4_addresses;
+                        interfaces.ipv6_addresses = previous_interfaces.ipv6_addresses;
+                    }
+                    latest.interface_metrics = std::move(interfaces);
+                } else {
+                    latest.interface_metrics = std::move(previous_interfaces);
+                }
                 if (sampled_config) {
                     auto config = std::move(*sampled_config);
                     if (config.observation_started_at <= minimum_config_observation_) {
@@ -403,6 +450,11 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 previous_neighbors.detail = "Smithproxy neighborhood is unavailable while the API probe is not ready";
                 previous_neighbors.checked_at = latest.checked_at;
                 latest.neighbor_metrics = std::move(previous_neighbors);
+                previous_interfaces.state = "unavailable";
+                previous_interfaces.detail =
+                    "Smithproxy interface monitoring is unavailable while the API probe is not ready";
+                previous_interfaces.checked_at = latest.checked_at;
+                latest.interface_metrics = std::move(previous_interfaces);
                 if (config_enabled_) {
                     previous_config.state = "unavailable";
                     previous_config.detail = "Smithproxy configuration is unavailable while the API probe is not ready";
@@ -599,6 +651,70 @@ NeighborMetrics SmithproxyMonitor::fetch_neighbor_metrics() const {
     auto parsed = parse_neighbor_metrics(response.body);
     if (!parsed.metrics) {
         metrics.detail = std::move(parsed.error);
+        return metrics;
+    }
+    parsed.metrics->checked_at = metrics.checked_at;
+    return std::move(*parsed.metrics);
+}
+
+InterfaceMetrics SmithproxyMonitor::fetch_interface_metrics() const {
+    InterfaceMetrics metrics;
+    metrics.state = "unavailable";
+    metrics.detail = "Smithproxy interface monitoring is unavailable";
+    metrics.checked_at = std::chrono::system_clock::now();
+
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if (!curl) {
+        metrics.detail = "Cannot initialize the Smithproxy interface client";
+        return metrics;
+    }
+    std::unique_ptr<curl_slist, HeaderCleanup> headers;
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    if (!headers) {
+        metrics.detail = "Cannot prepare Smithproxy interface authentication";
+        return metrics;
+    }
+
+    const std::string endpoint = config_->api_url + "/api/v1/network/interfaces/summary";
+    ResponseBuffer response{
+        .limit = 8U * 1024U,
+        .body = {},
+        .exceeded = false,
+    };
+    configure_request(curl.get(), *config_, endpoint, headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto result = curl_easy_perform(curl.get());
+    metrics.checked_at = std::chrono::system_clock::now();
+    if (response.exceeded) {
+        metrics.detail = "Smithproxy interface summary exceeded the response limit";
+        return metrics;
+    }
+    if (result != CURLE_OK) {
+        metrics.detail = std::string("Cannot retrieve Smithproxy interface summary: ") +
+                         curl_easy_strerror(result);
+        return metrics;
+    }
+    long status_code{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    if (status_code == 404L) {
+        metrics.state = "not-advertised";
+        metrics.detail = "Smithproxy does not advertise interface monitoring";
+        return metrics;
+    }
+    if (status_code != 200L) {
+        metrics.detail = "Smithproxy interface summary returned HTTP " +
+                         std::to_string(status_code);
+        return metrics;
+    }
+    auto parsed = parse_interface_metrics(response.body);
+    if (!parsed.metrics) {
+        metrics.detail = std::move(parsed.error);
+        return metrics;
+    }
+    const auto maximum_sample_time = metrics.checked_at + std::chrono::minutes(5);
+    if (parsed.metrics->sampled_at > maximum_sample_time) {
+        metrics.detail = "Smithproxy interface sample is too far in the future";
         return metrics;
     }
     parsed.metrics->checked_at = metrics.checked_at;

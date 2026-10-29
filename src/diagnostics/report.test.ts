@@ -21,6 +21,12 @@ function fixture(): DiagnosticsReportInput {
     sessionActivity: {...timed, total: 4, speedUp: 512, speedDown: 1024, protocolCount: 2},
     tlsCache: {...timed, size: 42, capacity: 1000},
     neighbors: {...timed, hostsTotal: 8, activeToday: 3, activeWeek: 7, taggedHosts: 2, observations: 22, bytesUp: 4096, bytesDown: 8192},
+    interfaces: {
+      ...timed, generation: 42, synchronizationRunning: true,
+      synchronizationAttempts: 3, synchronizationSuccesses: 3, synchronizationErrors: 0,
+      eventDatagrams: 15, changedEventDatagrams: 4, interfaces: 3, addresses: 5,
+      ipv4Addresses: 3, ipv6Addresses: 2, lastErrorCode: null,
+    },
     operations: {
       eventStream: 'live', eventCount: 4, activeAlertCount: 0, auditEntryCount: 2,
       jobCount: 3, activeJobCount: 1, failedJobCount: 1,
@@ -38,6 +44,7 @@ describe('diagnostics report', () => {
       schemaVersion: 1,
       application: {mode: 'embedded', apiVersion: 'v1'},
       runtime: {listenerCount: 2, sessionsActive: 4},
+      interfaces: {generation: 42, interfaces: 3, addresses: 5},
       capabilities: {jobs: true},
       operations: {
         eventCount: 4, activeAlertCount: 0, auditEntryCount: 2,
@@ -54,11 +61,13 @@ describe('diagnostics report', () => {
     input.runtime.sessionsActive = -1;
     input.controlPlane.latencyMs = Number.NaN;
     input.generatedAtUnixMs = Number.MAX_VALUE;
+    input.interfaces.lastErrorCode = 'raw kernel error';
 
     const report = buildDiagnosticsReport(input);
     expect(report.application.apiVersion).toBe('unknown');
     expect(report.runtime.sessionsActive).toBe(0);
     expect(report.controlPlane.latencyMs).toBeNull();
     expect(report.generatedAtUnixMs).toBe(0);
+    expect(report.interfaces.lastErrorCode).toBeNull();
   });
 });

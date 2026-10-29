@@ -84,5 +84,10 @@ authorization, pagination, and address-redaction rules.
 The browser continues to call only the same-origin GUI core. When Smithproxy
 advertises this capability, the core polls it with the existing server-side
 credential, validates every field and bound, and publishes a privacy-preserving
-same-origin summary. Until then, the GUI capability remains disabled and no CLI
-or filesystem fallback is permitted.
+same-origin summary. Until then, the same-origin summary reports
+`not-advertised` and no CLI or filesystem fallback is permitted.
+
+The GUI-core parser, bounded same-origin endpoint, diagnostics allowlist, and
+management-authenticated browser surface implement this proposed schema. Existing
+Smithproxy deployments return `not-advertised`; the GUI retains no fallback and
+does not interpret administrative command output.

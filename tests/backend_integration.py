@@ -236,6 +236,27 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                  "stats": [{"relative_days": 3, "counter": 4, "bytes_up": 10, "bytes_down": 20}]},
             ]).encode())
             return
+        if self.path == "/api/v1/network/interfaces/summary":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "schema_version": 1,
+                "state": "ready",
+                "generation": 42,
+                "sampled_at_unix_ms": int(time.time() * 1000),
+                "synchronization": {
+                    "running": True, "attempts": 3, "successes": 3, "errors": 0,
+                    "event_datagrams": 15, "changed_event_datagrams": 4,
+                },
+                "totals": {
+                    "interfaces": 3, "addresses": 5,
+                    "ipv4_addresses": 3, "ipv6_addresses": 2,
+                },
+                "last_error": None,
+            }).encode())
+            return
         if self.path == "/api/diag/proxy/session/list":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
             self.send_response(200)
@@ -405,6 +426,7 @@ def main() -> int:
         assert capabilities["features"]["session_activity"] is True
         assert capabilities["features"]["tls_monitoring"] is True
         assert capabilities["features"]["neighbor_monitoring"] is True
+        assert capabilities["features"]["interface_monitoring"] is True
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/status")
         snapshot = json.loads(body)
@@ -431,6 +453,10 @@ def main() -> int:
         neighbors = json.loads(body)
         assert status == 200
         assert neighbors["state"] == "unconfigured"
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/network/interfaces/summary")
+        interfaces = json.loads(body)
+        assert status == 200
+        assert interfaces["state"] == "unconfigured"
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/events/recent")
         assert status == 200
         assert json.loads(body) == {
@@ -527,7 +553,8 @@ def main() -> int:
                 "/api/v1/status", "/api/v1/events/recent", "/api/v1/events", "/api/v1/alerts",
                 "/api/v1/audit/recent",
                 "/api/v1/metrics/summary", "/api/v1/tls/cache/summary",
-                "/api/v1/network/neighbors/summary", "/api/v1/sessions/activity",
+                "/api/v1/network/neighbors/summary", "/api/v1/network/interfaces/summary",
+                "/api/v1/sessions/activity",
             )
             for path in protected_paths:
                 assert request(configured_port, path)[0] == 401
@@ -634,6 +661,19 @@ def main() -> int:
             assert neighbors["bytes_down"] == 220
             assert b"private-neighbor.example" not in body
             neighbor_last_success = neighbors["last_success_at_unix_ms"]
+            status, _, body = request(
+                configured_port, "/api/v1/network/interfaces/summary", headers=gateway_headers)
+            interfaces = json.loads(body)
+            assert status == 200
+            assert interfaces["state"] == "ready"
+            assert interfaces["generation"] == 42
+            assert interfaces["interfaces"] == 3
+            assert interfaces["addresses"] == 5
+            assert interfaces["ipv4_addresses"] == 3
+            assert interfaces["ipv6_addresses"] == 2
+            assert interfaces["last_error_code"] is None
+            assert b"private" not in body
+            interface_last_success = interfaces["last_success_at_unix_ms"]
             status, _, body = request(
                 configured_port, "/api/v1/sessions/activity", headers=gateway_headers)
             activity = json.loads(body)
@@ -852,7 +892,7 @@ def main() -> int:
             unauthenticated_features = json.loads(request(
                 configured_port, "/api/v1/capabilities")[2])["features"]
             for feature in ("jobs", "events", "alerts", "metrics", "session_activity",
-                            "tls_monitoring", "neighbor_monitoring"):
+                            "tls_monitoring", "neighbor_monitoring", "interface_monitoring"):
                 assert unauthenticated_features[feature] is False
             assert json.loads(request(configured_port, "/api/v1/capabilities")[2])[
                 "config_transaction_state"] == "unavailable"
@@ -874,7 +914,7 @@ def main() -> int:
             authenticated_features = json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])["features"]
             for feature in ("jobs", "events", "alerts", "metrics", "session_activity",
-                            "tls_monitoring", "neighbor_monitoring"):
+                            "tls_monitoring", "neighbor_monitoring", "interface_monitoring"):
                 assert authenticated_features[feature] is True
 
             assert request(configured_port, "/api/v1/jobs")[0] == 401
@@ -1235,6 +1275,13 @@ def main() -> int:
             assert stale_neighbors["state"] == "unavailable"
             assert stale_neighbors["last_success_at_unix_ms"] == neighbor_last_success
             assert stale_neighbors["hosts_total"] == 2
+            status, _, body = request(
+                configured_port, "/api/v1/network/interfaces/summary", headers=gateway_headers)
+            stale_interfaces = json.loads(body)
+            assert status == 200
+            assert stale_interfaces["state"] == "unavailable"
+            assert stale_interfaces["last_success_at_unix_ms"] == interface_last_success
+            assert stale_interfaces["interfaces"] == 3
             status, _, body = request(
                 configured_port, "/api/v1/sessions/activity", headers=gateway_headers)
             stale_activity = json.loads(body)

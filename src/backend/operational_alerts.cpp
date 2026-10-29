@@ -32,7 +32,7 @@ std::vector<OperationalAlert> derive_operational_alerts(
     const SmithproxyStatus& status, const bool configured, const bool config_enabled,
     const std::chrono::system_clock::time_point now) {
     std::vector<OperationalAlert> alerts;
-    alerts.reserve(9U);
+    alerts.reserve(10U);
 
     if (!configured) {
         alerts.push_back({"control-plane-unconfigured", "notice", "Control plane is not configured",
@@ -68,6 +68,12 @@ std::vector<OperationalAlert> derive_operational_alerts(
     append_collector_alert(alerts, "neighborhood", "Neighborhood monitoring is degraded",
                            status.neighbor_metrics.state, status.neighbor_metrics.last_success_at,
                            std::chrono::seconds{180}, now);
+    if (status.interface_metrics.state != "not-advertised") {
+        append_collector_alert(alerts, "interfaces", "Interface synchronization is degraded",
+                               status.interface_metrics.state,
+                               status.interface_metrics.last_success_at,
+                               std::chrono::seconds{180}, now);
+    }
     if (config_enabled) {
         append_collector_alert(alerts, "configuration", "Configuration snapshot is degraded",
                                status.config_snapshot.state, status.config_snapshot.last_success_at,

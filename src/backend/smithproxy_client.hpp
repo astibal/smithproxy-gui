@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 #include "config_snapshot.hpp"
+#include "interface_metrics.hpp"
 #include "live_sessions.hpp"
 #include "neighbor_metrics.hpp"
 #include "runtime_metrics.hpp"
@@ -41,6 +42,7 @@ struct SmithproxyStatus {
     TlsCacheMetrics tls_cache_metrics;
     LiveSessions live_sessions;
     NeighborMetrics neighbor_metrics;
+    InterfaceMetrics interface_metrics;
     ConfigSnapshot config_snapshot;
     TransactionCapabilities transaction_capabilities;
 };
@@ -70,6 +72,7 @@ private:
     TlsCacheMetrics fetch_tls_cache_metrics() const;
     LiveSessions fetch_live_sessions() const;
     NeighborMetrics fetch_neighbor_metrics() const;
+    InterfaceMetrics fetch_interface_metrics() const;
     ConfigSnapshot fetch_config_snapshot() const;
     TransactionCapabilities fetch_transaction_capabilities() const;
     TransactionResponse execute_transaction(

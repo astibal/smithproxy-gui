@@ -315,7 +315,17 @@ currently `Running`.
 The Monitoring view also presents a single collector health matrix. It keeps
 the server-reported state separate from interval-aware freshness and shows the
 expected cadence plus the age of the last successful sample for runtime metrics,
-session activity, TLS cache, and network-neighbor aggregates.
+session activity, TLS cache, network-neighbor aggregates, and the interface
+synchronization monitor.
+
+`GET /api/v1/network/interfaces/summary` publishes only the validated aggregate
+contract from `SMITHPROXY_INTERFACE_API_PROPOSAL.md`: generation, synchronization
+counters, event-datagram counters, address-family totals, and an optional stable
+diagnostic code. The core accepts schema version 1, exact bounded objects,
+JavaScript-safe non-negative integers, coherent counters, and at most five
+minutes of positive clock skew. Unknown schemas, oversized responses, raw error
+text, and incoherent totals fail closed. Interface names, indexes, IP and link
+addresses, routes, namespaces, and raw kernel errors never reach the browser.
 
 Browser validation permits at most five minutes of positive clock skew. It
 rejects health, collector, event, alert, audit, and job snapshots beyond that

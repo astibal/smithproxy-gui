@@ -1,6 +1,7 @@
 #include "config_snapshot.hpp"
 #include "draft_schema.hpp"
 #include "draft_store.hpp"
+#include "interface_metrics.hpp"
 #include "live_sessions.hpp"
 #include "neighbor_metrics.hpp"
 #include "runtime_metrics.hpp"
@@ -101,6 +102,7 @@ void exercise_json_parsers(const std::string_view payload) {
     static_cast<void>(parse_listener_metrics(payload));
     static_cast<void>(parse_tls_cache_metrics(payload));
     static_cast<void>(parse_neighbor_metrics(payload));
+    static_cast<void>(parse_interface_metrics(payload));
     static_cast<void>(parse_live_sessions(payload));
     static_cast<void>(parse_config_revision(payload));
     static_cast<void>(parse_config_snapshot(payload, payload, payload, payload));

@@ -1,4 +1,5 @@
 export type RuntimeDiagnosticState = 'starting' | 'ready' | 'unavailable' | 'unconfigured';
+export type InterfaceDiagnosticState = RuntimeDiagnosticState | 'degraded' | 'not-advertised';
 export type GatewayDiagnosticState = 'verified' | 'rejected' | 'disabled' | 'unavailable' | 'discovering';
 export type EventStreamDiagnosticState = 'connecting' | 'live' | 'paused' | 'invalid';
 
@@ -39,6 +40,21 @@ export interface DiagnosticsReportInput {
   neighbors: TimedAggregateInput & {
     hostsTotal: number; activeToday: number; activeWeek: number; taggedHosts: number;
     observations: number; bytesUp: number; bytesDown: number;
+  };
+  interfaces: Omit<TimedAggregateInput, 'state'> & {
+    state: InterfaceDiagnosticState;
+    generation: number;
+    synchronizationRunning: boolean;
+    synchronizationAttempts: number;
+    synchronizationSuccesses: number;
+    synchronizationErrors: number;
+    eventDatagrams: number;
+    changedEventDatagrams: number;
+    interfaces: number;
+    addresses: number;
+    ipv4Addresses: number;
+    ipv6Addresses: number;
+    lastErrorCode: string | null;
   };
   operations: {
     eventStream: EventStreamDiagnosticState;
@@ -134,6 +150,27 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
       observations: requiredInteger(input.neighbors.observations),
       bytesUp: requiredInteger(input.neighbors.bytesUp),
       bytesDown: requiredInteger(input.neighbors.bytesDown),
+    },
+    interfaces: {
+      state: input.interfaces.state,
+      checkedAtUnixMs: input.interfaces.checkedAtUnixMs === null
+        ? null : safeInteger(input.interfaces.checkedAtUnixMs),
+      lastSuccessAtUnixMs: input.interfaces.lastSuccessAtUnixMs === null
+        ? null : safeInteger(input.interfaces.lastSuccessAtUnixMs),
+      generation: requiredInteger(input.interfaces.generation),
+      synchronizationRunning: input.interfaces.synchronizationRunning,
+      synchronizationAttempts: requiredInteger(input.interfaces.synchronizationAttempts),
+      synchronizationSuccesses: requiredInteger(input.interfaces.synchronizationSuccesses),
+      synchronizationErrors: requiredInteger(input.interfaces.synchronizationErrors),
+      eventDatagrams: requiredInteger(input.interfaces.eventDatagrams),
+      changedEventDatagrams: requiredInteger(input.interfaces.changedEventDatagrams),
+      interfaces: requiredInteger(input.interfaces.interfaces),
+      addresses: requiredInteger(input.interfaces.addresses),
+      ipv4Addresses: requiredInteger(input.interfaces.ipv4Addresses),
+      ipv6Addresses: requiredInteger(input.interfaces.ipv6Addresses),
+      lastErrorCode: input.interfaces.lastErrorCode !== null &&
+        /^[a-z][a-z0-9._-]{0,63}$/u.test(input.interfaces.lastErrorCode)
+        ? input.interfaces.lastErrorCode : null,
     },
     operations: {
       eventStream: input.operations.eventStream,

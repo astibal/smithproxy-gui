@@ -46,6 +46,7 @@ export interface SystemCapabilities {
     sessionActivity: boolean;
     tlsMonitoring: boolean;
     neighborMonitoring: boolean;
+    interfaceMonitoring: boolean;
   };
 }
 
@@ -147,6 +148,33 @@ export interface NeighborSnapshot {
   observations: number;
   bytesUp: number;
   bytesDown: number;
+}
+
+export type InterfaceMonitorState =
+  | 'starting'
+  | 'ready'
+  | 'degraded'
+  | 'unavailable'
+  | 'unconfigured'
+  | 'not-advertised';
+
+export interface InterfaceSnapshot {
+  state: InterfaceMonitorState;
+  detail: string;
+  checkedAtUnixMs: number | null;
+  lastSuccessAtUnixMs: number | null;
+  generation: number;
+  synchronizationRunning: boolean;
+  synchronizationAttempts: number;
+  synchronizationSuccesses: number;
+  synchronizationErrors: number;
+  eventDatagrams: number;
+  changedEventDatagrams: number;
+  interfaces: number;
+  addresses: number;
+  ipv4Addresses: number;
+  ipv6Addresses: number;
+  lastErrorCode: string | null;
 }
 
 export type EventSeverity = 'info' | 'notice' | 'warning' | 'error';
@@ -285,7 +313,7 @@ function isPlausibleTimestamp(value: unknown): value is number {
 }
 
 function coherentSampleTimes(
-  state: SmithproxyState | RuntimeMetricsState,
+  state: SmithproxyState | RuntimeMetricsState | InterfaceMonitorState,
   checkedAtUnixMs: number | null,
   lastSuccessAtUnixMs: number | null,
 ): boolean {
@@ -297,12 +325,18 @@ function coherentSampleTimes(
       (checkedAtUnixMs === null || lastSuccessAtUnixMs > checkedAtUnixMs)) {
     return false;
   }
-  return state !== 'ready' || (checkedAtUnixMs !== null && lastSuccessAtUnixMs !== null);
+  return (state !== 'ready' && state !== 'degraded') ||
+    (checkedAtUnixMs !== null && lastSuccessAtUnixMs !== null);
 }
 
 function isRuntimeMetricsState(value: unknown): value is RuntimeMetricsState {
   return typeof value === 'string' &&
     ['starting', 'ready', 'unavailable', 'unconfigured'].includes(value);
+}
+
+function isInterfaceMonitorState(value: unknown): value is InterfaceMonitorState {
+  return typeof value === 'string' &&
+    ['starting', 'ready', 'degraded', 'unavailable', 'unconfigured', 'not-advertised'].includes(value);
 }
 
 function normalizedPath(value: string, label: string): string {
@@ -346,7 +380,8 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       typeof features.audit !== 'boolean' ||
       typeof features.smithproxy_events !== 'boolean' ||
       typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean' ||
-      typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean') {
+      typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean' ||
+      typeof features.interface_monitoring !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
   }
   if ((!features.config_read &&
@@ -379,6 +414,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       sessionActivity: features.session_activity,
       tlsMonitoring: features.tls_monitoring,
       neighborMonitoring: features.neighbor_monitoring,
+      interfaceMonitoring: features.interface_monitoring,
     },
   };
 }
@@ -614,6 +650,49 @@ function parseNeighbors(value: unknown): NeighborSnapshot {
     observations: value.observations,
     bytesUp: value.bytes_up,
     bytesDown: value.bytes_down,
+  };
+}
+
+function parseInterfaces(value: unknown): InterfaceSnapshot {
+  if (!isObject(value) || !isInterfaceMonitorState(value.state) || typeof value.detail !== 'string' ||
+      !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
+      !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
+      !isNonNegativeInteger(value.generation) || typeof value.synchronization_running !== 'boolean' ||
+      !isNonNegativeInteger(value.synchronization_attempts) ||
+      !isNonNegativeInteger(value.synchronization_successes) ||
+      !isNonNegativeInteger(value.synchronization_errors) ||
+      !isNonNegativeInteger(value.event_datagrams) ||
+      !isNonNegativeInteger(value.changed_event_datagrams) ||
+      !isNonNegativeInteger(value.interfaces) || !isNonNegativeInteger(value.addresses) ||
+      !isNonNegativeInteger(value.ipv4_addresses) || !isNonNegativeInteger(value.ipv6_addresses) ||
+      !(value.last_error_code === null ||
+        (typeof value.last_error_code === 'string' && /^[a-z][a-z0-9._-]{0,63}$/u.test(value.last_error_code))) ||
+      value.synchronization_successes > value.synchronization_attempts ||
+      value.synchronization_errors > value.synchronization_attempts ||
+      value.synchronization_successes + value.synchronization_errors > value.synchronization_attempts ||
+      value.changed_event_datagrams > value.event_datagrams ||
+      value.ipv4_addresses + value.ipv6_addresses !== value.addresses ||
+      (value.state === 'ready' && value.last_error_code !== null)) {
+    throw new Error('Invalid interface monitoring response.');
+  }
+  return {
+    state: value.state,
+    detail: value.detail,
+    checkedAtUnixMs: value.checked_at_unix_ms,
+    lastSuccessAtUnixMs: value.last_success_at_unix_ms,
+    generation: value.generation,
+    synchronizationRunning: value.synchronization_running,
+    synchronizationAttempts: value.synchronization_attempts,
+    synchronizationSuccesses: value.synchronization_successes,
+    synchronizationErrors: value.synchronization_errors,
+    eventDatagrams: value.event_datagrams,
+    changedEventDatagrams: value.changed_event_datagrams,
+    interfaces: value.interfaces,
+    addresses: value.addresses,
+    ipv4Addresses: value.ipv4_addresses,
+    ipv6Addresses: value.ipv6_addresses,
+    lastErrorCode: value.last_error_code,
   };
 }
 
@@ -855,6 +934,10 @@ export class SystemClient {
 
   async neighborSummary(): Promise<NeighborSnapshot> {
     return parseNeighbors(await this.#request(joinedPath(this.#apiBase, '/network/neighbors/summary')));
+  }
+
+  async interfaceSummary(): Promise<InterfaceSnapshot> {
+    return parseInterfaces(await this.#request(joinedPath(this.#apiBase, '/network/interfaces/summary')));
   }
 
   async recentEvents(): Promise<EventSnapshot> {

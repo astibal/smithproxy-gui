@@ -94,6 +94,7 @@ add_library(smithproxy_gui_core
     src/backend/config_snapshot.cpp
     src/backend/draft_store.cpp
     src/backend/draft_schema.cpp
+    src/backend/interface_metrics.cpp
     src/backend/json.cpp
     src/backend/job_store.cpp
     src/backend/live_sessions.cpp

@@ -5,6 +5,7 @@
 #include "draft_store.hpp"
 #include "json.hpp"
 #include "job_store.hpp"
+#include "interface_metrics.hpp"
 #include "live_sessions.hpp"
 #include "neighbor_metrics.hpp"
 #include "operational_alerts.hpp"
@@ -598,6 +599,37 @@ int main() {
     assert(!parse_neighbor_metrics(R"([{"hostname":"duplicate","tags":"","last_seen":1,"stats":[]},
         {"hostname":"duplicate","tags":"","last_seen":1,"stats":[]}])").metrics);
 
+    const auto interfaces = parse_interface_metrics(R"({
+        "schema_version":1,"state":"ready","generation":42,"sampled_at_unix_ms":1793239515319,
+        "synchronization":{"running":true,"attempts":2,"successes":2,"errors":0,
+            "event_datagrams":15,"changed_event_datagrams":4},
+        "totals":{"interfaces":3,"addresses":5,"ipv4_addresses":3,"ipv6_addresses":2},
+        "last_error":null})");
+    assert(interfaces.metrics);
+    assert(interfaces.metrics->generation == 42U);
+    assert(interfaces.metrics->interfaces == 3U);
+    assert(interfaces.metrics->addresses == 5U);
+    assert(interfaces.metrics->changed_event_datagrams == 4U);
+    assert(!parse_interface_metrics(R"({
+        "schema_version":1,"state":"ready","generation":1,"sampled_at_unix_ms":1,
+        "synchronization":{"running":true,"attempts":1,"successes":2,"errors":0,
+            "event_datagrams":1,"changed_event_datagrams":0},
+        "totals":{"interfaces":1,"addresses":1,"ipv4_addresses":1,"ipv6_addresses":0},
+        "last_error":null})").metrics);
+    assert(!parse_interface_metrics(R"({
+        "schema_version":1,"state":"ready","generation":1,"sampled_at_unix_ms":1,
+        "synchronization":{"running":true,"attempts":1,"successes":1,"errors":0,
+            "event_datagrams":1,"changed_event_datagrams":0},
+        "totals":{"interfaces":1,"addresses":1,"ipv4_addresses":1,"ipv6_addresses":0},
+        "last_error":"raw kernel error"})").metrics);
+    assert(!parse_interface_metrics(R"({
+        "schema_version":1,"state":"ready","generation":1,
+        "sampled_at_unix_ms":9007199254740991,
+        "synchronization":{"running":true,"attempts":1,"successes":1,"errors":0,
+            "event_datagrams":1,"changed_event_datagrams":0},
+        "totals":{"interfaces":1,"addresses":1,"ipv4_addresses":1,"ipv6_addresses":0},
+        "last_error":null})").metrics);
+
     const auto configuration = parse_config_snapshot(
         R"({"success":{"policy":[{"name":"office policy","disabled":"0","proto":"tcp","src":["office"],"sport":["any"],"dst":["internet"],"dport":["https"],"features":["sinkhole"],"action":"accept","nat":"masquerade","routing":"main","tls_profile":"inspect"}]}})",
         R"({"success":{"address_objects":{"office":{"type":"cidr","value":"10.0.0.0/24"},"internet":{"type":"fqdn","value":"example.test"}}}})",
@@ -867,6 +899,8 @@ int main() {
     alert_status.tls_cache_metrics.size = 42U;
     alert_status.neighbor_metrics.state = "ready";
     alert_status.neighbor_metrics.last_success_at = now;
+    alert_status.interface_metrics.state = "ready";
+    alert_status.interface_metrics.last_success_at = now;
     alert_status.config_snapshot.state = "ready";
     alert_status.config_snapshot.last_success_at = now;
     assert(derive_operational_alerts(alert_status, true, true, now).empty());
@@ -886,6 +920,11 @@ int main() {
     assert(active_alerts.size() == 1U);
     assert(active_alerts.front().id == "session-activity-stale");
     alert_status.live_sessions.last_success_at = now;
+    alert_status.interface_metrics.state = "degraded";
+    active_alerts = derive_operational_alerts(alert_status, true, true, now);
+    assert(active_alerts.size() == 1U);
+    assert(active_alerts.front().id == "interfaces");
+    alert_status.interface_metrics.state = "ready";
     alert_status.config_snapshot.settings.emplace();
     alert_status.config_snapshot.settings->extended_local_destination_protection = false;
     active_alerts = derive_operational_alerts(alert_status, true, true, now);

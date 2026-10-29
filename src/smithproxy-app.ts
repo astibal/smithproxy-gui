@@ -28,6 +28,7 @@ import {
   type AuditSnapshot,
   type EventSnapshot,
   type GatewaySession,
+  type InterfaceSnapshot,
   type JobSnapshot,
   type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
@@ -177,6 +178,25 @@ const initialNeighbors: NeighborSnapshot = {
   bytesDown: 0,
 };
 
+const initialInterfaces: InterfaceSnapshot = {
+  state: 'starting',
+  detail: 'Waiting for the first interface synchronization sample.',
+  checkedAtUnixMs: null,
+  lastSuccessAtUnixMs: null,
+  generation: 0,
+  synchronizationRunning: false,
+  synchronizationAttempts: 0,
+  synchronizationSuccesses: 0,
+  synchronizationErrors: 0,
+  eventDatagrams: 0,
+  changedEventDatagrams: 0,
+  interfaces: 0,
+  addresses: 0,
+  ipv4Addresses: 0,
+  ipv6Addresses: 0,
+  lastErrorCode: null,
+};
+
 const initialEvents: EventSnapshot = {
   source: 'gui-core',
   smithproxyEventsAvailable: false,
@@ -219,6 +239,7 @@ export class SmithproxyApp extends LitElement {
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
   @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
   @state() private neighbors: NeighborSnapshot = initialNeighbors;
+  @state() private interfaces: InterfaceSnapshot = initialInterfaces;
   @state() private operationalEvents: EventSnapshot = initialEvents;
   @state() private operationalAlerts: AlertSnapshot = initialAlerts;
   @state() private managementAudit: AuditSnapshot = initialAudit;
@@ -779,11 +800,12 @@ export class SmithproxyApp extends LitElement {
     try {
       const systemClient = this.systemClient;
       this.systemStatus = statusFromSnapshot(await systemClient.status());
-      const [metrics, sessions, tlsCache, neighbors, events, alerts, audit, jobs] = await Promise.allSettled([
+      const [metrics, sessions, tlsCache, neighbors, interfaces, events, alerts, audit, jobs] = await Promise.allSettled([
         systemClient.metricsSummary(),
         systemClient.sessionActivity(),
         systemClient.tlsCacheSummary(),
         systemClient.neighborSummary(),
+        systemClient.interfaceSummary(),
         systemClient.recentEvents(),
         systemClient.activeAlerts(),
         systemClient.recentAudit(),
@@ -823,6 +845,16 @@ export class SmithproxyApp extends LitElement {
           ...this.neighbors,
           state: 'unavailable',
           detail: neighbors.reason instanceof Error ? neighbors.reason.message : 'Neighborhood metrics are unavailable.',
+        };
+      }
+      if (interfaces.status === 'fulfilled') {
+        this.interfaces = interfaces.value;
+      } else {
+        this.interfaces = {
+          ...this.interfaces,
+          state: 'unavailable',
+          detail: interfaces.reason instanceof Error
+            ? interfaces.reason.message : 'Interface monitoring is unavailable.',
         };
       }
       if (events.status === 'fulfilled') {
@@ -1080,6 +1112,23 @@ export class SmithproxyApp extends LitElement {
         observations: this.neighbors.observations,
         bytesUp: this.neighbors.bytesUp,
         bytesDown: this.neighbors.bytesDown,
+      },
+      interfaces: {
+        state: this.interfaces.state,
+        checkedAtUnixMs: this.interfaces.checkedAtUnixMs,
+        lastSuccessAtUnixMs: this.interfaces.lastSuccessAtUnixMs,
+        generation: this.interfaces.generation,
+        synchronizationRunning: this.interfaces.synchronizationRunning,
+        synchronizationAttempts: this.interfaces.synchronizationAttempts,
+        synchronizationSuccesses: this.interfaces.synchronizationSuccesses,
+        synchronizationErrors: this.interfaces.synchronizationErrors,
+        eventDatagrams: this.interfaces.eventDatagrams,
+        changedEventDatagrams: this.interfaces.changedEventDatagrams,
+        interfaces: this.interfaces.interfaces,
+        addresses: this.interfaces.addresses,
+        ipv4Addresses: this.interfaces.ipv4Addresses,
+        ipv6Addresses: this.interfaces.ipv6Addresses,
+        lastErrorCode: this.interfaces.lastErrorCode,
       },
       operations: {
         eventStream: this.eventStreamState,
@@ -2955,6 +3004,7 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Listener workload</h2><p>Runtime view of Smithproxy network entry points</p></div>
         </div>
+        ${this.renderInterfaceSummary()}
         ${this.renderNeighborSummary()}
         ${this.renderCollectorNotice(presentation, metrics.detail, metrics.lastSuccessAtUnixMs)}
         <div class="card-grid" aria-label="Network listeners">
@@ -3017,6 +3067,48 @@ export class SmithproxyApp extends LitElement {
         </div>
         ${this.renderCollectorNotice(presentation, neighbors.detail, neighbors.lastSuccessAtUnixMs)}
         <div class="privacy-note">Hostnames, tags, labels, and per-endpoint timelines remain inside the GUI core.</div>
+      </section>
+    `;
+  }
+
+  private renderInterfaceSummary() {
+    const interfaces = this.interfaces;
+    const presentation = this.collectorPresentation(
+      interfaces.state, interfaces.lastSuccessAtUnixMs, 30_000,
+    );
+    return html`
+      <section class="runtime-summary" aria-label="Interface synchronization">
+        <div class="runtime-heading">
+          <div><h3>Interface synchronization</h3><p>Privacy-safe netlink monitor health and inventory totals</p></div>
+          <span class="runtime-state ${presentation.tone}"
+            title=${interfaces.detail}>● ${presentation.label}</span>
+        </div>
+        <div class="metric-grid">
+          <article class="metric">
+            <span class="metric-label">Interfaces</span>
+            <strong class="metric-value">${interfaces.interfaces.toLocaleString()}</strong>
+            <span class="metric-note">Generation ${interfaces.generation.toLocaleString()}</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Addresses</span>
+            <strong class="metric-value">${interfaces.addresses.toLocaleString()}</strong>
+            <span class="metric-note">${interfaces.ipv4Addresses.toLocaleString()} IPv4 · ${interfaces.ipv6Addresses.toLocaleString()} IPv6</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Synchronizations</span>
+            <strong class="metric-value">${interfaces.synchronizationSuccesses.toLocaleString()}</strong>
+            <span class="metric-note">${interfaces.synchronizationAttempts.toLocaleString()} attempts · ${interfaces.synchronizationErrors.toLocaleString()} errors</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Changed events</span>
+            <strong class="metric-value">${interfaces.changedEventDatagrams.toLocaleString()}</strong>
+            <span class="metric-note">${interfaces.eventDatagrams.toLocaleString()} event datagrams · ${interfaces.synchronizationRunning ? 'sync running' : 'sync idle'}</span>
+          </article>
+        </div>
+        ${interfaces.lastErrorCode === null ? nothing : html`
+          <div class="metrics-message" role="status">Stable diagnostic code: ${interfaces.lastErrorCode}</div>`}
+        ${this.renderCollectorNotice(presentation, interfaces.detail, interfaces.lastSuccessAtUnixMs)}
+        <div class="privacy-note">Interface names, indexes, addresses, routes, namespaces, and raw kernel errors never cross the GUI core boundary.</div>
       </section>
     `;
   }
@@ -3090,6 +3182,8 @@ export class SmithproxyApp extends LitElement {
         lastSuccess: this.tlsCache.lastSuccessAtUnixMs, intervalMs: 5_000},
       {name: 'Neighborhood', state: this.neighbors.state, checked: this.neighbors.checkedAtUnixMs,
         lastSuccess: this.neighbors.lastSuccessAtUnixMs, intervalMs: 30_000},
+      {name: 'Interfaces', state: this.interfaces.state, checked: this.interfaces.checkedAtUnixMs,
+        lastSuccess: this.interfaces.lastSuccessAtUnixMs, intervalMs: 30_000},
       {name: 'Configuration', state: this.snapshot?.state ?? 'starting', checked: this.snapshot?.checkedAtUnixMs ?? null,
         lastSuccess: this.snapshot?.lastSuccessAtUnixMs ?? null, intervalMs: 30_000},
     ];
@@ -3452,6 +3546,11 @@ export class SmithproxyApp extends LitElement {
         name: 'Network neighbors', state: this.neighbors.state,
         lastSuccessAtUnixMs: this.neighbors.lastSuccessAtUnixMs,
         expectedIntervalMs: 30_000, detail: this.neighbors.detail,
+      },
+      {
+        name: 'Network interfaces', state: this.interfaces.state,
+        lastSuccessAtUnixMs: this.interfaces.lastSuccessAtUnixMs,
+        expectedIntervalMs: 30_000, detail: this.interfaces.detail,
       },
     ].map(item => {
       const freshness = classifyFreshness(

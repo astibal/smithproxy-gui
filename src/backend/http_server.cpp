@@ -731,6 +731,7 @@ private:
         if (*relative == "/api/v1/metrics/summary") return metrics_summary();
         if (*relative == "/api/v1/tls/cache/summary") return tls_cache_summary();
         if (*relative == "/api/v1/network/neighbors/summary") return neighbor_summary();
+        if (*relative == "/api/v1/network/interfaces/summary") return interface_summary();
         if (*relative == "/api/v1/sessions/activity") return session_activity();
         if (*relative == "/api/v1/events/recent") return recent_events();
         if (*relative == "/api/v1/events") return event_stream(connection);
@@ -797,7 +798,8 @@ private:
                     ",\"smithproxy_events\":false,\"metrics\":" + (monitoring ? "true" : "false") +
                     ",\"session_activity\":" + (monitoring ? "true" : "false") +
                     ",\"tls_monitoring\":" + (monitoring ? "true" : "false") +
-                    ",\"neighbor_monitoring\":" + (monitoring ? "true" : "false") + "}}"};
+                    ",\"neighbor_monitoring\":" + (monitoring ? "true" : "false") +
+                    ",\"interface_monitoring\":" + (monitoring ? "true" : "false") + "}}"};
     }
 
     bool gateway_authenticated(MHD_Connection* connection) const {
@@ -1627,6 +1629,33 @@ private:
                     ",\"observations\":" + std::to_string(metrics.observations) +
                     ",\"bytes_up\":" + std::to_string(metrics.bytes_up) +
                     ",\"bytes_down\":" + std::to_string(metrics.bytes_down) + "}"};
+    }
+
+    Response interface_summary() const {
+        const auto metrics = monitor_.status().interface_metrics;
+        return {200, "application/json; charset=utf-8",
+                "{\"state\":" + json_string(metrics.state) +
+                    ",\"detail\":" + json_string(metrics.detail) +
+                    ",\"checked_at_unix_ms\":" + timestamp_json(metrics.checked_at) +
+                    ",\"last_success_at_unix_ms\":" + timestamp_json(metrics.last_success_at) +
+                    ",\"generation\":" + std::to_string(metrics.generation) +
+                    ",\"synchronization_running\":" +
+                    (metrics.synchronization_running ? "true" : "false") +
+                    ",\"synchronization_attempts\":" +
+                    std::to_string(metrics.synchronization_attempts) +
+                    ",\"synchronization_successes\":" +
+                    std::to_string(metrics.synchronization_successes) +
+                    ",\"synchronization_errors\":" +
+                    std::to_string(metrics.synchronization_errors) +
+                    ",\"event_datagrams\":" + std::to_string(metrics.event_datagrams) +
+                    ",\"changed_event_datagrams\":" +
+                    std::to_string(metrics.changed_event_datagrams) +
+                    ",\"interfaces\":" + std::to_string(metrics.interfaces) +
+                    ",\"addresses\":" + std::to_string(metrics.addresses) +
+                    ",\"ipv4_addresses\":" + std::to_string(metrics.ipv4_addresses) +
+                    ",\"ipv6_addresses\":" + std::to_string(metrics.ipv6_addresses) +
+                    ",\"last_error_code\":" +
+                    (metrics.last_error ? json_string(*metrics.last_error) : "null") + "}"};
     }
 
     Response session_activity() const {
