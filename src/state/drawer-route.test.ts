@@ -30,6 +30,9 @@ describe('drawer route', () => {
     expect(parseDrawerRoute('?edit=policy-create:create-policy-1')).toEqual([
       {kind: 'policy-create', id: 'create-policy-1'},
     ]);
+    expect(parseDrawerRoute('?edit=content-rule-create:create-content-rule-1')).toEqual([
+      {kind: 'content-rule-create', id: 'create-content-rule-1'},
+    ]);
     expect(parseDrawerRoute('?edit=port-create:create-port-1,protocol-create:create-protocol-1')).toEqual([
       {kind: 'port-create', id: 'create-port-1'},
       {kind: 'protocol-create', id: 'create-protocol-1'},

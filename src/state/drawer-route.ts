@@ -10,7 +10,7 @@ const drawerKinds = new Set<DrawerKind>([
   'policy', 'policy-create', 'address', 'address-create', 'port', 'port-create', 'protocol', 'protocol-create',
   'profile', 'settings', 'captures', 'authority',
   'signature', 'signature-flow',
-  'content-rule',
+  'content-rule', 'content-rule-create',
 ]);
 
 export function parseDrawerRoute(search: string): ReadonlyArray<DrawerRouteEntry> {

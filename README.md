@@ -212,6 +212,10 @@ same draft as confirmed delete operations; active references and conflicting pen
 field edits block the delete locally before the authoritative Smithproxy validation.
 Stable routing, TLS, detection, content, SSH, DNS, script, and authentication
 profiles use the same confirmed deletion path and cannot be deleted while referenced.
+Content profiles expose nested creation, confirmed deletion, and first/before/last
+ordering for stable content rules. New write-only match and replacement expressions
+are cleared from the editor after the GUI core accepts them and must be re-entered
+before a pending create operation can be updated.
 Current legacy deployments keep the controls disabled because their snapshot IDs
 are not stable.
 

@@ -324,6 +324,7 @@ export class SmithproxyApp extends LitElement {
   private drawerOrigins: HTMLElement[] = [];
   private readonly drawerInitialChanges = new Map<string, ReadonlyMap<string, DraftScalar>>();
   private readonly referencePreviewValues = new Map<string, string>();
+  private readonly contentRuleCreateParents = new Map<string, string>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -1102,6 +1103,7 @@ export class SmithproxyApp extends LitElement {
   private clearEditorChain(): void {
     this.drawerStore.clear();
     this.drawerInitialChanges.clear();
+    this.contentRuleCreateParents.clear();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -1623,17 +1625,24 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && operation.collection === 'proto_objects') {
         objects.add(`protocol-create:${operation.localId}`);
       }
+      if (operation.op === 'create' && operation.collection === 'content_profiles.content_rules') {
+        objects.add(`content-rule-create:${operation.localId}`);
+      }
       if (operation.op === 'delete') {
         const kind = operation.collection === 'policy' ? 'policy'
           : operation.collection === 'address_objects' ? 'address'
             : operation.collection === 'port_objects' ? 'port'
               : operation.collection === 'proto_objects' ? 'protocol'
+                : operation.collection === 'content_profiles.content_rules' ? 'content-rule'
                 : operation.collection === 'routing' || operation.collection.endsWith('_profiles')
                   ? 'profile' : undefined;
         if (kind) objects.add(`${kind}:${operation.entityId}`);
       }
       if (operation.op === 'move' && operation.collection === 'policy') {
         objects.add(`policy:${operation.entityId}`);
+      }
+      if (operation.op === 'move' && operation.collection === 'content_profiles.content_rules') {
+        objects.add(`content-rule:${operation.entityId}`);
       }
     }
     this.draftObjects = objects;
@@ -1918,20 +1927,36 @@ export class SmithproxyApp extends LitElement {
       if (policy) this.openPolicy(policy, origin);
       return;
     }
+    if (operation?.op === 'move' && operation.collection === 'content_profiles.content_rules') {
+      this.openContentRule(operation.entityId, origin);
+      return;
+    }
     if (operation?.op !== 'create' || ![
-      'address_objects', 'port_objects', 'proto_objects', 'policy',
+      'address_objects', 'port_objects', 'proto_objects', 'policy', 'content_profiles.content_rules',
     ].includes(operation.collection)) return;
     const kind = operation.collection === 'policy' ? 'policy-create'
       : operation.collection === 'address_objects' ? 'address-create'
-        : operation.collection === 'port_objects' ? 'port-create' : 'protocol-create';
+        : operation.collection === 'port_objects' ? 'port-create'
+          : operation.collection === 'proto_objects' ? 'protocol-create' : 'content-rule-create';
     const fallback = operation.collection === 'policy' ? 'New policy'
       : operation.collection === 'address_objects' ? 'New address object'
-        : operation.collection === 'port_objects' ? 'New port object' : 'New protocol object';
+        : operation.collection === 'port_objects' ? 'New port object'
+          : operation.collection === 'proto_objects' ? 'New protocol object' : 'New content rule';
     this.openObjectDrawer({
       kind,
       id: operation.localId,
       title: String(operation.fields['name'] ?? fallback),
     }, origin);
+    if (operation.collection === 'content_profiles.content_rules') {
+      const placement = operation.position.reference === null
+        ? operation.position.kind : `${operation.position.kind}:${operation.position.reference}`;
+      void this.updateComplete.then(() => {
+        const select = this.renderRoot.querySelector<HTMLSelectElement>(
+          `#content-rule-create-placement-${operation.localId}`,
+        );
+        if (select) select.value = placement;
+      });
+    }
   }
 
   private draftPathsForDrawer(entry: Pick<DrawerEntry, 'kind' | 'id'>): ReadonlyArray<string> {
@@ -2022,6 +2047,14 @@ export class SmithproxyApp extends LitElement {
                     : profile.dns ? 'alg_dns_profiles' : undefined;
       return collection
         ? {collection, entityId: profile.id, label: `${profile.type} profile`, usageCount: profile.usedBy.length}
+        : undefined;
+    }
+    if (entry.kind === 'content-rule') {
+      const rule = this.snapshot.profiles.flatMap(item => item.content?.rules ?? [])
+        .find(item => item.id === entry.id);
+      return rule
+        ? {collection: 'content_profiles.content_rules', entityId: rule.id,
+          label: 'content rule', usageCount: 0}
         : undefined;
     }
     return undefined;
@@ -2195,6 +2228,117 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private contentRuleContext(entityId: string) {
+    for (const profile of this.snapshot?.profiles ?? []) {
+      const rules = profile.content?.rules;
+      const index = rules?.findIndex(rule => rule.id === entityId) ?? -1;
+      if (rules && index >= 0) return {profile, rules, index};
+    }
+    return undefined;
+  }
+
+  private pendingContentRuleMove(entityId: string): DraftMoveOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'move' && item.collection === 'content_profiles.content_rules' &&
+      item.entityId === entityId);
+    return operation?.op === 'move' ? operation : undefined;
+  }
+
+  private contentRulePositionIsOriginal(
+    entityId: string, position: DraftMoveOperation['position'],
+  ): boolean {
+    const context = this.contentRuleContext(entityId);
+    if (!context) return false;
+    const {rules, index} = context;
+    if (position.kind === 'first') return index === 0;
+    if (position.kind === 'last') return index === rules.length - 1;
+    if (position.kind === 'after') return index > 0 && rules[index - 1]?.id === position.reference;
+    return index + 1 < rules.length && rules[index + 1]?.id === position.reference;
+  }
+
+  private contentRulePlacementValue(entityId: string): string {
+    const pending = this.pendingContentRuleMove(entityId);
+    if (pending) {
+      return pending.position.reference === null
+        ? pending.position.kind
+        : `${pending.position.kind}:${pending.position.reference}`;
+    }
+    const context = this.contentRuleContext(entityId);
+    if (!context || context.index <= 0) return 'first';
+    if (context.index === context.rules.length - 1) return 'last';
+    return `before:${context.rules[context.index + 1]!.id}`;
+  }
+
+  private async moveContentRuleInDraft(entry: DrawerEntry): Promise<void> {
+    if (entry.kind !== 'content-rule' || !this.structuralDraftsAvailable || !this.draftClient ||
+        this.draftSaving || this.draftCommitting) return;
+    const context = this.contentRuleContext(entry.id);
+    const placement = this.renderRoot.querySelector<HTMLSelectElement>(
+      `#content-rule-placement-${entry.id}`,
+    );
+    if (!context || !placement) return;
+    if (this.dirtyDrawerKeys.has(this.drawerKey(entry))) {
+      this.drawerError = 'Save or discard ordinary content-rule field changes before changing its order.';
+      return;
+    }
+    if (this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'delete' && operation.collection === 'content_profiles.content_rules' &&
+      operation.entityId === entry.id)) {
+      this.drawerError = 'Remove the pending content-rule deletion before changing its order.';
+      return;
+    }
+    let position: DraftMoveOperation['position'];
+    if (placement.value === 'first' || placement.value === 'last') {
+      position = {kind: placement.value, reference: null};
+    } else if (placement.value.startsWith('before:')) {
+      const reference = placement.value.slice('before:'.length);
+      if (reference === entry.id || !context.rules.some(rule => rule.id === reference)) {
+        this.drawerError = 'The selected content-rule placement is no longer available.';
+        return;
+      }
+      position = {kind: 'before', reference};
+    } else {
+      this.drawerError = 'A valid content-rule placement is required.';
+      return;
+    }
+
+    const existing = this.pendingContentRuleMove(entry.id);
+    const original = this.contentRulePositionIsOriginal(entry.id, position);
+    if (!existing && original) {
+      this.drawerError = 'The content rule is already in that position.';
+      return;
+    }
+    if (existing && existing.position.kind === position.kind &&
+        existing.position.reference === position.reference) {
+      this.drawerError = undefined;
+      return;
+    }
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = existing && original
+        ? await this.draftClient.removeOperation(this.draftVersion, existing.localId)
+        : await this.draftClient.upsertOperation(this.draftVersion, {
+          op: 'move', localId: existing?.localId ?? `move-content-rule-${crypto.randomUUID()}`,
+          collection: 'content_profiles.content_rules', entityId: entry.id, position,
+        });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+      this.markDrawerSaved(entry);
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error
+        ? error.message : 'Content-rule order could not be updated in the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private draftValueSummary(path: string, value: DraftScalar): string {
     if (value === '[redacted:clear]') return 'Cleared · redacted';
     if (value === '[redacted:replace]') return 'Replaced · redacted';
@@ -2314,6 +2458,14 @@ export class SmithproxyApp extends LitElement {
     if (!this.structuralDraftsAvailable) return;
     const localId = `create-policy-${crypto.randomUUID()}`;
     this.openObjectDrawer({kind: 'policy-create', id: localId, title: 'New policy'}, origin);
+  }
+
+  private openNewContentRule(profileId: string, origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable ||
+        !this.snapshot?.profiles.some(item => item.id === profileId && item.content !== null)) return;
+    const localId = `create-content-rule-${crypto.randomUUID()}`;
+    this.contentRuleCreateParents.set(localId, profileId);
+    this.openObjectDrawer({kind: 'content-rule-create', id: localId, title: 'New content rule'}, origin);
   }
 
   private openPort(id: string, origin?: HTMLElement): void {
@@ -2508,6 +2660,7 @@ export class SmithproxyApp extends LitElement {
       remainingDirty.delete(this.drawerKey(entry));
       this.drawerInitialChanges.delete(this.drawerKey(entry));
       this.clearReferencePreviews(entry);
+      if (entry.kind === 'content-rule-create') this.contentRuleCreateParents.delete(entry.id);
     }
     this.dirtyDrawerKeys = remainingDirty;
     this.pendingCloseIndex = undefined;
@@ -2649,6 +2802,15 @@ export class SmithproxyApp extends LitElement {
         .find(item => item.id === entry.id);
       return rule ? {id: rule.id, name: 'Content rule'} : undefined;
     }
+    if (entry.kind === 'content-rule-create') {
+      const operation = this.workspaceDraft?.structuralOperations.find(item =>
+        item.op === 'create' && item.collection === 'content_profiles.content_rules' &&
+        item.localId === entry.id);
+      const parentId = operation?.op === 'create'
+        ? operation.parentId : this.contentRuleCreateParents.get(entry.id);
+      return parentId && this.snapshot.profiles.some(item => item.id === parentId && item.content !== null)
+        ? {id: entry.id, name: 'New content rule'} : undefined;
+    }
     return this.snapshot.profiles.find(item => item.id === entry.id);
   }
 
@@ -2780,6 +2942,106 @@ export class SmithproxyApp extends LitElement {
     } catch (error) {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const message = error instanceof Error ? error.message : 'Policy could not be added to the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  private pendingContentRuleCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'create' && item.collection === 'content_profiles.content_rules' &&
+      item.localId === entry.id);
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private contentRuleCreateProfile(entry: DrawerEntry): ProfileObject | undefined {
+    const operation = this.pendingContentRuleCreate(entry);
+    const parentId = operation?.parentId ?? this.contentRuleCreateParents.get(entry.id);
+    return this.snapshot?.profiles.find(item => item.id === parentId && item.content !== null);
+  }
+
+  private async saveContentRuleCreate(entry: DrawerEntry): Promise<void> {
+    if (entry.kind !== 'content-rule-create' || !this.structuralDraftsAvailable || !this.draftClient ||
+        this.draftCommitting) return;
+    const profile = this.contentRuleCreateProfile(entry);
+    const match = this.renderRoot.querySelector<HTMLTextAreaElement>(`#content-rule-create-match-${entry.id}`);
+    const replacementMode = this.renderRoot.querySelector<HTMLSelectElement>(
+      `#content-rule-create-replacement-mode-${entry.id}`,
+    );
+    const replacement = this.renderRoot.querySelector<HTMLTextAreaElement>(
+      `#content-rule-create-replacement-${entry.id}`,
+    );
+    const fillLength = this.renderRoot.querySelector<HTMLSelectElement>(
+      `#content-rule-create-fill-length-${entry.id}`,
+    );
+    const replaceEach = this.renderRoot.querySelector<HTMLInputElement>(
+      `#content-rule-create-replace-each-${entry.id}`,
+    );
+    const placement = this.renderRoot.querySelector<HTMLSelectElement>(
+      `#content-rule-create-placement-${entry.id}`,
+    );
+    if (!profile?.content || !match || !replacementMode || !replacement || !fillLength ||
+        !replaceEach || !placement) return;
+    const validExpression = (value: string, empty = false) =>
+      (empty || value.length > 0) && value.length <= 65536 && !value.includes('\0');
+    if (!validExpression(match.value)) {
+      this.drawerError = 'A match expression from 1 to 65536 characters is required.';
+      return;
+    }
+    if (!['absent', 'replace', 'empty'].includes(replacementMode.value) ||
+        (replacementMode.value === 'replace' && !validExpression(replacement.value))) {
+      this.drawerError = 'A replacement expression from 1 to 65536 characters is required.';
+      return;
+    }
+    if (!['true', 'false'].includes(fillLength.value)) return;
+    const replaceEachValue = replaceEach.valueAsNumber;
+    if (!Number.isInteger(replaceEachValue) || replaceEachValue < -2147483648 ||
+        replaceEachValue > 2147483647) {
+      this.drawerError = 'The replacement interval must be a signed 32-bit integer.';
+      return;
+    }
+    let position: DraftCreateOperation['position'];
+    if (placement.value === 'first' || placement.value === 'last') {
+      position = {kind: placement.value, reference: null};
+    } else if (placement.value.startsWith('before:')) {
+      const reference = placement.value.slice('before:'.length);
+      if (!profile.content.rules.some(rule => rule.id === reference)) {
+        this.drawerError = 'The selected content-rule placement is no longer available.';
+        return;
+      }
+      position = {kind: 'before', reference};
+    } else {
+      this.drawerError = 'A valid content-rule placement is required.';
+      return;
+    }
+    const fields: DraftCreateOperation['fields'] = {
+      match: match.value,
+      fill_length: fillLength.value === 'true',
+      replace_each_nth: replaceEachValue,
+      ...(replacementMode.value === 'replace' ? {replace: replacement.value}
+        : replacementMode.value === 'empty' ? {replace: ''} : {}),
+    };
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create', localId: entry.id, collection: 'content_profiles.content_rules',
+        clientId: entry.id, parentId: profile.id, position, fields,
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.contentRuleCreateParents.set(entry.id, profile.id);
+      this.applyDraft(draft);
+      match.value = '';
+      replacement.value = '';
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Content rule could not be added to the draft.';
       await this.loadDraft();
       this.drawerError = message;
     } finally {
@@ -2950,6 +3212,10 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'port-create' || entry.kind === 'protocol-create') {
       await this.saveSimpleObjectCreate(entry);
+      return;
+    }
+    if (entry.kind === 'content-rule-create') {
+      await this.saveContentRuleCreate(entry);
       return;
     }
     if (this.snapshot?.source !== 'live') {
@@ -4290,8 +4556,10 @@ export class SmithproxyApp extends LitElement {
                 <span class="draft-actions" role="cell">
                   ${(operation.op === 'create' && [
                     'address_objects', 'port_objects', 'proto_objects', 'policy',
+                    'content_profiles.content_rules',
                   ].includes(operation.collection)) ||
-                    (operation.op === 'move' && operation.collection === 'policy') ? html`
+                    (operation.op === 'move' && (operation.collection === 'policy' ||
+                      operation.collection === 'content_profiles.content_rules')) ? html`
                     <button class="secondary" type="button"
                       ?disabled=${!this.structuralDraftsAvailable}
                       @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
@@ -6739,6 +7007,14 @@ export class SmithproxyApp extends LitElement {
           </div>
           <label>Content rules</label>
           <div class="reference-stack" role="group" aria-label="Content rules">
+            <button class="secondary" type="button"
+              ?disabled=${!this.structuralDraftsAvailable}
+              title=${this.structuralDraftsAvailable
+                ? 'Add a content rule to the workspace draft'
+                : 'Requires reviewed structural transactions and stable entity IDs.'}
+              @click=${(event: MouseEvent) => this.openNewContentRule(
+                profile.id, event.currentTarget as HTMLElement,
+              )}>New content rule</button>
             ${content.rules.length === 0 ? html`<span>No content rules configured.</span>` :
               content.rules.map((rule, index) => html`
                 <button class="reference" type="button"
@@ -7205,9 +7481,37 @@ export class SmithproxyApp extends LitElement {
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
     const prefix = this.originPrefix(entry);
     const path = (field: string) => `${prefix ?? ''}${field}`;
+    const pendingMove = this.pendingContentRuleMove(entry.id);
+    const placement = this.contentRulePlacementValue(entry.id);
+    const rules = profile.content?.rules ?? [];
+    const showPlacement = (this.structuralDraftsAvailable || pendingMove !== undefined) && rules.length > 1;
     return html`
       <div class="form-grid wide-form-grid">
         <label>Content profile</label><span>${profile.name}</span>
+        ${showPlacement ? html`
+          <label for="content-rule-placement-${entry.id}">Draft order</label>
+          <div class="reference-edit">
+            <select id="content-rule-placement-${entry.id}" data-structural-control="true"
+              ?disabled=${!this.structuralDraftsAvailable}>
+              <option value="first" ?selected=${placement === 'first'}>First rule</option>
+              ${rules.filter(item => item.id !== entry.id).map(item => html`
+                <option value=${`before:${item.id}`} ?selected=${placement === `before:${item.id}`}>
+                  Before rule ${rules.indexOf(item) + 1}
+                </option>
+              `)}
+              <option value="last" ?selected=${placement === 'last'}>Last rule</option>
+            </select>
+            <button class="secondary" type="button"
+              ?disabled=${!this.structuralDraftsAvailable || this.draftSaving || this.draftCommitting ||
+                this.dirtyDrawerKeys.has(this.drawerKey(entry))}
+              title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
+                ? 'Save or discard ordinary content-rule field changes first.'
+                : 'Store content-rule order in the workspace draft'}
+              @click=${() => this.moveContentRuleInDraft(entry)}>
+              ${pendingMove ? 'Update draft order' : 'Save order to draft'}
+            </button>
+          </div>
+        ` : nothing}
         <label for="content-rule-fill-length-${entry.id}">Preserve matched length</label>
         ${this.renderBooleanSelect(
           `content-rule-fill-length-${entry.id}`, this.persistentValue(path('fill_length'), rule.fillLength),
@@ -7244,6 +7548,71 @@ export class SmithproxyApp extends LitElement {
       </div>
       <div class="privacy-note section">
         Current content expressions stay inside the GUI core. Draft review exposes only replacement intent.
+      </div>
+    `;
+  }
+
+  private renderContentRuleCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingContentRuleCreate(entry);
+    const profile = this.contentRuleCreateProfile(entry);
+    if (!profile?.content) return nothing;
+    const readOnly = !this.structuralDraftsAvailable;
+    const position = operation
+      ? operation.position.reference === null
+        ? operation.position.kind : `${operation.position.kind}:${operation.position.reference}`
+      : 'last';
+    const replacement = operation?.fields['replace'];
+    const replacementMode = replacement === undefined ? 'absent'
+      : replacement === '[redacted:clear]' ? 'empty' : 'replace';
+    const fillLength = operation?.fields['fill_length'];
+    const replaceEach = operation?.fields['replace_each_nth'];
+    return html`
+      <div class="form-grid wide-form-grid">
+        <label>Content profile</label><span>${profile.name}</span>
+        <label for="content-rule-create-placement-${entry.id}">Placement</label>
+        <select id="content-rule-create-placement-${entry.id}" ?disabled=${readOnly}>
+          <option value="first" ?selected=${position === 'first'}>First rule</option>
+          ${profile.content.rules.map((rule, index) => html`
+            <option value=${`before:${rule.id}`} ?selected=${position === `before:${rule.id}`}>
+              Before rule ${index + 1}
+            </option>
+          `)}
+          <option value="last" ?selected=${position === 'last'}>Last rule</option>
+        </select>
+        <label for="content-rule-create-fill-length-${entry.id}">Preserve matched length</label>
+        ${this.renderBooleanSelect(
+          `content-rule-create-fill-length-${entry.id}`,
+          typeof fillLength === 'boolean' ? fillLength : false,
+          readOnly, 'Yes', 'No',
+        )}
+        <label for="content-rule-create-replace-each-${entry.id}">Replace every Nth match</label>
+        <input id="content-rule-create-replace-each-${entry.id}" type="number"
+          min="-2147483648" max="2147483647" step="1"
+          .value=${String(typeof replaceEach === 'number' ? replaceEach : 0)}
+          .readOnly=${readOnly} />
+        <label for="content-rule-create-match-${entry.id}">Match expression</label>
+        <textarea id="content-rule-create-match-${entry.id}" maxlength="65536" required
+          aria-label="New content match expression" autocomplete="off"
+          placeholder=${operation ? 'Re-enter match expression (write-only)' : 'Match expression (write-only)'}
+          .readOnly=${readOnly}></textarea>
+        <label for="content-rule-create-replacement-mode-${entry.id}">Replacement</label>
+        <div class="write-only-control">
+          <select id="content-rule-create-replacement-mode-${entry.id}"
+            .value=${replacementMode} ?disabled=${readOnly}>
+            <option value="absent">No replacement</option>
+            <option value="replace">Set replacement</option>
+            <option value="empty">Set empty replacement</option>
+          </select>
+          <textarea id="content-rule-create-replacement-${entry.id}" maxlength="65536"
+            aria-label="New content replacement expression" autocomplete="off"
+            placeholder=${operation && replacementMode === 'replace'
+              ? 'Re-enter replacement expression (write-only)' : 'Replacement expression (write-only)'}
+            .readOnly=${readOnly}></textarea>
+        </div>
+      </div>
+      <div class="privacy-note section">
+        Match and replacement expressions stay inside the GUI core. Reopening this pending rule requires
+        re-entering every configured write-only expression before another update.
       </div>
     `;
   }
@@ -7525,6 +7894,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);
     if (entry.kind === 'content-rule') return this.renderContentRuleEditor(entry);
+    if (entry.kind === 'content-rule-create') return this.renderContentRuleCreateEditor(entry);
     if (entry.kind === 'signature') return this.renderSignatureEditor(entry);
     if (entry.kind === 'signature-flow') return this.renderSignatureFlowEditor(entry);
     return this.renderProfileEditor(entry);
@@ -7535,7 +7905,8 @@ export class SmithproxyApp extends LitElement {
     const editLabel = entry.kind === 'address-create' ? 'Create address object'
       : entry.kind === 'port-create' ? 'Create port object'
         : entry.kind === 'protocol-create' ? 'Create protocol object'
-          : entry.kind === 'policy-create' ? 'Create policy' : `Edit ${entry.title}`;
+          : entry.kind === 'policy-create' ? 'Create policy'
+            : entry.kind === 'content-rule-create' ? 'Create content rule' : `Edit ${entry.title}`;
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
@@ -7551,7 +7922,9 @@ export class SmithproxyApp extends LitElement {
       profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns ||
       profile?.script || profile?.authentication,
     );
-    const draftable = ['address-create', 'port-create', 'protocol-create', 'policy-create'].includes(entry.kind)
+    const draftable = [
+      'address-create', 'port-create', 'protocol-create', 'policy-create', 'content-rule-create',
+    ].includes(entry.kind)
       ? this.structuralDraftsAvailable
       : this.snapshot?.source !== 'live' ||
         (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
@@ -7576,7 +7949,8 @@ export class SmithproxyApp extends LitElement {
             ? 'Create address object' : entry.kind === 'port-create'
               ? 'Create port object' : entry.kind === 'protocol-create'
                 ? 'Create protocol object' : entry.kind === 'policy-create'
-                  ? 'Create policy' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+                  ? 'Create policy' : entry.kind === 'content-rule-create'
+                    ? 'Create content rule' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}

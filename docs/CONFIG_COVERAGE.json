@@ -105,7 +105,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["name", "write_payload", "write_format", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http", "rules_session_filter", "content_rules"],
-      "notes": "Content controls and nested rule action metadata are typed. Session filters and rule match/replacement expressions remain server-side and use write-only rotation. Stable unreferenced profiles support confirmed structural deletion. Structural rule add, remove, and reorder semantics are specified in the transaction proposal but remain unavailable until the reviewed upstream capability exists."
+      "notes": "Content controls and nested rule action metadata are typed. Session filters and rule match/replacement expressions remain server-side and use write-only rotation. Stable unreferenced profiles support confirmed structural deletion. Nested rules support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
     },
     {
       "name": "tls_ca",

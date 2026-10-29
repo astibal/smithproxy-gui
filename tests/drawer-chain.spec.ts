@@ -488,9 +488,22 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     const existing = draft.structural_operations.findIndex(
       operation => operation.local_id === body.operation.local_id,
     );
+    const storedOperation = body.operation.op === 'create' &&
+      body.operation.collection === 'content_profiles.content_rules' &&
+      typeof body.operation.fields === 'object' && body.operation.fields !== null
+      ? {
+        ...body.operation,
+        fields: Object.fromEntries(Object.entries(body.operation.fields).map(([field, value]) => [
+          field,
+          field === 'match' ? '[redacted:replace]'
+            : field === 'replace' ? value === '' ? '[redacted:clear]' : '[redacted:replace]'
+              : value,
+        ])),
+      }
+      : body.operation;
     const operations = [...draft.structural_operations];
-    if (existing < 0) operations.push(body.operation as typeof operations[number]);
-    else operations[existing] = body.operation as typeof operations[number];
+    if (existing < 0) operations.push(storedOperation as typeof operations[number]);
+    else operations[existing] = storedOperation as typeof operations[number];
     draft = {...draft, version: draft.version + 1, structural_operations: operations};
     await route.fulfill({json: draft});
   });
@@ -902,7 +915,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(contentEditor.getByText('Saved to draft')).toBeVisible();
   await expect(contentEditor.getByLabel('Session filter', {exact: true})).toHaveValue('unchanged');
   await expect(contentEditor.getByLabel('Session filter replacement')).toHaveValue('');
-  await expect(contentEditor.getByRole('group', {name: 'Content rules'}).getByRole('button')).toHaveCount(2);
+  await expect(contentEditor.getByRole('group', {name: 'Content rules'})
+    .getByRole('button', {name: /Rule \d/i})).toHaveCount(2);
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await contentEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'default-ssh', exact: true}).click();
@@ -1828,6 +1842,136 @@ test('deletes an unused stable profile and blocks referenced profiles', async ({
   const deleteButton = referencedEditor.getByRole('button', {name: 'Delete detection profile'});
   await expect(deleteButton).toBeDisabled();
   await expect(deleteButton).toHaveAttribute('title', 'This object is referenced by 1 configuration entry.');
+});
+
+test('reorders and deletes stable nested content rules', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+    structuralRemovalRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await profiles.getByRole('button', {name: /capture content/i}).click();
+  let profileEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  await profileEditor.getByRole('group', {name: 'Content rules'})
+    .getByRole('button', {name: /Rule 1/i}).click();
+
+  let ruleEditor = page.getByRole('dialog', {name: 'Edit Content rule 1'});
+  await expect(ruleEditor.getByLabel('Draft order')).toHaveValue('first');
+  await ruleEditor.getByLabel('Draft order').selectOption('last');
+  await ruleEditor.getByRole('button', {name: 'Save order to draft'}).click();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {
+      op: 'move', collection: 'content_profiles.content_rules',
+      entity_id: 'content-rule-0-0', position: {last: true},
+    },
+    csrf: '1',
+  });
+  expect(state.structuralMutationRequests![0]!.operation.local_id)
+    .toMatch(/^move-content-rule-[0-9a-f-]{36}$/u);
+
+  await ruleEditor.getByRole('button', {name: 'Cancel'}).click();
+  await profileEditor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  const moveRow = page.getByRole('table', {name: 'Pending draft changes'})
+    .getByRole('row').filter({hasText: 'content_profiles.content_rules · move'});
+  await expect(moveRow).toContainText('content-rule-0-0');
+  await moveRow.getByRole('button', {name: 'Edit'}).click();
+
+  ruleEditor = page.getByRole('dialog', {name: 'Edit Content rule 1'});
+  await expect(ruleEditor.getByLabel('Draft order')).toHaveValue('last');
+  await ruleEditor.getByLabel('Draft order').selectOption('first');
+  await ruleEditor.getByRole('button', {name: 'Update draft order'}).click();
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
+  expect(state.structuralRemovalRequests).toHaveLength(1);
+  expect(state.structuralRemovalRequests![0]).toMatchObject({expectedVersion: 1, csrf: '1'});
+
+  await ruleEditor.getByRole('button', {name: 'Delete content rule'}).click();
+  await expect(ruleEditor.getByText('Confirm deletion of this content rule.')).toBeVisible();
+  await ruleEditor.getByRole('button', {name: 'Confirm delete content rule'}).click();
+  await expect(ruleEditor).toBeHidden();
+  expect(state.structuralMutationRequests).toHaveLength(2);
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 2,
+    operation: {
+      op: 'delete', collection: 'content_profiles.content_rules', entity_id: 'content-rule-0-0',
+    },
+    csrf: '1',
+  });
+});
+
+test('creates and safely reopens a nested content rule', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /capture content/i}).click();
+  const profileEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  await profileEditor.getByRole('button', {name: 'New content rule'}).click();
+
+  let createEditor = page.getByRole('dialog', {name: 'Create content rule'});
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('A match expression from 1 to 65536 characters is required.')).toBeVisible();
+  await createEditor.getByLabel('Placement', {exact: true}).selectOption('before:content-rule-0-1');
+  await createEditor.getByLabel('Preserve matched length').selectOption('true');
+  await createEditor.getByLabel('Replace every Nth match').fill('3');
+  await createEditor.getByLabel('New content match expression').fill('secret-match');
+  await createEditor.getByLabel('Replacement', {exact: true}).selectOption('replace');
+  await createEditor.getByLabel('New content replacement expression').fill('secret-replacement');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor.getByLabel('New content match expression')).toHaveValue('');
+  await expect(createEditor.getByLabel('New content replacement expression')).toHaveValue('');
+
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {
+      op: 'create', collection: 'content_profiles.content_rules',
+      parent_id: 'content-0', position: {before: 'content-rule-0-1'},
+      fields: {
+        match: 'secret-match', replace: 'secret-replacement',
+        fill_length: true, replace_each_nth: 3,
+      },
+    },
+    csrf: '1',
+  });
+  expect(state.structuralMutationRequests![0]!.operation.local_id)
+    .toMatch(/^create-content-rule-[0-9a-f-]{36}$/u);
+
+  await createEditor.getByRole('button', {name: 'Cancel'}).click();
+  await profileEditor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  await expect(page.getByText('secret-match')).toHaveCount(0);
+  await expect(page.getByText('secret-replacement')).toHaveCount(0);
+  const createRow = page.getByRole('table', {name: 'Pending draft changes'})
+    .getByRole('row').filter({hasText: 'content_profiles.content_rules · create'});
+  await createRow.getByRole('button', {name: 'Edit'}).click();
+
+  createEditor = page.getByRole('dialog', {name: 'Create content rule'});
+  await expect(createEditor.getByLabel('Placement', {exact: true})).toHaveValue('before:content-rule-0-1');
+  await expect(createEditor.getByLabel('Preserve matched length')).toHaveValue('true');
+  await expect(createEditor.getByLabel('Replace every Nth match')).toHaveValue('3');
+  await expect(createEditor.getByLabel('New content match expression')).toHaveValue('');
+  await expect(createEditor.getByLabel('Replacement', {exact: true})).toHaveValue('replace');
+  await expect(createEditor.getByLabel('New content replacement expression')).toHaveValue('');
+  await expect(createEditor.locator('.privacy-note'))
+    .toContainText('re-entering every configured write-only expression');
 });
 
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {
@@ -2920,7 +3064,8 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /capture content Typed details/i}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
-  await expect(contentEditor.getByRole('group', {name: 'Content rules'}).getByRole('button')).toHaveCount(2);
+  await expect(contentEditor.getByRole('group', {name: 'Content rules'})
+    .getByRole('button', {name: /Rule \d/i})).toHaveCount(2);
   await expect(contentEditor.getByText(/Current session filters and all content-rule payloads stay inside/i)).toBeVisible();
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /default-ssh ssh Typed details/i}).click();
