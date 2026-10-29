@@ -2526,6 +2526,7 @@ test('saves typed system and capture settings without exposing redacted values',
   });
   await captureCard.getByRole('button', {name: 'Edit'}).click();
   const captureEditor = page.getByRole('dialog', {name: 'Edit Capture settings'});
+  await expect(captureEditor.getByLabel('Tunnel type')).toHaveValue('gre');
   await captureEditor.getByLabel('Local capture').selectOption('true');
   await captureEditor.getByLabel('Local format').selectOption('smcap');
   await captureEditor.getByLabel('Tunnel TTL').fill('32');

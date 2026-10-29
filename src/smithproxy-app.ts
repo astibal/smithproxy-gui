@@ -3233,13 +3233,15 @@ export class SmithproxyApp extends LitElement {
       changes.push({path: `captures.${path}`, value: select.value === 'true'});
     }
     const format = this.renderRoot.querySelector<HTMLSelectElement>('#captures-local-format');
+    const tunnelType = this.renderRoot.querySelector<HTMLSelectElement>('#captures-tunnel-type');
     const greFormat = this.renderRoot.querySelector<HTMLSelectElement>('#captures-gre-format');
     const quota = this.renderRoot.querySelector<HTMLInputElement>('#captures-local-quota');
     const ttl = this.renderRoot.querySelector<HTMLInputElement>('#captures-remote-ttl');
     const quotaValue = quota?.valueAsNumber ?? Number.NaN;
     const ttlValue = ttl?.valueAsNumber ?? Number.NaN;
-    if (!format || !greFormat || !quota || !ttl ||
+    if (!format || !tunnelType || !greFormat || !quota || !ttl ||
         !['pcap_single', 'pcap', 'smcap'].includes(format.value) ||
+        tunnelType.value !== 'gre' ||
         !['traffic', 'pcapng'].includes(greFormat.value) ||
         !Number.isInteger(quotaValue) || quotaValue < 0 || quotaValue > 1048576 ||
         !Number.isInteger(ttlValue) || ttlValue < 0 || ttlValue > 255) {
@@ -3249,6 +3251,7 @@ export class SmithproxyApp extends LitElement {
     changes.push(
       {path: 'captures.local.format', value: format.value},
       {path: 'captures.local.pcap_quota', value: quotaValue},
+      {path: 'captures.remote.tun_type', value: tunnelType.value},
       {path: 'captures.remote.gre_format', value: greFormat.value},
       {path: 'captures.remote.tun_ttl', value: ttlValue},
     );
@@ -3741,7 +3744,7 @@ export class SmithproxyApp extends LitElement {
       Number(captures.local.directoryConfigured), Number(captures.local.filePrefixConfigured),
       Number(captures.local.fileSuffixConfigured),
       Number(this.presentedValue('captures.remote.enabled', captures.remote.enabled)),
-      captures.remote.tunnelType,
+      this.presentedValue('captures.remote.tun_type', captures.remote.tunnelType),
       this.presentedValue('captures.remote.gre_format', captures.remote.greFormat),
       this.presentedValue('captures.remote.tun_ttl', captures.remote.ttl),
       Number(captures.remote.destinationConfigured), Number(captures.remote.bindInterfaceConfigured),
@@ -5008,7 +5011,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Filename prefix / suffix</dt><dd>${captures.local.filePrefixConfigured ? 'Configured' : 'Empty'} / ${captures.local.fileSuffixConfigured ? 'Configured' : 'Empty'}</dd>
                 <dt>Format / quota</dt><dd>${captureSetting('local.format', captures.local.format)} / ${captureSetting('local.pcap_quota', captures.local.quotaMiB)} MiB</dd>
                 <dt>Remote capture</dt><dd>${captureSetting('remote.enabled', captures.remote.enabled) ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Tunnel format</dt><dd>${captures.remote.tunnelType} / ${captureSetting('remote.gre_format', captures.remote.greFormat)}</dd>
+                <dt>Tunnel format</dt><dd>${captureSetting('remote.tun_type', captures.remote.tunnelType)} / ${captureSetting('remote.gre_format', captures.remote.greFormat)}</dd>
                 <dt>Remote target</dt><dd>${captures.remote.destinationConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>TTL / bound interface</dt><dd>${captureSetting('remote.tun_ttl', captures.remote.ttl)} / ${captures.remote.bindInterfaceConfigured ? 'Yes' : 'No'}</dd>
                 <dt>Checksums</dt><dd>${captureSetting('options.calculate_checksums', captures.calculateChecksums) ? 'Calculated' : 'Preserved'}</dd>
@@ -6071,7 +6074,12 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('local-suffix', 'Local filename suffix', captures.local.fileSuffixConfigured)}
         <label for="captures-remote-enabled">Remote capture</label>
         ${booleanField('remote-enabled', captures.remote.enabled)}
-        <label>Tunnel type</label><span>${captures.remote.tunnelType.toUpperCase()} · unchanged</span>
+        <label for="captures-tunnel-type">Tunnel type</label>
+        <select id="captures-tunnel-type"
+          .value=${scalar('captures.remote.tun_type', captures.remote.tunnelType)}
+          ?disabled=${locked('captures.remote.tun_type')}>
+          <option value="gre">GRE</option>
+        </select>
         <label for="captures-gre-format">GRE format</label>
         <select id="captures-gre-format" .value=${scalar('captures.remote.gre_format', captures.remote.greFormat)}
           ?disabled=${locked('captures.remote.gre_format')}>

@@ -49,7 +49,7 @@ FULL_TYPED_FIELDS = {
         "certs_path", "certs_ca_key_password", "certs_ctlog", "ca_bundle_path",
         "ca_bundle_file", "admin", "tuning", "messages_dir",
         "write_payload_file_prefix", "write_payload_file_suffix", "cli", "web_rating",
-        "tpool_log", "socks", "ssl_autodetect_harder", "kernel_tls", "nameservers",
+        "tpool_log", "socks", "ssl_autodetect_harder", "ssl_use_ktls", "nameservers",
         "http_api", "webhook", "webhook.sift_lored_mode",
         "webhook.sift_lored_include_url",
     },

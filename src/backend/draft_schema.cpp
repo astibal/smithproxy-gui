@@ -407,6 +407,7 @@ Result validate_capture(const std::string_view field, const DraftScalar& value) 
         return valid(boolean(value));
     }
     if (field == "local.format") return valid(enumerated(value, {"pcap_single", "pcap", "smcap"}));
+    if (field == "remote.tun_type") return valid(enumerated(value, {"gre"}));
     if (field == "remote.gre_format") return valid(enumerated(value, {"traffic", "pcapng"}));
     if (field == "local.pcap_quota") return valid(bounded_integer(value, 0, 1048576));
     if (field == "remote.tun_ttl") return valid(bounded_integer(value, 0, 255));

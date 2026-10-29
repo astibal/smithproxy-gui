@@ -326,8 +326,11 @@ int main() {
            DraftMutationResult::InvalidValue);
     assert(schema_draft.upsert(0U, {"settings.syslog_family", std::int64_t{5}}) ==
            DraftMutationResult::InvalidValue);
+    assert(schema_draft.upsert(0U, {"captures.remote.tun_type", std::string("vxlan")}) ==
+           DraftMutationResult::InvalidValue);
     assert(schema_draft.upsert_many(0U, {
         {"settings.accept_api", true},
+        {"captures.remote.tun_type", std::string("gre")},
         {"captures.remote.tun_ttl", std::int64_t{64}},
         {"content_profiles.[0].content_rules.[0].replace", std::string("first\nsecond")},
         {"detection_signatures.[0].flow.[0].type", std::string("regex")},
