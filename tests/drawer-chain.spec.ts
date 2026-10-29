@@ -2665,6 +2665,10 @@ test('searches the complete readable configuration without unsafe markup', async
       {path: 'content_profiles.[0].write_format', value: 'smcap'},
       {path: 'ssh_profiles.[0].hostkey_policy', value: 'accept-new'},
       {path: 'script_profiles.[0].type', value: '1'},
+      {path: 'settings.nameservers', value: ['pending-resolver.example']},
+      {path: 'settings.tuning.host_io_batch', value: 7654321},
+      {path: 'captures.remote.gre_format', value: 'pcapng'},
+      {path: 'settings.webhook.url', value: 'never-index-this.example'},
     ],
   }, true);
   await page.goto('/');
@@ -2726,12 +2730,23 @@ test('searches the complete readable configuration without unsafe markup', async
   await expect(page.getByRole('dialog', {name: 'Edit System settings'})).toBeVisible();
   await page.keyboard.press('Escape');
 
+  for (const query of ['pending-resolver.example', '7654321']) {
+    await search.fill(query);
+    await expect(results.getByRole('button').filter({hasText: 'System settings'})).toHaveCount(1);
+  }
+
   await search.fill('remote capture');
   const captureResult = results.getByRole('button').filter({hasText: 'Capture settings'});
   await expect(captureResult).toBeVisible();
   await captureResult.click();
   await expect(page.getByRole('dialog', {name: 'Edit Capture settings'})).toBeVisible();
   await page.keyboard.press('Escape');
+
+  await search.fill('pcapng');
+  await expect(results.getByRole('button').filter({hasText: 'Capture settings'})).toHaveCount(1);
+
+  await search.fill('never-index-this.example');
+  await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
 
   await search.fill('<script>');
   await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();

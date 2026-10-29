@@ -13,14 +13,17 @@ import {
 import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
+  CaptureSettings,
   ConfigScalar,
   ConfigSnapshot,
   ConfigValue,
   ConfigUsage,
+  DebugSettings,
   PolicySummary,
   PortObject,
   ProfileObject,
   ProtocolObject,
+  SystemSettings,
 } from './api/models';
 import {
   SystemClient,
@@ -3622,6 +3625,131 @@ export class SmithproxyApp extends LitElement {
     return values;
   }
 
+  private systemSearchValues(settings: SystemSettings, debug: DebugSettings | null): ReadonlyArray<string | number> {
+    const scalar = <T extends ConfigScalar>(path: string, fallback: T): T =>
+      this.presentedValue(`settings.${path}`, fallback);
+    const strings = (path: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
+      this.presentedListValue(`settings.${path}`, fallback, 'string');
+    const flag = (path: string, fallback: boolean): number => Number(scalar(path, fallback));
+    const values: Array<string | number> = [
+      'system', 'settings', 'traffic admission', 'workers', 'listener ports', 'logging', 'syslog',
+      'http api', 'webhook', 'sift', 'socks', 'nameservers', 'performance tuning', 'debug logging',
+      flag('accept_tproxy', settings.acceptTproxy),
+      flag('accept_redirect', settings.acceptRedirect),
+      flag('accept_socks', settings.acceptSocks),
+      flag('accept_http_connect', settings.acceptHttpConnect),
+      flag('accept_api', settings.acceptApi),
+      flag('extended_local_destination_protection', settings.extendedLocalDestinationProtection),
+      flag('policy_fail_open', settings.policyFailOpen),
+      flag('policy_access_request_fail_open', settings.accessRequestFailOpen),
+      scalar('plaintext_workers', settings.workers.plaintext),
+      scalar('ssl_workers', settings.workers.tls),
+      scalar('udp_workers', settings.workers.udp),
+      scalar('dtls_workers', settings.workers.dtls),
+      scalar('quic_workers', settings.workers.quic),
+      scalar('socks_workers', settings.workers.socks),
+      scalar('http_connect_workers', settings.workers.httpConnect),
+      scalar('plaintext_port', settings.ports.plaintext),
+      scalar('ssl_port', settings.ports.tls),
+      scalar('udp_port', settings.ports.udp),
+      scalar('dtls_port', settings.ports.dtls),
+      scalar('quic_port', settings.ports.quic),
+      scalar('socks_port', settings.ports.socks),
+      scalar('http_connect_port', settings.ports.httpConnect),
+      scalar('ssl_ocsp_status_ttl', settings.ocspStatusTtl),
+      scalar('ssl_crl_status_ttl', settings.crlStatusTtl),
+      flag('default_write_payload', settings.logging.defaultWritePayload),
+      scalar('write_pcap_single_quota', settings.logging.pcapSingleQuota),
+      scalar('log_level', settings.logging.level),
+      flag('log_console', settings.logging.console),
+      scalar('syslog_port', settings.logging.syslogPort),
+      scalar('syslog_facility', settings.logging.syslogFacility),
+      scalar('syslog_level', settings.logging.syslogLevel),
+      scalar('syslog_family', settings.logging.syslogFamily),
+      scalar('cli.port', settings.auxiliary.cliPort),
+      flag('tpool_log', settings.auxiliary.threadPoolLogging),
+      flag('socks.async_dns', settings.auxiliary.socksAsyncDns),
+      flag('socks.ipver_mixing', settings.auxiliary.socksIpVersionMixing),
+      flag('socks.prefer_ipv6', settings.auxiliary.socksPreferIpv6),
+      ...strings('udp_quick_ports', settings.auxiliary.udpQuickPorts),
+      scalar('tuning.host_bufsz_min', settings.auxiliary.tuning.hostBufferMin),
+      scalar('tuning.host_bufsz_max_multiplier', settings.auxiliary.tuning.hostBufferMaxMultiplier),
+      scalar('tuning.host_write_full', settings.auxiliary.tuning.hostWriteFull),
+      scalar('tuning.host_io_batch', settings.auxiliary.tuning.hostIoBatch),
+      scalar('tuning.tls_write_chunk', settings.auxiliary.tuning.tlsWriteChunk),
+      scalar('tuning.host_open_timeout', settings.auxiliary.tuning.hostOpenTimeout),
+      scalar('tuning.host_idle_timeout', settings.auxiliary.tuning.hostIdleTimeout),
+      scalar('tuning.nbr_cache_size', settings.auxiliary.tuning.neighborCacheSize),
+      flag('ssl_autodetect', settings.tlsAutodetect),
+      flag('ssl_autodetect_harder', settings.tlsAutodetectHarder),
+      flag('ssl_use_ktls', settings.kernelTls),
+      ...strings('nameservers', settings.nameservers),
+      scalar('http_api.key_timeout', settings.httpApi.keyTimeout),
+      scalar('http_api.port', settings.httpApi.port),
+      flag('http_api.key_extend_on_access', settings.httpApi.keyExtendOnAccess),
+      flag('http_api.loopback_only', settings.httpApi.loopbackOnly),
+      flag('http_api.pam_login', settings.httpApi.pamLogin),
+      flag('http_api.allow_api_header', settings.httpApi.allowApiHeader),
+      ...strings('http_api.allowed_ips', settings.httpApi.allowedIps),
+      flag('webhook.enabled', settings.webhook.enabled),
+      flag('webhook.tls_verify', settings.webhook.tlsVerify),
+      flag('webhook.sift', settings.webhook.siftEnabled),
+      flag('webhook.api_override', settings.webhook.apiOverride),
+      scalar('webhook.sift_lored_mode', settings.webhook.siftLoredMode),
+      flag('webhook.sift_lored_include_url', settings.webhook.siftLoredIncludeUrl),
+      scalar('webhook.sift_payload_limit_per_direction', settings.webhook.siftPayloadLimitPerDirection),
+      scalar('webhook.ping_interval', settings.webhook.pingInterval),
+      scalar('webhook.nbr_update_interval', settings.webhook.neighborUpdateInterval),
+      scalar('webhook.nbr_tag_refresh_age', settings.webhook.neighborTagRefreshAge),
+      flag('webhook.task_debug', settings.webhook.taskDebug),
+      flag('webhook.task_debug_dump', settings.webhook.taskDebugDump),
+      Number(settings.logging.payloadDirectoryConfigured), Number(settings.logging.fileConfigured),
+      Number(settings.logging.sslKeyFileConfigured), Number(settings.logging.syslogServerConfigured),
+      Number(settings.auxiliary.certificatesPathConfigured),
+      Number(settings.auxiliary.certificatePasswordConfigured),
+      Number(settings.auxiliary.certificateTransparencyLogConfigured),
+      Number(settings.auxiliary.caBundlePathConfigured), Number(settings.auxiliary.caBundleFileConfigured),
+      Number(settings.auxiliary.messagesDirectoryConfigured), Number(settings.auxiliary.cliPasswordConfigured),
+      Number(settings.auxiliary.webRatingKeyConfigured), Number(settings.auxiliary.adminGroupConfigured),
+      Number(settings.httpApi.bindAddressConfigured), Number(settings.httpApi.bindInterfaceConfigured),
+      Number(settings.webhook.urlConfigured), Number(settings.webhook.siftUrlConfigured),
+      Number(settings.webhook.siftTenantConfigured), Number(settings.webhook.siftInstanceConfigured),
+      Number(settings.webhook.hostIdConfigured), Number(settings.webhook.bindInterfaceConfigured),
+    ];
+    if (debug) {
+      values.push(
+        Number(this.presentedValue('debug.log_data_crc', debug.logDataCrc)),
+        Number(this.presentedValue('debug.log_sockets', debug.logSockets)),
+        Number(this.presentedValue('debug.log_online_cx_name', debug.logOnlineConnectionName)),
+        Number(this.presentedValue('debug.log_srclines', debug.logSourceLines)),
+        Number(this.presentedValue('debug.log_srclines_always', debug.logSourceLinesAlways)),
+      );
+      for (const override of debug.moduleOverrides) {
+        const value = this.presentedValue(`debug.log.${override.name}`, override.value);
+        values.push(override.name, typeof value === 'boolean' ? Number(value) : value);
+      }
+    }
+    return values;
+  }
+
+  private captureSearchValues(captures: CaptureSettings): ReadonlyArray<string | number> {
+    return [
+      'capture', 'captures', 'local capture', 'remote capture', 'gre',
+      Number(this.presentedValue('captures.local.enabled', captures.local.enabled)),
+      this.presentedValue('captures.local.format', captures.local.format),
+      this.presentedValue('captures.local.pcap_quota', captures.local.quotaMiB),
+      Number(captures.local.directoryConfigured), Number(captures.local.filePrefixConfigured),
+      Number(captures.local.fileSuffixConfigured),
+      Number(this.presentedValue('captures.remote.enabled', captures.remote.enabled)),
+      captures.remote.tunnelType,
+      this.presentedValue('captures.remote.gre_format', captures.remote.greFormat),
+      this.presentedValue('captures.remote.tun_ttl', captures.remote.ttl),
+      Number(captures.remote.destinationConfigured), Number(captures.remote.bindInterfaceConfigured),
+      Number(this.presentedValue('captures.options.calculate_checksums', captures.calculateChecksums)),
+      'format', 'quota', 'tunnel', 'ttl', 'checksums',
+    ];
+  }
+
   private renderSearchResults() {
     const query = this.searchQuery.trim().toLocaleLowerCase();
     if (!query || !this.snapshot) return html`<div class="empty-state"><h2>Search</h2><p>Enter a configuration name, type, value, or field.</p></div>`;
@@ -3738,21 +3866,13 @@ export class SmithproxyApp extends LitElement {
       });
     }).filter(item => item.matches);
     const settings = this.snapshot.settings;
-    const systemMatches = settings ? this.searchMatches([
-      'system', 'settings', 'traffic admission', 'workers', 'listener ports', 'logging', 'syslog',
-      'http api', 'webhook', 'sift', 'socks', 'nameservers', 'performance tuning', 'debug logging',
-      ...Object.values(settings.workers), ...Object.values(settings.ports),
-      settings.logging.level, settings.logging.syslogPort, settings.auxiliary.cliPort,
-      settings.nameserverCount, settings.httpApi.allowedIpCount, settings.httpApi.keyCount,
-      settings.webhook.siftLoredMode,
-      ...(this.snapshot.debug?.moduleOverrides.flatMap(item => [item.name, String(item.value)]) ?? []),
-    ], query) : false;
+    const systemMatches = settings
+      ? this.searchMatches(this.systemSearchValues(settings, this.snapshot.debug), query)
+      : false;
     const captures = this.snapshot.captures;
-    const capturesMatch = captures ? this.searchMatches([
-      'capture', 'captures', 'local capture', 'remote capture', 'gre', captures.local.format,
-      captures.local.quotaMiB, captures.remote.tunnelType, captures.remote.greFormat,
-      captures.remote.ttl, Number(captures.local.enabled), Number(captures.remote.enabled),
-    ], query) : false;
+    const capturesMatch = captures
+      ? this.searchMatches(this.captureSearchValues(captures), query)
+      : false;
     const count = policies.length + addresses.length + ports.length + protocols.length + profiles.length +
       authorities.length + signatures.length + contentRules.length + Number(systemMatches) + Number(capturesMatch);
     const row = (kind: string, name: string, detail: string, open: (origin: HTMLElement) => void) => html`
