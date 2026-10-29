@@ -176,7 +176,7 @@
         "ssh_profile", "detection_profile", "content_profile", "alg_dns_profile",
         "script_profile", "auth_profile", "nat", "routing", "features", "disabled"
       ],
-      "notes": "All fields currently returned by the policy snapshot contract are represented by typed edit and ordered structural create drawers. Confirmed structural deletion rejects conflicting pending field edits. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "All fields currently returned by the policy snapshot contract are represented by typed edit and ordered structural create drawers. Existing policies support optimistic first, before, and last move operations; restoring the original position removes the pending move. Confirmed structural deletion rejects conflicting pending field edits. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "starttls_signatures",

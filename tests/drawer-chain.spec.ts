@@ -98,6 +98,7 @@ type MockState = {
   validationReady?: boolean;
   commitReady?: boolean;
   structuralDraftsReady?: boolean;
+  secondPolicy?: boolean;
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   commitRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   validationOperationDelta?: number;
@@ -604,7 +605,12 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         action: 'accept', nat: '', routing: 'main', tls_profile: 'inspect',
         ssh_profile: 'default-ssh', detection_profile: 'detect', content_profile: 'capture', auth_profile: 'legacy-auth',
         dns_profile: 'resolver', script_profile: 'audit',
-      }],
+      }, ...(state.secondPolicy ? [{
+        id: 'policy-1', name: 'Policy 2', enabled: true, protocol: 'tcp', sources: ['office'],
+        source_ports: [], destinations: ['internet'], destination_ports: [], features: [],
+        action: 'reject', nat: '', routing: '', tls_profile: '', ssh_profile: '',
+        detection_profile: '', content_profile: '', auth_profile: '', dns_profile: '', script_profile: '',
+      }] : [])],
       addresses: [
         {id: 'address-0', name: 'office', type: 'cidr', value: '10.0.0.0/24'},
         {id: 'address-1', name: 'internet', type: 'fqdn', value: 'example.test'},
@@ -1730,6 +1736,55 @@ test('confirms policy deletion and blocks removal of referenced objects', async 
   await table.getByRole('button', {name: /Remove delete operation/u}).click();
   await expect(page.getByText('No pending changes')).toBeVisible();
   expect(state.structuralRemovalRequests).toHaveLength(1);
+});
+
+test('moves a stable policy and removes the operation when order is restored', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    secondPolicy: true,
+    structuralMutationRequests: [],
+    structuralRemovalRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /Policy 1/i}).click();
+
+  let editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const placement = editor.getByLabel('Draft order');
+  await expect(placement).toHaveValue('first');
+  await placement.selectOption('last');
+  await editor.getByRole('button', {name: 'Save order to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {op: 'move', collection: 'policy', entity_id: 'policy-0', position: {last: true}},
+    csrf: '1',
+  });
+  expect(state.structuralMutationRequests![0]!.operation.local_id)
+    .toMatch(/^move-policy-[0-9a-f-]{36}$/u);
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  const moveRow = table.getByRole('row').filter({hasText: 'policy · move'});
+  await expect(moveRow).toContainText('policy-0');
+  await moveRow.getByRole('button', {name: 'Edit'}).click();
+
+  editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(editor.getByLabel('Draft order')).toHaveValue('last');
+  await editor.getByLabel('Draft order').selectOption('first');
+  await editor.getByRole('button', {name: 'Update draft order'}).click();
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
+  await expect(editor.getByLabel('Draft order')).toHaveValue('first');
+  expect(state.structuralRemovalRequests).toHaveLength(1);
+  expect(state.structuralRemovalRequests![0]).toMatchObject({expectedVersion: 1, csrf: '1'});
+  expect(state.structuralRemovalRequests![0]!.localId)
+    .toBe(state.structuralMutationRequests![0]!.operation.local_id);
 });
 
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {

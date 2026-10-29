@@ -205,9 +205,11 @@ They reject duplicate identities and invalid ranges locally, store ordered creat
 operations under optimistic draft concurrency, and reopen pending items from draft
 review. A policy can be placed first, last, or immediately before an existing stable
 policy and can open referenced objects in another nested drawer. Existing policies
-and unreferenced reusable objects can be placed into the same draft as confirmed
-delete operations; active references and conflicting pending field edits block the
-delete locally before the authoritative Smithproxy validation.
+can also be reordered first, last, or before another stable policy. Reordering updates
+one optimistic move operation, while restoring the original position removes that
+operation. Existing policies and unreferenced reusable objects can be placed into the
+same draft as confirmed delete operations; active references and conflicting pending
+field edits block the delete locally before the authoritative Smithproxy validation.
 Current legacy deployments keep the controls disabled because their snapshot IDs
 are not stable.
 

@@ -8,6 +8,7 @@ import {
   type DraftCommit,
   type DraftCreateOperation,
   type DraftDeleteOperation,
+  type DraftMoveOperation,
   type DraftPreflight,
   type DraftScalar,
   type DraftSnapshot,
@@ -1629,6 +1630,9 @@ export class SmithproxyApp extends LitElement {
               : operation.collection === 'proto_objects' ? 'protocol' : undefined;
         if (kind) objects.add(`${kind}:${operation.entityId}`);
       }
+      if (operation.op === 'move' && operation.collection === 'policy') {
+        objects.add(`policy:${operation.entityId}`);
+      }
     }
     this.draftObjects = objects;
   }
@@ -1907,6 +1911,11 @@ export class SmithproxyApp extends LitElement {
 
   private openDraftStructuralOperation(localId: string, origin: HTMLElement): void {
     const operation = this.workspaceDraft?.structuralOperations.find(item => item.localId === localId);
+    if (operation?.op === 'move' && operation.collection === 'policy') {
+      const policy = this.snapshot?.policies.find(item => item.id === operation.entityId);
+      if (policy) this.openPolicy(policy, origin);
+      return;
+    }
     if (operation?.op !== 'create' || ![
       'address_objects', 'port_objects', 'proto_objects', 'policy',
     ].includes(operation.collection)) return;
@@ -2068,6 +2077,104 @@ export class SmithproxyApp extends LitElement {
         this.draftSaving = false;
         this.structuralDeleteArmedKey = undefined;
       }
+    }
+  }
+
+  private pendingPolicyMove(entityId: string): DraftMoveOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'move' && item.collection === 'policy' && item.entityId === entityId);
+    return operation?.op === 'move' ? operation : undefined;
+  }
+
+  private policyPositionIsOriginal(entityId: string, position: DraftMoveOperation['position']): boolean {
+    const policies = this.snapshot?.policies ?? [];
+    const index = policies.findIndex(policy => policy.id === entityId);
+    if (index < 0) return false;
+    if (position.kind === 'first') return index === 0;
+    if (position.kind === 'last') return index === policies.length - 1;
+    if (position.kind === 'after') {
+      return index > 0 && policies[index - 1]?.id === position.reference;
+    }
+    return index + 1 < policies.length && policies[index + 1]?.id === position.reference;
+  }
+
+  private policyPlacementValue(entityId: string): string {
+    const pending = this.pendingPolicyMove(entityId);
+    if (pending) {
+      return pending.position.reference === null
+        ? pending.position.kind
+        : `${pending.position.kind}:${pending.position.reference}`;
+    }
+    const policies = this.snapshot?.policies ?? [];
+    const index = policies.findIndex(policy => policy.id === entityId);
+    if (index <= 0) return 'first';
+    if (index === policies.length - 1) return 'last';
+    return `before:${policies[index + 1]!.id}`;
+  }
+
+  private async movePolicyInDraft(entry: DrawerEntry): Promise<void> {
+    if (entry.kind !== 'policy' || !this.structuralDraftsAvailable || !this.draftClient ||
+        this.draftSaving || this.draftCommitting) return;
+    const policy = this.snapshot?.policies.find(item => item.id === entry.id);
+    const placement = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-placement-${entry.id}`);
+    if (!policy || !placement) return;
+    if (this.dirtyDrawerKeys.has(this.drawerKey(entry))) {
+      this.drawerError = 'Save or discard ordinary policy field changes before changing its order.';
+      return;
+    }
+    if (this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'delete' && operation.collection === 'policy' && operation.entityId === policy.id)) {
+      this.drawerError = 'Remove the pending policy deletion before changing its order.';
+      return;
+    }
+    let position: DraftMoveOperation['position'];
+    if (placement.value === 'first' || placement.value === 'last') {
+      position = {kind: placement.value, reference: null};
+    } else if (placement.value.startsWith('before:')) {
+      const reference = placement.value.slice('before:'.length);
+      if (reference === policy.id || !this.snapshot?.policies.some(item => item.id === reference)) {
+        this.drawerError = 'The selected policy placement is no longer available.';
+        return;
+      }
+      position = {kind: 'before', reference};
+    } else {
+      this.drawerError = 'A valid policy placement is required.';
+      return;
+    }
+
+    const existing = this.pendingPolicyMove(policy.id);
+    const original = this.policyPositionIsOriginal(policy.id, position);
+    if (!existing && original) {
+      this.drawerError = 'The policy is already in that position.';
+      return;
+    }
+    if (existing && existing.position.kind === position.kind &&
+        existing.position.reference === position.reference) {
+      this.drawerError = undefined;
+      return;
+    }
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = existing && original
+        ? await this.draftClient.removeOperation(this.draftVersion, existing.localId)
+        : await this.draftClient.upsertOperation(this.draftVersion, {
+          op: 'move', localId: existing?.localId ?? `move-policy-${crypto.randomUUID()}`,
+          collection: 'policy', entityId: policy.id, position,
+        });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+      this.markDrawerSaved(entry);
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Policy order could not be updated in the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
     }
   }
 
@@ -2315,6 +2422,9 @@ export class SmithproxyApp extends LitElement {
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement ||
           target instanceof HTMLTextAreaElement) || target.disabled ||
         ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) && target.readOnly)) {
+      return;
+    }
+    if (target.dataset.structuralControl === 'true') {
       return;
     }
     const key = this.drawerKey(entry);
@@ -4161,9 +4271,10 @@ export class SmithproxyApp extends LitElement {
                     : operation.entityId}
                 </span>
                 <span class="draft-actions" role="cell">
-                  ${operation.op === 'create' && [
+                  ${(operation.op === 'create' && [
                     'address_objects', 'port_objects', 'proto_objects', 'policy',
-                  ].includes(operation.collection) ? html`
+                  ].includes(operation.collection)) ||
+                    (operation.op === 'move' && operation.collection === 'policy') ? html`
                     <button class="secondary" type="button"
                       ?disabled=${!this.structuralDraftsAvailable}
                       @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
@@ -6052,6 +6163,10 @@ export class SmithproxyApp extends LitElement {
     const destinationPortValues = this.persistentListValue(`${policyBase}.dport`, policy.destinationPorts, 'string');
     const featureValues = this.persistentListValue(`${policyBase}.features`, policy.features, 'string');
     const protocol = this.snapshot?.protocols.find(item => item.name === protocolValue);
+    const pendingMove = this.pendingPolicyMove(policy.id);
+    const placement = this.policyPlacementValue(policy.id);
+    const showPlacement = (this.structuralDraftsAvailable || pendingMove !== undefined) &&
+      (this.snapshot?.policies.length ?? 0) > 1;
     return html`
       <div class="form-grid">
         <label for="policy-name-${entry.id}">Name</label>
@@ -6061,6 +6176,30 @@ export class SmithproxyApp extends LitElement {
         <label><input id="policy-enabled-${entry.id}" type="checkbox"
           .checked=${!this.persistentValue(`${policyBase}.disabled`, !policy.enabled)}
           ?disabled=${this.originReadOnly(`${policyBase}.disabled`, liveReadOnly)} /> Accept traffic for evaluation</label>
+        ${showPlacement ? html`
+          <label for="policy-placement-${entry.id}">Draft order</label>
+          <div class="reference-edit">
+            <select id="policy-placement-${entry.id}" data-structural-control="true"
+              ?disabled=${!this.structuralDraftsAvailable}>
+              <option value="first" ?selected=${placement === 'first'}>First policy</option>
+              ${this.snapshot?.policies.filter(item => item.id !== policy.id).map(item => html`
+                <option value=${`before:${item.id}`} ?selected=${placement === `before:${item.id}`}>
+                  Before ${item.name}
+                </option>
+              `)}
+              <option value="last" ?selected=${placement === 'last'}>Last policy</option>
+            </select>
+            <button class="secondary" type="button"
+              ?disabled=${!this.structuralDraftsAvailable || this.draftSaving || this.draftCommitting ||
+                this.dirtyDrawerKeys.has(this.drawerKey(entry))}
+              title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
+                ? 'Save or discard ordinary policy field changes first.'
+                : 'Store policy order in the workspace draft'}
+              @click=${() => this.movePolicyInDraft(entry)}>
+              ${pendingMove ? 'Update draft order' : 'Save order to draft'}
+            </button>
+          </div>
+        ` : nothing}
         <label for="policy-sources-${entry.id}">Sources</label>
         <div class="reference-stack">
           <input id="policy-sources-${entry.id}" .value=${sourceValues.join(', ')}
