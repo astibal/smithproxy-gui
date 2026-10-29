@@ -2,6 +2,11 @@
 
 Toto je návrh povrchů, nikoli schválená implementace Smithproxy API.
 
+Aktuálně implementovaný GUI-core povrch, jeho metody, autentizační hranice a
+capability vazby jsou strojově evidovány v `API_SURFACE.json`. CI porovnává tento
+manifest přímo s C++ routerem; tento dokument navíc obsahuje budoucí návrhy,
+které ještě implementované být nemusí.
+
 ## Zásady
 
 - verzování pod `/api/v1`;

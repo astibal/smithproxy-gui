@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "api_version": "v1",
+  "endpoints": [
+    {
+      "path": "/healthz",
+      "methods": ["GET", "HEAD"],
+      "authentication": "public",
+      "csrf": false,
+      "feature": null,
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/capabilities",
+      "methods": ["GET", "HEAD"],
+      "authentication": "public",
+      "csrf": false,
+      "feature": null,
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/auth/session",
+      "methods": ["GET", "HEAD"],
+      "authentication": "public",
+      "csrf": false,
+      "feature": null,
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/status",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": null,
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/metrics/summary",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "metrics",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/tls/cache/summary",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "tls_monitoring",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/network/neighbors/summary",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "neighbor_monitoring",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/sessions/activity",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "session_activity",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/events/recent",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "events",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/events",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "events",
+      "response_media_type": "text/event-stream"
+    },
+    {
+      "path": "/api/v1/alerts",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "alerts",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/audit/recent",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "audit",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/snapshot",
+      "methods": ["GET", "HEAD"],
+      "authentication": "gateway",
+      "csrf": false,
+      "feature": "config_read",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/draft",
+      "methods": ["GET", "HEAD"],
+      "authentication": "gateway",
+      "csrf": false,
+      "feature": "drafts",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/draft/preflight",
+      "methods": ["GET", "HEAD"],
+      "authentication": "gateway",
+      "csrf": false,
+      "feature": "draft_preflight",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/draft/changes",
+      "methods": ["POST"],
+      "authentication": "gateway",
+      "csrf": true,
+      "feature": "drafts",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/draft/clear",
+      "methods": ["POST"],
+      "authentication": "gateway",
+      "csrf": true,
+      "feature": "drafts",
+      "response_media_type": "application/json"
+    }
+  ]
+}

@@ -155,4 +155,8 @@ if(BUILD_TESTING)
                 "${MICROHTTPD_VERSION}"
                 "${nlohmann_json_VERSION}"
                 "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME api_surface_tests
+        COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/api_surface.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/API_SURFACE.json"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/backend/http_server.cpp")
 endif()

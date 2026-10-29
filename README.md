@@ -30,6 +30,7 @@ documentation:
 - [Configuration, drafts, and augments](docs/CONFIG_AND_AUGMENTS.md)
 - [Machine-readable configuration coverage](docs/CONFIG_COVERAGE.json)
 - [API contract](docs/API_CONTRACT.md)
+- [Machine-readable implemented API surface](docs/API_SURFACE.json)
 - [Security](docs/SECURITY.md)
 - [Testing strategy](docs/TESTING.md)
 - [Change and review process](docs/CHANGE_PROCESS.md)
