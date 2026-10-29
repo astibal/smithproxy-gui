@@ -1575,6 +1575,47 @@ test('reviews and removes a structural draft operation', async ({page}) => {
   }]);
 });
 
+test('removes pending create operations only after their draft dependents', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', structuralRemovalRequests: [],
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'create-address-pending', collection: 'address_objects',
+      client_id: 'create-address-pending', position: {last: true},
+      fields: {name: 'pending-office', type: 'cidr', value: '192.0.2.0/24'},
+    }, {
+      op: 'create', local_id: 'create-policy-pending', collection: 'policy',
+      client_id: 'create-policy-pending', position: {last: true},
+      fields: {
+        name: 'pending-policy', disabled: false, proto: 'tcp', src: ['pending-office'],
+        sport: [], dst: ['internet'], dport: [], features: [], action: 'accept', nat: '',
+        routing: '', tls_profile: '', ssh_profile: '', detection_profile: '',
+        content_profile: '', auth_profile: '', alg_dns_profile: '', script_profile: '',
+      },
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 2'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  const addressRow = table.getByRole('row').filter({hasText: 'address_objects · create'});
+  const policyRow = table.getByRole('row').filter({hasText: 'policy · create'});
+  const addressRemove = addressRow.getByRole('button', {name: /Remove create operation/u});
+  await expect(addressRemove).toBeDisabled();
+  await expect(addressRemove).toHaveAttribute(
+    'title', 'Remove pending draft references before removing this create operation.',
+  );
+
+  await policyRow.getByRole('button', {name: /Remove create operation/u}).click();
+  await expect(addressRemove).toBeEnabled();
+  await addressRemove.click();
+  await expect(page.getByText('No pending changes')).toBeVisible();
+  expect(state.structuralRemovalRequests).toEqual([{
+    expectedVersion: 1, localId: 'create-policy-pending', csrf: '1',
+  }, {
+    expectedVersion: 2, localId: 'create-address-pending', csrf: '1',
+  }]);
+});
+
 test('creates and reopens an address object through a structural drawer', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',

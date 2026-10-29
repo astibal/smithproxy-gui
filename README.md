@@ -215,7 +215,9 @@ same draft as confirmed delete operations; active references and conflicting pen
 field edits block the delete locally before the authoritative Smithproxy validation.
 References introduced by pending policy or routing edits and structural creates are
 included in that blocker, so an internally contradictory draft is not offered as a
-valid local workflow.
+valid local workflow. Draft review applies the same dependency ordering to pending
+create operations: dependent policy or routing operations must be removed before
+the object or profile they reference.
 Stable routing, TLS, detection, content, SSH, DNS, script, and authentication
 profiles use the same confirmed deletion path and cannot be deleted while referenced.
 New routing, TLS, detection, DNS ALG, authentication, content, SSH, and script profiles

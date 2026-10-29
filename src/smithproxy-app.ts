@@ -1961,6 +1961,11 @@ export class SmithproxyApp extends LitElement {
 
   private async removeDraftOperation(localId: string): Promise<void> {
     if (!this.draftAvailable || !this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const dependencyBlocker = this.pendingCreateRemovalBlocker(localId);
+    if (dependencyBlocker) {
+      this.draftError = dependencyBlocker;
+      return;
+    }
     this.draftSaving = true;
     const accessEpoch = this.configurationAccessEpoch;
     this.draftError = undefined;
@@ -2183,46 +2188,40 @@ export class SmithproxyApp extends LitElement {
       operation.entityId === target.entityId) ?? false;
   }
 
-  private pendingDraftReferences(entry: DrawerEntry): boolean {
-    if (!this.snapshot || !this.workspaceDraft) return false;
-    let name: string | undefined;
-    let specifications: ReadonlyArray<{
-      collection: DraftCreateOperation['collection'];
-      fields: ReadonlyArray<string>;
-    }> = [];
-    if (entry.kind === 'address') {
-      name = this.snapshot.addresses.find(item => item.id === entry.id)?.name;
-      specifications = [
-        {collection: 'policy', fields: ['src', 'dst']},
-        {collection: 'routing', fields: ['dnat_address']},
-      ];
-    } else if (entry.kind === 'port') {
-      name = this.snapshot.ports.find(item => item.id === entry.id)?.name;
-      specifications = [
-        {collection: 'policy', fields: ['sport', 'dport']},
-        {collection: 'routing', fields: ['dnat_port']},
-      ];
-    } else if (entry.kind === 'protocol') {
-      name = this.snapshot.protocols.find(item => item.id === entry.id)?.name;
-      specifications = [{collection: 'policy', fields: ['proto']}];
-    } else if (entry.kind === 'profile') {
-      const profile = this.snapshot.profiles.find(item => item.id === entry.id);
-      name = profile?.name;
-      const field = profile?.routing ? 'routing'
-        : profile?.tls ? 'tls_profile'
-          : profile?.ssh ? 'ssh_profile'
-            : profile?.detection ? 'detection_profile'
-              : profile?.content ? 'content_profile'
-                : profile?.authentication ? 'auth_profile'
-                  : profile?.dns ? 'alg_dns_profile'
-                    : profile?.script ? 'script_profile' : undefined;
-      if (field) specifications = [{collection: 'policy', fields: [field]}];
-    }
-    if (!name || specifications.length === 0) return false;
+  private referenceSpecifications(collection: DraftCreateOperation['collection']): ReadonlyArray<{
+    collection: DraftCreateOperation['collection'];
+    fields: ReadonlyArray<string>;
+  }> {
+    if (collection === 'address_objects') return [
+      {collection: 'policy', fields: ['src', 'dst']},
+      {collection: 'routing', fields: ['dnat_address']},
+    ];
+    if (collection === 'port_objects') return [
+      {collection: 'policy', fields: ['sport', 'dport']},
+      {collection: 'routing', fields: ['dnat_port']},
+    ];
+    if (collection === 'proto_objects') return [{collection: 'policy', fields: ['proto']}];
+    const profileFields: Partial<Record<DraftCreateOperation['collection'], string>> = {
+      routing: 'routing', tls_profiles: 'tls_profile', ssh_profiles: 'ssh_profile',
+      detection_profiles: 'detection_profile', content_profiles: 'content_profile',
+      auth_profiles: 'auth_profile', alg_dns_profiles: 'alg_dns_profile',
+      script_profiles: 'script_profile',
+    };
+    const field = profileFields[collection];
+    return field ? [{collection: 'policy', fields: [field]}] : [];
+  }
+
+  private draftReferencesName(
+    name: string,
+    specifications: ReturnType<SmithproxyApp['referenceSpecifications']>,
+    excludedLocalId?: string,
+  ): boolean {
+    if (!this.workspaceDraft) return false;
     const references = (value: DraftScalar | undefined) =>
       value === name || (Array.isArray(value) && value.includes(name));
     const structuralReference = this.workspaceDraft.structuralOperations.some(operation =>
-      operation.op === 'create' && specifications.some(specification =>
+      operation.op === 'create' && operation.localId !== excludedLocalId &&
+      specifications.some(specification =>
         operation.collection === specification.collection &&
         specification.fields.some(field => references(operation.fields[field]))));
     if (structuralReference) return true;
@@ -2232,8 +2231,38 @@ export class SmithproxyApp extends LitElement {
       references(change.value)));
   }
 
+  private pendingCreateRemovalBlocker(localId: string): string | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item => item.localId === localId);
+    if (operation?.op !== 'create') return undefined;
+    const name = operation.fields['name'];
+    if (typeof name !== 'string') return undefined;
+    const specifications = this.referenceSpecifications(operation.collection);
+    return specifications.length > 0 && this.draftReferencesName(name, specifications, localId)
+      ? 'Remove pending draft references before removing this create operation.'
+      : undefined;
+  }
+
+  private pendingDraftReferences(
+    entry: DrawerEntry, target: {collection: DraftDeleteOperation['collection']},
+  ): boolean {
+    if (!this.snapshot || !this.workspaceDraft) return false;
+    let name: string | undefined;
+    if (entry.kind === 'address') {
+      name = this.snapshot.addresses.find(item => item.id === entry.id)?.name;
+    } else if (entry.kind === 'port') {
+      name = this.snapshot.ports.find(item => item.id === entry.id)?.name;
+    } else if (entry.kind === 'protocol') {
+      name = this.snapshot.protocols.find(item => item.id === entry.id)?.name;
+    } else if (entry.kind === 'profile') {
+      name = this.snapshot.profiles.find(item => item.id === entry.id)?.name;
+    }
+    const specifications = this.referenceSpecifications(target.collection);
+    if (!name || specifications.length === 0) return false;
+    return this.draftReferencesName(name, specifications);
+  }
+
   private structuralDeleteBlocker(entry: DrawerEntry, target: {
-    collection: string;
+    collection: DraftDeleteOperation['collection'];
     entityId: string;
     usageCount: number;
     blocker?: string;
@@ -2245,7 +2274,7 @@ export class SmithproxyApp extends LitElement {
     if (target.usageCount > 0) {
       return `This object is referenced by ${target.usageCount} configuration ${target.usageCount === 1 ? 'entry' : 'entries'}.`;
     }
-    if (this.pendingDraftReferences(entry)) {
+    if (this.pendingDraftReferences(entry, target)) {
       return 'This object is referenced by a pending workspace draft entry.';
     }
     if (this.workspaceDraft?.structuralOperations.some(operation =>
@@ -5477,7 +5506,9 @@ export class SmithproxyApp extends LitElement {
                 </span>
               </div>`;
             })}
-            ${structuralOperations.map(operation => html`
+            ${structuralOperations.map(operation => {
+              const removalBlocker = this.pendingCreateRemovalBlocker(operation.localId);
+              return html`
               <div class="draft-row" role="row">
                 <span class="draft-path" role="cell">
                   ${operation.collection} · ${operation.op}
@@ -5508,11 +5539,13 @@ export class SmithproxyApp extends LitElement {
                   ` : nothing}
                   <button class="secondary" type="button"
                     aria-label=${`Remove ${operation.op} operation ${operation.localId} from draft`}
-                    ?disabled=${this.draftSaving || this.draftValidating || this.draftCommitting}
+                    title=${removalBlocker ?? nothing}
+                    ?disabled=${removalBlocker !== undefined || this.draftSaving ||
+                      this.draftValidating || this.draftCommitting}
                     @click=${() => this.removeDraftOperation(operation.localId)}>Remove</button>
                 </span>
-              </div>
-            `)}
+              </div>`;
+            })}
           </div>
           <div class="scope-note section">
             This is a pending management draft only. It has not changed persistent or runtime Smithproxy configuration.
