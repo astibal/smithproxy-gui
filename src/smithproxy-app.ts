@@ -2183,6 +2183,55 @@ export class SmithproxyApp extends LitElement {
       operation.entityId === target.entityId) ?? false;
   }
 
+  private pendingDraftReferences(entry: DrawerEntry): boolean {
+    if (!this.snapshot || !this.workspaceDraft) return false;
+    let name: string | undefined;
+    let specifications: ReadonlyArray<{
+      collection: DraftCreateOperation['collection'];
+      fields: ReadonlyArray<string>;
+    }> = [];
+    if (entry.kind === 'address') {
+      name = this.snapshot.addresses.find(item => item.id === entry.id)?.name;
+      specifications = [
+        {collection: 'policy', fields: ['src', 'dst']},
+        {collection: 'routing', fields: ['dnat_address']},
+      ];
+    } else if (entry.kind === 'port') {
+      name = this.snapshot.ports.find(item => item.id === entry.id)?.name;
+      specifications = [
+        {collection: 'policy', fields: ['sport', 'dport']},
+        {collection: 'routing', fields: ['dnat_port']},
+      ];
+    } else if (entry.kind === 'protocol') {
+      name = this.snapshot.protocols.find(item => item.id === entry.id)?.name;
+      specifications = [{collection: 'policy', fields: ['proto']}];
+    } else if (entry.kind === 'profile') {
+      const profile = this.snapshot.profiles.find(item => item.id === entry.id);
+      name = profile?.name;
+      const field = profile?.routing ? 'routing'
+        : profile?.tls ? 'tls_profile'
+          : profile?.ssh ? 'ssh_profile'
+            : profile?.detection ? 'detection_profile'
+              : profile?.content ? 'content_profile'
+                : profile?.authentication ? 'auth_profile'
+                  : profile?.dns ? 'alg_dns_profile'
+                    : profile?.script ? 'script_profile' : undefined;
+      if (field) specifications = [{collection: 'policy', fields: [field]}];
+    }
+    if (!name || specifications.length === 0) return false;
+    const references = (value: DraftScalar | undefined) =>
+      value === name || (Array.isArray(value) && value.includes(name));
+    const structuralReference = this.workspaceDraft.structuralOperations.some(operation =>
+      operation.op === 'create' && specifications.some(specification =>
+        operation.collection === specification.collection &&
+        specification.fields.some(field => references(operation.fields[field]))));
+    if (structuralReference) return true;
+    return this.workspaceDraft.changes.some(change => specifications.some(specification =>
+      change.path.startsWith(`${specification.collection}.[`) &&
+      specification.fields.some(field => change.path.endsWith(`].${field}`)) &&
+      references(change.value)));
+  }
+
   private structuralDeleteBlocker(entry: DrawerEntry, target: {
     collection: string;
     entityId: string;
@@ -2195,6 +2244,9 @@ export class SmithproxyApp extends LitElement {
     if (target.blocker) return target.blocker;
     if (target.usageCount > 0) {
       return `This object is referenced by ${target.usageCount} configuration ${target.usageCount === 1 ? 'entry' : 'entries'}.`;
+    }
+    if (this.pendingDraftReferences(entry)) {
+      return 'This object is referenced by a pending workspace draft entry.';
     }
     if (this.workspaceDraft?.structuralOperations.some(operation =>
       operation.collection === target.collection &&

@@ -2264,6 +2264,67 @@ test('deletes an unused stable profile and blocks referenced profiles', async ({
   await expect(deleteButton).toHaveAttribute('title', 'This object is referenced by 1 configuration entry.');
 });
 
+test('blocks deletion when a new policy references the object in the same draft', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, unusedProfile: true, structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: 'New policy'}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Create policy'});
+  await policyEditor.getByLabel('Name').fill('pending-profile-reference');
+  await policyEditor.getByLabel('Detection profile').fill('unused-detection');
+  await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(policyEditor.getByText('Saved to draft')).toBeVisible();
+  await policyEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await profiles.getByRole('button', {name: /unused-detection detection/i}).click();
+  const profileEditor = page.getByRole('dialog', {name: 'Edit unused-detection'});
+  const deleteButton = profileEditor.getByRole('button', {name: 'Delete detection profile'});
+  await expect(deleteButton).toBeDisabled();
+  await expect(deleteButton).toHaveAttribute(
+    'title', 'This object is referenced by a pending workspace draft entry.',
+  );
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    operation: {
+      op: 'create', collection: 'policy', fields: {detection_profile: 'unused-detection'},
+    },
+  });
+  await expectNoWcagViolations(page);
+});
+
+test('blocks deletion when a pending policy edit adds the reference', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, unusedProfile: true, draftMutationBatches: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1.*accept/i}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await policyEditor.getByLabel('Detection profile').fill('unused-detection');
+  await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(policyEditor.getByText('Saved to draft')).toBeVisible();
+  await policyEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await profiles.getByRole('button', {name: /unused-detection detection/i}).click();
+  const profileEditor = page.getByRole('dialog', {name: 'Edit unused-detection'});
+  await expect(profileEditor.getByRole('button', {name: 'Delete detection profile'})).toHaveAttribute(
+    'title', 'This object is referenced by a pending workspace draft entry.',
+  );
+  expect(state.draftMutationBatches).toEqual([[
+    {path: 'policy.[0].detection_profile', value: 'unused-detection'},
+  ]]);
+});
+
 test('reorders and deletes stable nested content rules', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',

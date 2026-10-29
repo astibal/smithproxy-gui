@@ -213,6 +213,9 @@ one optimistic move operation, while restoring the original position removes tha
 operation. Existing policies and unreferenced reusable objects can be placed into the
 same draft as confirmed delete operations; active references and conflicting pending
 field edits block the delete locally before the authoritative Smithproxy validation.
+References introduced by pending policy or routing edits and structural creates are
+included in that blocker, so an internally contradictory draft is not offered as a
+valid local workflow.
 Stable routing, TLS, detection, content, SSH, DNS, script, and authentication
 profiles use the same confirmed deletion path and cannot be deleted while referenced.
 New routing, TLS, detection, DNS ALG, authentication, content, SSH, and script profiles

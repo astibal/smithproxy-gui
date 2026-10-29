@@ -55,7 +55,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "type", "value"],
-      "notes": "CIDR and FQDN address objects are represented by typed edit and structural create drawers. Confirmed structural deletion is available only for unreferenced objects without pending field edits. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "CIDR and FQDN address objects are represented by typed edit and structural create drawers. Confirmed structural deletion is available only for objects without live or pending policy/routing references and without pending field edits. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "port_objects",
@@ -64,7 +64,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "start", "end"],
-      "notes": "Port ranges are represented by typed edit and structural create drawers. Creation validates ascending bounded ranges; confirmed deletion is limited to unreferenced objects without pending field edits. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "Port ranges are represented by typed edit and structural create drawers. Creation validates ascending bounded ranges; confirmed deletion is limited to objects without live or pending policy/routing references and without pending field edits. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "proto_objects",
@@ -73,7 +73,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "id"],
-      "notes": "Protocol identifiers are represented by typed edit and structural create drawers. Creation validates unique protocol numbers; confirmed deletion is limited to unreferenced objects without pending field edits. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "Protocol identifiers are represented by typed edit and structural create drawers. Creation validates unique protocol numbers; confirmed deletion is limited to objects without live or pending policy references and without pending field edits. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "detection_profiles",
