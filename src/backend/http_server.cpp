@@ -6,6 +6,7 @@
 #include "job_store.hpp"
 #include "json.hpp"
 #include "operational_alerts.hpp"
+#include "operational_event_store.hpp"
 #include "path.hpp"
 
 #include <lmhttpd.hpp>
@@ -51,14 +52,6 @@ struct Response {
     std::string body;
     std::string cache_control{"no-store"};
     std::vector<std::pair<std::string, std::string>> headers;
-};
-
-struct OperationalEventRecord {
-    std::string id;
-    std::uint64_t source_revision{};
-    std::chrono::system_clock::time_point occurred_at;
-    std::string severity;
-    std::string message;
 };
 
 constexpr std::size_t maximum_request_body = 64U * 1024U;
@@ -203,26 +196,6 @@ nlohmann::json job_json(const JobRecord& record) {
         {"owner", nullptr},
         {"result", record.result ? nlohmann::json(*record.result) : nlohmann::json(nullptr)},
     };
-}
-
-std::vector<OperationalEventRecord> operational_events(const SmithproxyStatus& status) {
-    std::vector<OperationalEventRecord> events;
-    events.reserve(status.history.size());
-    std::string previous_state;
-    for (const auto& sample : status.history) {
-        if (sample.state == previous_state) continue;
-        previous_state = sample.state;
-        events.push_back({
-            std::to_string(sample.sequence) + "-" + sample.state,
-            sample.sequence,
-            sample.checked_at,
-            sample.state == "ready" ? "info" : sample.state == "starting" ? "notice" : "error",
-            sample.state == "ready" ? "Smithproxy control plane is reachable" :
-            sample.state == "starting" ? "Smithproxy probe is starting" :
-            "Smithproxy control plane changed to " + sample.state,
-        });
-    }
-    return events;
 }
 
 std::string operational_event_json(const OperationalEventRecord& event) {
@@ -1399,14 +1372,24 @@ private:
                     ",\"successful\":" + std::to_string(successful) + "},\"history\":" + history + "}}"};
     }
 
-    Response recent_events() const {
-        const auto status = monitor_.status();
-        return {200, "application/json; charset=utf-8",
-                operational_snapshot_json(operational_events(status))};
+    std::vector<JobRecord> observe_operational_state(const SmithproxyStatus& status) {
+        jobs_.reconcile(status.config_snapshot);
+        auto job_records = jobs_.snapshot();
+        operational_events_.observe(status, job_records);
+        return job_records;
     }
 
-    Response event_stream(MHD_Connection* connection) const {
-        const auto records = operational_events(monitor_.status());
+    Response recent_events() {
+        const auto status = monitor_.status();
+        (void)observe_operational_state(status);
+        return {200, "application/json; charset=utf-8",
+                operational_snapshot_json(operational_events_.snapshot())};
+    }
+
+    Response event_stream(MHD_Connection* connection) {
+        const auto status = monitor_.status();
+        (void)observe_operational_state(status);
+        const auto records = operational_events_.snapshot();
         const auto* supplied_id = MHD_lookup_connection_value(
             connection, MHD_HEADER_KIND, "Last-Event-ID");
         const std::string_view last_id = supplied_id == nullptr ? std::string_view{} : supplied_id;
@@ -1443,10 +1426,14 @@ private:
                 {{"X-Accel-Buffering", "no"}}};
     }
 
-    Response alerts() const {
+    Response alerts() {
         const auto generated_at = std::chrono::system_clock::now();
-        const auto active = derive_operational_alerts(
-            monitor_.status(), monitor_.configured(), monitor_.config_enabled(), generated_at);
+        const auto status = monitor_.status();
+        const auto job_records = observe_operational_state(status);
+        auto active = derive_operational_alerts(
+            status, monitor_.configured(), monitor_.config_enabled(), generated_at);
+        const auto job_alerts = derive_job_alerts(job_records);
+        active.insert(active.end(), job_alerts.begin(), job_alerts.end());
         std::string alerts{"["};
         for (std::size_t index = 0; index < active.size(); ++index) {
             if (index != 0U) alerts += ',';
@@ -1487,8 +1474,7 @@ private:
     }
 
     Response jobs() {
-        jobs_.reconcile(monitor_.status().config_snapshot);
-        const auto records = jobs_.snapshot();
+        const auto records = observe_operational_state(monitor_.status());
         auto generated_at = std::chrono::system_clock::now();
         for (const auto& record : records) {
             generated_at = std::max(generated_at, record.updated_at);
@@ -1510,7 +1496,7 @@ private:
         if (!valid_job_id(id)) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"job not found\"}"};
         }
-        jobs_.reconcile(monitor_.status().config_snapshot);
+        (void)observe_operational_state(monitor_.status());
         const auto record = jobs_.find(id);
         if (!record) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"job not found\"}"};
@@ -1691,6 +1677,7 @@ private:
     DraftStore draft_;
     CommitCoordinator commit_coordinator_;
     JobStore jobs_;
+    OperationalEventStore operational_events_;
     AuditStore audit_;
 };
 

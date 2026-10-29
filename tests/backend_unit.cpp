@@ -8,6 +8,7 @@
 #include "live_sessions.hpp"
 #include "neighbor_metrics.hpp"
 #include "operational_alerts.hpp"
+#include "operational_event_store.hpp"
 #include "path.hpp"
 #include "runtime_metrics.hpp"
 #include "smithproxy_client.hpp"
@@ -219,6 +220,72 @@ int main() {
     assert(expired_job && expired_job->state == "failed");
     assert(expired_job->phase == "timed-out");
     assert(expired_job->progress_percent == 100U);
+
+    SmithproxyStatus event_status;
+    const auto event_time = std::chrono::system_clock::now();
+    event_status.history = {
+        {.state = "ready", .checked_at = event_time, .latency_ms = 1U, .sequence = 1U},
+        {.state = "ready", .checked_at = event_time + std::chrono::seconds{1},
+         .latency_ms = 2U, .sequence = 2U},
+    };
+    JobStore event_jobs;
+    const auto event_job_id = event_jobs.create_config_refresh(canonical_revision_b);
+    assert(event_job_id);
+    OperationalEventStore events;
+    const auto running_event_jobs = event_jobs.snapshot();
+    events.observe(event_status, running_event_jobs);
+    auto event_records = events.snapshot();
+    assert(event_records.size() == 1U);
+    assert(event_records.front().id == "event-1");
+    assert(event_records.front().message == "Smithproxy control plane is reachable");
+    event_jobs.reconcile(synchronized_config);
+    events.observe(event_status, event_jobs.snapshot());
+    event_records = events.snapshot();
+    assert(event_records.size() == 2U);
+    assert(event_records.back().id == "event-2");
+    assert(event_records.back().severity == "info");
+    assert(event_records.back().message == "Configuration refresh synchronized");
+    events.observe(event_status, running_event_jobs);
+    events.observe(event_status, event_jobs.snapshot());
+    assert(events.snapshot().size() == 2U);
+    event_status.history.push_back({
+        .state = "error",
+        .checked_at = event_time + std::chrono::seconds{2},
+        .latency_ms = std::nullopt,
+        .sequence = 3U,
+    });
+    events.observe(event_status, event_jobs.snapshot());
+    event_records = events.snapshot();
+    assert(event_records.size() == 3U);
+    assert(event_records.back().message == "Smithproxy control plane changed to error");
+
+    SmithproxyStatus rotating_status;
+    for (std::uint64_t sequence = 1U; sequence <= 70U; ++sequence) {
+        rotating_status.history.push_back({
+            .state = sequence % 2U == 0U ? "ready" : "error",
+            .checked_at = event_time + std::chrono::seconds{sequence},
+            .latency_ms = std::nullopt,
+            .sequence = sequence,
+        });
+    }
+    OperationalEventStore rotating_events;
+    rotating_events.observe(rotating_status, {});
+    const auto rotated = rotating_events.snapshot();
+    assert(rotated.size() == 60U);
+    assert(rotated.front().id == "event-11");
+    assert(rotated.back().id == "event-70");
+
+    auto failed_alerts = derive_job_alerts(expiring_jobs.snapshot());
+    assert(failed_alerts.size() == 1U);
+    assert(failed_alerts.front().id == "configuration-refresh-failed");
+    auto retrying_jobs = expiring_jobs.snapshot();
+    retrying_jobs.push_back(*monotonic_jobs.find(*monotonic_job_id));
+    assert(derive_job_alerts(retrying_jobs).size() == 1U);
+    auto resolved_jobs = expiring_jobs.snapshot();
+    auto resolved_success = *successful_job;
+    resolved_success.sequence = resolved_jobs.front().sequence + 1U;
+    resolved_jobs.push_back(std::move(resolved_success));
+    assert(derive_job_alerts(resolved_jobs).empty());
 
     DraftStore schema_draft{"schema"};
     assert(schema_draft.upsert(0U, {"settings.enabled", true}) ==

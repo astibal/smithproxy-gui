@@ -99,6 +99,7 @@ add_library(smithproxy_gui_core
     src/backend/live_sessions.cpp
     src/backend/neighbor_metrics.cpp
     src/backend/operational_alerts.cpp
+    src/backend/operational_event_store.cpp
     src/backend/path.cpp
     src/backend/revision.cpp
     src/backend/runtime_metrics.cpp

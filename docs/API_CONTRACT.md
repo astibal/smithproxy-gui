@@ -302,7 +302,7 @@ timelines are consumed only inside the GUI core and are never serialized to the
 browser response.
 
 `/events/recent` currently exposes at most 60 structured GUI-core control-plane
-state transitions. Messages are generated from a fixed vocabulary and validated
+and backend-job state transitions. Messages are generated from a fixed vocabulary and validated
 for length and control characters in the browser client. The capability response
 distinguishes these events from the unavailable Smithproxy event ring. Smithproxy
 event text must only be added through a bounded authenticated HTTP API; the GUI
@@ -313,8 +313,9 @@ severity, titles, and details come from a fixed server vocabulary; arbitrary
 upstream log text is never forwarded. The current rules cover control-plane
 reachability and rolling availability, collector health and freshness, and TLS
 cache capacity. Disabling local explicit-proxy destination protection emits a
-configuration-posture warning. A control-plane outage suppresses derivative collector alerts
-to avoid an alert storm.
+configuration-posture warning. A latest configuration-refresh timeout emits a
+warning until a newer refresh succeeds. A control-plane outage suppresses
+derivative collector alerts to avoid an alert storm.
 
 `/audit/recent` exposes at most 256 in-memory GUI-core records for management
 mutation attempts. Each record contains a monotonic audit ID, time, request ID,
@@ -330,12 +331,14 @@ audit remains part of the production API design.
 
 `/events` používá autentizované same-origin SSE. První odpověď nese událost
 `snapshot`; další požadavky posílají `Last-Event-ID` a dostanou pouze novější
-události typu `operational`. Event ID i `source_revision` vycházejí z monotónního
-počítadla probe, takže nejsou závislé na systémovém čase. Pokud ID již není v
-omezeném šedesátipoložkovém okně nebo core mezitím restartoval, server pošle
-událost `reset` s autoritativním snapshotem. Prázdná kontinuita vrací SSE
-keepalive. Klient každý payload znovu validuje stejnými limity jako REST snapshot
-a při nevalidním payloadu stream uzavře.
+události typu `operational`. Event ID i `source_revision` přiděluje jednotný
+monotónní ring GUI core, takže nejsou závislé na systémovém čase ani na pořadí
+jednotlivých collectorů. Ring slučuje změny control-plane stavu a terminální
+stavy redigovaných backend úloh; nevkládá job ID, revize ani konfigurační hodnoty
+do zprávy. Pokud ID již není v omezeném šedesátipoložkovém okně nebo core mezitím
+restartoval, server pošle událost `reset` s autoritativním snapshotem. Prázdná
+kontinuita vrací SSE keepalive. Klient každý payload znovu validuje stejnými
+limity jako REST snapshot a při nevalidním payloadu stream uzavře.
 
 Server vrací `retry: 2500`, `Cache-Control: no-store` a `X-Accel-Buffering: no`.
 Spojení je po každé dávce uzavřeno; standardní `EventSource` jej obnoví bez
@@ -356,6 +359,10 @@ když monitorovaný autoritativní snapshot dosáhne revize z commit receipt; po
 deadline skončí jako `failed`. Seznam ani detail neobsahuje cílovou revizi,
 konfigurační hodnoty nebo credentials. Vlastník je zatím poctivě `null`, protože
 gateway kontrakt neposkytuje reviewovanou identitu uživatele.
+
+Terminální stav vstupuje také do jednotného operational event ringu. Poslední
+neúspěšný `config-refresh` aktivuje strukturovaný warning; warning se uzavře až
+novějším úspěšným refreshem, nikoli pouhým zahájením retry.
 
 `POST /api/v1/jobs/{job-id}/cancel` zůstává rezervovanou budoucí capability.
 `config-refresh` bezpečné zrušení nepodporuje a proto vždy vrací

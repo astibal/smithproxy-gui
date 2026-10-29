@@ -92,4 +92,20 @@ std::vector<OperationalAlert> derive_operational_alerts(
     return alerts;
 }
 
+std::vector<OperationalAlert> derive_job_alerts(const std::vector<JobRecord>& jobs) {
+    const JobRecord* latest = nullptr;
+    for (const auto& job : jobs) {
+        if (job.type != "config-refresh" ||
+            (job.state != "succeeded" && job.state != "failed")) continue;
+        if (latest == nullptr || job.sequence > latest->sequence) latest = &job;
+    }
+    if (latest == nullptr || latest->state != "failed") return {};
+    return {{
+        "configuration-refresh-failed",
+        "warning",
+        "Configuration refresh did not converge",
+        "The authoritative configuration snapshot did not reach the committed revision before the deadline.",
+    }};
+}
+
 } // namespace smithproxy::gui

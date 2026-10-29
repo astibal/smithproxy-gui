@@ -4,6 +4,7 @@
 #include "transaction_envelope.hpp"
 
 #include <algorithm>
+#include <limits>
 
 namespace smithproxy::gui {
 namespace {
@@ -27,6 +28,7 @@ std::optional<std::string> JobStore::create_config_refresh(
     const auto wall_now = std::chrono::system_clock::now();
     const auto monotonic_now = std::chrono::steady_clock::now();
     std::scoped_lock lock(mutex_);
+    if (next_sequence_ == std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
     if (jobs_.size() >= maximum_jobs) {
         const auto completed = std::find_if(jobs_.begin(), jobs_.end(), [](const StoredJob& job) {
             return terminal(job.record.state);
@@ -38,8 +40,10 @@ std::optional<std::string> JobStore::create_config_refresh(
         ? wall_now
         : std::max(wall_now, jobs_.back().record.created_at);
     const auto id = "job-" + *identifier;
+    const auto sequence = ++next_sequence_;
     jobs_.push_back({
         .record = {
+            .sequence = sequence,
             .id = id,
             .type = "config-refresh",
             .state = "running",

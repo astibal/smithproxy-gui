@@ -63,7 +63,9 @@ Event stream je realizován krátkou SSE odpovědí s `retry`, po které standar
 vlákno pro každou otevřenou záložku. Platné ID vrací pouze novější přechody;
 ID mimo omezenou historii vrací událost `reset` s autoritativním snapshotem.
 SSE endpoint má stejné management ověření jako REST monitoring a zakazuje
-proxy buffering.
+proxy buffering. Jednotný šedesátipoložkový ring přiděluje vlastní monotónní ID
+a slučuje control-plane přechody s terminálními stavy backend úloh. Zprávy mají
+pevný slovník a neobsahují job ID, config revision ani konfigurační hodnoty.
 
 Management mutace se současně korelují pomocí request ID a omezeného in-memory
 audit store. Store zaznamenává pouze validované cílové cesty, nikoli hodnoty.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "job_store.hpp"
 #include "smithproxy_client.hpp"
 
 #include <chrono>
@@ -18,5 +19,8 @@ struct OperationalAlert {
 [[nodiscard]] std::vector<OperationalAlert> derive_operational_alerts(
     const SmithproxyStatus& status, bool configured, bool config_enabled,
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
+
+[[nodiscard]] std::vector<OperationalAlert> derive_job_alerts(
+    const std::vector<JobRecord>& jobs);
 
 } // namespace smithproxy::gui

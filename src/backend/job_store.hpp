@@ -3,6 +3,7 @@
 #include "config_snapshot.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -12,6 +13,7 @@
 namespace smithproxy::gui {
 
 struct JobRecord {
+    std::uint64_t sequence{};
     std::string id;
     std::string type;
     std::string state;
@@ -45,6 +47,7 @@ private:
     std::chrono::milliseconds config_refresh_timeout_;
     mutable std::mutex mutex_;
     std::vector<StoredJob> jobs_;
+    std::uint64_t next_sequence_{};
 };
 
 } // namespace smithproxy::gui
