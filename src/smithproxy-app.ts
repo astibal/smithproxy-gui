@@ -156,6 +156,7 @@ export class SmithproxyApp extends LitElement {
   private systemProbeInFlight = false;
   private systemProbePending = false;
   private closeEventStream: (() => void) | undefined;
+  private eventStreamDegradedTimer: number | undefined;
   private configRefreshInFlight = false;
   private nextConfigRefreshAt = 0;
   private drawerHistoryDepth = 0;
@@ -516,8 +517,27 @@ export class SmithproxyApp extends LitElement {
   };
 
   private disconnectEventStream(): void {
+    this.clearEventStreamDegradedTimer();
     this.closeEventStream?.();
     this.closeEventStream = undefined;
+  }
+
+  private clearEventStreamDegradedTimer(): void {
+    if (this.eventStreamDegradedTimer !== undefined) window.clearTimeout(this.eventStreamDegradedTimer);
+    this.eventStreamDegradedTimer = undefined;
+  }
+
+  private markEventStreamReconnecting(): void {
+    if (this.eventStreamState === 'invalid') return;
+    if (this.eventStreamState !== 'live') {
+      this.eventStreamState = 'connecting';
+      return;
+    }
+    this.clearEventStreamDegradedTimer();
+    this.eventStreamDegradedTimer = window.setTimeout(() => {
+      this.eventStreamDegradedTimer = undefined;
+      if (this.eventStreamState === 'live') this.eventStreamState = 'connecting';
+    }, 2_000);
   }
 
   private connectEventStream(): void {
@@ -525,11 +545,13 @@ export class SmithproxyApp extends LitElement {
     this.eventStreamState = 'connecting';
     this.closeEventStream = this.systemClient.subscribeEvents({
       snapshot: snapshot => {
+        this.clearEventStreamDegradedTimer();
         this.operationalEvents = snapshot;
         this.eventsError = undefined;
         this.eventStreamState = 'live';
       },
       event: event => {
+        this.clearEventStreamDegradedTimer();
         const withoutDuplicate = this.operationalEvents.events.filter(item => item.id !== event.id);
         this.operationalEvents = {
           ...this.operationalEvents,
@@ -542,6 +564,9 @@ export class SmithproxyApp extends LitElement {
         this.disconnectEventStream();
         this.eventsError = error.message;
         this.eventStreamState = 'invalid';
+      },
+      connection: state => {
+        if (state === 'reconnecting') this.markEventStreamReconnecting();
       },
     });
   }

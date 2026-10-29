@@ -155,6 +155,7 @@ export interface EventStreamHandlers {
   snapshot: (snapshot: EventSnapshot) => void;
   event: (event: OperationalEvent) => void;
   invalid: (error: Error) => void;
+  connection?: (state: 'open' | 'reconnecting') => void;
 }
 
 interface EventSourceLike {
@@ -657,6 +658,12 @@ export class SystemClient {
         fail(error);
       }
     };
+    source.addEventListener('open', () => {
+      if (!closed) handlers.connection?.('open');
+    });
+    source.addEventListener('error', () => {
+      if (!closed) handlers.connection?.('reconnecting');
+    });
     source.addEventListener('snapshot', acceptSnapshot);
     source.addEventListener('reset', acceptSnapshot);
     source.addEventListener('operational', (event): void => {

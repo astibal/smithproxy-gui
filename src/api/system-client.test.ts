@@ -295,12 +295,14 @@ describe('SystemClient', () => {
     const snapshot = vi.fn();
     const event = vi.fn();
     const invalid = vi.fn();
+    const connection = vi.fn();
     const client = new SystemClient(
       '/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui',
       async () => jsonResponse({}), 3000, eventSourceFactory,
     );
 
-    const unsubscribe = client.subscribeEvents({snapshot, event, invalid});
+    const unsubscribe = client.subscribeEvents({snapshot, event, invalid, connection});
+    listeners.get('open')?.({} as MessageEvent<string>);
     listeners.get('snapshot')?.({data: JSON.stringify({
       source: 'gui-core', smithproxy_events_available: false,
       events: [{
@@ -318,6 +320,9 @@ describe('SystemClient', () => {
       events: [expect.objectContaining({id: '100-ready'})],
     }));
     expect(event).toHaveBeenCalledWith(expect.objectContaining({id: '200-error'}));
+    expect(connection).toHaveBeenCalledWith('open');
+    listeners.get('error')?.({} as MessageEvent<string>);
+    expect(connection).toHaveBeenLastCalledWith('reconnecting');
     expect(invalid).not.toHaveBeenCalled();
     unsubscribe();
     expect(close).toHaveBeenCalledOnce();

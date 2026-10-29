@@ -875,6 +875,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).toContainText('Alerts: Clear');
   await expect(statusbar).toContainText('Freshness: Fresh');
   await expect(statusbar).toContainText('Events: Live');
+  await expect(statusbar).toContainText('Events: Connecting', {timeout: 4_000});
   await expect(page.getByText('Probe latency').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
   const activeAlerts = page.getByRole('region', {name: 'Active operational alerts'});
