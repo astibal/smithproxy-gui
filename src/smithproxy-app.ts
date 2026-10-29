@@ -325,6 +325,7 @@ export class SmithproxyApp extends LitElement {
   private readonly drawerInitialChanges = new Map<string, ReadonlyMap<string, DraftScalar>>();
   private readonly referencePreviewValues = new Map<string, string>();
   private readonly contentRuleCreateParents = new Map<string, string>();
+  private readonly signatureFlowCreateParents = new Map<string, string>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -1104,6 +1105,7 @@ export class SmithproxyApp extends LitElement {
     this.drawerStore.clear();
     this.drawerInitialChanges.clear();
     this.contentRuleCreateParents.clear();
+    this.signatureFlowCreateParents.clear();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -1628,12 +1630,16 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && operation.collection === 'content_profiles.content_rules') {
         objects.add(`content-rule-create:${operation.localId}`);
       }
+      if (operation.op === 'create' && operation.collection.endsWith('_signatures.flow')) {
+        objects.add(`signature-flow-create:${operation.localId}`);
+      }
       if (operation.op === 'delete') {
         const kind = operation.collection === 'policy' ? 'policy'
           : operation.collection === 'address_objects' ? 'address'
             : operation.collection === 'port_objects' ? 'port'
               : operation.collection === 'proto_objects' ? 'protocol'
                 : operation.collection === 'content_profiles.content_rules' ? 'content-rule'
+                  : operation.collection.endsWith('_signatures.flow') ? 'signature-flow'
                 : operation.collection === 'routing' || operation.collection.endsWith('_profiles')
                   ? 'profile' : undefined;
         if (kind) objects.add(`${kind}:${operation.entityId}`);
@@ -1643,6 +1649,9 @@ export class SmithproxyApp extends LitElement {
       }
       if (operation.op === 'move' && operation.collection === 'content_profiles.content_rules') {
         objects.add(`content-rule:${operation.entityId}`);
+      }
+      if (operation.op === 'move' && operation.collection.endsWith('_signatures.flow')) {
+        objects.add(`signature-flow:${operation.entityId}`);
       }
     }
     this.draftObjects = objects;
@@ -1931,28 +1940,40 @@ export class SmithproxyApp extends LitElement {
       this.openContentRule(operation.entityId, origin);
       return;
     }
+    if (operation?.op === 'move' && operation.collection.endsWith('_signatures.flow')) {
+      this.openSignatureFlow(operation.entityId, origin);
+      return;
+    }
     if (operation?.op !== 'create' || ![
       'address_objects', 'port_objects', 'proto_objects', 'policy', 'content_profiles.content_rules',
+      'starttls_signatures.flow', 'detection_signatures.flow',
     ].includes(operation.collection)) return;
     const kind = operation.collection === 'policy' ? 'policy-create'
       : operation.collection === 'address_objects' ? 'address-create'
         : operation.collection === 'port_objects' ? 'port-create'
-          : operation.collection === 'proto_objects' ? 'protocol-create' : 'content-rule-create';
+          : operation.collection === 'proto_objects' ? 'protocol-create'
+            : operation.collection === 'content_profiles.content_rules'
+              ? 'content-rule-create' : 'signature-flow-create';
     const fallback = operation.collection === 'policy' ? 'New policy'
       : operation.collection === 'address_objects' ? 'New address object'
         : operation.collection === 'port_objects' ? 'New port object'
-          : operation.collection === 'proto_objects' ? 'New protocol object' : 'New content rule';
+          : operation.collection === 'proto_objects' ? 'New protocol object'
+            : operation.collection === 'content_profiles.content_rules'
+              ? 'New content rule' : 'New signature flow step';
     this.openObjectDrawer({
       kind,
       id: operation.localId,
       title: String(operation.fields['name'] ?? fallback),
     }, origin);
-    if (operation.collection === 'content_profiles.content_rules') {
+    if (operation.collection === 'content_profiles.content_rules' ||
+        operation.collection.endsWith('_signatures.flow')) {
       const placement = operation.position.reference === null
         ? operation.position.kind : `${operation.position.kind}:${operation.position.reference}`;
       void this.updateComplete.then(() => {
+        const prefix = operation.collection === 'content_profiles.content_rules'
+          ? 'content-rule' : 'signature-flow';
         const select = this.renderRoot.querySelector<HTMLSelectElement>(
-          `#content-rule-create-placement-${operation.localId}`,
+          `#${prefix}-create-placement-${operation.localId}`,
         );
         if (select) select.value = placement;
       });
@@ -2006,6 +2027,7 @@ export class SmithproxyApp extends LitElement {
     entityId: string;
     label: string;
     usageCount: number;
+    blocker?: string;
   } | undefined {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'policy') {
@@ -2057,6 +2079,16 @@ export class SmithproxyApp extends LitElement {
           label: 'content rule', usageCount: 0}
         : undefined;
     }
+    if (entry.kind === 'signature-flow') {
+      const signature = this.snapshot.securityAssets?.signatures
+        .find(item => item.flow.some(step => step.id === entry.id));
+      return signature
+        ? {collection: `${signature.kind}_signatures.flow`, entityId: entry.id,
+          label: 'signature flow step', usageCount: 0,
+          ...(signature.flow.length <= 1
+            ? {blocker: 'A signature must retain at least one flow step.'} : {})}
+        : undefined;
+    }
     return undefined;
   }
 
@@ -2070,10 +2102,12 @@ export class SmithproxyApp extends LitElement {
     collection: string;
     entityId: string;
     usageCount: number;
+    blocker?: string;
   }): string | undefined {
     if (!this.structuralDraftsAvailable) return 'Stable structural transactions are unavailable.';
     if (this.dirtyDrawerKeys.has(this.drawerKey(entry))) return 'Discard or save unsaved editor changes first.';
     if (this.draftPathsForDrawer(entry).length > 0) return 'Remove pending field edits before deleting this entry.';
+    if (target.blocker) return target.blocker;
     if (target.usageCount > 0) {
       return `This object is referenced by ${target.usageCount} configuration ${target.usageCount === 1 ? 'entry' : 'entries'}.`;
     }
@@ -2339,6 +2373,114 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private signatureFlowContext(entityId: string) {
+    for (const signature of this.snapshot?.securityAssets?.signatures ?? []) {
+      const index = signature.flow.findIndex(step => step.id === entityId);
+      if (index >= 0) return {signature, steps: signature.flow, index};
+    }
+    return undefined;
+  }
+
+  private pendingSignatureFlowMove(entityId: string): DraftMoveOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'move' && item.collection.endsWith('_signatures.flow') &&
+      item.entityId === entityId);
+    return operation?.op === 'move' ? operation : undefined;
+  }
+
+  private signatureFlowPositionIsOriginal(
+    entityId: string, position: DraftMoveOperation['position'],
+  ): boolean {
+    const context = this.signatureFlowContext(entityId);
+    if (!context) return false;
+    const {steps, index} = context;
+    if (position.kind === 'first') return index === 0;
+    if (position.kind === 'last') return index === steps.length - 1;
+    if (position.kind === 'after') return index > 0 && steps[index - 1]?.id === position.reference;
+    return index + 1 < steps.length && steps[index + 1]?.id === position.reference;
+  }
+
+  private signatureFlowPlacementValue(entityId: string): string {
+    const pending = this.pendingSignatureFlowMove(entityId);
+    if (pending) {
+      return pending.position.reference === null
+        ? pending.position.kind : `${pending.position.kind}:${pending.position.reference}`;
+    }
+    const context = this.signatureFlowContext(entityId);
+    if (!context || context.index <= 0) return 'first';
+    if (context.index === context.steps.length - 1) return 'last';
+    return `before:${context.steps[context.index + 1]!.id}`;
+  }
+
+  private async moveSignatureFlowInDraft(entry: DrawerEntry): Promise<void> {
+    if (entry.kind !== 'signature-flow' || !this.structuralDraftsAvailable || !this.draftClient ||
+        this.draftSaving || this.draftCommitting) return;
+    const context = this.signatureFlowContext(entry.id);
+    const placement = this.renderRoot.querySelector<HTMLSelectElement>(
+      `#signature-flow-placement-${entry.id}`,
+    );
+    if (!context || !placement) return;
+    if (this.dirtyDrawerKeys.has(this.drawerKey(entry))) {
+      this.drawerError = 'Save or discard ordinary flow-step field changes before changing its order.';
+      return;
+    }
+    const collection = `${context.signature.kind}_signatures.flow` as const;
+    if (this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'delete' && operation.collection === collection && operation.entityId === entry.id)) {
+      this.drawerError = 'Remove the pending flow-step deletion before changing its order.';
+      return;
+    }
+    let position: DraftMoveOperation['position'];
+    if (placement.value === 'first' || placement.value === 'last') {
+      position = {kind: placement.value, reference: null};
+    } else if (placement.value.startsWith('before:')) {
+      const reference = placement.value.slice('before:'.length);
+      if (reference === entry.id || !context.steps.some(step => step.id === reference)) {
+        this.drawerError = 'The selected flow-step placement is no longer available.';
+        return;
+      }
+      position = {kind: 'before', reference};
+    } else {
+      this.drawerError = 'A valid flow-step placement is required.';
+      return;
+    }
+    const existing = this.pendingSignatureFlowMove(entry.id);
+    const original = this.signatureFlowPositionIsOriginal(entry.id, position);
+    if (!existing && original) {
+      this.drawerError = 'The flow step is already in that position.';
+      return;
+    }
+    if (existing && existing.position.kind === position.kind &&
+        existing.position.reference === position.reference) {
+      this.drawerError = undefined;
+      return;
+    }
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = existing && original
+        ? await this.draftClient.removeOperation(this.draftVersion, existing.localId)
+        : await this.draftClient.upsertOperation(this.draftVersion, {
+          op: 'move', localId: existing?.localId ?? `move-signature-flow-${crypto.randomUUID()}`,
+          collection, entityId: entry.id, position,
+        });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+      this.markDrawerSaved(entry);
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error
+        ? error.message : 'Signature flow order could not be updated in the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private draftValueSummary(path: string, value: DraftScalar): string {
     if (value === '[redacted:clear]') return 'Cleared · redacted';
     if (value === '[redacted:replace]') return 'Replaced · redacted';
@@ -2532,6 +2674,16 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({kind: 'signature-flow', id: step.id, title: `Flow ${step.side.toUpperCase()}`}, origin);
   }
 
+  private openNewSignatureFlow(signatureId: string, origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable ||
+        !this.snapshot?.securityAssets?.signatures.some(item => item.id === signatureId)) return;
+    const localId = `create-signature-flow-${crypto.randomUUID()}`;
+    this.signatureFlowCreateParents.set(localId, signatureId);
+    this.openObjectDrawer({
+      kind: 'signature-flow-create', id: localId, title: 'New signature flow step',
+    }, origin);
+  }
+
   private openSystemDrawer(kind: 'settings' | 'captures', origin?: HTMLElement): void {
     if ((kind === 'settings' && !this.snapshot?.settings) ||
         (kind === 'captures' && !this.snapshot?.captures)) return;
@@ -2661,6 +2813,7 @@ export class SmithproxyApp extends LitElement {
       this.drawerInitialChanges.delete(this.drawerKey(entry));
       this.clearReferencePreviews(entry);
       if (entry.kind === 'content-rule-create') this.contentRuleCreateParents.delete(entry.id);
+      if (entry.kind === 'signature-flow-create') this.signatureFlowCreateParents.delete(entry.id);
     }
     this.dirtyDrawerKeys = remainingDirty;
     this.pendingCloseIndex = undefined;
@@ -2736,7 +2889,9 @@ export class SmithproxyApp extends LitElement {
     }
     this.drawers = [...this.drawerStore.entries];
     if (this.drawers[0]?.kind === 'policy') this.activeSection = 'Policy';
-    if (this.drawers[0] && ['settings', 'captures', 'authority', 'signature', 'signature-flow']
+    if (this.drawers[0] && [
+      'settings', 'captures', 'authority', 'signature', 'signature-flow', 'signature-flow-create',
+    ]
       .includes(this.drawers[0].kind)) {
       this.activeSection = 'System';
     }
@@ -2796,6 +2951,15 @@ export class SmithproxyApp extends LitElement {
       const step = this.snapshot.securityAssets?.signatures.flatMap(item => item.flow)
         .find(item => item.id === entry.id);
       return step ? {id: step.id, name: `Flow ${step.side.toUpperCase()}`} : undefined;
+    }
+    if (entry.kind === 'signature-flow-create') {
+      const operation = this.workspaceDraft?.structuralOperations.find(item =>
+        item.op === 'create' && item.collection.endsWith('_signatures.flow') &&
+        item.localId === entry.id);
+      const parentId = operation?.op === 'create'
+        ? operation.parentId : this.signatureFlowCreateParents.get(entry.id);
+      return parentId && this.snapshot.securityAssets?.signatures.some(item => item.id === parentId)
+        ? {id: entry.id, name: 'New signature flow step'} : undefined;
     }
     if (entry.kind === 'content-rule') {
       const rule = this.snapshot.profiles.flatMap(item => item.content?.rules ?? [])
@@ -3049,6 +3213,91 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private pendingSignatureFlowCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(item =>
+      item.op === 'create' && item.collection.endsWith('_signatures.flow') &&
+      item.localId === entry.id);
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private signatureFlowCreateSignature(entry: DrawerEntry) {
+    const operation = this.pendingSignatureFlowCreate(entry);
+    const parentId = operation?.parentId ?? this.signatureFlowCreateParents.get(entry.id);
+    return this.snapshot?.securityAssets?.signatures.find(item => item.id === parentId);
+  }
+
+  private async saveSignatureFlowCreate(entry: DrawerEntry): Promise<void> {
+    if (entry.kind !== 'signature-flow-create' || !this.structuralDraftsAvailable || !this.draftClient ||
+        this.draftCommitting) return;
+    const signature = this.signatureFlowCreateSignature(entry);
+    const side = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-flow-create-side-${entry.id}`);
+    const type = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-flow-create-type-${entry.id}`);
+    const start = this.renderRoot.querySelector<HTMLInputElement>(`#signature-flow-create-start-${entry.id}`);
+    const maximum = this.renderRoot.querySelector<HTMLInputElement>(`#signature-flow-create-maximum-${entry.id}`);
+    const expression = this.renderRoot.querySelector<HTMLTextAreaElement>(
+      `#signature-flow-create-expression-${entry.id}`,
+    );
+    const placement = this.renderRoot.querySelector<HTMLSelectElement>(
+      `#signature-flow-create-placement-${entry.id}`,
+    );
+    if (!signature || !side || !type || !start || !maximum || !expression || !placement ||
+        !['r', 'w'].includes(side.value) || !['regex', 'simple'].includes(type.value)) return;
+    const bytesStart = start.valueAsNumber;
+    const bytesMax = maximum.valueAsNumber;
+    if (![bytesStart, bytesMax].every(value => Number.isSafeInteger(value) && value >= 0)) {
+      this.drawerError = 'Signature byte positions must be non-negative safe integers.';
+      return;
+    }
+    if (expression.value.length === 0 || expression.value.length > 65536 || expression.value.includes('\0')) {
+      this.drawerError = 'A matcher expression from 1 to 65536 characters is required.';
+      return;
+    }
+    let position: DraftCreateOperation['position'];
+    if (placement.value === 'first' || placement.value === 'last') {
+      position = {kind: placement.value, reference: null};
+    } else if (placement.value.startsWith('before:')) {
+      const reference = placement.value.slice('before:'.length);
+      if (!signature.flow.some(step => step.id === reference)) {
+        this.drawerError = 'The selected flow-step placement is no longer available.';
+        return;
+      }
+      position = {kind: 'before', reference};
+    } else {
+      this.drawerError = 'A valid flow-step placement is required.';
+      return;
+    }
+    const collection: DraftCreateOperation['collection'] = signature.kind === 'starttls'
+      ? 'starttls_signatures.flow' : 'detection_signatures.flow';
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create', localId: entry.id, collection, clientId: entry.id,
+        parentId: signature.id, position,
+        fields: {
+          side: side.value, type: type.value, bytes_start: bytesStart,
+          bytes_max: bytesMax, signature: expression.value,
+        },
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.signatureFlowCreateParents.set(entry.id, signature.id);
+      this.applyDraft(draft);
+      expression.value = '';
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error
+        ? error.message : 'Signature flow step could not be added to the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private async saveAddressCreate(entry: DrawerEntry): Promise<void> {
     if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
     const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#address-create-name-${entry.id}`);
@@ -3216,6 +3465,10 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'content-rule-create') {
       await this.saveContentRuleCreate(entry);
+      return;
+    }
+    if (entry.kind === 'signature-flow-create') {
+      await this.saveSignatureFlowCreate(entry);
       return;
     }
     if (this.snapshot?.source !== 'live') {
@@ -4557,9 +4810,11 @@ export class SmithproxyApp extends LitElement {
                   ${(operation.op === 'create' && [
                     'address_objects', 'port_objects', 'proto_objects', 'policy',
                     'content_profiles.content_rules',
+                    'starttls_signatures.flow', 'detection_signatures.flow',
                   ].includes(operation.collection)) ||
                     (operation.op === 'move' && (operation.collection === 'policy' ||
-                      operation.collection === 'content_profiles.content_rules')) ? html`
+                      operation.collection === 'content_profiles.content_rules' ||
+                      operation.collection.endsWith('_signatures.flow'))) ? html`
                     <button class="secondary" type="button"
                       ?disabled=${!this.structuralDraftsAvailable}
                       @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
@@ -7655,6 +7910,14 @@ export class SmithproxyApp extends LitElement {
       <div class="section">
         <h3>Ordered flow</h3>
         <div class="reference-stack" role="group" aria-label="Signature flow steps">
+          <button class="secondary" type="button"
+            ?disabled=${!this.structuralDraftsAvailable}
+            title=${this.structuralDraftsAvailable
+              ? 'Add a signature flow step to the workspace draft'
+              : 'Requires reviewed structural transactions and stable entity IDs.'}
+            @click=${(event: MouseEvent) => this.openNewSignatureFlow(
+              signature.id, event.currentTarget as HTMLElement,
+            )}>New flow step</button>
           ${signature.flow.map((step, index) => html`
             <button class="reference" type="button"
               @click=${(event: MouseEvent) => this.openSignatureFlow(
@@ -7685,9 +7948,36 @@ export class SmithproxyApp extends LitElement {
     const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
       this.persistentValue(path(field), fallback);
     const locked = (field: string): boolean => this.originReadOnly(path(field), disabled);
+    const pendingMove = this.pendingSignatureFlowMove(entry.id);
+    const placement = this.signatureFlowPlacementValue(entry.id);
+    const showPlacement = (this.structuralDraftsAvailable || pendingMove !== undefined) && signature.flow.length > 1;
     return html`
       <div class="form-grid wide-form-grid">
         <label>Signature</label><span>${signature.name}</span>
+        ${showPlacement ? html`
+          <label for="signature-flow-placement-${entry.id}">Draft order</label>
+          <div class="reference-edit">
+            <select id="signature-flow-placement-${entry.id}" data-structural-control="true"
+              ?disabled=${!this.structuralDraftsAvailable}>
+              <option value="first" ?selected=${placement === 'first'}>First step</option>
+              ${signature.flow.filter(item => item.id !== entry.id).map(item => html`
+                <option value=${`before:${item.id}`} ?selected=${placement === `before:${item.id}`}>
+                  Before step ${signature.flow.indexOf(item) + 1}
+                </option>
+              `)}
+              <option value="last" ?selected=${placement === 'last'}>Last step</option>
+            </select>
+            <button class="secondary" type="button"
+              ?disabled=${!this.structuralDraftsAvailable || this.draftSaving || this.draftCommitting ||
+                this.dirtyDrawerKeys.has(this.drawerKey(entry))}
+              title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
+                ? 'Save or discard ordinary flow-step field changes first.'
+                : 'Store signature flow order in the workspace draft'}
+              @click=${() => this.moveSignatureFlowInDraft(entry)}>
+              ${pendingMove ? 'Update draft order' : 'Save order to draft'}
+            </button>
+          </div>
+        ` : nothing}
         <label for="signature-flow-side-${entry.id}">Direction</label>
         <select id="signature-flow-side-${entry.id}" .value=${scalar('side', step.side)} ?disabled=${locked('side')}>
           <option value="r">Read</option>
@@ -7717,6 +8007,61 @@ export class SmithproxyApp extends LitElement {
       </div>
       <div class="privacy-note section">
         The current matcher expression is never serialized to the browser. A replacement is redacted in draft review.
+      </div>
+    `;
+  }
+
+  private renderSignatureFlowCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingSignatureFlowCreate(entry);
+    const signature = this.signatureFlowCreateSignature(entry);
+    if (!signature) return nothing;
+    const readOnly = !this.structuralDraftsAvailable;
+    const position = operation
+      ? operation.position.reference === null
+        ? operation.position.kind : `${operation.position.kind}:${operation.position.reference}`
+      : 'last';
+    const side = operation?.fields['side'];
+    const type = operation?.fields['type'];
+    const start = operation?.fields['bytes_start'];
+    const maximum = operation?.fields['bytes_max'];
+    return html`
+      <div class="form-grid wide-form-grid">
+        <label>Signature</label><span>${signature.name}</span>
+        <label for="signature-flow-create-placement-${entry.id}">Placement</label>
+        <select id="signature-flow-create-placement-${entry.id}" ?disabled=${readOnly}>
+          <option value="first" ?selected=${position === 'first'}>First step</option>
+          ${signature.flow.map((step, index) => html`
+            <option value=${`before:${step.id}`} ?selected=${position === `before:${step.id}`}>
+              Before step ${index + 1}
+            </option>
+          `)}
+          <option value="last" ?selected=${position === 'last'}>Last step</option>
+        </select>
+        <label for="signature-flow-create-side-${entry.id}">Direction</label>
+        <select id="signature-flow-create-side-${entry.id}"
+          .value=${typeof side === 'string' ? side : 'r'} ?disabled=${readOnly}>
+          <option value="r">Read</option><option value="w">Write</option>
+        </select>
+        <label for="signature-flow-create-type-${entry.id}">Matcher</label>
+        <select id="signature-flow-create-type-${entry.id}"
+          .value=${typeof type === 'string' ? type : 'regex'} ?disabled=${readOnly}>
+          <option value="regex">Regular expression</option><option value="simple">Simple bytes</option>
+        </select>
+        <label for="signature-flow-create-start-${entry.id}">Byte offset</label>
+        <input id="signature-flow-create-start-${entry.id}" type="number" min="0" step="1"
+          .value=${String(typeof start === 'number' ? start : 0)} .readOnly=${readOnly} />
+        <label for="signature-flow-create-maximum-${entry.id}">Byte window</label>
+        <input id="signature-flow-create-maximum-${entry.id}" type="number" min="0" step="1"
+          .value=${String(typeof maximum === 'number' ? maximum : 0)} .readOnly=${readOnly} />
+        <label for="signature-flow-create-expression-${entry.id}">Expression</label>
+        <textarea id="signature-flow-create-expression-${entry.id}" maxlength="65536" required
+          aria-label="New signature flow expression" autocomplete="off"
+          placeholder=${operation ? 'Re-enter matcher expression (write-only)' : 'Matcher expression (write-only)'}
+          .readOnly=${readOnly}></textarea>
+      </div>
+      <div class="privacy-note section">
+        The matcher expression stays inside the GUI core. Reopening this pending step requires
+        re-entering the write-only expression before another update.
       </div>
     `;
   }
@@ -7897,6 +8242,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'content-rule-create') return this.renderContentRuleCreateEditor(entry);
     if (entry.kind === 'signature') return this.renderSignatureEditor(entry);
     if (entry.kind === 'signature-flow') return this.renderSignatureFlowEditor(entry);
+    if (entry.kind === 'signature-flow-create') return this.renderSignatureFlowCreateEditor(entry);
     return this.renderProfileEditor(entry);
   }
 
@@ -7906,7 +8252,8 @@ export class SmithproxyApp extends LitElement {
       : entry.kind === 'port-create' ? 'Create port object'
         : entry.kind === 'protocol-create' ? 'Create protocol object'
           : entry.kind === 'policy-create' ? 'Create policy'
-            : entry.kind === 'content-rule-create' ? 'Create content rule' : `Edit ${entry.title}`;
+            : entry.kind === 'content-rule-create' ? 'Create content rule'
+              : entry.kind === 'signature-flow-create' ? 'Create signature flow step' : `Edit ${entry.title}`;
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
@@ -7924,6 +8271,7 @@ export class SmithproxyApp extends LitElement {
     );
     const draftable = [
       'address-create', 'port-create', 'protocol-create', 'policy-create', 'content-rule-create',
+      'signature-flow-create',
     ].includes(entry.kind)
       ? this.structuralDraftsAvailable
       : this.snapshot?.source !== 'live' ||
@@ -7950,7 +8298,8 @@ export class SmithproxyApp extends LitElement {
               ? 'Create port object' : entry.kind === 'protocol-create'
                 ? 'Create protocol object' : entry.kind === 'policy-create'
                   ? 'Create policy' : entry.kind === 'content-rule-create'
-                    ? 'Create content rule' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+                    ? 'Create content rule' : entry.kind === 'signature-flow-create'
+                      ? 'Create signature flow step' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}

@@ -185,7 +185,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement. Structural add, remove, and reorder semantics are specified in the transaction proposal but remain unavailable until the reviewed upstream capability exists."
+      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
     },
     {
       "name": "detection_signatures",
@@ -194,7 +194,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement. Structural add, remove, and reorder semantics are specified in the transaction proposal but remain unavailable until the reviewed upstream capability exists."
+      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
     },
     {
       "name": "script_profiles",

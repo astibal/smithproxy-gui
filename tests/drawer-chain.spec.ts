@@ -488,14 +488,16 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     const existing = draft.structural_operations.findIndex(
       operation => operation.local_id === body.operation.local_id,
     );
-    const storedOperation = body.operation.op === 'create' &&
-      body.operation.collection === 'content_profiles.content_rules' &&
+    const sensitiveCreate = body.operation.collection === 'content_profiles.content_rules' ||
+      body.operation.collection === 'starttls_signatures.flow' ||
+      body.operation.collection === 'detection_signatures.flow';
+    const storedOperation = body.operation.op === 'create' && sensitiveCreate &&
       typeof body.operation.fields === 'object' && body.operation.fields !== null
       ? {
         ...body.operation,
         fields: Object.fromEntries(Object.entries(body.operation.fields).map(([field, value]) => [
           field,
-          field === 'match' ? '[redacted:replace]'
+          field === 'match' || field === 'signature' ? '[redacted:replace]'
             : field === 'replace' ? value === '' ? '[redacted:clear]' : '[redacted:replace]'
               : value,
         ])),
@@ -1906,6 +1908,16 @@ test('reorders and deletes stable nested content rules', async ({page}) => {
     },
     csrf: '1',
   });
+
+  await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
+  await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
+  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const detectionEditor = page.getByRole('dialog', {name: 'Edit http/request'});
+  await detectionEditor.getByRole('button', {name: /1\. R · regex/i}).click();
+  const onlyFlowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
+  const deleteOnlyFlow = onlyFlowEditor.getByRole('button', {name: 'Delete signature flow step'});
+  await expect(deleteOnlyFlow).toBeDisabled();
+  await expect(deleteOnlyFlow).toHaveAttribute('title', 'A signature must retain at least one flow step.');
 });
 
 test('creates and safely reopens a nested content rule', async ({page}) => {
@@ -1972,6 +1984,136 @@ test('creates and safely reopens a nested content rule', async ({page}) => {
   await expect(createEditor.getByLabel('New content replacement expression')).toHaveValue('');
   await expect(createEditor.locator('.privacy-note'))
     .toContainText('re-entering every configured write-only expression');
+});
+
+test('reorders and deletes stable signature flow steps', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+    structuralRemovalRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trustPosture = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trustPosture.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await trustPosture.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  const signatureEditor = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
+  await signatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
+
+  let flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
+  await expect(flowEditor.getByLabel('Draft order')).toHaveValue('first');
+  await flowEditor.getByLabel('Draft order').selectOption('last');
+  await flowEditor.getByRole('button', {name: 'Save order to draft'}).click();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {
+      op: 'move', collection: 'starttls_signatures.flow',
+      entity_id: 'starttls-signature-0-flow-0', position: {last: true},
+    },
+    csrf: '1',
+  });
+  expect(state.structuralMutationRequests![0]!.operation.local_id)
+    .toMatch(/^move-signature-flow-[0-9a-f-]{36}$/u);
+
+  await flowEditor.getByRole('button', {name: 'Cancel'}).click();
+  await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  const moveRow = page.getByRole('table', {name: 'Pending draft changes'})
+    .getByRole('row').filter({hasText: 'starttls_signatures.flow · move'});
+  await moveRow.getByRole('button', {name: 'Edit'}).click();
+
+  flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
+  await expect(flowEditor.getByLabel('Draft order')).toHaveValue('last');
+  await flowEditor.getByLabel('Draft order').selectOption('first');
+  await flowEditor.getByRole('button', {name: 'Update draft order'}).click();
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
+  expect(state.structuralRemovalRequests).toHaveLength(1);
+  expect(state.structuralRemovalRequests![0]).toMatchObject({expectedVersion: 1, csrf: '1'});
+
+  await flowEditor.getByRole('button', {name: 'Delete signature flow step'}).click();
+  await expect(flowEditor.getByText('Confirm deletion of this signature flow step.')).toBeVisible();
+  await flowEditor.getByRole('button', {name: 'Confirm delete signature flow step'}).click();
+  await expect(flowEditor).toBeHidden();
+  expect(state.structuralMutationRequests).toHaveLength(2);
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 2,
+    operation: {
+      op: 'delete', collection: 'starttls_signatures.flow',
+      entity_id: 'starttls-signature-0-flow-0',
+    },
+    csrf: '1',
+  });
+});
+
+test('creates and safely reopens a signature flow step', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trustPosture = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trustPosture.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await trustPosture.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  const signatureEditor = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
+  await signatureEditor.getByRole('button', {name: 'New flow step'}).click();
+
+  let createEditor = page.getByRole('dialog', {name: 'Create signature flow step'});
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('A matcher expression from 1 to 65536 characters is required.')).toBeVisible();
+  await createEditor.getByLabel('Placement', {exact: true}).selectOption('before:starttls-signature-0-flow-1');
+  await createEditor.getByLabel('Direction').selectOption('w');
+  await createEditor.getByLabel('Matcher').selectOption('simple');
+  await createEditor.getByLabel('Byte offset').fill('5');
+  await createEditor.getByLabel('Byte window').fill('64');
+  await createEditor.getByLabel('New signature flow expression').fill('PRIVATE-FLOW');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor.getByLabel('New signature flow expression')).toHaveValue('');
+
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {
+      op: 'create', collection: 'starttls_signatures.flow', parent_id: 'starttls-signature-0',
+      position: {before: 'starttls-signature-0-flow-1'},
+      fields: {side: 'w', type: 'simple', bytes_start: 5, bytes_max: 64, signature: 'PRIVATE-FLOW'},
+    },
+    csrf: '1',
+  });
+  expect(state.structuralMutationRequests![0]!.operation.local_id)
+    .toMatch(/^create-signature-flow-[0-9a-f-]{36}$/u);
+
+  await createEditor.getByRole('button', {name: 'Cancel'}).click();
+  await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  await expect(page.getByText('PRIVATE-FLOW')).toHaveCount(0);
+  const createRow = page.getByRole('table', {name: 'Pending draft changes'})
+    .getByRole('row').filter({hasText: 'starttls_signatures.flow · create'});
+  await createRow.getByRole('button', {name: 'Edit'}).click();
+
+  createEditor = page.getByRole('dialog', {name: 'Create signature flow step'});
+  await expect(createEditor.getByLabel('Placement', {exact: true}))
+    .toHaveValue('before:starttls-signature-0-flow-1');
+  await expect(createEditor.getByLabel('Direction')).toHaveValue('w');
+  await expect(createEditor.getByLabel('Matcher')).toHaveValue('simple');
+  await expect(createEditor.getByLabel('Byte offset')).toHaveValue('5');
+  await expect(createEditor.getByLabel('Byte window')).toHaveValue('64');
+  await expect(createEditor.getByLabel('New signature flow expression')).toHaveValue('');
+  await expect(createEditor.locator('.privacy-note')).toContainText('re-entering the write-only expression');
 });
 
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {

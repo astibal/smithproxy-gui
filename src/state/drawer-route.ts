@@ -9,7 +9,7 @@ const safeIdentifier = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const drawerKinds = new Set<DrawerKind>([
   'policy', 'policy-create', 'address', 'address-create', 'port', 'port-create', 'protocol', 'protocol-create',
   'profile', 'settings', 'captures', 'authority',
-  'signature', 'signature-flow',
+  'signature', 'signature-flow', 'signature-flow-create',
   'content-rule', 'content-rule-create',
 ]);
 
