@@ -132,6 +132,11 @@ The proposed atomic Smithproxy write contract is documented in
 The GUI intentionally does not emulate a transaction by issuing multiple legacy
 configuration writes.
 
+The privacy-preserving interface-monitor contract required for future netlink
+health monitoring is documented in
+[`docs/SMITHPROXY_INTERFACE_API_PROPOSAL.md`](docs/SMITHPROXY_INTERFACE_API_PROPOSAL.md).
+The GUI does not invoke or parse the privileged administrative CLI.
+
 When served behind Saslik, the page loads the canonical `/saslik-theme.css` and
 `/saslik-theme.js` assets with the `smithproxy-gui` application scope. Standalone
 deployments retain the built-in Petroleum fallback when those shared assets are

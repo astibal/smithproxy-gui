@@ -600,8 +600,21 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await expect(addressEditor).toBeVisible();
   await expect(page.getByText('This shared object is used by 4 configuration entries.')).toBeVisible();
 
+  const policyEditor = page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true});
+  await expect(policyEditor).toHaveAttribute('inert', '');
+  await expect(addressEditor).not.toHaveAttribute('inert', '');
+
+  const firstFocusable = addressEditor.getByRole('button', {name: 'Enter focus mode'});
+  const lastFocusable = addressEditor.getByRole('button', {name: 'Save to draft'});
+  await firstFocusable.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(lastFocusable).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(firstFocusable).toBeFocused();
+
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(page.getByText('Draft: 1 changes')).toBeVisible();
+  await expect(addressEditor.getByRole('status')).toHaveText('Saved to draft');
 
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toBeVisible();

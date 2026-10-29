@@ -3996,7 +3996,9 @@ export class SmithproxyApp extends LitElement {
           ${this.renderAugmentOrigins(entry)}
         </div>
         <footer class="drawer-foot">
-          <span class="validation">${this.drawerError ?? this.draftError ?? (readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}</span>
+          <span class="validation" role="status" aria-live="polite">
+            ${this.drawerError ?? this.draftError ?? (readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}
+          </span>
           <button class="secondary" type="button" @click=${() => this.closeDrawer(index)}>Cancel</button>
           <button class="primary" type="button" ?disabled=${readOnly || this.draftSaving}
             @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
