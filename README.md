@@ -127,7 +127,10 @@ activity windows, observations, and traffic totals reach the browser; hostnames,
 tags, labels, and individual timelines do not. Structured active alerts are
 derived inside the GUI core from reachability,
 rolling availability, collector freshness, and TLS cache capacity. They use a
-bounded fixed vocabulary and never forward arbitrary upstream log text. The root
+bounded fixed vocabulary and never forward arbitrary upstream log text. The
+dashboard groups consecutive non-ready control-plane probes into a bounded
+incident timeline with observed states and recovery boundaries. It is derived
+only from the validated five-minute probe window. The root
 monitoring feed uses a same-origin, authenticated SSE endpoint with monotonic
 probe revisions, `Last-Event-ID` replay, and an explicit snapshot reset when a
 client falls behind the bounded history. The periodic snapshot remains a recovery

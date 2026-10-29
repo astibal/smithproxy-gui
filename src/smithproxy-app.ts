@@ -30,6 +30,7 @@ import {
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {classifyFreshness, freshnessLabel, type FreshnessState} from './monitoring/freshness';
+import {probeIncidents} from './monitoring/incidents';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
 import {DrawerStore, MAXIMUM_DRAWER_DEPTH, type DrawerEntry} from './state/drawer-store';
 import {
@@ -383,6 +384,15 @@ export class SmithproxyApp extends LitElement {
     .alert-row:last-child { border-bottom: 0; }
     .alert-row.critical { border-left-color: var(--app-danger); }
     .alert-row p { margin: 3px 0 0; color: var(--app-muted); }
+    .incident-list { display: grid; margin-top: 14px; border: 1px solid var(--app-border); background: var(--app-surface); }
+    .incident-row { display: grid; grid-template-columns: 150px minmax(150px, 1fr) 110px 100px; gap: 14px; align-items: center; padding: 12px 14px; border-left: 3px solid var(--app-muted); border-bottom: 1px solid var(--app-border); }
+    .incident-row:last-child { border-bottom: 0; }
+    .incident-row.active { border-left-color: var(--app-danger); background: color-mix(in srgb, var(--app-danger) 10%, var(--app-surface)); }
+    .incident-state { min-width: 0; }
+    .incident-state strong, .incident-state small { display: block; }
+    .incident-state small, .incident-time, .incident-duration { color: var(--app-muted); font-size: 12px; }
+    .incident-state small { overflow: hidden; margin-top: 3px; text-overflow: ellipsis; white-space: nowrap; }
+    .incident-duration { text-align: right; }
     .capacity-track { height: 8px; overflow: hidden; border-radius: 2px; background: var(--app-border); }
     .capacity-fill { height: 100%; border-radius: inherit; background: var(--app-brand); }
 
@@ -536,6 +546,8 @@ export class SmithproxyApp extends LitElement {
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
       .event-row { grid-template-columns: 110px 66px minmax(120px, 1fr); }
+      .incident-row { grid-template-columns: minmax(100px, .7fr) minmax(140px, 1fr); }
+      .incident-duration, .incident-time { display: none; }
       .audit-row { grid-template-columns: 72px minmax(0, 1fr); }
       .audit-row .event-time, .audit-request { display: none; }
       .draft-row { grid-template-columns: 1fr; gap: 5px; }
@@ -2637,6 +2649,47 @@ export class SmithproxyApp extends LitElement {
       </div>`;
   }
 
+  private durationLabel(milliseconds: number): string {
+    const seconds = Math.max(0, Math.round(milliseconds / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return minutes < 60 ? `${minutes}m ${remainder}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+
+  private renderProbeIncidents() {
+    const incidents = [...probeIncidents(this.systemStatus.history)].reverse().slice(0, 5);
+    const active = incidents.filter(incident => incident.recoveredAtUnixMs === null).length;
+    return html`
+      <section class="monitor-panel" aria-label="Control-plane incident timeline">
+        <div class="runtime-heading">
+          <div><h3>Observed incidents</h3><p>Consecutive non-ready probes grouped into recovery windows</p></div>
+          <span class="runtime-state ${active ? 'danger' : 'success'}">
+            ${active ? `${active} active` : incidents.length ? '● Recovered' : '● Clear'}
+          </span>
+        </div>
+        ${incidents.length === 0 ? html`
+          <div class="privacy-note">No control-plane incident was observed in the current five-minute window.</div>
+        ` : html`
+          <div class="incident-list" role="list">
+            ${incidents.map(incident => {
+              const end = incident.recoveredAtUnixMs ?? incident.lastFailureAtUnixMs;
+              return html`
+                <article class="incident-row ${incident.recoveredAtUnixMs === null ? 'active' : ''}" role="listitem">
+                  <span class="incident-time">${this.timeLabel(incident.startedAtUnixMs)}</span>
+                  <span class="incident-state">
+                    <strong>${incident.recoveredAtUnixMs === null ? 'Incident active' : 'Recovered'}</strong>
+                    <small>${incident.states.map(displayState).join(' → ')}</small>
+                  </span>
+                  <span>${incident.samples} failed probe${incident.samples === 1 ? '' : 's'}</span>
+                  <span class="incident-duration">${incident.recoveredAtUnixMs === null ? 'observed ' : 'after '}${this.durationLabel(end - incident.startedAtUnixMs)}</span>
+                </article>`;
+            })}
+          </div>
+        `}
+      </section>`;
+  }
+
   private renderActiveAlerts() {
     const alerts = this.operationalAlerts.alerts;
     return html`
@@ -2876,6 +2929,7 @@ export class SmithproxyApp extends LitElement {
           </div>
           ${this.renderProbeAnalysis()}
         </section>
+        ${this.renderProbeIncidents()}
         <div class="scope-note">
           Control-plane health and listener counters are live. TLS inspection outcomes and deeper dataplane health will be added as dedicated monitoring surfaces.
         </div>
@@ -2893,6 +2947,7 @@ export class SmithproxyApp extends LitElement {
         ${this.renderOperationalHealth()}
         ${this.renderActiveAlerts()}
         ${this.renderProbeAnalysis()}
+        ${this.renderProbeIncidents()}
         ${this.renderRuntimeSummary()}
         ${this.renderRuntimeHistory()}
         ${this.renderTlsCache()}

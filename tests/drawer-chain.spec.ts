@@ -1072,6 +1072,9 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).toContainText('Events: Connecting', {timeout: 4_000});
   await expect(page.getByText('Probe latency').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
+  const incidentTimeline = page.getByRole('region', {name: 'Control-plane incident timeline'});
+  await expect(incidentTimeline.getByText('● Clear', {exact: true})).toBeVisible();
+  await expect(incidentTimeline).toContainText('No control-plane incident was observed');
   const activeAlerts = page.getByRole('region', {name: 'Active operational alerts'});
   await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
   await expect(page.getByText(/control-plane health and listener counters are live/i)).toBeVisible();
@@ -1099,12 +1102,15 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByText('Smithproxy: Unreachable')).toBeVisible();
   await expect(statusbar).toContainText('Alerts: 1 active');
   await expect(activeAlerts.getByText('Control plane is unavailable', {exact: true})).toBeVisible();
+  await expect(incidentTimeline.getByText('Incident active', {exact: true})).toBeVisible();
+  await expect(incidentTimeline.getByText('1 failed probe', {exact: true})).toBeVisible();
 
   state.smithproxy = 'ready';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
   await expect(statusbar).toContainText('Alerts: Clear');
   await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
+  await expect(incidentTimeline).toContainText('No control-plane incident was observed');
   const health = page.getByRole('region', {name: 'Operational health matrix'});
   await expect(health.getByRole('heading', {name: 'Control plane'})).toBeVisible();
   await expect(health.getByRole('heading', {name: 'TLS cache'})).toBeVisible();

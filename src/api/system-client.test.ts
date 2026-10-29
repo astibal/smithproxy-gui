@@ -105,6 +105,28 @@ describe('SystemClient', () => {
     await expect(client.status()).rejects.toThrow('Inconsistent Smithproxy status counters');
   });
 
+  it('rejects unordered probe history and inconsistent availability', async () => {
+    const snapshot = {
+      service: 'smithproxy-gui', uptime_ms: 1,
+      smithproxy: {
+        configured: true, state: 'ready', detail: 'Connected', checked_at_unix_ms: 100,
+        last_success_at_unix_ms: 100, latency_ms: 1, total_probes: 2, consecutive_failures: 0,
+        availability_window: {samples: 2, successful: 1},
+        history: [
+          {state: 'ready', checked_at_unix_ms: 100, latency_ms: 1},
+          {state: 'unreachable', checked_at_unix_ms: 90, latency_ms: null},
+        ],
+      },
+    };
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse(snapshot));
+    await expect(client.status()).rejects.toThrow('Invalid Smithproxy probe history');
+
+    snapshot.smithproxy.history[0]!.checked_at_unix_ms = 90;
+    snapshot.smithproxy.history[1]!.checked_at_unix_ms = 100;
+    snapshot.smithproxy.availability_window.successful = 2;
+    await expect(client.status()).rejects.toThrow('Inconsistent Smithproxy status counters');
+  });
+
   it('loads and validates aggregated runtime metrics', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,

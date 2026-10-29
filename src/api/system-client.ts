@@ -309,14 +309,19 @@ function parseStatus(value: unknown): SystemSnapshot {
       !Array.isArray(source.history) || source.history.length > 60) {
     throw new Error('Invalid Smithproxy status response.');
   }
+  let previousTimestamp = -1;
   const history = source.history.map((item): ProbeSample => {
     if (!isObject(item) || !isSmithproxyState(item.state) ||
-        !isNonNegativeInteger(item.checked_at_unix_ms) || !isNullableNonNegativeInteger(item.latency_ms)) {
+        !isNonNegativeInteger(item.checked_at_unix_ms) || item.checked_at_unix_ms <= previousTimestamp ||
+        !isNullableNonNegativeInteger(item.latency_ms)) {
       throw new Error('Invalid Smithproxy probe history.');
     }
+    previousTimestamp = item.checked_at_unix_ms;
     return {state: item.state, checkedAtUnixMs: item.checked_at_unix_ms, latencyMs: item.latency_ms};
   });
-  if (source.availability_window.samples !== history.length || source.total_probes < history.length) {
+  const successful = history.filter(item => item.state === 'ready').length;
+  if (source.availability_window.samples !== history.length ||
+      source.availability_window.successful !== successful || source.total_probes < history.length) {
     throw new Error('Inconsistent Smithproxy status counters.');
   }
   return {
