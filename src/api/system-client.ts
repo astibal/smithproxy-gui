@@ -39,6 +39,11 @@ export interface SystemCapabilities {
   };
 }
 
+export interface GatewaySession {
+  mode: 'gateway' | 'disabled';
+  authenticated: boolean;
+}
+
 export interface ProbeSample {
   state: SmithproxyState;
   checkedAtUnixMs: number;
@@ -269,6 +274,12 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
   }
+  if ((!features.config_read &&
+       (features.config_write || features.drafts || features.draft_preflight)) ||
+      (features.config_write && !features.drafts) ||
+      (features.draft_preflight && !features.drafts)) {
+    throw new Error('Inconsistent privileged capabilities.');
+  }
   return {
     service: 'smithproxy-gui',
     apiVersion: value.api_version,
@@ -290,6 +301,15 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       neighborMonitoring: features.neighbor_monitoring,
     },
   };
+}
+
+function parseGatewaySession(value: unknown): GatewaySession {
+  if (!isObject(value) || (value.mode !== 'gateway' && value.mode !== 'disabled') ||
+      typeof value.authenticated !== 'boolean' ||
+      (value.mode === 'disabled' && value.authenticated)) {
+    throw new Error('Invalid gateway session response.');
+  }
+  return {mode: value.mode, authenticated: value.authenticated};
 }
 
 function parseStatus(value: unknown): SystemSnapshot {
@@ -615,6 +635,10 @@ export class SystemClient {
 
   async capabilities(): Promise<SystemCapabilities> {
     return parseCapabilities(await this.#request(joinedPath(this.#apiBase, '/capabilities')));
+  }
+
+  async authSession(): Promise<GatewaySession> {
+    return parseGatewaySession(await this.#request(joinedPath(this.#apiBase, '/auth/session')));
   }
 
   async status(): Promise<SystemSnapshot> {

@@ -45,6 +45,20 @@ The overlap is bounded to exactly two validated values. Rollback reverses the
 same sequence. Health remains unauthenticated and contains only bounded
 orchestration state; all management endpoints remain fail-closed.
 
+## Browser diagnostics
+
+The bounded `/api/v1/auth/session` response reports only `gateway` or `disabled`
+mode and whether the current request passed the handoff. It never returns a
+secret, identity, header value, or reason derived from credentials. The System
+view shows disabled, rejected, and verified states and refreshes the result every
+30 seconds and immediately after browser connectivity or visibility recovery.
+
+The browser accepts privileged configuration and draft capabilities only when
+the same refresh also reports an authenticated gateway session. A contradictory
+or malformed pair of responses disables every privileged capability. This is a
+defense-in-depth UI boundary; the GUI core remains authoritative on every
+request.
+
 ## Required review evidence
 
 - unit tests prove the secret file is `0600`, narrow, atomically replaced, and

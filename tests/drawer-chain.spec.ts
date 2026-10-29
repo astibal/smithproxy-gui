@@ -49,6 +49,9 @@ async function applySaslikVisualTheme(page: Page, theme: SaslikVisualTheme): Pro
 
 type MockState = {
   smithproxy: 'ready' | 'unreachable';
+  gatewayMode?: 'gateway' | 'disabled';
+  gatewayAuthenticated?: boolean;
+  authSessionRequests?: number;
   now?: number;
   configFetches?: number;
   conflictNextDraftWrite?: boolean;
@@ -77,30 +80,43 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
     },
   }}));
-  await page.route('**/api/v1/status', async route => route.fulfill({json: {
-    service: 'smithproxy-gui',
-    uptime_ms: 65000,
-    smithproxy: {
-      configured: true,
-      state: state.smithproxy,
-      detail: state.smithproxy === 'ready' ? 'Connected' : 'Connection timed out',
-      checked_at_unix_ms: now(),
-      last_success_at_unix_ms: now() - 5000,
-      latency_ms: state.smithproxy === 'ready' ? 12 : 2500,
-      total_probes: 3,
-      consecutive_failures: state.smithproxy === 'ready' ? 0 : 1,
-      availability_window: {samples: 2, successful: state.smithproxy === 'ready' ? 2 : 1},
-      history: state.smithproxy === 'ready'
-        ? [
-            {state: 'ready', checked_at_unix_ms: now() - 5000, latency_ms: 11},
-            {state: 'ready', checked_at_unix_ms: now(), latency_ms: 12},
-          ]
-        : [
-            {state: 'ready', checked_at_unix_ms: now() - 5000, latency_ms: 11},
-            {state: 'unreachable', checked_at_unix_ms: now(), latency_ms: 2500},
-          ],
-    },
-  }}));
+  await page.route('**/api/v1/auth/session', async route => {
+    state.authSessionRequests = (state.authSessionRequests ?? 0) + 1;
+    await route.fulfill({json: {
+      mode: state.gatewayMode ?? (configRead ? 'gateway' : 'disabled'),
+      authenticated: state.gatewayAuthenticated ?? configRead,
+    }});
+  });
+  await page.route('**/api/v1/status', async route => {
+    if (state.gatewayMode === 'gateway' && state.gatewayAuthenticated === false) {
+      await route.fulfill({status: 401, json: {error: {code: 'auth.required'}}});
+      return;
+    }
+    await route.fulfill({json: {
+      service: 'smithproxy-gui',
+      uptime_ms: 65000,
+      smithproxy: {
+        configured: true,
+        state: state.smithproxy,
+        detail: state.smithproxy === 'ready' ? 'Connected' : 'Connection timed out',
+        checked_at_unix_ms: now(),
+        last_success_at_unix_ms: now() - 5000,
+        latency_ms: state.smithproxy === 'ready' ? 12 : 2500,
+        total_probes: 3,
+        consecutive_failures: state.smithproxy === 'ready' ? 0 : 1,
+        availability_window: {samples: 2, successful: state.smithproxy === 'ready' ? 2 : 1},
+        history: state.smithproxy === 'ready'
+          ? [
+              {state: 'ready', checked_at_unix_ms: now() - 5000, latency_ms: 11},
+              {state: 'ready', checked_at_unix_ms: now(), latency_ms: 12},
+            ]
+          : [
+              {state: 'ready', checked_at_unix_ms: now() - 5000, latency_ms: 11},
+              {state: 'unreachable', checked_at_unix_ms: now(), latency_ms: 2500},
+            ],
+      },
+    }});
+  });
   await page.route('**/api/v1/metrics/summary', async route => route.fulfill({json: {
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current listener metrics' : 'Metrics are stale',
@@ -1113,6 +1129,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Alerts: Clear');
+  await expect(statusbar).toContainText('Gateway: Disabled');
   await expect(statusbar).toContainText('Freshness: Fresh');
   await expect(statusbar).toContainText('Events: Live');
   await expect(statusbar).toContainText('Events: Connecting', {timeout: 4_000});
@@ -1164,6 +1181,51 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(analysis.getByText('11 ms', {exact: true})).toBeVisible();
   await expect(analysis.getByText('12 ms', {exact: true})).toHaveCount(2);
   await expect(analysis.getByText('0', {exact: true})).toBeVisible();
+});
+
+test('reports a verified Saslik gateway handoff without exposing credentials', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Gateway: Verified');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const gatewayCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Saslik gateway'}),
+  });
+  await expect(gatewayCard).toContainText('Gateway configured');
+  await expect(gatewayCard).toContainText('Current requestVerified');
+  await expect(gatewayCard).toContainText('Configuration readAvailable');
+  await expect(gatewayCard).toContainText('Shared draftAvailable');
+  await expect(gatewayCard).toContainText('Atomic commitBlocked');
+  await expect(gatewayCard).toContainText(/verified its gateway handoff/i);
+  await expect(gatewayCard).not.toContainText(/secret|credential/i);
+});
+
+test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: false,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Gateway: Rejected');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const gatewayCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Saslik gateway'}),
+  });
+  await expect(gatewayCard).toContainText('Current requestNot verified');
+  await expect(gatewayCard).toContainText('Configuration readBlocked');
+  await expect(gatewayCard).toContainText('Shared draftBlocked');
+  await expect(gatewayCard).toContainText(/did not receive a valid trusted gateway handoff/i);
+
+  state.gatewayAuthenticated = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect.poll(() => state.authSessionRequests).toBeGreaterThan(1);
+  await expect(statusbar).toContainText('Gateway: Verified');
+  await expect(gatewayCard).toContainText('Current requestVerified');
+  await expect(gatewayCard).toContainText('Configuration readAvailable');
 });
 
 test('loads independent monitoring surfaces concurrently', async ({page}) => {
@@ -1264,6 +1326,13 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();
+  const gatewayCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Saslik gateway'}),
+  });
+  await expect(gatewayCard).toContainText('Fail-closed disabled');
+  await expect(gatewayCard).toContainText('Configuration readBlocked');
+  await expect(gatewayCard).toContainText('Atomic commitBlocked');
+  await expect(gatewayCard).toContainText(/configuration APIs remain fail-closed/i);
   await expect(page.getByText('Smithproxy key')).toBeVisible();
   await expect(page.getByText('Never exposed')).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Traffic admission'})).toBeVisible();

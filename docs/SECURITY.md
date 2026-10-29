@@ -42,6 +42,13 @@ available for orchestration. A non-loopback listener is rejected at startup
 unless gateway authentication is configured. Configuration reads and mutations
 always require an authenticated gateway, including on loopback.
 
+The bounded session diagnostic reveals only whether gateway mode is configured
+and whether the current request passed it. Browser code cross-checks that result
+with every privileged configuration capability refresh and disables all config
+and draft actions on a missing, malformed, or contradictory response. It polls
+at a bounded interval and rechecks immediately after connectivity or visibility
+recovery so a reviewed secret rotation can recover without a page reload.
+
 Gateway-secret rotation uses a bounded two-value overlap. The current value is
 mandatory; `SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS` is optional, independently
 validated, and must differ. Both comparisons use the constant-time helper. A

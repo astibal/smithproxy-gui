@@ -41,6 +41,38 @@ describe('SystemClient', () => {
     });
   });
 
+  it('rejects inconsistent privileged capability combinations', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'ready',
+      features: {
+        config_read: false, config_write: false, drafts: true, draft_preflight: true,
+        jobs: false, events: true, alerts: true, audit: true, smithproxy_events: false,
+        metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
+      },
+    }));
+    await expect(client.capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
+  });
+
+  it('loads and validates the trusted gateway session', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({mode: 'gateway', authenticated: true}));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.authSession()).resolves.toEqual({mode: 'gateway', authenticated: true});
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/auth/session', expect.objectContaining({redirect: 'error'}),
+    );
+  });
+
+  it('rejects contradictory or malformed gateway sessions', async () => {
+    const client = new SystemClient('/api/v1', '/', async () =>
+      jsonResponse({mode: 'disabled', authenticated: true}));
+    await expect(client.authSession()).rejects.toThrow('Invalid gateway session response');
+
+    const malformed = new SystemClient('/api/v1', '/', async () =>
+      jsonResponse({mode: 'proxy', authenticated: false}));
+    await expect(malformed.authSession()).rejects.toThrow('Invalid gateway session response');
+  });
+
   it('loads and validates the monitoring snapshot', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', uptime_ms: 1234,

@@ -25,6 +25,7 @@ import {
   type AlertSnapshot,
   type AuditSnapshot,
   type EventSnapshot,
+  type GatewaySession,
   type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
   type SessionActivitySnapshot,
@@ -186,6 +187,8 @@ export class SmithproxyApp extends LitElement {
   @state() private draftObjects = new Set<string>();
   @state() private systemStatus: SystemStatus = connectingSystemStatus;
   @state() private apiVersion = 'discovering';
+  @state() private gatewaySession: GatewaySession | undefined;
+  @state() private gatewaySessionError: string | undefined;
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
   @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
@@ -226,6 +229,8 @@ export class SmithproxyApp extends LitElement {
   private systemProbeTimer: number | undefined;
   private systemProbeInFlight = false;
   private systemProbePending = false;
+  private capabilityRefreshInFlight = false;
+  private nextCapabilityRefreshAt = 0;
   private closeEventStream: (() => void) | undefined;
   private eventStreamDegradedTimer: number | undefined;
   private configRefreshInFlight = false;
@@ -605,12 +610,16 @@ export class SmithproxyApp extends LitElement {
       this.eventStreamState = 'paused';
     } else {
       this.connectEventStream();
+      this.nextCapabilityRefreshAt = 0;
+      void this.loadCapabilities();
       void this.probeSystem();
     }
   };
 
   private readonly handleOnline = (): void => {
     this.connectEventStream();
+    this.nextCapabilityRefreshAt = 0;
+    void this.loadCapabilities();
     void this.probeSystem();
   };
 
@@ -708,6 +717,7 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     this.systemProbeInFlight = true;
+    if (Date.now() >= this.nextCapabilityRefreshAt) void this.loadCapabilities();
     try {
       const systemClient = this.systemClient;
       this.systemStatus = statusFromSnapshot(await systemClient.status());
@@ -775,7 +785,6 @@ export class SmithproxyApp extends LitElement {
         this.auditError = audit.reason instanceof Error ? audit.reason.message : 'Management audit is unavailable.';
       }
       await this.refreshConfiguration();
-      if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
       this.runtimeMetrics = {
@@ -811,9 +820,34 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async loadCapabilities(): Promise<void> {
-    if (!this.systemClient) return;
+    if (!this.systemClient || this.capabilityRefreshInFlight) return;
+    this.capabilityRefreshInFlight = true;
+    this.nextCapabilityRefreshAt = Date.now() + 30_000;
     try {
-      const capabilities = await this.systemClient.capabilities();
+      const [capabilitiesResult, sessionResult] = await Promise.allSettled([
+        this.systemClient.capabilities(),
+        this.systemClient.authSession(),
+      ] as const);
+      if (sessionResult.status === 'fulfilled') {
+        this.gatewaySession = sessionResult.value;
+        this.gatewaySessionError = undefined;
+      } else {
+        this.gatewaySession = undefined;
+        this.gatewaySessionError = sessionResult.reason instanceof Error
+          ? sessionResult.reason.message
+          : 'Gateway session diagnostics are unavailable.';
+      }
+      if (capabilitiesResult.status === 'rejected') throw capabilitiesResult.reason;
+      const capabilities = capabilitiesResult.value;
+      const privilegedConfiguration = capabilities.features.configRead ||
+        capabilities.features.configWrite || capabilities.features.drafts ||
+        capabilities.features.draftPreflight;
+      if (privilegedConfiguration &&
+          (sessionResult.status !== 'fulfilled' || sessionResult.value.mode !== 'gateway' ||
+           !sessionResult.value.authenticated)) {
+        throw new Error('Privileged capabilities require a verified trusted gateway session.');
+      }
+      const draftWasAvailable = this.draftAvailable;
       this.apiVersion = capabilities.apiVersion;
       this.configReadAvailable = capabilities.features.configRead;
       if (!this.configReadAvailable) this.configRefreshDeferred = false;
@@ -828,12 +862,18 @@ export class SmithproxyApp extends LitElement {
         await this.refreshConfiguration(true);
         this.restoreDrawerRoute();
       }
-      if (this.draftAvailable) await this.loadDraft();
+      if (this.draftAvailable && !draftWasAvailable) await this.loadDraft();
     } catch {
       this.apiVersion = 'unavailable';
       this.configReadAvailable = false;
       this.configRefreshDeferred = false;
+      this.configWriteAvailable = false;
+      this.draftAvailable = false;
       this.draftPreflightAvailable = false;
+      this.draftPreflight = undefined;
+      this.draftPreflightError = undefined;
+    } finally {
+      this.capabilityRefreshInFlight = false;
     }
   }
 
@@ -864,6 +904,34 @@ export class SmithproxyApp extends LitElement {
       ? 'not checked yet'
       : new Date(this.systemStatus.checkedAtUnixMs).toLocaleString();
     return `${this.systemStatus.detail} Last Smithproxy check: ${checked}.`;
+  }
+
+  private gatewayStatus(): {label: string; tone: 'success' | 'warning' | 'danger'; detail: string} {
+    if (this.gatewaySessionError) {
+      return {label: 'Unavailable', tone: 'danger', detail: this.gatewaySessionError};
+    }
+    if (!this.gatewaySession) {
+      return {label: 'Discovering', tone: 'warning', detail: 'Checking trusted gateway handoff.'};
+    }
+    if (this.gatewaySession.mode === 'disabled') {
+      return {
+        label: 'Disabled',
+        tone: 'warning',
+        detail: 'The GUI core has no trusted gateway secret; configuration APIs remain fail-closed.',
+      };
+    }
+    if (!this.gatewaySession.authenticated) {
+      return {
+        label: 'Rejected',
+        tone: 'danger',
+        detail: 'This request did not receive a valid trusted gateway handoff.',
+      };
+    }
+    return {
+      label: 'Verified',
+      tone: 'success',
+      detail: 'Saslik authenticated this request and the GUI core verified its gateway handoff.',
+    };
   }
 
   private async loadConfiguration(): Promise<void> {
@@ -3071,6 +3139,7 @@ export class SmithproxyApp extends LitElement {
     const captures = this.snapshot?.captures;
     const securityAssets = this.snapshot?.securityAssets;
     const workers = (value: number) => value === -1 ? 'Disabled' : String(value);
+    const gateway = this.gatewayStatus();
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
@@ -3110,6 +3179,21 @@ export class SmithproxyApp extends LitElement {
               <dt>Smithproxy key</dt><dd>Never exposed</dd>
               <dt>External redirects</dt><dd>Rejected</dd>
             </dl>
+          </article>
+          <article class="domain-card">
+            <header>
+              <div><h3>Saslik gateway</h3><p>Trusted per-instance request handoff</p></div>
+              <span class="runtime-state ${gateway.tone}" title=${gateway.detail}>● ${gateway.label}</span>
+            </header>
+            <dl>
+              <dt>Core mode</dt><dd>${this.gatewaySession?.mode === 'gateway' ? 'Gateway configured' :
+                this.gatewaySession?.mode === 'disabled' ? 'Fail-closed disabled' : 'Unknown'}</dd>
+              <dt>Current request</dt><dd>${this.gatewaySession?.authenticated ? 'Verified' : 'Not verified'}</dd>
+              <dt>Configuration read</dt><dd>${this.configReadAvailable ? 'Available' : 'Blocked'}</dd>
+              <dt>Shared draft</dt><dd>${this.draftAvailable ? 'Available' : 'Blocked'}</dd>
+              <dt>Atomic commit</dt><dd>${this.configWriteAvailable ? 'Available' : 'Blocked'}</dd>
+            </dl>
+            <p role="status">${gateway.detail}</p>
           </article>
           <article class="domain-card">
             <header><div><h3>Augment overlays</h3><p>Persistent and effective value provenance</p></div></header>
@@ -4681,6 +4765,8 @@ export class SmithproxyApp extends LitElement {
               : this.configError ? 'Preview · live unavailable' : this.snapshot ? 'Preview' : 'Loading'}
             ${this.configRefreshDeferred ? ' · refresh paused' : ''}
           </span>
+          <span class="status-secondary system-state ${this.gatewayStatus().tone}"
+            title=${this.gatewayStatus().detail}>● Gateway: ${this.gatewayStatus().label}</span>
           <span class="status-tertiary">API: ${this.apiVersion}</span><span class="spacer"></span>
           <span class="status-tertiary">Revision ${this.snapshot?.revision ?? 'runtime'}</span>
         </footer>
