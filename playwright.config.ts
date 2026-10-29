@@ -8,6 +8,8 @@ const browserNames: ReadonlyArray<BrowserName> = process.env.PLAYWRIGHT_ALL_BROW
 
 export default defineConfig({
   testDir: './tests',
+  reporter: process.env.CI ? [['github'], ['line']] : [['line']],
+  ...(process.env.CI ? {workers: 1} : {}),
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',

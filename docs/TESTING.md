@@ -33,6 +33,9 @@ schema, rolí, browserů a chybových stavů. Samotné procento line coverage ne
 CI spouští celý Playwright scénář nad Chromium, Firefox a WebKit. Lokální
 vývojový příkaz používá pro rychlost Chromium; shodný tříbrowserový matrix se
 zapíná proměnnou `PLAYWRIGHT_ALL_BROWSERS=1`.
+CI záměrně nepoužívá retry a zapisuje detail každého browserového pádu přímo do
+GitHub check annotations, aby platformní rozdíl nemohl zůstat skrytý za obecným
+exit kódem.
 
 Axe automaticky kontroluje WCAG A/AA pravidla na dashboardu, policy listu,
 prvním i vnořeném editoru a mobilním layoutu. Nález se opravuje v UI; test
