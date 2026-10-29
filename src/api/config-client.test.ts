@@ -254,6 +254,18 @@ describe('ApiConfigClient', () => {
           {id: 'temporary-office-access', priority: 50, value: 'reject', active: false},
           {id: 'incident-response', priority: 100, value: 'accept', active: true},
         ], editable: false,
+      }, {
+        path: 'policy.[0].src', persistent_value: ['office-net'], effective_value: ['maintenance-net'],
+        layers: [
+          {id: 'expanded-office', priority: 50, value: ['office-net', 'guest-net'], active: false},
+          {id: 'maintenance-only', priority: 100, value: ['maintenance-net'], active: true},
+        ], editable: false,
+      }, {
+        path: 'policy.[0].sport', persistent_value: [], effective_value: ['https'],
+        layers: [
+          {id: 'default-source-ports', priority: 10, value: [], active: false},
+          {id: 'restricted-source-ports', priority: 20, value: ['https'], active: true},
+        ], editable: false,
       }],
     });
     expect(augmented.valueOrigins[0]).toMatchObject({
@@ -262,6 +274,16 @@ describe('ApiConfigClient', () => {
         {id: 'temporary-office-access', priority: 50, value: 'reject', active: false},
         {id: 'incident-response', priority: 100, value: 'accept', active: true},
       ],
+    });
+    expect(augmented.valueOrigins[1]).toMatchObject({
+      path: 'policy.[0].src', persistentValue: ['office-net'], effectiveValue: ['maintenance-net'],
+      layers: [
+        {id: 'expanded-office', value: ['office-net', 'guest-net'], active: false},
+        {id: 'maintenance-only', value: ['maintenance-net'], active: true},
+      ],
+    });
+    expect(augmented.valueOrigins[2]).toMatchObject({
+      path: 'policy.[0].sport', persistentValue: [], effectiveValue: ['https'],
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/config/snapshot',
@@ -325,6 +347,21 @@ describe('ApiConfigClient', () => {
         layers: [{id: 'unexpected', priority: null, value: 'accept', active: true}], editable: false,
       }],
     })).toThrow('Unexpected provenance without augment support');
+    for (const path of [
+      'settings.http_api.keys',
+      'tls_profiles.[0].sni_filter_bypass',
+      'content_profiles.[0].rules_session_filter',
+      'policy.[0].future_secret',
+    ]) {
+      expect(() => parseConfigSnapshot({
+        ...liveSnapshot, augment_support: true,
+        value_origins: [{
+          path, persistent_value: 'redacted', effective_value: 'redacted',
+          layers: [{id: 'unsafe-origin', priority: null, value: 'redacted', active: true}],
+          editable: false,
+        }],
+      })).toThrow('Invalid value provenance entry');
+    }
     expect(() => parseConfigSnapshot({
       ...liveSnapshot, augment_support: true,
       value_origins: [{
@@ -342,6 +379,41 @@ describe('ApiConfigClient', () => {
         layers: [{id: 'wrong-value', priority: null, value: 'reject', active: true}], editable: false,
       }],
     })).toThrow('Invalid active augment layer');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].src', persistent_value: ['office-net'], effective_value: ['guest-net'],
+        layers: [{id: 'mixed-list', priority: null, value: ['guest-net', 42], active: true}],
+        editable: false,
+      }],
+    })).toThrow('Invalid augment layer value');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].src', persistent_value: ['office-net'], effective_value: [443],
+        layers: [{id: 'wrong-list-type', priority: null, value: [443], active: true}],
+        editable: false,
+      }],
+    })).toThrow('Inconsistent augment layer value types');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].src', persistent_value: ['office-net'], effective_value: ['guest-net'],
+        layers: [{id: 'wrong-list-value', priority: null, value: ['office-net'], active: true}],
+        editable: false,
+      }],
+    })).toThrow('Invalid active augment layer');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].src', persistent_value: ['office-net'], effective_value: ['guest-net'],
+        layers: [{
+          id: 'oversized-list', priority: null,
+          value: Array.from({length: 257}, (_, index) => `object-${index}`), active: true,
+        }],
+        editable: false,
+      }],
+    })).toThrow('Invalid augment layer value');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot, augment_support: true,
       value_origins: [{

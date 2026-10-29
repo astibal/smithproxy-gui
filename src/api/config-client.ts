@@ -6,6 +6,7 @@ import type {
   ConfigClient,
   ConfigReference,
   ConfigSnapshot,
+  ConfigValue,
   ConfigUsage,
   PolicySummary,
   PortObject,
@@ -30,8 +31,100 @@ const MAX_OBJECTS = 4096;
 const MAX_REFERENCES = 256;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
+const indexedProvenanceFields: Readonly<Record<string, ReadonlySet<string>>> = {
+  policy: new Set([
+    'name', 'disabled', 'proto', 'src', 'sport', 'dst', 'dport', 'features', 'action', 'nat',
+    'routing', 'tls_profile', 'ssh_profile', 'detection_profile', 'content_profile',
+    'auth_profile', 'alg_dns_profile', 'script_profile',
+  ]),
+  address_objects: new Set(['name', 'type', 'value']),
+  port_objects: new Set(['name', 'start', 'end']),
+  proto_objects: new Set(['name', 'id']),
+  routing: new Set(['name', 'dnat_address', 'dnat_port', 'dnat_lb_method', 'rewrite_sni', 'rewrite_sni_to']),
+  tls_profiles: new Set([
+    'name', 'inspect', 'no_fallback_bypass', 'client_hello_timeout', 'handshake_timeout',
+    'use_pfs', 'left_use_pfs', 'right_use_pfs', 'left_disable_reuse', 'right_disable_reuse',
+    'allow_untrusted_issuers', 'allow_invalid_certs', 'allow_self_signed', 'ocsp_mode',
+    'ocsp_stapling', 'ocsp_stapling_mode', 'ct_enable', 'alpn_block',
+    'failed_certcheck_replacement', 'failed_certcheck_override',
+    'failed_certcheck_override_timeout', 'failed_certcheck_override_timeout_type',
+    'client_cert_action', 'sni_based_cert', 'ip_based_cert', 'only_custom_certs',
+    'sni_filter_use_dns_cache', 'sni_filter_use_dns_domain_tree', 'redirect_warning_ports',
+    'sslkeylog', 'alerts',
+  ]),
+  content_profiles: new Set([
+    'name', 'write_payload', 'write_format', 'webhook_enable', 'webhook_lock_traffic',
+    'ja4_tls_ch', 'ja4_tls_ch_ignore_sni', 'ja4_tls_sh', 'ja4_http',
+  ]),
+  ssh_profiles: new Set([
+    'name', 'hostkey_policy', 'shell', 'exec', 'subsystem', 'pty', 'environment',
+    'local_forward', 'remote_forward', 'x11', 'agent',
+  ]),
+  script_profiles: new Set(['name', 'type']),
+  auth_profiles: new Set(['name', 'authenticate', 'resolve']),
+  detection_profiles: new Set(['name', 'mode', 'engines_enabled', 'kb_enabled']),
+  alg_dns_profiles: new Set(['name', 'match_request_id', 'randomize_id', 'cached_responses']),
+  tls_ca: new Set(['name']),
+  starttls_signatures: new Set(['cat', 'name', 'side', 'severity', 'group', 'enables', 'engine']),
+  detection_signatures: new Set(['cat', 'name', 'side', 'severity', 'group', 'enables', 'engine']),
+};
+
+const settingsProvenanceFields = new Set([
+  'accept_tproxy', 'accept_redirect', 'accept_socks', 'accept_http_connect', 'accept_api',
+  'extended_local_destination_protection', 'policy_fail_open', 'policy_access_request_fail_open',
+  'ssl_autodetect', 'ssl_autodetect_harder', 'ssl_use_ktls',
+  'http_api.key_extend_on_access', 'http_api.loopback_only', 'http_api.pam_login',
+  'http_api.allow_api_header', 'webhook.enabled', 'webhook.tls_verify', 'webhook.sift',
+  'webhook.api_override', 'webhook.sift_lored_include_url', 'webhook.task_debug',
+  'webhook.task_debug_dump', 'default_write_payload', 'log_console', 'tpool_log',
+  'socks.async_dns', 'socks.ipver_mixing', 'socks.prefer_ipv6', 'plaintext_workers',
+  'ssl_workers', 'udp_workers', 'dtls_workers', 'quic_workers', 'socks_workers',
+  'http_connect_workers', 'plaintext_port', 'ssl_port', 'udp_port', 'dtls_port',
+  'quic_port', 'socks_port', 'http_connect_port', 'ssl_ocsp_status_ttl', 'ssl_crl_status_ttl',
+  'write_pcap_single_quota', 'log_level', 'syslog_port', 'syslog_facility', 'syslog_level',
+  'syslog_family', 'cli.port', 'webhook.ping_interval', 'webhook.nbr_update_interval',
+  'webhook.nbr_tag_refresh_age', 'http_api.key_timeout', 'http_api.port',
+  'tuning.host_bufsz_min', 'tuning.host_bufsz_max_multiplier', 'tuning.host_write_full',
+  'tuning.host_io_batch', 'tuning.tls_write_chunk', 'tuning.host_open_timeout',
+  'tuning.host_idle_timeout', 'tuning.nbr_cache_size', 'webhook.sift_payload_limit_per_direction',
+  'webhook.sift_lored_mode', 'nameservers', 'http_api.allowed_ips', 'udp_quick_ports',
+]);
+
+const captureProvenanceFields = new Set([
+  'local.enabled', 'local.format', 'local.pcap_quota', 'remote.enabled',
+  'remote.gre_format', 'remote.tun_ttl', 'options.calculate_checksums',
+]);
+
+const debugProvenanceFields = new Set([
+  'log_data_crc', 'log_sockets', 'log_online_cx_name', 'log_srclines', 'log_srclines_always',
+]);
+
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function provenancePathAllowed(path: string): boolean {
+  if (path.startsWith('settings.')) return settingsProvenanceFields.has(path.slice(9));
+  if (path.startsWith('captures.')) return captureProvenanceFields.has(path.slice(9));
+  if (path.startsWith('debug.')) {
+    const field = path.slice(6);
+    return debugProvenanceFields.has(field) || /^log\.[A-Za-z0-9_-]+$/u.test(field);
+  }
+  const match = /^([a-z_]+)\.\[(0|[1-9][0-9]{0,3})\]\.(.+)$/u.exec(path);
+  const section = match?.[1];
+  const index = match?.[2];
+  const field = match?.[3];
+  if (!section || !index || !field || Number(index) >= MAX_OBJECTS) return false;
+  if (indexedProvenanceFields[section]?.has(field)) return true;
+  if (section === 'content_profiles') {
+    const nested = /^content_rules\.\[(0|[1-9][0-9]{0,2})\]\.(fill_length|replace_each_nth)$/u.exec(field);
+    return nested !== null && Number(nested[1]) < MAX_REFERENCES;
+  }
+  if (section === 'starttls_signatures' || section === 'detection_signatures') {
+    const nested = /^flow\.\[(0|[1-9][0-9]{0,2})\]\.(side|type|bytes_start|bytes_max)$/u.exec(field);
+    return nested !== null && Number(nested[1]) < MAX_REFERENCES;
+  }
+  return false;
 }
 
 function configScalar(value: unknown, label: string): boolean | number | string {
@@ -39,6 +132,33 @@ function configScalar(value: unknown, label: string): boolean | number | string 
   if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
   if (typeof value === 'string' && value.length <= 1024 && !/[\u0000-\u001f\u007f]/u.test(value)) return value;
   throw new Error(`Invalid ${label}.`);
+}
+
+function configValue(value: unknown, label: string): ConfigValue {
+  if (!Array.isArray(value)) return configScalar(value, label);
+  if (value.length > MAX_REFERENCES) throw new Error(`Invalid ${label}.`);
+  if (value.length === 0) return [];
+  const itemType = typeof value[0];
+  if (itemType !== 'string' && itemType !== 'number') throw new Error(`Invalid ${label}.`);
+  const items = value.map(item => configScalar(item, `${label} item`));
+  if (items.some(item => typeof item !== itemType)) throw new Error(`Invalid ${label}.`);
+  return itemType === 'string' ? items as string[] : items as number[];
+}
+
+function configValueType(value: ConfigValue): string {
+  if (!Array.isArray(value)) return typeof value;
+  return value.length === 0 ? 'empty-list' : `${typeof value[0]}-list`;
+}
+
+function configValueTypesAgree(values: ReadonlyArray<ConfigValue>): boolean {
+  const types = new Set(values.map(configValueType).filter(type => type !== 'empty-list'));
+  const hasList = values.some(Array.isArray);
+  return hasList ? values.every(Array.isArray) && types.size <= 1 : types.size === 1;
+}
+
+function configValuesEqual(left: ConfigValue, right: ConfigValue): boolean {
+  if (!Array.isArray(left) || !Array.isArray(right)) return Object.is(left, right);
+  return left.length === right.length && left.every((item, index) => Object.is(item, right[index]));
 }
 
 function safeString(value: unknown, label: string, maximum = 1024): string {
@@ -899,7 +1019,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   const valueOrigins = value.value_origins.map((item): ValueOrigin => {
     if (!isObject(item) || typeof item.path !== 'string' || item.path.length === 0 ||
         item.path.length > 512 || originPaths.has(item.path) ||
-        !/^[A-Za-z0-9_.\[\]-]+$/u.test(item.path) || typeof item.editable !== 'boolean' ||
+        !/^[A-Za-z0-9_.\[\]-]+$/u.test(item.path) || !provenancePathAllowed(item.path) ||
+        typeof item.editable !== 'boolean' ||
         !Array.isArray(item.layers) || item.layers.length === 0 || item.layers.length > 64) {
       throw new Error('Invalid value provenance entry.');
     }
@@ -928,20 +1049,21 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         previousPriority = layer.priority;
       }
       layerIds.add(layer.id);
-      const layerValue = configScalar(layer.value, 'augment layer value');
+      const layerValue = configValue(layer.value, 'augment layer value');
       if (layer.active) activeLayerCount += 1;
       if (layer.active && index !== rawLayers.length - 1) {
         throw new Error('Active augment layer must terminate the chain.');
       }
       return {id: layer.id, priority: layer.priority, value: layerValue, active: layer.active};
     });
-    const persistentValue = configScalar(item.persistent_value, 'persistent value');
-    const effectiveValue = configScalar(item.effective_value, 'effective value');
-    if (typeof persistentValue !== typeof effectiveValue) throw new Error('Inconsistent value provenance types.');
-    if (layers.some(layer => typeof layer.value !== typeof persistentValue)) {
+    const persistentValue = configValue(item.persistent_value, 'persistent value');
+    const effectiveValue = configValue(item.effective_value, 'effective value');
+    if (!configValueTypesAgree([persistentValue, effectiveValue, ...layers.map(layer => layer.value)])) {
       throw new Error('Inconsistent augment layer value types.');
     }
-    if (activeLayerCount !== 1 || !Object.is(layers.at(-1)?.value, effectiveValue)) {
+    const activeValue = layers.at(-1)?.value;
+    if (activeLayerCount !== 1 || activeValue === undefined ||
+        !configValuesEqual(activeValue, effectiveValue)) {
       throw new Error('Invalid active augment layer.');
     }
     return {path: item.path, persistentValue, effectiveValue, layers, editable: item.editable};

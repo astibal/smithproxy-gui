@@ -34,6 +34,7 @@ const saslikVisualThemes = {
 } as const;
 
 type SaslikVisualTheme = keyof typeof saslikVisualThemes;
+type MockConfigValue = boolean | number | string | string[] | number[];
 
 async function applySaslikVisualTheme(page: Page, theme: SaslikVisualTheme): Promise<void> {
   const [palette, mode] = theme.split('-') as ['grill' | 'petroleum', 'dark' | 'light'];
@@ -80,9 +81,14 @@ type MockState = {
   initialDraftChanges?: Array<{path: string; value: unknown}>;
   valueOrigins?: Array<{
     path: string;
-    persistent_value: boolean | number | string;
-    effective_value: boolean | number | string;
-    layers: Array<{id: string; priority: number | null; value: boolean | number | string; active: boolean}>;
+    persistent_value: MockConfigValue;
+    effective_value: MockConfigValue;
+    layers: Array<{
+      id: string;
+      priority: number | null;
+      value: MockConfigValue;
+      active: boolean;
+    }>;
     editable: boolean;
   }>;
 };
@@ -1165,9 +1171,49 @@ test('rejects tampering with augment-owned persistent values', async ({page}) =>
   expect(state.draftMutationVersions).toEqual([]);
 });
 
+test('renders and protects augment-owned list overlay chains', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    draftMutationVersions: [],
+    valueOrigins: [{
+      path: 'policy.[0].src', persistent_value: ['office-net'], effective_value: ['maintenance-net'],
+      layers: [
+        {id: 'expanded-office', priority: 100, value: ['office-net', 'guest-net'], active: false},
+        {id: 'maintenance-only', priority: 200, value: ['maintenance-net'], active: true},
+      ],
+      editable: false,
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /^Policy 1 /u}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const chain = editor.getByRole('list', {name: 'src overlay chain'});
+  await expect(chain.locator('.origin-id')).toHaveText(['expanded-office', 'maintenance-only']);
+  await expect(chain.locator('.origin-value')).toHaveText([
+    'office-net', 'office-net, guest-net', 'maintenance-net', 'maintenance-net',
+  ]);
+  const sources = editor.locator('#policy-sources-policy-0');
+  await expect(sources).toHaveValue('office-net');
+  await expect(sources).toHaveAttribute('readonly', '');
+  await sources.evaluate(input => {
+    input.removeAttribute('readonly');
+    input.value = 'office-net, tampered-net';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+  });
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect(editor.getByRole('status')).toContainText(
+    'policy.[0].src is owned by an active augment layer',
+  );
+  expect(state.draftMutationVersions).toEqual([]);
+});
+
 test('binds every profile editor to augment-owned persistent values', async ({page}) => {
   const origin = (
-    path: string, persistent_value: boolean | number | string, effective_value: boolean | number | string,
+    path: string, persistent_value: MockConfigValue, effective_value: MockConfigValue,
   ): NonNullable<MockState['valueOrigins']>[number] => ({
     path, persistent_value, effective_value,
     layers: [{id: 'profile-maintenance', priority: 50, value: effective_value, active: true}],
@@ -1176,7 +1222,9 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   const state: MockState = {
     smithproxy: 'ready',
     valueOrigins: [
+      origin('routing.[0].dnat_address', ['office-net'], ['maintenance-net']),
       origin('routing.[0].dnat_lb_method', 'sticky-l3', 'round-robin'),
+      origin('tls_profiles.[0].redirect_warning_ports', [8443, 44443], [443]),
       origin('tls_profiles.[0].allow_invalid_certs', true, false),
       origin('detection_profiles.[0].mode', 2, 1),
       origin('content_profiles.[0].write_format', 'pcap', 'pcap_single'),
@@ -1191,7 +1239,7 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   await expect(profiles.getByRole('button', {name: /main routing Typed details/u}))
-    .toContainText('1 overridden');
+    .toContainText('2 overridden');
 
   const verify = async (
     buttonName: RegExp, dialogName: string, label: string, value: string,
@@ -1200,12 +1248,22 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
     const editor = page.getByRole('dialog', {name: `Edit ${dialogName}`});
     await expect(editor.getByLabel(label, {exact: true})).toHaveValue(value);
     await expect(editor.getByLabel(label, {exact: true})).toBeDisabled();
-    await expect(editor.getByRole('list', {name: /overlay chain$/u})).toContainText('profile-maintenance');
+    await expect(editor.locator('.origin-id').first()).toHaveText('profile-maintenance');
     await page.keyboard.press('Escape');
   };
 
   await verify(/main routing Typed details/u, 'main', 'Load balancing', 'sticky-l3');
+  await profiles.getByRole('button', {name: /main routing Typed details/u}).click();
+  const routing = page.getByRole('dialog', {name: 'Edit main'});
+  await expect(routing.getByLabel('Destination addresses')).toHaveValue('office-net');
+  await expect(routing.getByLabel('Destination addresses')).toHaveAttribute('readonly', '');
+  await page.keyboard.press('Escape');
   await verify(/inspect tls Typed details/u, 'inspect', 'Allow invalid certificates', 'true');
+  await profiles.getByRole('button', {name: /inspect tls Typed details/u}).click();
+  const tls = page.getByRole('dialog', {name: 'Edit inspect'});
+  await expect(tls.getByLabel('Certificate warning ports')).toHaveValue('8443, 44443');
+  await expect(tls.getByLabel('Certificate warning ports')).toHaveAttribute('readonly', '');
+  await page.keyboard.press('Escape');
   await verify(/detect detection Typed details/u, 'detect', 'Detection phase', '2');
   await verify(/capture content Typed details/u, 'capture', 'Capture format', 'pcap');
   await verify(/default-ssh ssh Typed details/u, 'default-ssh', 'Shell', 'reject');
@@ -1216,7 +1274,7 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
 
 test('binds system, capture, and nested security editors to persistent values', async ({page}) => {
   const origin = (
-    path: string, persistent_value: boolean | number | string, effective_value: boolean | number | string,
+    path: string, persistent_value: MockConfigValue, effective_value: MockConfigValue,
   ): NonNullable<MockState['valueOrigins']>[number] => ({
     path, persistent_value, effective_value,
     layers: [{id: 'runtime-override', priority: 90, value: effective_value, active: true}],
@@ -1229,6 +1287,7 @@ test('binds system, capture, and nested security editors to persistent values', 
       origin('settings.ssl_workers', 7, 4),
       origin('settings.syslog_family', 6, 4),
       origin('settings.http_api.port', 60000, 55555),
+      origin('settings.nameservers', ['192.0.2.53', 'resolver.example'], ['203.0.113.53']),
       origin('settings.webhook.sift_lored_mode', 'required', 'disabled'),
       origin('settings.tuning.host_bufsz_min', 4096, 2048),
       origin('debug.log_data_crc', true, false),
@@ -1260,6 +1319,8 @@ test('binds system, capture, and nested security editors to persistent values', 
   await expect(settings.getByLabel('Syslog address family')).toBeDisabled();
   await expect(settings.getByLabel('API port')).toHaveValue('60000');
   await expect(settings.getByLabel('API port')).toHaveAttribute('readonly', '');
+  await expect(settings.getByLabel('Nameservers', {exact: true})).toHaveValue('192.0.2.53, resolver.example');
+  await expect(settings.getByLabel('Nameservers', {exact: true})).toHaveAttribute('readonly', '');
   await expect(settings.getByLabel('Sift LoreD enrichment')).toHaveValue('required');
   await expect(settings.getByLabel('Sift LoreD enrichment')).toBeDisabled();
   await expect(settings.getByLabel('Initial host buffer (bytes)')).toHaveValue('4096');

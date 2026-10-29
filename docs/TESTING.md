@@ -63,6 +63,10 @@ neznámou API verzi a nemožné závislosti transaction, draft a event příznak
 před prvním chráněným requestem. Browser testy zároveň rozlišují platný omezený
 kontrakt ve stavu `ready` od nekonzistentního grafu ve stavu `unavailable` a
 ověřují bezpečný obsah lokálního diagnostického exportu.
+Augment contract testy pokrývají scalar i homogenní listové hodnoty, prázdné
+listy, maximální délku, typovou shodu a hlubokou shodu aktivní a efektivní
+hodnoty. Browser test navíc zkouší DOM tampering listového policy fieldu a
+ověřuje, že nevznikne žádný draft request.
 
 Shared bounded-JSON testy dělí vícebajtové UTF-8 mezi chunky, překračují limit
 bez `Content-Length`, ověřují aktivní zrušení streamu a odmítají chybnou délku,

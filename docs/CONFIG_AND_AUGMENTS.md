@@ -32,10 +32,11 @@ Seznamy policy a objektů označují počet efektivně přepsaných polí ješt�
 otevřením editoru. Prioritizovaný řetěz musí mít úplnou a striktně rostoucí
 prioritu; řetěz bez priorit používá pouze autoritativní pořadí pole. Smíšené nebo
 regresivní pořadí klient odmítne celé.
-Všechny typované scalar controls v policy, objektech, profilech, system/capture
-nastavení a vnořených security/rule editorech se vážou přímo na persistentní
-hodnotu a pole vlastněné aktivní vrstvou zobrazují pouze pro čtení. Centrální
-draft pipeline navíc fail-closed odmítne změnu libovolné augment-owned cesty,
+Všechny typované scalar i list controls v policy, objektech, profilech,
+system/capture nastavení a vnořených security/rule editorech se vážou přímo na
+persistentní hodnotu a pole vlastněné aktivní vrstvou zobrazují pouze pro čtení.
+Listy jsou homogenní, omezené na 256 položek a zachovávají autoritativní pořadí.
+Centrální draft pipeline navíc fail-closed odmítne změnu libovolné augment-owned cesty,
 takže ochrana nezávisí na konkrétním rendereru ani na nezměněném DOM.
 
 ## Coverage model

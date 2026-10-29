@@ -16,6 +16,7 @@ import type {
   ConfigReference,
   ConfigScalar,
   ConfigSnapshot,
+  ConfigValue,
   ConfigUsage,
   PolicySummary,
   PortObject,
@@ -2077,6 +2078,27 @@ export class SmithproxyApp extends LitElement {
     return value !== undefined && typeof value === typeof fallback ? value as T : fallback;
   }
 
+  private persistentListValue<T extends string | number>(
+    path: string, fallback: ReadonlyArray<T>, itemType: 'string' | 'number',
+  ): ReadonlyArray<T> {
+    const value = this.valueOrigin(path)?.persistentValue;
+    return Array.isArray(value) && value.every(item => typeof item === itemType)
+      ? value as ReadonlyArray<T>
+      : fallback;
+  }
+
+  private configValuesEqual(left: ConfigValue, right: DraftScalar): boolean {
+    if (!Array.isArray(left) || !Array.isArray(right)) return Object.is(left, right);
+    return left.length === right.length && left.every((item, index) => Object.is(item, right[index]));
+  }
+
+  private formatConfigValue(value: ConfigValue): string {
+    if (!Array.isArray(value)) return String(value);
+    if (value.length === 0) return 'Empty list';
+    const preview = value.slice(0, 4).join(', ');
+    return value.length > 4 ? `${preview}, … · ${value.length} items` : preview;
+  }
+
   private originReadOnly(path: string, otherwiseReadOnly: boolean): boolean {
     return otherwiseReadOnly || this.valueOrigin(path)?.editable === false;
   }
@@ -2085,8 +2107,8 @@ export class SmithproxyApp extends LitElement {
     const changedLockedValue = changes.find(change => {
       const origin = this.valueOrigin(change.path);
       return origin?.editable === false &&
-        !Object.is(change.value, origin.persistentValue) &&
-        !Object.is(change.value, origin.effectiveValue);
+        !this.configValuesEqual(origin.persistentValue, change.value) &&
+        !this.configValuesEqual(origin.effectiveValue, change.value);
     });
     if (changedLockedValue) {
       this.draftError = `${changedLockedValue.path} is owned by an active augment layer and cannot be changed here.`;
@@ -4411,6 +4433,15 @@ export class SmithproxyApp extends LitElement {
     const policyBase = `policy.[${policyIndex}]`;
     const liveReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
     const protocolValue = this.persistentValue(`${policyBase}.proto`, policy.protocol);
+    const sourceValues = this.persistentListValue(
+      `${policyBase}.src`, policy.sources.map(item => item.name), 'string',
+    );
+    const destinationValues = this.persistentListValue(
+      `${policyBase}.dst`, policy.destinations.map(item => item.name), 'string',
+    );
+    const sourcePortValues = this.persistentListValue(`${policyBase}.sport`, policy.sourcePorts, 'string');
+    const destinationPortValues = this.persistentListValue(`${policyBase}.dport`, policy.destinationPorts, 'string');
+    const featureValues = this.persistentListValue(`${policyBase}.features`, policy.features, 'string');
     const protocol = this.snapshot?.protocols.find(item => item.name === protocolValue);
     return html`
       <div class="form-grid">
@@ -4423,12 +4454,14 @@ export class SmithproxyApp extends LitElement {
           ?disabled=${this.originReadOnly(`${policyBase}.disabled`, liveReadOnly)} /> Accept traffic for evaluation</label>
         <label for="policy-sources-${entry.id}">Sources</label>
         <div class="reference-stack">
-          <input id="policy-sources-${entry.id}" .value=${policy.sources.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
+          <input id="policy-sources-${entry.id}" .value=${sourceValues.join(', ')}
+            .readOnly=${this.originReadOnly(`${policyBase}.src`, liveReadOnly)} />
           ${this.renderAddressReferences(policy.sources)}</div>
         <label for="destination-${entry.id}">Destinations</label>
         <div class="reference-stack">
           <input id="destination-${entry.id}"
-            .value=${policy.destinations.map(item => item.name).join(', ')} .readOnly=${liveReadOnly} />
+            .value=${destinationValues.join(', ')}
+            .readOnly=${this.originReadOnly(`${policyBase}.dst`, liveReadOnly)} />
           ${this.renderAddressReferences(policy.destinations)}
         </div>
         <label for="action-${entry.id}">Action</label>
@@ -4445,9 +4478,13 @@ export class SmithproxyApp extends LitElement {
               @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
               <span>${protocol.name}</span><span aria-hidden="true">→</span></button>` : nothing}</div>
           <label for="policy-source-ports-${entry.id}">Source ports</label>
-          <div class="reference-stack"><input id="policy-source-ports-${entry.id}" .value=${policy.sourcePorts.join(', ')} .readOnly=${liveReadOnly} />${this.renderPortReferences(policy.sourcePorts)}</div>
+          <div class="reference-stack"><input id="policy-source-ports-${entry.id}"
+            .value=${sourcePortValues.join(', ')}
+            .readOnly=${this.originReadOnly(`${policyBase}.sport`, liveReadOnly)} />${this.renderPortReferences(policy.sourcePorts)}</div>
           <label for="policy-destination-ports-${entry.id}">Destination ports</label>
-          <div class="reference-stack"><input id="policy-destination-ports-${entry.id}" .value=${policy.destinationPorts.join(', ')} .readOnly=${liveReadOnly} />${this.renderPortReferences(policy.destinationPorts)}</div>
+          <div class="reference-stack"><input id="policy-destination-ports-${entry.id}"
+            .value=${destinationPortValues.join(', ')}
+            .readOnly=${this.originReadOnly(`${policyBase}.dport`, liveReadOnly)} />${this.renderPortReferences(policy.destinationPorts)}</div>
           ${this.renderPolicyProfileField(entry, 'tls', 'TLS profile', 'tls', policy.tlsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'routing', 'Routing profile', 'routing', policy.routing, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'detection', 'Detection profile', 'detection', policy.detectionProfile, liveReadOnly)}
@@ -4457,7 +4494,8 @@ export class SmithproxyApp extends LitElement {
           ${this.renderPolicyProfileField(entry, 'dns', 'DNS ALG profile', 'dns', policy.dnsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'script', 'Script profile', 'script', policy.scriptProfile, liveReadOnly)}
           <label for="policy-features-${entry.id}">Features</label>
-          <input id="policy-features-${entry.id}" .value=${policy.features.join(', ')} .readOnly=${liveReadOnly} />
+          <input id="policy-features-${entry.id}" .value=${featureValues.join(', ')}
+            .readOnly=${this.originReadOnly(`${policyBase}.features`, liveReadOnly)} />
           <label for="policy-nat-${entry.id}">NAT</label>
           <input id="policy-nat-${entry.id}" .value=${this.persistentValue(`${policyBase}.nat`, policy.nat)}
             .readOnly=${this.originReadOnly(`${policyBase}.nat`, liveReadOnly)} />
@@ -4609,6 +4647,10 @@ export class SmithproxyApp extends LitElement {
     const prefix = this.originPrefix(entry);
     const persistent = <T extends ConfigScalar>(field: string, fallback: T): T =>
       prefix ? this.persistentValue(`${prefix}${field}`, fallback) : fallback;
+    const persistentStrings = (field: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
+      prefix ? this.persistentListValue(`${prefix}${field}`, fallback, 'string') : fallback;
+    const persistentNumbers = (field: string, fallback: ReadonlyArray<number>): ReadonlyArray<number> =>
+      prefix ? this.persistentListValue(`${prefix}${field}`, fallback, 'number') : fallback;
     const fieldReadOnly = (field: string): boolean =>
       prefix ? this.originReadOnly(`${prefix}${field}`, mappedReadOnly) : mappedReadOnly;
     const booleanSelect = (
@@ -4631,7 +4673,8 @@ export class SmithproxyApp extends LitElement {
         ${routing ? html`
           <label for="routing-addresses-${entry.id}">Destination addresses</label>
           <input id="routing-addresses-${entry.id}"
-            .value=${routing.destinationAddresses.join(', ')} .readOnly=${mappedReadOnly} />
+            .value=${persistentStrings('dnat_address', routing.destinationAddresses).join(', ')}
+            .readOnly=${fieldReadOnly('dnat_address')} />
           <label>Address object links</label>
           <div class="reference-stack">${routing.destinationAddresses.length === 0 ? html`<span>None</span>` :
             routing.destinationAddresses.map(name => {
@@ -4643,7 +4686,8 @@ export class SmithproxyApp extends LitElement {
             })}</div>
           <label for="routing-ports-${entry.id}">Destination ports</label>
           <input id="routing-ports-${entry.id}"
-            .value=${routing.destinationPorts.join(', ')} .readOnly=${mappedReadOnly} />
+            .value=${persistentStrings('dnat_port', routing.destinationPorts).join(', ')}
+            .readOnly=${fieldReadOnly('dnat_port')} />
           <label>Port object links</label>
           ${this.renderPortReferences(routing.destinationPorts)}
           <label for="routing-load-balancing-${entry.id}">Load balancing</label>
@@ -4712,8 +4756,9 @@ export class SmithproxyApp extends LitElement {
           <label for="tls-sni-dns-tree-${entry.id}">SNI filter DNS tree</label>
           ${booleanSelect(`tls-sni-dns-tree-${entry.id}`, 'sni_filter_use_dns_domain_tree', tls.sniFilterUsesDnsDomainTree)}
           <label for="tls-warning-ports-${entry.id}">Certificate warning ports</label>
-          <input id="tls-warning-ports-${entry.id}" .value=${tls.redirectWarningPorts.join(', ')}
-            .readOnly=${mappedReadOnly} placeholder="443, 44443" />
+          <input id="tls-warning-ports-${entry.id}"
+            .value=${persistentNumbers('redirect_warning_ports', tls.redirectWarningPorts).join(', ')}
+            .readOnly=${fieldReadOnly('redirect_warning_ports')} placeholder="443, 44443" />
           <label for="tls-failed-replacement-${entry.id}">Certificate failure replacement</label>
           ${booleanSelect(`tls-failed-replacement-${entry.id}`, 'failed_certcheck_replacement', tls.failedCertificateReplacement)}
           <label for="tls-failed-override-${entry.id}">Certificate failure override</label>
@@ -4942,6 +4987,8 @@ export class SmithproxyApp extends LitElement {
       systemTuningFields.map(([path, id]) => [id, `settings.tuning.${path}`]),
     );
     const scalar = <T extends ConfigScalar>(path: string, fallback: T): T => this.persistentValue(path, fallback);
+    const strings = (path: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
+      this.persistentListValue(path, fallback, 'string');
     const locked = (path: string): boolean => this.originReadOnly(path, disabled);
     const booleanField = (id: string, label: string, value: boolean) => html`
       <label for="settings-${id}">${label}</label>
@@ -5037,8 +5084,9 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('aux-socks-prefer-ipv6', 'SOCKS prefer IPv6', settings.auxiliary.socksPreferIpv6)}
         ${writeOnlyField('cli-password', 'CLI password', settings.auxiliary.cliPasswordConfigured, true)}
         <label for="settings-udp-quick-ports">UDP quick ports</label>
-        <input id="settings-udp-quick-ports" .value=${settings.auxiliary.udpQuickPorts.join(', ')}
-          placeholder="0, 53, 443" .readOnly=${disabled} />
+        <input id="settings-udp-quick-ports"
+          .value=${strings('settings.udp_quick_ports', settings.auxiliary.udpQuickPorts).join(', ')}
+          placeholder="0, 53, 443" .readOnly=${locked('settings.udp_quick_ports')} />
         ${writeOnlyField('certificates-path', 'Certificates path', settings.auxiliary.certificatesPathConfigured)}
         ${writeOnlyField('certificate-password', 'Certificate password', settings.auxiliary.certificatePasswordConfigured, true)}
         ${writeOnlyField('certificate-transparency-log', 'Certificate transparency log file', settings.auxiliary.certificateTransparencyLogConfigured)}
@@ -5098,8 +5146,9 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('webhook-task-debug', 'Webhook task diagnostics', settings.webhook.taskDebug)}
         ${booleanField('webhook-task-debug-dump', 'Webhook task dump diagnostics', settings.webhook.taskDebugDump)}
         <label for="settings-nameservers">Nameservers</label>
-        <input id="settings-nameservers" .value=${settings.nameservers.join(', ')}
-          placeholder="192.0.2.53, resolver.example" .readOnly=${disabled} />
+        <input id="settings-nameservers"
+          .value=${strings('settings.nameservers', settings.nameservers).join(', ')}
+          placeholder="192.0.2.53, resolver.example" .readOnly=${locked('settings.nameservers')} />
         <label for="settings-api-keys-mode">HTTP API keys</label>
         <div class="write-only-control">
           <select id="settings-api-keys-mode" ?disabled=${disabled}>
@@ -5112,8 +5161,10 @@ export class SmithproxyApp extends LitElement {
             .readOnly=${disabled} />
         </div>
         <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
-        <input id="settings-api-allowed-ips" .value=${settings.httpApi.allowedIps.join(', ')}
-          placeholder="127.0.0.1, 192.0.2.0/24" .readOnly=${disabled} />
+        <input id="settings-api-allowed-ips"
+          .value=${strings('settings.http_api.allowed_ips', settings.httpApi.allowedIps).join(', ')}
+          placeholder="127.0.0.1, 192.0.2.0/24"
+          .readOnly=${locked('settings.http_api.allowed_ips')} />
         ${writeOnlyField('webhook-url', 'Webhook URL', settings.webhook.urlConfigured)}
         ${writeOnlyField('webhook-sift-url', 'Sift URL', settings.webhook.siftUrlConfigured)}
         ${writeOnlyField('webhook-sift-tenant', 'Sift tenant ID', settings.webhook.siftTenantConfigured)}
@@ -5522,19 +5573,19 @@ export class SmithproxyApp extends LitElement {
               <ol class="origin-chain" aria-label="${field} overlay chain">
                 <li class="origin-step">
                   <span class="origin-kind">Persistent</span>
-                  <strong class="origin-value">${String(origin.persistentValue)}</strong>
+                  <strong class="origin-value">${this.formatConfigValue(origin.persistentValue)}</strong>
                 </li>
                 ${origin.layers.map(layer => html`
                   <li class="origin-step">
                     <span class="origin-kind">Augment${layer.priority === null ? '' : ` · Priority ${layer.priority}`}</span>
                     <strong class="origin-id">${layer.id}</strong>
-                    <span class="origin-value">${String(layer.value)}</span>
+                    <span class="origin-value">${this.formatConfigValue(layer.value)}</span>
                     ${layer.active ? html`<span class="origin-active">Active owner</span>` : nothing}
                   </li>
                 `)}
                 <li class="origin-step effective">
                   <span class="origin-kind">Effective</span>
-                  <strong class="origin-value">${String(origin.effectiveValue)}</strong>
+                  <strong class="origin-value">${this.formatConfigValue(origin.effectiveValue)}</strong>
                 </li>
               </ol>
             </article>`;

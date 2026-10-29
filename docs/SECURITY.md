@@ -224,6 +224,13 @@ and base-path identifiers, free-form upstream details, listener and protocol
 names, event and alert text, audit targets and request IDs, credentials, and
 tokens.
 
+Augment provenance accepts only bounded scalar or homogeneous string/integer
+list values. List length, item length, control characters, numeric safety, layer
+type agreement, and deep equality of the active and effective values are checked
+before any provenance reaches an editor. Secret-bearing values remain
+write-only and are never valid provenance payloads. A pinned non-secret path
+allowlist also rejects unknown future fields until they receive explicit review.
+
 Interface monitoring follows a stricter topology boundary. Only synchronization
 state, bounded counters, generation, address-family totals, and a validated
 stable error code are accepted. Interface names and indexes, IP and link-layer

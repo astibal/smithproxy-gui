@@ -343,18 +343,19 @@ export interface SecurityAssets {
 }
 
 export type ConfigScalar = boolean | number | string;
+export type ConfigValue = ConfigScalar | ReadonlyArray<string> | ReadonlyArray<number>;
 
 export interface AugmentLayer {
   id: string;
   priority: number | null;
-  value: ConfigScalar;
+  value: ConfigValue;
   active: boolean;
 }
 
 export interface ValueOrigin {
   path: string;
-  persistentValue: ConfigScalar;
-  effectiveValue: ConfigScalar;
+  persistentValue: ConfigValue;
+  effectiveValue: ConfigValue;
   layers: ReadonlyArray<AugmentLayer>;
   editable: boolean;
 }

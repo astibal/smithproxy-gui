@@ -151,6 +151,8 @@ validation and explicit operator confirmation.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls.
+Augment provenance preserves both scalar and homogeneous string or integer list
+values, so reference collections are not flattened when upstream support arrives.
 
 The GUI core now discovers the proposed authenticated Smithproxy transaction
 capability and strictly validates its versions, operation set, bounded limits,
