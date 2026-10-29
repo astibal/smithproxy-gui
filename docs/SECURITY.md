@@ -101,6 +101,15 @@ sentinel rejects the complete snapshot before it reaches application state.
 Global search indexes pending structural creates through an explicit safe-field
 allowlist and never indexes redaction sentinels.
 
+Authentication identity mappings use complete write-only replacement rather
+than read-modify-write. The browser sees only the configured identity count and
+cannot recover a pending replacement after it has been accepted by the core.
+The core validates identity syntax, uniqueness, bounded profile bindings, and
+cross-section references before retaining a replacement. Draft responses,
+diagnostics, search, audit details, errors, logs, and operational events contain
+only a clear/replace marker and bounded entry count. An operator must re-enter
+the entire map to update a pending replacement.
+
 Browser validation is never authoritative. The core accepts only pinned schema
 paths emitted by the typed editors and independently checks canonical indexes,
 types, enums, ranges, bounded unique collections, and opaque secret limits.

@@ -116,6 +116,56 @@ an augment layer implicitly. Every set path is resolved and bound against the
 locked base snapshot before structural operations run, so an earlier create,
 delete, or move cannot silently retarget a later index-based path.
 
+### Write-only authentication identity replacement
+
+Legacy authentication profiles contain identity names and their profile
+bindings. These values are sensitive and are never returned by the configuration
+snapshot. The snapshot exposes only `identity_count`; consequently the GUI must
+not infer, merge, or individually patch existing mappings.
+
+An operator may explicitly keep the current map, replace the complete map, or
+clear it. Keep emits no operation. Clear uses an empty array. Replacement uses a
+single typed `set` operation:
+
+```json
+{
+  "op": "set",
+  "path": "auth_profiles.[0].identities",
+  "value": [
+    {
+      "name": "integration_user",
+      "detection_profile": "detect",
+      "content_profile": "default",
+      "tls_profile": "inspect",
+      "alg_dns_profile": "dns_default"
+    }
+  ]
+}
+```
+
+Each replacement contains at most 256 identities. `name` is required, unique,
+1–128 characters, and constrained to a reviewed libconfig-safe identifier.
+Every identity contains at least one binding. The four optional binding fields
+are bounded profile names; unknown members, duplicate identities, empty
+replacement arrays represented as anything other than clear, missing
+references, and references to the wrong profile type reject the complete
+transaction. Cross-section reference validation runs against the private
+transaction clone.
+
+The GUI core retains the values only inside the versioned draft and upstream
+transaction request. Browser draft responses expose only
+`[redacted:replace:N]` or `[redacted:clear]`. Values are excluded from search,
+diagnostics, audit details, errors, logs, and monitoring events. Reopening a
+pending replacement does not reveal its contents; updating it requires complete
+write-only re-entry. Removing the draft operation remains available without
+re-entry.
+
+New authentication-profile creates may carry the same complete `identities`
+field. A create without the field creates an empty map. A non-empty field obeys
+the same validation and redaction rules. Any binding to an entity created in the
+same transaction must use the transaction's reviewed reference semantics; a
+display name alone must not create an ambiguous or use-before-create binding.
+
 ### Create an entity
 
 ```json
