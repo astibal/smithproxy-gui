@@ -28,8 +28,9 @@ anonymní JSON strom.
 Aktuální frontend vykresluje obecnou provenance sekci ve všech typech editorů.
 Podporuje seřazený řetěz více vrstev, hodnotu každé vrstvy, priority, explicitního
 aktivního vlastníka, persistentní i efektivní hodnotu a příznak editovatelnosti.
-Policy a základní objektové editory vážou scalar controls přímo na persistentní
-hodnotu a pole vlastněné aktivní vrstvou zobrazují pouze pro čtení. Centrální
+Policy, základní objekty a všechny typované profilové editory vážou scalar
+controls přímo na persistentní hodnotu a pole vlastněné aktivní vrstvou
+zobrazují pouze pro čtení. Centrální
 draft pipeline navíc fail-closed odmítne změnu libovolné augment-owned cesty,
 takže ochrana nezávisí na konkrétním rendereru ani na nezměněném DOM.
 

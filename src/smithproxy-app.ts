@@ -3517,11 +3517,27 @@ export class SmithproxyApp extends LitElement {
     const authentication = profile.authentication;
     const mapped = Boolean(routing || tls || detection || content || ssh || dns || script || authentication);
     const mappedReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const prefix = this.originPrefix(entry);
+    const persistent = <T extends ConfigScalar>(field: string, fallback: T): T =>
+      prefix ? this.persistentValue(`${prefix}${field}`, fallback) : fallback;
+    const fieldReadOnly = (field: string): boolean =>
+      prefix ? this.originReadOnly(`${prefix}${field}`, mappedReadOnly) : mappedReadOnly;
+    const booleanSelect = (
+      id: string, field: string, value: boolean,
+      trueLabel = 'Enabled', falseLabel = 'Disabled',
+    ) => this.renderBooleanSelect(
+      id, persistent(field, value), fieldReadOnly(field), trueLabel, falseLabel,
+    );
+    const passRejectSelect = (id: string, field: string, value: boolean) =>
+      this.renderPassRejectSelect(id, persistent(field, value), fieldReadOnly(field));
+    const configuredScriptType = script?.runtime === 'python' ? '0' : script?.runtime === 'go' ? '1' : '-1';
+    const persistentScriptType = persistent('type', configuredScriptType);
+    const scriptRuntime = persistentScriptType === '0' ? 'python' : persistentScriptType === '1' ? 'go' : 'unknown';
     return html`
       <div class=${tls || content || ssh ? 'form-grid wide-form-grid' : 'form-grid'}>
         <label for=${mapped ? `profile-name-${entry.id}` : nothing}>Name</label>
         ${mapped ? html`<input id="profile-name-${entry.id}"
-          .value=${profile.name} .readOnly=${mappedReadOnly} />` : html`<span>${profile.name}</span>`}
+          .value=${persistent('name', profile.name)} .readOnly=${fieldReadOnly('name')} />` : html`<span>${profile.name}</span>`}
         <label>Profile type</label><span class="action">${profile.type}</span>
         ${routing ? html`
           <label for="routing-addresses-${entry.id}">Destination addresses</label>
@@ -3543,96 +3559,107 @@ export class SmithproxyApp extends LitElement {
           ${this.renderPortReferences(routing.destinationPorts)}
           <label for="routing-load-balancing-${entry.id}">Load balancing</label>
           <select id="routing-load-balancing-${entry.id}"
-            .value=${routing.loadBalancingMethod} ?disabled=${mappedReadOnly}>
+            .value=${persistent('dnat_lb_method', routing.loadBalancingMethod)}
+            ?disabled=${fieldReadOnly('dnat_lb_method')}>
             <option value="round-robin">Round robin</option>
             <option value="sticky-l3">Sticky L3</option>
             <option value="sticky-l4">Sticky L4</option>
           </select>
           <label for="routing-rewrite-sni-${entry.id}">Rewrite SNI match</label>
           <input id="routing-rewrite-sni-${entry.id}"
-            .value=${routing.rewriteSni} .readOnly=${mappedReadOnly} placeholder="Disabled" />
+            .value=${persistent('rewrite_sni', routing.rewriteSni)}
+            .readOnly=${fieldReadOnly('rewrite_sni')} placeholder="Disabled" />
           <label for="routing-rewrite-sni-to-${entry.id}">Rewrite SNI target</label>
           <input id="routing-rewrite-sni-to-${entry.id}"
-            .value=${routing.rewriteSniTo} .readOnly=${mappedReadOnly} placeholder="Disabled" />
+            .value=${persistent('rewrite_sni_to', routing.rewriteSniTo)}
+            .readOnly=${fieldReadOnly('rewrite_sni_to')} placeholder="Disabled" />
         ` : tls ? html`
           <label for="tls-inspect-${entry.id}">Inspection</label>
-          ${this.renderBooleanSelect(`tls-inspect-${entry.id}`, tls.inspect, mappedReadOnly)}
+          ${booleanSelect(`tls-inspect-${entry.id}`, 'inspect', tls.inspect)}
           <label for="tls-use-pfs-${entry.id}">Perfect forward secrecy</label>
-          ${this.renderBooleanSelect(`tls-use-pfs-${entry.id}`, tls.usePfs, mappedReadOnly)}
+          ${booleanSelect(`tls-use-pfs-${entry.id}`, 'use_pfs', tls.usePfs)}
           <label for="tls-left-use-pfs-${entry.id}">Downstream PFS</label>
-          ${this.renderBooleanSelect(`tls-left-use-pfs-${entry.id}`, tls.leftUsePfs, mappedReadOnly)}
+          ${booleanSelect(`tls-left-use-pfs-${entry.id}`, 'left_use_pfs', tls.leftUsePfs)}
           <label for="tls-right-use-pfs-${entry.id}">Upstream PFS</label>
-          ${this.renderBooleanSelect(`tls-right-use-pfs-${entry.id}`, tls.rightUsePfs, mappedReadOnly)}
+          ${booleanSelect(`tls-right-use-pfs-${entry.id}`, 'right_use_pfs', tls.rightUsePfs)}
           <label for="tls-left-disable-reuse-${entry.id}">Downstream session reuse</label>
-          ${this.renderBooleanSelect(`tls-left-disable-reuse-${entry.id}`, tls.leftDisableReuse, mappedReadOnly, 'Disabled', 'Allowed')}
+          ${booleanSelect(`tls-left-disable-reuse-${entry.id}`, 'left_disable_reuse', tls.leftDisableReuse, 'Disabled', 'Allowed')}
           <label for="tls-right-disable-reuse-${entry.id}">Upstream session reuse</label>
-          ${this.renderBooleanSelect(`tls-right-disable-reuse-${entry.id}`, tls.rightDisableReuse, mappedReadOnly, 'Disabled', 'Allowed')}
+          ${booleanSelect(`tls-right-disable-reuse-${entry.id}`, 'right_disable_reuse', tls.rightDisableReuse, 'Disabled', 'Allowed')}
           <label for="tls-allow-untrusted-${entry.id}">Allow untrusted issuers</label>
-          ${this.renderBooleanSelect(`tls-allow-untrusted-${entry.id}`, tls.allowUntrustedIssuers, mappedReadOnly, 'Allowed', 'Rejected')}
+          ${booleanSelect(`tls-allow-untrusted-${entry.id}`, 'allow_untrusted_issuers', tls.allowUntrustedIssuers, 'Allowed', 'Rejected')}
           <label for="tls-allow-invalid-${entry.id}">Allow invalid certificates</label>
-          ${this.renderBooleanSelect(`tls-allow-invalid-${entry.id}`, tls.allowInvalidCertificates, mappedReadOnly, 'Allowed', 'Rejected')}
+          ${booleanSelect(`tls-allow-invalid-${entry.id}`, 'allow_invalid_certs', tls.allowInvalidCertificates, 'Allowed', 'Rejected')}
           <label for="tls-allow-self-signed-${entry.id}">Allow self-signed certificates</label>
-          ${this.renderBooleanSelect(`tls-allow-self-signed-${entry.id}`, tls.allowSelfSigned, mappedReadOnly, 'Allowed', 'Rejected')}
+          ${booleanSelect(`tls-allow-self-signed-${entry.id}`, 'allow_self_signed', tls.allowSelfSigned, 'Allowed', 'Rejected')}
           <label for="tls-certificate-transparency-${entry.id}">Certificate transparency</label>
-          ${this.renderBooleanSelect(`tls-certificate-transparency-${entry.id}`, tls.certificateTransparency, mappedReadOnly)}
+          ${booleanSelect(`tls-certificate-transparency-${entry.id}`, 'ct_enable', tls.certificateTransparency)}
           <label for="tls-ocsp-mode-${entry.id}">OCSP certificate checks</label>
-          <select id="tls-ocsp-mode-${entry.id}" .value=${String(tls.ocspMode)} ?disabled=${mappedReadOnly}>
+          <select id="tls-ocsp-mode-${entry.id}" .value=${String(persistent('ocsp_mode', tls.ocspMode))}
+            ?disabled=${fieldReadOnly('ocsp_mode')}>
             <option value="0">Disabled</option><option value="1">Leaf certificate</option>
             <option value="2">Full chain</option>
           </select>
           <label for="tls-ocsp-stapling-${entry.id}">OCSP stapling</label>
-          ${this.renderBooleanSelect(`tls-ocsp-stapling-${entry.id}`, tls.ocspStapling, mappedReadOnly)}
+          ${booleanSelect(`tls-ocsp-stapling-${entry.id}`, 'ocsp_stapling', tls.ocspStapling)}
           <label for="tls-ocsp-stapling-mode-${entry.id}">OCSP stapling policy</label>
           <select id="tls-ocsp-stapling-mode-${entry.id}"
-            .value=${String(tls.ocspStaplingMode)} ?disabled=${mappedReadOnly}>
+            .value=${String(persistent('ocsp_stapling_mode', tls.ocspStaplingMode))}
+            ?disabled=${fieldReadOnly('ocsp_stapling_mode')}>
             <option value="0">Loose</option><option value="1">Strict</option><option value="2">Required</option>
           </select>
           <label for="tls-block-alpn-${entry.id}">ALPN negotiation</label>
-          ${this.renderBooleanSelect(`tls-block-alpn-${entry.id}`, tls.blockAlpn, mappedReadOnly, 'Blocked', 'Allowed')}
+          ${booleanSelect(`tls-block-alpn-${entry.id}`, 'alpn_block', tls.blockAlpn, 'Blocked', 'Allowed')}
           <label for="tls-sni-cert-${entry.id}">SNI certificate lookup</label>
-          ${this.renderBooleanSelect(`tls-sni-cert-${entry.id}`, tls.sniBasedCertificates, mappedReadOnly)}
+          ${booleanSelect(`tls-sni-cert-${entry.id}`, 'sni_based_cert', tls.sniBasedCertificates)}
           <label for="tls-ip-cert-${entry.id}">IP certificate lookup</label>
-          ${this.renderBooleanSelect(`tls-ip-cert-${entry.id}`, tls.ipBasedCertificates, mappedReadOnly)}
+          ${booleanSelect(`tls-ip-cert-${entry.id}`, 'ip_based_cert', tls.ipBasedCertificates)}
           <label for="tls-custom-only-${entry.id}">Custom certificates only</label>
-          ${this.renderBooleanSelect(`tls-custom-only-${entry.id}`, tls.onlyCustomCertificates, mappedReadOnly, 'Required', 'Not required')}
+          ${booleanSelect(`tls-custom-only-${entry.id}`, 'only_custom_certs', tls.onlyCustomCertificates, 'Required', 'Not required')}
           <label for="tls-no-fallback-${entry.id}">Fallback bypass</label>
-          ${this.renderBooleanSelect(`tls-no-fallback-${entry.id}`, tls.noFallbackBypass, mappedReadOnly, 'Blocked', 'Allowed')}
+          ${booleanSelect(`tls-no-fallback-${entry.id}`, 'no_fallback_bypass', tls.noFallbackBypass, 'Blocked', 'Allowed')}
           <label for="tls-sni-dns-cache-${entry.id}">SNI filter DNS cache</label>
-          ${this.renderBooleanSelect(`tls-sni-dns-cache-${entry.id}`, tls.sniFilterUsesDnsCache, mappedReadOnly)}
+          ${booleanSelect(`tls-sni-dns-cache-${entry.id}`, 'sni_filter_use_dns_cache', tls.sniFilterUsesDnsCache)}
           <label for="tls-sni-dns-tree-${entry.id}">SNI filter DNS tree</label>
-          ${this.renderBooleanSelect(`tls-sni-dns-tree-${entry.id}`, tls.sniFilterUsesDnsDomainTree, mappedReadOnly)}
+          ${booleanSelect(`tls-sni-dns-tree-${entry.id}`, 'sni_filter_use_dns_domain_tree', tls.sniFilterUsesDnsDomainTree)}
           <label for="tls-warning-ports-${entry.id}">Certificate warning ports</label>
           <input id="tls-warning-ports-${entry.id}" .value=${tls.redirectWarningPorts.join(', ')}
             .readOnly=${mappedReadOnly} placeholder="443, 44443" />
           <label for="tls-failed-replacement-${entry.id}">Certificate failure replacement</label>
-          ${this.renderBooleanSelect(`tls-failed-replacement-${entry.id}`, tls.failedCertificateReplacement, mappedReadOnly)}
+          ${booleanSelect(`tls-failed-replacement-${entry.id}`, 'failed_certcheck_replacement', tls.failedCertificateReplacement)}
           <label for="tls-failed-override-${entry.id}">Certificate failure override</label>
-          ${this.renderBooleanSelect(`tls-failed-override-${entry.id}`, tls.failedCertificateOverride, mappedReadOnly)}
+          ${booleanSelect(`tls-failed-override-${entry.id}`, 'failed_certcheck_override', tls.failedCertificateOverride)}
           <label for="tls-failed-override-timeout-${entry.id}">Override timeout</label>
           <input id="tls-failed-override-timeout-${entry.id}" type="number" min="1" max="2147483647"
-            .value=${String(tls.failedCertificateOverrideTimeout)} .readOnly=${mappedReadOnly} />
+            .value=${String(persistent('failed_certcheck_override_timeout', tls.failedCertificateOverrideTimeout))}
+            .readOnly=${fieldReadOnly('failed_certcheck_override_timeout')} />
           <label for="tls-failed-override-timeout-type-${entry.id}">Override timeout behavior</label>
           <select id="tls-failed-override-timeout-type-${entry.id}"
-            .value=${String(tls.failedCertificateOverrideTimeoutType)} ?disabled=${mappedReadOnly}>
+            .value=${String(persistent('failed_certcheck_override_timeout_type', tls.failedCertificateOverrideTimeoutType))}
+            ?disabled=${fieldReadOnly('failed_certcheck_override_timeout_type')}>
             <option value="0">Absolute expiry</option><option value="1">Idle expiry</option>
           </select>
           <label for="tls-key-log-${entry.id}">SSL key logging</label>
-          ${this.renderBooleanSelect(`tls-key-log-${entry.id}`, tls.sslKeyLog, mappedReadOnly)}
+          ${booleanSelect(`tls-key-log-${entry.id}`, 'sslkeylog', tls.sslKeyLog)}
           <label for="tls-hello-timeout-${entry.id}">Client hello timeout</label>
           <input id="tls-hello-timeout-${entry.id}" type="number" min="1" max="2147483647"
-            .value=${String(tls.clientHelloTimeoutMs)} .readOnly=${mappedReadOnly} />
+            .value=${String(persistent('client_hello_timeout', tls.clientHelloTimeoutMs))}
+            .readOnly=${fieldReadOnly('client_hello_timeout')} />
           <label for="tls-handshake-timeout-${entry.id}">Handshake timeout</label>
           <input id="tls-handshake-timeout-${entry.id}" type="number" min="1" max="2147483647"
-            .value=${String(tls.handshakeTimeoutMs)} .readOnly=${mappedReadOnly} />
+            .value=${String(persistent('handshake_timeout', tls.handshakeTimeoutMs))}
+            .readOnly=${fieldReadOnly('handshake_timeout')} />
           <label for="tls-client-action-${entry.id}">Client certificate action</label>
-          <select id="tls-client-action-${entry.id}" .value=${tls.clientCertificateAction} ?disabled=${mappedReadOnly}>
+          <select id="tls-client-action-${entry.id}" .value=${persistent('client_cert_action', tls.clientCertificateAction)}
+            ?disabled=${fieldReadOnly('client_cert_action')}>
             <option value="block_or_replacement">Block or replacement</option>
             <option value="empty_client_cert">Empty client certificate</option>
             <option value="tls_bypass">TLS bypass</option>
             <option value="use_configured">Use configured certificate</option>
           </select>
           <label for="tls-alerts-${entry.id}">Alerts</label>
-          <select id="tls-alerts-${entry.id}" .value=${tls.alerts} ?disabled=${mappedReadOnly}>
+          <select id="tls-alerts-${entry.id}" .value=${persistent('alerts', tls.alerts)}
+            ?disabled=${fieldReadOnly('alerts')}>
             <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
           </select>
           <label for="tls-write-sni-${entry.id}-mode">SNI bypass list</label>
@@ -3647,39 +3674,43 @@ export class SmithproxyApp extends LitElement {
           </div>
         ` : detection ? html`
           <label for="detection-mode-${entry.id}">Detection phase</label>
-          <select id="detection-mode-${entry.id}" .value=${String(detection.mode)} ?disabled=${mappedReadOnly}>
+          <select id="detection-mode-${entry.id}" .value=${String(persistent('mode', detection.mode))}
+            ?disabled=${fieldReadOnly('mode')}>
             <option value="0">Disabled</option><option value="1">Pre-read</option><option value="2">Post-read</option>
           </select>
           <label for="detection-engines-${entry.id}">L7 engines</label>
           <select id="detection-engines-${entry.id}"
-            .value=${String(detection.enginesEnabled)} ?disabled=${mappedReadOnly}>
+            .value=${String(persistent('engines_enabled', detection.enginesEnabled))}
+            ?disabled=${fieldReadOnly('engines_enabled')}>
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
           <label for="detection-kb-${entry.id}">Knowledge base</label>
           <select id="detection-kb-${entry.id}"
-            .value=${String(detection.knowledgeBaseEnabled)} ?disabled=${mappedReadOnly}>
+            .value=${String(persistent('kb_enabled', detection.knowledgeBaseEnabled))}
+            ?disabled=${fieldReadOnly('kb_enabled')}>
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
         ` : content ? html`
           <label for="content-write-payload-${entry.id}">Payload capture</label>
-          ${this.renderBooleanSelect(`content-write-payload-${entry.id}`, content.writePayload, mappedReadOnly)}
+          ${booleanSelect(`content-write-payload-${entry.id}`, 'write_payload', content.writePayload)}
           <label for="content-format-${entry.id}">Capture format</label>
-          <select id="content-format-${entry.id}" .value=${content.writeFormat} ?disabled=${mappedReadOnly}>
+          <select id="content-format-${entry.id}" .value=${persistent('write_format', content.writeFormat)}
+            ?disabled=${fieldReadOnly('write_format')}>
             <option value="smcap">SMCAP</option><option value="pcap">PCAP</option>
             <option value="pcap_single">Single PCAP</option>
           </select>
           <label for="content-webhook-${entry.id}">Webhook</label>
-          ${this.renderBooleanSelect(`content-webhook-${entry.id}`, content.webhookEnabled, mappedReadOnly)}
+          ${booleanSelect(`content-webhook-${entry.id}`, 'webhook_enable', content.webhookEnabled)}
           <label for="content-webhook-lock-${entry.id}">Webhook traffic lock</label>
-          ${this.renderBooleanSelect(`content-webhook-lock-${entry.id}`, content.webhookLocksTraffic, mappedReadOnly)}
+          ${booleanSelect(`content-webhook-lock-${entry.id}`, 'webhook_lock_traffic', content.webhookLocksTraffic)}
           <label for="content-ja4-client-${entry.id}">JA4 TLS ClientHello</label>
-          ${this.renderBooleanSelect(`content-ja4-client-${entry.id}`, content.ja4TlsClientHello, mappedReadOnly)}
+          ${booleanSelect(`content-ja4-client-${entry.id}`, 'ja4_tls_ch', content.ja4TlsClientHello)}
           <label for="content-ja4-ignore-sni-${entry.id}">JA4 ignores SNI</label>
-          ${this.renderBooleanSelect(`content-ja4-ignore-sni-${entry.id}`, content.ja4TlsClientHelloIgnoresSni, mappedReadOnly, 'Yes', 'No')}
+          ${booleanSelect(`content-ja4-ignore-sni-${entry.id}`, 'ja4_tls_ch_ignore_sni', content.ja4TlsClientHelloIgnoresSni, 'Yes', 'No')}
           <label for="content-ja4-server-${entry.id}">JA4 TLS ServerHello</label>
-          ${this.renderBooleanSelect(`content-ja4-server-${entry.id}`, content.ja4TlsServerHello, mappedReadOnly)}
+          ${booleanSelect(`content-ja4-server-${entry.id}`, 'ja4_tls_sh', content.ja4TlsServerHello)}
           <label for="content-ja4-http-${entry.id}">JA4 HTTP</label>
-          ${this.renderBooleanSelect(`content-ja4-http-${entry.id}`, content.ja4Http, mappedReadOnly)}
+          ${booleanSelect(`content-ja4-http-${entry.id}`, 'ja4_http', content.ja4Http)}
           <label for="content-write-filter-${entry.id}-mode">Session filter</label>
           <div class="write-only-control">
             <select id="content-write-filter-${entry.id}-mode" ?disabled=${mappedReadOnly}>
@@ -3718,44 +3749,48 @@ export class SmithproxyApp extends LitElement {
               placeholder="New path (write-only)" autocomplete="off" .readOnly=${mappedReadOnly} />
           </div>
           <label for="ssh-host-key-policy-${entry.id}">Upstream host-key policy</label>
-          <select id="ssh-host-key-policy-${entry.id}" .value=${ssh.hostKeyPolicy} ?disabled=${mappedReadOnly}>
+          <select id="ssh-host-key-policy-${entry.id}" .value=${persistent('hostkey_policy', ssh.hostKeyPolicy)}
+            ?disabled=${fieldReadOnly('hostkey_policy')}>
             <option value="insecure">Insecure</option><option value="accept-new">Accept new</option>
             <option value="strict">Strict</option>
           </select>
           <label for="ssh-shell-${entry.id}">Shell</label>
-          ${this.renderPassRejectSelect(`ssh-shell-${entry.id}`, ssh.shell, mappedReadOnly)}
+          ${passRejectSelect(`ssh-shell-${entry.id}`, 'shell', ssh.shell)}
           <label for="ssh-exec-${entry.id}">Exec</label>
-          ${this.renderPassRejectSelect(`ssh-exec-${entry.id}`, ssh.exec, mappedReadOnly)}
+          ${passRejectSelect(`ssh-exec-${entry.id}`, 'exec', ssh.exec)}
           <label for="ssh-subsystem-${entry.id}">Subsystem</label>
-          ${this.renderPassRejectSelect(`ssh-subsystem-${entry.id}`, ssh.subsystem, mappedReadOnly)}
+          ${passRejectSelect(`ssh-subsystem-${entry.id}`, 'subsystem', ssh.subsystem)}
           <label for="ssh-pty-${entry.id}">PTY</label>
-          ${this.renderPassRejectSelect(`ssh-pty-${entry.id}`, ssh.pty, mappedReadOnly)}
+          ${passRejectSelect(`ssh-pty-${entry.id}`, 'pty', ssh.pty)}
           <label for="ssh-environment-${entry.id}">Environment</label>
-          ${this.renderPassRejectSelect(`ssh-environment-${entry.id}`, ssh.environment, mappedReadOnly)}
+          ${passRejectSelect(`ssh-environment-${entry.id}`, 'environment', ssh.environment)}
           <label for="ssh-local-forward-${entry.id}">Local forwarding</label>
-          ${this.renderPassRejectSelect(`ssh-local-forward-${entry.id}`, ssh.localForward, mappedReadOnly)}
+          ${passRejectSelect(`ssh-local-forward-${entry.id}`, 'local_forward', ssh.localForward)}
           <label for="ssh-remote-forward-${entry.id}">Remote forwarding</label>
-          ${this.renderPassRejectSelect(`ssh-remote-forward-${entry.id}`, ssh.remoteForward, mappedReadOnly)}
+          ${passRejectSelect(`ssh-remote-forward-${entry.id}`, 'remote_forward', ssh.remoteForward)}
           <label for="ssh-x11-${entry.id}">X11 forwarding</label>
-          ${this.renderPassRejectSelect(`ssh-x11-${entry.id}`, ssh.x11, mappedReadOnly)}
+          ${passRejectSelect(`ssh-x11-${entry.id}`, 'x11', ssh.x11)}
           <label for="ssh-agent-${entry.id}">Agent forwarding</label>
-          ${this.renderPassRejectSelect(`ssh-agent-${entry.id}`, ssh.agent, mappedReadOnly)}
+          ${passRejectSelect(`ssh-agent-${entry.id}`, 'agent', ssh.agent)}
         ` : dns ? html`
           <label for="dns-match-${entry.id}">Match request ID</label>
-          <select id="dns-match-${entry.id}" .value=${String(dns.matchRequestId)} ?disabled=${mappedReadOnly}>
+          <select id="dns-match-${entry.id}" .value=${String(persistent('match_request_id', dns.matchRequestId))}
+            ?disabled=${fieldReadOnly('match_request_id')}>
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
           <label for="dns-randomize-${entry.id}">Randomize upstream ID</label>
-          <select id="dns-randomize-${entry.id}" .value=${String(dns.randomizeId)} ?disabled=${mappedReadOnly}>
+          <select id="dns-randomize-${entry.id}" .value=${String(persistent('randomize_id', dns.randomizeId))}
+            ?disabled=${fieldReadOnly('randomize_id')}>
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
           <label for="dns-cached-${entry.id}">Cached responses</label>
-          <select id="dns-cached-${entry.id}" .value=${String(dns.cachedResponses)} ?disabled=${mappedReadOnly}>
+          <select id="dns-cached-${entry.id}" .value=${String(persistent('cached_responses', dns.cachedResponses))}
+            ?disabled=${fieldReadOnly('cached_responses')}>
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
         ` : script ? html`
           <label for="script-runtime-${entry.id}">Runtime</label>
-          <select id="script-runtime-${entry.id}" .value=${script.runtime} ?disabled=${mappedReadOnly}>
+          <select id="script-runtime-${entry.id}" .value=${scriptRuntime} ?disabled=${fieldReadOnly('type')}>
             <option value="python">Python</option><option value="go">Go</option>
             <option value="unknown">Unspecified</option>
           </select>
@@ -3771,9 +3806,9 @@ export class SmithproxyApp extends LitElement {
         ` : authentication ? html`
           <label>Lifecycle</label><span>Deprecated compatibility profile</span>
           <label for="auth-authenticate-${entry.id}">Authenticate</label>
-          ${this.renderBooleanSelect(`auth-authenticate-${entry.id}`, authentication.authenticate, mappedReadOnly)}
+          ${booleanSelect(`auth-authenticate-${entry.id}`, 'authenticate', authentication.authenticate)}
           <label for="auth-resolve-${entry.id}">Resolve identities</label>
-          ${this.renderBooleanSelect(`auth-resolve-${entry.id}`, authentication.resolve, mappedReadOnly)}
+          ${booleanSelect(`auth-resolve-${entry.id}`, 'resolve', authentication.resolve)}
           <label>Identity mappings</label><span>${authentication.identityCount} redacted entries · unchanged</span>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>

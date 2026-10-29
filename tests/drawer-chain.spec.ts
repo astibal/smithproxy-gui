@@ -825,6 +825,53 @@ test('rejects tampering with augment-owned persistent values', async ({page}) =>
   expect(state.draftMutationVersions).toEqual([]);
 });
 
+test('binds every profile editor to augment-owned persistent values', async ({page}) => {
+  const origin = (
+    path: string, persistent_value: boolean | number | string, effective_value: boolean | number | string,
+  ): NonNullable<MockState['valueOrigins']>[number] => ({
+    path, persistent_value, effective_value,
+    layers: [{id: 'profile-maintenance', priority: 50, value: effective_value, active: true}],
+    editable: false,
+  });
+  const state: MockState = {
+    smithproxy: 'ready',
+    valueOrigins: [
+      origin('routing.[0].dnat_lb_method', 'sticky-l3', 'round-robin'),
+      origin('tls_profiles.[0].allow_invalid_certs', true, false),
+      origin('detection_profiles.[0].mode', 2, 1),
+      origin('content_profiles.[0].write_format', 'pcap', 'pcap_single'),
+      origin('ssh_profiles.[0].shell', false, true),
+      origin('alg_dns_profiles.[0].randomize_id', false, true),
+      origin('script_profiles.[0].type', '1', '0'),
+      origin('auth_profiles.[0].authenticate', false, true),
+    ],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+
+  const verify = async (
+    buttonName: RegExp, dialogName: string, label: string, value: string,
+  ): Promise<void> => {
+    await profiles.getByRole('button', {name: buttonName}).click();
+    const editor = page.getByRole('dialog', {name: `Edit ${dialogName}`});
+    await expect(editor.getByLabel(label, {exact: true})).toHaveValue(value);
+    await expect(editor.getByLabel(label, {exact: true})).toBeDisabled();
+    await expect(editor.getByRole('list', {name: /overlay chain$/u})).toContainText('profile-maintenance');
+    await page.keyboard.press('Escape');
+  };
+
+  await verify(/main routing Typed details/u, 'main', 'Load balancing', 'sticky-l3');
+  await verify(/inspect tls Typed details/u, 'inspect', 'Allow invalid certificates', 'true');
+  await verify(/detect detection Typed details/u, 'detect', 'Detection phase', '2');
+  await verify(/capture content Typed details/u, 'capture', 'Capture format', 'pcap');
+  await verify(/default-ssh ssh Typed details/u, 'default-ssh', 'Shell', 'reject');
+  await verify(/resolver dns Typed details/u, 'resolver', 'Randomize upstream ID', 'false');
+  await verify(/audit script Typed details/u, 'audit', 'Runtime', 'go');
+  await verify(/legacy-auth authentication Typed details/u, 'legacy-auth', 'Authenticate', 'false');
+});
+
 test('restores drawer routes and manages focus across the chain', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'});
   await page.goto('/');
