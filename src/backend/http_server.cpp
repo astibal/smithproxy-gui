@@ -98,6 +98,7 @@ bool sensitive_draft_path(const std::string_view path) {
         "settings.certs_ca_key_password", "settings.ca_bundle_path", "settings.messages_dir",
         "settings.write_payload_file_prefix", "settings.write_payload_file_suffix",
         "settings.cli.enable_password", "settings.web_rating.wot_key", "settings.http_api.keys",
+        "settings.http_api.bind_address", "settings.http_api.bind_interface",
         "captures.local.dir", "captures.local.file_prefix", "captures.local.file_suffix",
         "captures.remote.tun_dst", "captures.remote.bind_interface",
     };
@@ -692,9 +693,16 @@ private:
                        ",\"http_api\":{\"key_count\":" + std::to_string(value.api_key_count) +
                        ",\"allowed_ip_count\":" + std::to_string(value.api_allowed_ip_count) +
                        ",\"allowed_ips\":" + string_array_json(value.api_allowed_ips) +
+                       ",\"key_timeout\":" + std::to_string(value.api_key_timeout) +
+                       ",\"port\":" + std::to_string(value.api_port) +
+                       ",\"key_extend_on_access\":" + (value.api_key_extend_on_access ? "true" : "false") +
                        ",\"loopback_only\":" + (value.api_loopback_only ? "true" : "false") +
                        ",\"pam_login\":" + (value.api_pam_login ? "true" : "false") +
-                       ",\"allow_api_header\":" + (value.api_header_allowed ? "true" : "false") + "}" +
+                       ",\"allow_api_header\":" + (value.api_header_allowed ? "true" : "false") +
+                       ",\"bind_address_configured\":" +
+                       (value.api_bind_address_configured ? "true" : "false") +
+                       ",\"bind_interface_configured\":" +
+                       (value.api_bind_interface_configured ? "true" : "false") + "}" +
                        ",\"webhook\":{\"enabled\":" + (value.webhook_enabled ? "true" : "false") +
                        ",\"tls_verify\":" + (value.webhook_tls_verify ? "true" : "false") +
                        ",\"url_configured\":" + (value.webhook_url_configured ? "true" : "false") +

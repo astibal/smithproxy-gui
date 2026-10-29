@@ -311,11 +311,25 @@ int main() {
     assert(settings.settings->nameservers == std::vector<std::string>{"192.0.2.53"});
     assert(settings.settings->api_key_count == 1U);
     assert(settings.settings->api_allowed_ips == std::vector<std::string>{"127.0.0.1"});
+    assert(settings.settings->api_key_timeout == 3600U);
+    assert(settings.settings->api_port == 55555U);
+    assert(settings.settings->api_key_extend_on_access);
+    assert(!settings.settings->api_bind_address_configured);
     assert(settings.settings->webhook_url_configured);
+    const auto http_api_settings = parse_config_settings(
+        R"({"success":{"settings":{"default_write_payload":"false","http_api":{"key_timeout":"900","port":"55580","key_extend_on_access":"false","bind_address":"127.0.0.1","bind_interface":"private0"}}}})");
+    assert(http_api_settings.settings);
+    assert(http_api_settings.settings->api_key_timeout == 900U);
+    assert(http_api_settings.settings->api_port == 55580U);
+    assert(!http_api_settings.settings->api_key_extend_on_access);
+    assert(http_api_settings.settings->api_bind_address_configured);
+    assert(http_api_settings.settings->api_bind_interface_configured);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"http_api":{"keys":"secret"}}}})").settings);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"quic_workers":"-2"}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"default_write_payload":"false","http_api":{"port":"1024"}}}})").settings);
     const auto debug = parse_config_debug(
         R"({"success":{"debug":{"log_data_crc":"true","log_sockets":"false","log_online_cx_name":"true","log_srclines":"false","log_srclines_always":"true","log":{"proxy":"7","tls":"8"}}}})");
     assert(debug.debug);

@@ -608,9 +608,20 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         keyCount: safeInteger(value.settings.http_api.key_count, 'API key count', MAX_REFERENCES),
         allowedIpCount: safeInteger(value.settings.http_api.allowed_ip_count, 'API allowed-IP count', MAX_REFERENCES),
         allowedIps,
+        keyTimeout: rangedInteger(value.settings.http_api.key_timeout, 'API key timeout', 1, 4294967295),
+        port: rangedInteger(value.settings.http_api.port, 'API port', 1025, 65534),
+        keyExtendOnAccess: safeBoolean(
+          value.settings.http_api.key_extend_on_access, 'API key extension state',
+        ),
         loopbackOnly: safeBoolean(value.settings.http_api.loopback_only, 'API loopback state'),
         pamLogin: safeBoolean(value.settings.http_api.pam_login, 'API PAM state'),
         allowApiHeader: safeBoolean(value.settings.http_api.allow_api_header, 'API header state'),
+        bindAddressConfigured: safeBoolean(
+          value.settings.http_api.bind_address_configured, 'API bind-address state',
+        ),
+        bindInterfaceConfigured: safeBoolean(
+          value.settings.http_api.bind_interface_configured, 'API bind-interface state',
+        ),
       },
       webhook: {
         enabled: safeBoolean(value.settings.webhook.enabled, 'webhook state'),

@@ -110,7 +110,9 @@ const liveSnapshot = {
     nameserver_count: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
     http_api: {
       key_count: 1, allowed_ip_count: 1, allowed_ips: ['127.0.0.1'],
+      key_timeout: 3600, port: 55555, key_extend_on_access: true,
       loopback_only: true, pam_login: false, allow_api_header: false,
+      bind_address_configured: true, bind_interface_configured: false,
     },
     webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
   },
@@ -210,7 +212,10 @@ describe('ApiConfigClient', () => {
       logging: {level: 6, pcapSingleQuota: 100, syslogFamily: 4},
       auxiliary: {cliPort: 50000, socksAsyncDns: true, udpQuickPorts: ['0']},
       nameservers: ['192.0.2.53', '2001:db8::53'],
-      httpApi: {allowedIps: ['127.0.0.1']},
+      httpApi: {
+        allowedIps: ['127.0.0.1'], keyTimeout: 3600, port: 55555,
+        keyExtendOnAccess: true, bindAddressConfigured: true,
+      },
     });
     expect(snapshot.captures).toMatchObject({local: {enabled: true, quotaMiB: 512}});
     expect(snapshot.securityAssets).toMatchObject({
@@ -294,6 +299,13 @@ describe('ApiConfigClient', () => {
       ...liveSnapshot,
       debug: {...liveSnapshot.debug, module_override_count: 2},
     })).toThrow('Invalid debug module override count');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      settings: {
+        ...liveSnapshot.settings,
+        http_api: {...liveSnapshot.settings.http_api, port: 1024},
+      },
+    })).toThrow('Invalid API port');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,
       debug: {

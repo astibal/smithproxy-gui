@@ -257,7 +257,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         nameserver_count: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
         http_api: {
           key_count: 1, allowed_ip_count: 1, allowed_ips: ['127.0.0.1'],
+          key_timeout: 3600, port: 55555, key_extend_on_access: true,
           loopback_only: true, pam_login: false, allow_api_header: false,
+          bind_address_configured: true, bind_interface_configured: false,
         },
         webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
       },
@@ -737,6 +739,13 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('TLS workers', {exact: true}).fill('8');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('5443');
   await settingsEditor.getByLabel('API header access').selectOption('true');
+  await settingsEditor.getByLabel('API token TTL (seconds)').fill('900');
+  await settingsEditor.getByLabel('API port').fill('55580');
+  await settingsEditor.getByLabel('Refresh tokens on access').selectOption('false');
+  await settingsEditor.getByLabel('API bind address', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('API bind address replacement').fill('192.0.2.77');
+  await settingsEditor.getByLabel('API bind interface', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('API bind interface replacement').fill('private-api0');
   await settingsEditor.getByLabel('Socket event logging').selectOption('true');
   await settingsEditor.getByLabel('Log level', {exact: true}).fill('7');
   await settingsEditor.getByLabel('CLI port', {exact: true}).fill('50001');
@@ -751,10 +760,10 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('HTTP API keys', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('HTTP API keys replacement').fill('["new-api-key", "overlap-api-key"]');
   await settingsEditor.getByLabel('proxy module override').fill('8');
-  await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(6);
+  await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(7);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 54 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 59 changes')).toBeVisible();
   await expect(settingsEditor.getByLabel('HTTP API keys replacement')).toHaveValue('');
   await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -772,11 +781,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 63 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 68 changes')).toBeVisible();
   await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 63'}).click();
+  await page.getByRole('button', {name: 'Review draft · 68'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
@@ -785,6 +794,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('settings.nameservers');
   await expect(changes).toContainText('settings.udp_quick_ports');
   await expect(changes).toContainText('settings.http_api.allowed_ips');
+  await expect(changes).toContainText('settings.http_api.key_timeout');
+  await expect(changes).toContainText('settings.http_api.port');
+  await expect(changes).toContainText('settings.http_api.key_extend_on_access');
+  await expect(changes).toContainText('settings.http_api.bind_address');
+  await expect(changes).toContainText('settings.http_api.bind_interface');
   await expect(changes).toContainText('settings.webhook.url');
   await expect(changes).toContainText('settings.certs_ca_key_password');
   await expect(changes).toContainText('settings.http_api.keys');
@@ -802,6 +816,8 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).not.toContainText('new-private-password');
   await expect(changes).not.toContainText('new-api-key');
   await expect(changes).not.toContainText('overlap-api-key');
+  await expect(changes).not.toContainText('192.0.2.77');
+  await expect(changes).not.toContainText('private-api0');
   await expect(changes).not.toContainText('/new/private/captures');
 });
 

@@ -638,9 +638,14 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const Json& http_api = http_api_value != value->end() && http_api_value->is_object() ? *http_api_value : empty;
     const auto api_keys = optional_string_array_size(http_api, "keys");
     const auto allowed_ips = string_array(http_api, "allowed_ips", true);
+    const auto api_key_timeout = optional_decimal(http_api, "key_timeout", 3600U, 4294967295U);
+    const auto api_port = optional_decimal(http_api, "port", 55555U, 65534U);
+    const auto key_extend = boolean_scalar(http_api, "key_extend_on_access", true);
     const auto loopback_only = boolean_scalar(http_api, "loopback_only", true);
     const auto pam_login = boolean_scalar(http_api, "pam_login", false);
     const auto api_header = boolean_scalar(http_api, "allow_api_header", false);
+    const auto bind_address = bounded_string(http_api, "bind_address", maximum_value_length, true);
+    const auto bind_interface = bounded_string(http_api, "bind_interface", maximum_value_length, true);
 
     const auto webhook_value = value->find("webhook");
     if (webhook_value != value->end() && !webhook_value->is_object()) {
@@ -665,8 +670,10 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !messages_directory || !payload_file_prefix || !payload_file_suffix || !cli_port ||
         !cli_password || !rating_key || !socks_async_dns ||
         !tls_autodetect ||
-        !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips || !loopback_only ||
-        !pam_login || !api_header || !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
+        !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips ||
+        !api_key_timeout || *api_key_timeout == 0U || !api_port || *api_port < 1025U || !key_extend ||
+        !loopback_only || !pam_login || !api_header || !bind_address || !bind_interface ||
+        !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
         !webhook_api_override) {
         return {std::nullopt, "Smithproxy returned invalid system settings fields"};
     }
@@ -699,7 +706,8 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !rating_key->empty(), *socks_async_dns, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, nameservers->size(), *nameservers,
                 *api_keys, allowed_ips->size(), *allowed_ips,
-                *loopback_only, *pam_login, *api_header, *webhook_enabled, *webhook_tls_verify,
+                *api_key_timeout, *api_port, *key_extend, *loopback_only, *pam_login, *api_header,
+                !bind_address->empty(), !bind_interface->empty(), *webhook_enabled, *webhook_tls_verify,
                 !webhook_url->empty(), *webhook_sift, *webhook_api_override,
             }, {}};
 }

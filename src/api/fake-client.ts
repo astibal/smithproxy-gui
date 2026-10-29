@@ -221,7 +221,9 @@ const snapshot: ConfigSnapshot = {
     nameserverCount: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
     httpApi: {
       keyCount: 1, allowedIpCount: 1, allowedIps: ['127.0.0.1'],
+      keyTimeout: 3600, port: 55555, keyExtendOnAccess: true,
       loopbackOnly: true, pamLogin: false, allowApiHeader: false,
+      bindAddressConfigured: true, bindInterfaceConfigured: false,
     },
     webhook: {enabled: false, tlsVerify: true, urlConfigured: false, siftEnabled: false, apiOverride: false},
   },

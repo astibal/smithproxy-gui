@@ -31,7 +31,7 @@
         "cli", "web_rating", "socks",
         "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "All non-secret scalar and list fields from the reference config are typed and editable. Filesystem paths, credentials, API keys, webhook and syslog targets, filename components, and rating keys use write-only replace/clear controls and remain redacted in draft responses."
+      "notes": "Core listener, logging, and HTTP API fields are typed and editable. The HTTP API slice covers token lifetime/refresh, port, allowlists, login posture, and write-only bind targets. Filesystem paths, credentials, API keys, webhook and syslog targets, filename components, and rating keys use write-only replace/clear controls. Tuning, administration, expanded SOCKS, and newer webhook/Sift fields remain partial."
     },
     {
       "name": "debug",

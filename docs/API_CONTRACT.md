@@ -142,11 +142,13 @@ Certificate-authority batches cover names and write-only path rotation.
 Deprecated authentication profile batches cover authentication
 and identity resolution while redacted identity mappings remain unchanged.
 System-setting batches cover listener admission, fail-open behavior, worker
-pools, TLS detection, HTTP API posture, and webhook switches. Capture batches
-cover enablement, formats, quota, tunnel TTL, and checksum behavior. Nameservers,
-API credentials, webhook URLs, capture paths, remote destinations, and bound
-interfaces use explicit write-only replacement or clearing. Allowed addresses
-and other non-secret lists use bounded typed editors.
+pools, TLS detection, HTTP API token lifetime/refresh, listener port, access
+posture, and webhook switches. HTTP API bind address/interface values remain
+write-only. Capture batches cover enablement, formats, quota, tunnel TTL, and
+checksum behavior. Nameservers, API credentials, webhook URLs, capture paths,
+remote destinations, and bound interfaces use explicit write-only replacement
+or clearing. Allowed addresses and other non-secret lists use bounded typed
+editors.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.

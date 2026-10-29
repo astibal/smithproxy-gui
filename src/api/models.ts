@@ -221,9 +221,14 @@ export interface SystemSettings {
     keyCount: number;
     allowedIpCount: number;
     allowedIps: ReadonlyArray<string>;
+    keyTimeout: number;
+    port: number;
+    keyExtendOnAccess: boolean;
     loopbackOnly: boolean;
     pamLogin: boolean;
     allowApiHeader: boolean;
+    bindAddressConfigured: boolean;
+    bindInterfaceConfigured: boolean;
   };
   webhook: {
     enabled: boolean;

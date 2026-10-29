@@ -220,9 +220,14 @@ struct ConfigSystemSettings {
     std::uint64_t api_key_count{};
     std::uint64_t api_allowed_ip_count{};
     std::vector<std::string> api_allowed_ips;
+    std::uint64_t api_key_timeout{};
+    std::uint64_t api_port{};
+    bool api_key_extend_on_access{};
     bool api_loopback_only{};
     bool api_pam_login{};
     bool api_header_allowed{};
+    bool api_bind_address_configured{};
+    bool api_bind_interface_configured{};
     bool webhook_enabled{};
     bool webhook_tls_verify{};
     bool webhook_url_configured{};

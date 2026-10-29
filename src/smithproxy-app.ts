@@ -724,6 +724,7 @@ export class SmithproxyApp extends LitElement {
       'settings.certs_ca_key_password', 'settings.ca_bundle_path', 'settings.messages_dir',
       'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
       'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
+      'settings.http_api.bind_address', 'settings.http_api.bind_interface',
       'captures.local.dir', 'captures.local.file_prefix', 'captures.local.file_suffix',
       'captures.remote.tun_dst', 'captures.remote.bind_interface',
     ]);
@@ -1571,7 +1572,8 @@ export class SmithproxyApp extends LitElement {
       ['accept_api', 'accept-api'], ['policy_fail_open', 'policy-fail-open'],
       ['policy_access_request_fail_open', 'access-fail-open'],
       ['ssl_autodetect', 'tls-autodetect'], ['ssl_autodetect_harder', 'tls-autodetect-harder'],
-      ['ssl_use_ktls', 'kernel-tls'], ['http_api.loopback_only', 'api-loopback'],
+      ['ssl_use_ktls', 'kernel-tls'], ['http_api.key_extend_on_access', 'api-key-extend'],
+      ['http_api.loopback_only', 'api-loopback'],
       ['http_api.pam_login', 'api-pam'], ['http_api.allow_api_header', 'api-header'],
       ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
       ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
@@ -1642,6 +1644,18 @@ export class SmithproxyApp extends LitElement {
     changes.push({path: 'settings.nameservers', value: nameservers});
     changes.push({path: 'settings.udp_quick_ports', value: quickPorts});
     changes.push({path: 'settings.http_api.allowed_ips', value: allowedIps});
+    const apiKeyTimeout = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-key-timeout');
+    const apiPort = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-port');
+    const apiKeyTimeoutValue = apiKeyTimeout?.valueAsNumber ?? Number.NaN;
+    const apiPortValue = apiPort?.valueAsNumber ?? Number.NaN;
+    if (!apiKeyTimeout || !apiPort || !Number.isInteger(apiKeyTimeoutValue) ||
+        apiKeyTimeoutValue < 1 || apiKeyTimeoutValue > 4294967295 ||
+        !Number.isInteger(apiPortValue) || apiPortValue < 1025 || apiPortValue > 65534) {
+      this.draftError = 'API token TTL and listener port are outside their supported ranges.';
+      return undefined;
+    }
+    changes.push({path: 'settings.http_api.key_timeout', value: apiKeyTimeoutValue});
+    changes.push({path: 'settings.http_api.port', value: apiPortValue});
     const apiKeysMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-api-keys-mode');
     const apiKeysInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-keys-value');
     if (!apiKeysMode || !apiKeysInput || !['unchanged', 'replace', 'clear'].includes(apiKeysMode.value)) {
@@ -1674,6 +1688,8 @@ export class SmithproxyApp extends LitElement {
       ['write_payload_file_suffix', 'payload-suffix', 'filename'],
       ['cli.enable_password', 'cli-password', 'secret'],
       ['web_rating.wot_key', 'web-rating-key', 'secret'],
+      ['http_api.bind_address', 'api-bind-address', 'ipv4'],
+      ['http_api.bind_interface', 'api-bind-interface', 'host'],
     ] as const;
     for (const [path, id, kind] of writeOnlyFields) {
       const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-write-${id}-mode`);
@@ -1689,6 +1705,12 @@ export class SmithproxyApp extends LitElement {
         !/[\u0000-\u001f\u007f]/u.test(replacement);
       if (kind === 'path') valid = valid && replacement.startsWith('/');
       if (kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
+      if (kind === 'ipv4') {
+        const octets = replacement.split('.');
+        valid = valid && octets.length === 4 && octets.every(octet =>
+          /^\d{1,3}$/u.test(octet) && Number(octet) <= 255 && String(Number(octet)) === octet,
+        );
+      }
       if (kind === 'filename') valid = valid && replacement.length <= 128 && !/[\\/]/u.test(replacement);
       if (kind === 'url' && valid) {
         try {
@@ -2606,7 +2628,11 @@ export class SmithproxyApp extends LitElement {
                 <dt>Listener</dt><dd>${settings.acceptApi ? 'Enabled' : 'Disabled'}</dd>
                 <dt>API keys</dt><dd>${settings.httpApi.keyCount} configured</dd>
                 <dt>Allowed IPs</dt><dd>${settings.httpApi.allowedIps.join(', ') || 'None'}</dd>
+                <dt>Listener</dt><dd>Port ${settings.httpApi.port} · ${settings.httpApi.keyTimeout}s token TTL</dd>
+                <dt>Token refresh</dt><dd>${settings.httpApi.keyExtendOnAccess ? 'On access' : 'Fixed expiry'}</dd>
                 <dt>Loopback only</dt><dd>${settings.httpApi.loopbackOnly ? 'Yes' : 'No'}</dd>
+                <dt>Bind address</dt><dd>${settings.httpApi.bindAddressConfigured ? 'Configured · redacted' : 'Default'}</dd>
+                <dt>Bind interface</dt><dd>${settings.httpApi.bindInterfaceConfigured ? 'Configured · redacted' : 'Default'}</dd>
                 <dt>API header access</dt><dd>${settings.httpApi.allowApiHeader ? 'Allowed' : 'Blocked'}</dd>
                 <dt>PAM login</dt><dd>${settings.httpApi.pamLogin ? 'Enabled' : 'Disabled'}</dd>
               </dl>
@@ -3330,9 +3356,18 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}
+        <h3 class="form-span">Smithproxy HTTP API</h3>
+        ${numericField('api-key-timeout', 'API token TTL (seconds)', settings.httpApi.keyTimeout, 4294967295)}
+        <label for="settings-api-port">API port</label>
+        <input id="settings-api-port" type="number" min="1025" max="65534"
+          .value=${String(settings.httpApi.port)} .readOnly=${disabled} />
+        ${booleanField('api-key-extend', 'Refresh tokens on access', settings.httpApi.keyExtendOnAccess)}
         ${booleanField('api-loopback', 'API loopback only', settings.httpApi.loopbackOnly)}
         ${booleanField('api-pam', 'API PAM login', settings.httpApi.pamLogin)}
         ${booleanField('api-header', 'API header access', settings.httpApi.allowApiHeader)}
+        ${writeOnlyField('api-bind-address', 'API bind address', settings.httpApi.bindAddressConfigured)}
+        ${writeOnlyField('api-bind-interface', 'API bind interface', settings.httpApi.bindInterfaceConfigured)}
+        <h3 class="form-span">Webhook</h3>
         ${booleanField('webhook-enabled', 'Webhook', settings.webhook.enabled)}
         ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
         ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}

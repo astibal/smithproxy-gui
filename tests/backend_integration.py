@@ -90,7 +90,9 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "nameservers": ["192.0.2.53"],
             "http_api": {
                 "keys": ["backend-secret-value"], "allowed_ips": ["127.0.0.1"],
+                "key_timeout": "3600", "port": "55555", "key_extend_on_access": "true",
                 "loopback_only": "true", "pam_login": "false", "allow_api_header": "false",
+                "bind_address": "192.0.2.77", "bind_interface": "private-api0",
             },
             "webhook": {
                 "enabled": "true", "tls_verify": "true",
@@ -510,7 +512,19 @@ def main() -> int:
                 "socks_async_dns": True,
             }
             assert config_snapshot["settings"]["nameservers"] == ["192.0.2.53"]
-            assert config_snapshot["settings"]["http_api"]["allowed_ips"] == ["127.0.0.1"]
+            assert config_snapshot["settings"]["http_api"] == {
+                "key_count": 1,
+                "allowed_ip_count": 1,
+                "allowed_ips": ["127.0.0.1"],
+                "key_timeout": 3600,
+                "port": 55555,
+                "key_extend_on_access": True,
+                "loopback_only": True,
+                "pam_login": False,
+                "allow_api_header": False,
+                "bind_address_configured": True,
+                "bind_interface_configured": True,
+            }
             assert config_snapshot["captures"]["local"]["file_prefix_configured"] is True
             assert config_snapshot["captures"]["local"]["file_suffix_configured"] is True
             assert config_snapshot["debug"] == {
@@ -538,6 +552,8 @@ def main() -> int:
             assert secret.encode() not in config_body
             assert gateway_secret.encode() not in config_body
             assert b"backend-secret-value" not in config_body
+            assert b"192.0.2.77" not in config_body
+            assert b"private-api0" not in config_body
             assert b"private-webhook.example" not in config_body
             assert b"/private/captures" not in config_body
             assert b"192.0.2.10" not in config_body
@@ -669,6 +685,11 @@ def main() -> int:
                     {"path": "policy.[0].dst", "value": ["internet", "backup"]},
                     {"path": "settings.certs_ca_key_password", "value": "new-private-password"},
                     {"path": "settings.http_api.keys", "value": ["new-api-key", "overlap-api-key"]},
+                    {"path": "settings.http_api.key_timeout", "value": 900},
+                    {"path": "settings.http_api.port", "value": 55580},
+                    {"path": "settings.http_api.key_extend_on_access", "value": False},
+                    {"path": "settings.http_api.bind_address", "value": "192.0.2.88"},
+                    {"path": "settings.http_api.bind_interface", "value": "private-api1"},
                     {"path": "captures.local.dir", "value": "/new/private/captures"},
                     {"path": "captures.remote.tun_dst", "value": ""},
                     {"path": "ssh_profiles.[0].host_key", "value": "/new/private/ssh-key"},
@@ -691,9 +712,14 @@ def main() -> int:
             changes_by_path = {item["path"]: item["value"] for item in batch_snapshot["changes"]}
             assert changes_by_path["policy.[0].dst"] == ["internet", "backup"]
             assert changes_by_path["tls_profiles.[0].redirect_warning_ports"] == [443, 44443]
+            assert changes_by_path["settings.http_api.key_timeout"] == 900
+            assert changes_by_path["settings.http_api.port"] == 55580
+            assert changes_by_path["settings.http_api.key_extend_on_access"] is False
             expected_redactions = {
                 "settings.certs_ca_key_password": "[redacted:replace]",
                 "settings.http_api.keys": "[redacted:replace:2]",
+                "settings.http_api.bind_address": "[redacted:replace]",
+                "settings.http_api.bind_interface": "[redacted:replace]",
                 "captures.local.dir": "[redacted:replace]",
                 "captures.remote.tun_dst": "[redacted:clear]",
                 "ssh_profiles.[0].host_key": "[redacted:replace]",
@@ -710,6 +736,8 @@ def main() -> int:
             assert b"new-private-password" not in body
             assert b"new-api-key" not in body
             assert b"overlap-api-key" not in body
+            assert b"192.0.2.88" not in body
+            assert b"private-api1" not in body
             assert b"/new/private/captures" not in body
             assert b"/new/private/ssh-key" not in body
             assert b"/new/private/audit.py" not in body
