@@ -44,6 +44,73 @@ import {
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
 type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid';
 
+const systemBooleanFields = [
+  ['accept_tproxy', 'accept-tproxy'], ['accept_redirect', 'accept-redirect'],
+  ['accept_socks', 'accept-socks'], ['accept_http_connect', 'accept-http-connect'],
+  ['accept_api', 'accept-api'],
+  ['extended_local_destination_protection', 'extended-local-destination-protection'],
+  ['policy_fail_open', 'policy-fail-open'],
+  ['policy_access_request_fail_open', 'access-fail-open'],
+  ['ssl_autodetect', 'tls-autodetect'], ['ssl_autodetect_harder', 'tls-autodetect-harder'],
+  ['ssl_use_ktls', 'kernel-tls'], ['http_api.key_extend_on_access', 'api-key-extend'],
+  ['http_api.loopback_only', 'api-loopback'],
+  ['http_api.pam_login', 'api-pam'], ['http_api.allow_api_header', 'api-header'],
+  ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
+  ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
+  ['webhook.sift_lored_include_url', 'webhook-sift-lored-include-url'],
+  ['webhook.task_debug', 'webhook-task-debug'],
+  ['webhook.task_debug_dump', 'webhook-task-debug-dump'],
+  ['default_write_payload', 'logging-default-payload'], ['log_console', 'logging-console'],
+  ['tpool_log', 'aux-thread-pool-log'], ['socks.async_dns', 'aux-socks-async-dns'],
+  ['socks.ipver_mixing', 'aux-socks-ipver-mixing'],
+  ['socks.prefer_ipv6', 'aux-socks-prefer-ipv6'],
+] as const;
+
+const systemWorkerFields = [
+  ['plaintext_workers', 'plaintext'], ['ssl_workers', 'tls'], ['udp_workers', 'udp'],
+  ['dtls_workers', 'dtls'], ['quic_workers', 'quic'], ['socks_workers', 'socks'],
+  ['http_connect_workers', 'http-connect'],
+] as const;
+
+const systemNumericFields = [
+  ['plaintext_port', 'port-plaintext', 65535], ['ssl_port', 'port-tls', 65535],
+  ['udp_port', 'port-udp', 65535], ['quic_port', 'port-quic', 65535],
+  ['dtls_port', 'port-dtls', 65535], ['socks_port', 'port-socks', 65535],
+  ['http_connect_port', 'port-http-connect', 65535],
+  ['ssl_ocsp_status_ttl', 'ocsp-status-ttl', 31536000],
+  ['ssl_crl_status_ttl', 'crl-status-ttl', 31536000],
+  ['write_pcap_single_quota', 'logging-pcap-quota', 1048576],
+  ['log_level', 'logging-level', 10], ['syslog_port', 'logging-syslog-port', 65535],
+  ['syslog_facility', 'logging-syslog-facility', 23],
+  ['syslog_level', 'logging-syslog-level', 10],
+  ['cli.port', 'aux-cli-port', 65535],
+  ['webhook.ping_interval', 'webhook-ping-interval', 2147483647],
+  ['webhook.nbr_update_interval', 'webhook-neighbor-update-interval', 2147483647],
+  ['webhook.nbr_tag_refresh_age', 'webhook-neighbor-tag-refresh-age', 2147483647],
+] as const;
+
+const systemTuningFields = [
+  ['host_bufsz_min', 'host-buffer-min', 1500, 10000000],
+  ['host_bufsz_max_multiplier', 'host-buffer-max-multiplier', 1, 1024000000],
+  ['host_write_full', 'host-write-full', 1024, 1024000000],
+  ['host_io_batch', 'host-io-batch', 16384, 16777216],
+  ['tls_write_chunk', 'tls-write-chunk', 1024, 1048576],
+  ['host_open_timeout', 'host-open-timeout', 0, 65535],
+  ['host_idle_timeout', 'host-idle-timeout', 0, 65535],
+  ['nbr_cache_size', 'neighbor-cache-size', 1, 2147483647],
+] as const;
+
+const debugFields = [
+  ['log_data_crc', 'data-crc'], ['log_sockets', 'sockets'],
+  ['log_online_cx_name', 'online-name'], ['log_srclines', 'source-lines'],
+  ['log_srclines_always', 'source-lines-always'],
+] as const;
+
+const captureBooleanFields = [
+  ['local.enabled', 'local-enabled'], ['remote.enabled', 'remote-enabled'],
+  ['options.calculate_checksums', 'checksums'],
+] as const;
+
 const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
   state: 'starting',
   detail: 'Waiting for the first runtime metrics sample.',
@@ -1893,29 +1960,8 @@ export class SmithproxyApp extends LitElement {
   }
 
   private systemSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
-    const booleanFields = [
-      ['accept_tproxy', 'accept-tproxy'], ['accept_redirect', 'accept-redirect'],
-      ['accept_socks', 'accept-socks'], ['accept_http_connect', 'accept-http-connect'],
-      ['accept_api', 'accept-api'],
-      ['extended_local_destination_protection', 'extended-local-destination-protection'],
-      ['policy_fail_open', 'policy-fail-open'],
-      ['policy_access_request_fail_open', 'access-fail-open'],
-      ['ssl_autodetect', 'tls-autodetect'], ['ssl_autodetect_harder', 'tls-autodetect-harder'],
-      ['ssl_use_ktls', 'kernel-tls'], ['http_api.key_extend_on_access', 'api-key-extend'],
-      ['http_api.loopback_only', 'api-loopback'],
-      ['http_api.pam_login', 'api-pam'], ['http_api.allow_api_header', 'api-header'],
-      ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
-      ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
-      ['webhook.sift_lored_include_url', 'webhook-sift-lored-include-url'],
-      ['webhook.task_debug', 'webhook-task-debug'],
-      ['webhook.task_debug_dump', 'webhook-task-debug-dump'],
-      ['default_write_payload', 'logging-default-payload'], ['log_console', 'logging-console'],
-      ['tpool_log', 'aux-thread-pool-log'], ['socks.async_dns', 'aux-socks-async-dns'],
-      ['socks.ipver_mixing', 'aux-socks-ipver-mixing'],
-      ['socks.prefer_ipv6', 'aux-socks-prefer-ipv6'],
-    ] as const;
     const changes: DraftChange[] = [];
-    for (const [path, id] of booleanFields) {
+    for (const [path, id] of systemBooleanFields) {
       const select = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-${id}`);
       if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
       changes.push({path: `settings.${path}`, value: select.value === 'true'});
@@ -1926,12 +1972,7 @@ export class SmithproxyApp extends LitElement {
       return undefined;
     }
     changes.push({path: 'settings.webhook.sift_lored_mode', value: siftLoredMode.value});
-    const workerFields = [
-      ['plaintext_workers', 'plaintext'], ['ssl_workers', 'tls'], ['udp_workers', 'udp'],
-      ['dtls_workers', 'dtls'], ['quic_workers', 'quic'], ['socks_workers', 'socks'],
-      ['http_connect_workers', 'http-connect'],
-    ] as const;
-    for (const [path, id] of workerFields) {
+    for (const [path, id] of systemWorkerFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-worker-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
       if (!input || !Number.isInteger(value) || value < -1 || value > 4096) {
@@ -1940,23 +1981,7 @@ export class SmithproxyApp extends LitElement {
       }
       changes.push({path: `settings.${path}`, value});
     }
-    const numericFields = [
-      ['plaintext_port', 'port-plaintext', 65535], ['ssl_port', 'port-tls', 65535],
-      ['udp_port', 'port-udp', 65535], ['quic_port', 'port-quic', 65535],
-      ['dtls_port', 'port-dtls', 65535], ['socks_port', 'port-socks', 65535],
-      ['http_connect_port', 'port-http-connect', 65535],
-      ['ssl_ocsp_status_ttl', 'ocsp-status-ttl', 31536000],
-      ['ssl_crl_status_ttl', 'crl-status-ttl', 31536000],
-      ['write_pcap_single_quota', 'logging-pcap-quota', 1048576],
-      ['log_level', 'logging-level', 10], ['syslog_port', 'logging-syslog-port', 65535],
-      ['syslog_facility', 'logging-syslog-facility', 23],
-      ['syslog_level', 'logging-syslog-level', 10],
-      ['cli.port', 'aux-cli-port', 65535],
-      ['webhook.ping_interval', 'webhook-ping-interval', 2147483647],
-      ['webhook.nbr_update_interval', 'webhook-neighbor-update-interval', 2147483647],
-      ['webhook.nbr_tag_refresh_age', 'webhook-neighbor-tag-refresh-age', 2147483647],
-    ] as const;
-    for (const [path, id, maximum] of numericFields) {
+    for (const [path, id, maximum] of systemNumericFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
       if (!input || !Number.isInteger(value) || value < 0 || value > maximum) {
@@ -2000,17 +2025,7 @@ export class SmithproxyApp extends LitElement {
     }
     changes.push({path: 'settings.http_api.key_timeout', value: apiKeyTimeoutValue});
     changes.push({path: 'settings.http_api.port', value: apiPortValue});
-    const tuningFields = [
-      ['host_bufsz_min', 'host-buffer-min', 1500, 10000000],
-      ['host_bufsz_max_multiplier', 'host-buffer-max-multiplier', 1, 1024000000],
-      ['host_write_full', 'host-write-full', 1024, 1024000000],
-      ['host_io_batch', 'host-io-batch', 16384, 16777216],
-      ['tls_write_chunk', 'tls-write-chunk', 1024, 1048576],
-      ['host_open_timeout', 'host-open-timeout', 0, 65535],
-      ['host_idle_timeout', 'host-idle-timeout', 0, 65535],
-      ['nbr_cache_size', 'neighbor-cache-size', 1, 2147483647],
-    ] as const;
-    for (const [path, id, minimum, maximum] of tuningFields) {
+    for (const [path, id, minimum, maximum] of systemTuningFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-tuning-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
       if (!input || !Number.isInteger(value) || value < minimum || value > maximum) {
@@ -2105,11 +2120,6 @@ export class SmithproxyApp extends LitElement {
       changes.push({path: `settings.${path}`, value: replacement});
     }
     if (this.snapshot?.debug) {
-      const debugFields = [
-        ['log_data_crc', 'data-crc'], ['log_sockets', 'sockets'],
-        ['log_online_cx_name', 'online-name'], ['log_srclines', 'source-lines'],
-        ['log_srclines_always', 'source-lines-always'],
-      ] as const;
       for (const [path, id] of debugFields) {
         const select = this.renderRoot.querySelector<HTMLSelectElement>(`#debug-${id}`);
         if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
@@ -2145,12 +2155,8 @@ export class SmithproxyApp extends LitElement {
   }
 
   private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
-    const booleanFields = [
-      ['local.enabled', 'local-enabled'], ['remote.enabled', 'remote-enabled'],
-      ['options.calculate_checksums', 'checksums'],
-    ] as const;
     const changes: DraftChange[] = [];
-    for (const [path, id] of booleanFields) {
+    for (const [path, id] of captureBooleanFields) {
       const select = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-${id}`);
       if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
       changes.push({path: `captures.${path}`, value: select.value === 'true'});
@@ -3838,24 +3844,42 @@ export class SmithproxyApp extends LitElement {
     const settings = this.snapshot?.settings;
     if (!settings) return nothing;
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const booleanPaths: ReadonlyMap<string, string> = new Map(
+      systemBooleanFields.map(([path, id]) => [id, `settings.${path}`]),
+    );
+    const workerPaths: ReadonlyMap<string, string> = new Map(
+      systemWorkerFields.map(([path, id]) => [id, `settings.${path}`]),
+    );
+    const numericPaths: ReadonlyMap<string, string> = new Map([
+      ...systemNumericFields.map(([path, id]) => [id, `settings.${path}`] as const),
+      ['api-key-timeout', 'settings.http_api.key_timeout'],
+      ['webhook-sift-payload-limit', 'settings.webhook.sift_payload_limit_per_direction'],
+    ]);
+    const tuningPaths: ReadonlyMap<string, string> = new Map(
+      systemTuningFields.map(([path, id]) => [id, `settings.tuning.${path}`]),
+    );
+    const scalar = <T extends ConfigScalar>(path: string, fallback: T): T => this.persistentValue(path, fallback);
+    const locked = (path: string): boolean => this.originReadOnly(path, disabled);
     const booleanField = (id: string, label: string, value: boolean) => html`
       <label for="settings-${id}">${label}</label>
-      ${this.renderBooleanSelect(`settings-${id}`, value, disabled)}
+      ${this.renderBooleanSelect(
+        `settings-${id}`, scalar(booleanPaths.get(id)!, value), locked(booleanPaths.get(id)!),
+      )}
     `;
     const workerField = (id: string, label: string, value: number) => html`
       <label for="settings-worker-${id}">${label}</label>
       <input id="settings-worker-${id}" type="number" min="-1" max="4096"
-        .value=${String(value)} .readOnly=${disabled} />
+        .value=${String(scalar(workerPaths.get(id)!, value))} .readOnly=${locked(workerPaths.get(id)!)} />
     `;
     const numericField = (id: string, label: string, value: number, maximum: number) => html`
       <label for="settings-${id}">${label}</label>
       <input id="settings-${id}" type="number" min="0" max=${String(maximum)}
-        .value=${String(value)} .readOnly=${disabled} />
+        .value=${String(scalar(numericPaths.get(id)!, value))} .readOnly=${locked(numericPaths.get(id)!)} />
     `;
     const tuningField = (id: string, label: string, value: number, minimum: number, maximum: number) => html`
       <label for="settings-tuning-${id}">${label}</label>
       <input id="settings-tuning-${id}" type="number" min=${String(minimum)} max=${String(maximum)}
-        .value=${String(value)} .readOnly=${disabled} />
+        .value=${String(scalar(tuningPaths.get(id)!, value))} .readOnly=${locked(tuningPaths.get(id)!)} />
     `;
     const writeOnlyField = (
       id: string, label: string, configured: boolean, secret = false,
@@ -3913,7 +3937,9 @@ export class SmithproxyApp extends LitElement {
         ${numericField('logging-syslog-facility', 'Syslog facility', settings.logging.syslogFacility, 23)}
         ${numericField('logging-syslog-level', 'Syslog level', settings.logging.syslogLevel, 10)}
         <label for="settings-logging-syslog-family">Syslog address family</label>
-        <select id="settings-logging-syslog-family" .value=${String(settings.logging.syslogFamily)} ?disabled=${disabled}>
+        <select id="settings-logging-syslog-family"
+          .value=${String(scalar('settings.syslog_family', settings.logging.syslogFamily))}
+          ?disabled=${locked('settings.syslog_family')}>
           <option value="4">IPv4</option><option value="6">IPv6</option>
         </select>
         ${writeOnlyField('payload-directory', 'Payload directory', settings.logging.payloadDirectoryConfigured)}
@@ -3956,7 +3982,8 @@ export class SmithproxyApp extends LitElement {
         ${numericField('api-key-timeout', 'API token TTL (seconds)', settings.httpApi.keyTimeout, 4294967295)}
         <label for="settings-api-port">API port</label>
         <input id="settings-api-port" type="number" min="1025" max="65534"
-          .value=${String(settings.httpApi.port)} .readOnly=${disabled} />
+          .value=${String(scalar('settings.http_api.port', settings.httpApi.port))}
+          .readOnly=${locked('settings.http_api.port')} />
         ${booleanField('api-key-extend', 'Refresh tokens on access', settings.httpApi.keyExtendOnAccess)}
         ${booleanField('api-loopback', 'API loopback only', settings.httpApi.loopbackOnly)}
         ${booleanField('api-pam', 'API PAM login', settings.httpApi.pamLogin)}
@@ -3969,7 +3996,9 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
         ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
         <label for="settings-webhook-sift-lored-mode">Sift LoreD enrichment</label>
-        <select id="settings-webhook-sift-lored-mode" .value=${settings.webhook.siftLoredMode} ?disabled=${disabled}>
+        <select id="settings-webhook-sift-lored-mode"
+          .value=${scalar('settings.webhook.sift_lored_mode', settings.webhook.siftLoredMode)}
+          ?disabled=${locked('settings.webhook.sift_lored_mode')}>
           <option value="disabled">Disabled</option>
           <option value="optional">Optional</option>
           <option value="required">Required</option>
@@ -4011,15 +4040,29 @@ export class SmithproxyApp extends LitElement {
         ${this.snapshot?.debug ? html`
           <h3 class="form-span">Debug logging</h3>
           <label for="debug-data-crc">Payload CRC logging</label>
-          ${this.renderBooleanSelect('debug-data-crc', this.snapshot.debug.logDataCrc, disabled)}
+          ${this.renderBooleanSelect(
+            'debug-data-crc', scalar('debug.log_data_crc', this.snapshot.debug.logDataCrc),
+            locked('debug.log_data_crc'),
+          )}
           <label for="debug-sockets">Socket event logging</label>
-          ${this.renderBooleanSelect('debug-sockets', this.snapshot.debug.logSockets, disabled)}
+          ${this.renderBooleanSelect(
+            'debug-sockets', scalar('debug.log_sockets', this.snapshot.debug.logSockets), locked('debug.log_sockets'),
+          )}
           <label for="debug-online-name">Resolve online connection names</label>
-          ${this.renderBooleanSelect('debug-online-name', this.snapshot.debug.logOnlineConnectionName, disabled)}
+          ${this.renderBooleanSelect(
+            'debug-online-name', scalar('debug.log_online_cx_name', this.snapshot.debug.logOnlineConnectionName),
+            locked('debug.log_online_cx_name'),
+          )}
           <label for="debug-source-lines">Source lines at diagnostic levels</label>
-          ${this.renderBooleanSelect('debug-source-lines', this.snapshot.debug.logSourceLines, disabled)}
+          ${this.renderBooleanSelect(
+            'debug-source-lines', scalar('debug.log_srclines', this.snapshot.debug.logSourceLines),
+            locked('debug.log_srclines'),
+          )}
           <label for="debug-source-lines-always">Source lines at every level</label>
-          ${this.renderBooleanSelect('debug-source-lines-always', this.snapshot.debug.logSourceLinesAlways, disabled)}
+          ${this.renderBooleanSelect(
+            'debug-source-lines-always', scalar('debug.log_srclines_always', this.snapshot.debug.logSourceLinesAlways),
+            locked('debug.log_srclines_always'),
+          )}
           <h3 class="form-span">Per-module overrides</h3>
           ${this.snapshot.debug.moduleOverrides.map((override, index) => {
             const id = `debug-module-${index}`;
@@ -4027,12 +4070,16 @@ export class SmithproxyApp extends LitElement {
             return html`
               <label for=${id}>${label}</label>
               ${override.kind === 'boolean'
-                ? this.renderBooleanSelect(id, Boolean(override.value), disabled)
+                ? this.renderBooleanSelect(
+                    id, scalar(`debug.log.${override.name}`, Boolean(override.value)),
+                    locked(`debug.log.${override.name}`),
+                  )
                 : html`<input id=${id} type=${override.kind === 'integer' ? 'number' : 'text'}
                     min=${override.kind === 'integer' ? '-2147483648' : nothing}
                     max=${override.kind === 'integer' ? '2147483647' : nothing}
                     maxlength=${override.kind === 'string' ? '32' : nothing}
-                    .value=${String(override.value)} .readOnly=${disabled} />`}
+                    .value=${String(scalar(`debug.log.${override.name}`, override.value))}
+                    .readOnly=${locked(`debug.log.${override.name}`)} />`}
             `;
           })}
           ${this.snapshot.debug.moduleOverrideCount === 0
@@ -4047,6 +4094,14 @@ export class SmithproxyApp extends LitElement {
     const captures = this.snapshot?.captures;
     if (!captures) return nothing;
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const booleanPaths: ReadonlyMap<string, string> = new Map(
+      captureBooleanFields.map(([path, id]) => [id, `captures.${path}`]),
+    );
+    const scalar = <T extends ConfigScalar>(path: string, fallback: T): T => this.persistentValue(path, fallback);
+    const locked = (path: string): boolean => this.originReadOnly(path, disabled);
+    const booleanField = (id: string, value: boolean) => this.renderBooleanSelect(
+      `captures-${id}`, scalar(booleanPaths.get(id)!, value), locked(booleanPaths.get(id)!),
+    );
     const writeOnlyField = (id: string, label: string, configured: boolean) => html`
       <label for="captures-write-${id}-mode">${label}</label>
       <div class="write-only-control">
@@ -4062,31 +4117,35 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="form-grid wide-form-grid">
         <label for="captures-local-enabled">Local capture</label>
-        ${this.renderBooleanSelect('captures-local-enabled', captures.local.enabled, disabled)}
+        ${booleanField('local-enabled', captures.local.enabled)}
         <label for="captures-local-format">Local format</label>
-        <select id="captures-local-format" .value=${captures.local.format} ?disabled=${disabled}>
+        <select id="captures-local-format" .value=${scalar('captures.local.format', captures.local.format)}
+          ?disabled=${locked('captures.local.format')}>
           <option value="pcap_single">PCAP single</option><option value="pcap">PCAP</option><option value="smcap">SMCAP</option>
         </select>
         <label for="captures-local-quota">Local quota (MiB)</label>
         <input id="captures-local-quota" type="number" min="0" max="1048576"
-          .value=${String(captures.local.quotaMiB)} .readOnly=${disabled} />
+          .value=${String(scalar('captures.local.pcap_quota', captures.local.quotaMiB))}
+          .readOnly=${locked('captures.local.pcap_quota')} />
         ${writeOnlyField('local-directory', 'Local directory', captures.local.directoryConfigured)}
         ${writeOnlyField('local-prefix', 'Local filename prefix', captures.local.filePrefixConfigured)}
         ${writeOnlyField('local-suffix', 'Local filename suffix', captures.local.fileSuffixConfigured)}
         <label for="captures-remote-enabled">Remote capture</label>
-        ${this.renderBooleanSelect('captures-remote-enabled', captures.remote.enabled, disabled)}
+        ${booleanField('remote-enabled', captures.remote.enabled)}
         <label>Tunnel type</label><span>${captures.remote.tunnelType.toUpperCase()} · unchanged</span>
         <label for="captures-gre-format">GRE format</label>
-        <select id="captures-gre-format" .value=${captures.remote.greFormat} ?disabled=${disabled}>
+        <select id="captures-gre-format" .value=${scalar('captures.remote.gre_format', captures.remote.greFormat)}
+          ?disabled=${locked('captures.remote.gre_format')}>
           <option value="traffic">Traffic</option><option value="pcapng">PCAPNG</option>
         </select>
         <label for="captures-remote-ttl">Tunnel TTL</label>
         <input id="captures-remote-ttl" type="number" min="0" max="255"
-          .value=${String(captures.remote.ttl)} .readOnly=${disabled} />
+          .value=${String(scalar('captures.remote.tun_ttl', captures.remote.ttl))}
+          .readOnly=${locked('captures.remote.tun_ttl')} />
         ${writeOnlyField('remote-destination', 'Remote destination', captures.remote.destinationConfigured)}
         ${writeOnlyField('bind-interface', 'Bound interface', captures.remote.bindInterfaceConfigured)}
         <label for="captures-checksums">Calculate checksums</label>
-        ${this.renderBooleanSelect('captures-checksums', captures.calculateChecksums, disabled)}
+        ${booleanField('checksums', captures.calculateChecksums)}
       </div>
     `;
   }
@@ -4095,10 +4154,13 @@ export class SmithproxyApp extends LitElement {
     const authority = this.snapshot?.securityAssets?.certificateAuthorities.find(item => item.id === entry.id);
     if (!authority) return nothing;
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const prefix = this.originPrefix(entry);
+    const namePath = `${prefix ?? ''}name`;
     return html`
       <div class="form-grid">
         <label for="authority-name-${entry.id}">Name</label>
-        <input id="authority-name-${entry.id}" .value=${authority.name} .readOnly=${disabled} />
+        <input id="authority-name-${entry.id}" .value=${this.persistentValue(namePath, authority.name)}
+          .readOnly=${this.originReadOnly(namePath, disabled)} />
         <label for="authority-write-path-${entry.id}-mode">CA path</label>
         <div class="write-only-control">
           <select id="authority-write-path-${entry.id}-mode" ?disabled=${disabled}>
@@ -4120,15 +4182,21 @@ export class SmithproxyApp extends LitElement {
     const rule = profile?.content?.rules.find(item => item.id === entry.id);
     if (!profile || !rule) return nothing;
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const prefix = this.originPrefix(entry);
+    const path = (field: string) => `${prefix ?? ''}${field}`;
     return html`
       <div class="form-grid wide-form-grid">
         <label>Content profile</label><span>${profile.name}</span>
         <label for="content-rule-fill-length-${entry.id}">Preserve matched length</label>
-        ${this.renderBooleanSelect(`content-rule-fill-length-${entry.id}`, rule.fillLength, disabled, 'Yes', 'No')}
+        ${this.renderBooleanSelect(
+          `content-rule-fill-length-${entry.id}`, this.persistentValue(path('fill_length'), rule.fillLength),
+          this.originReadOnly(path('fill_length'), disabled), 'Yes', 'No',
+        )}
         <label for="content-rule-replace-each-${entry.id}">Replace every Nth match</label>
         <input id="content-rule-replace-each-${entry.id}" type="number"
-          min="-2147483648" max="2147483647" .value=${String(rule.replaceEachNth)}
-          .readOnly=${disabled} />
+          min="-2147483648" max="2147483647"
+          .value=${String(this.persistentValue(path('replace_each_nth'), rule.replaceEachNth))}
+          .readOnly=${this.originReadOnly(path('replace_each_nth'), disabled)} />
         <label for="content-rule-write-match-${entry.id}-mode">Match expression</label>
         <div class="write-only-control">
           <select id="content-rule-write-match-${entry.id}-mode" ?disabled=${disabled}>
@@ -4163,31 +4231,36 @@ export class SmithproxyApp extends LitElement {
     const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === entry.id);
     if (!signature) return nothing;
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const prefix = this.originPrefix(entry);
+    const path = (field: string) => `${prefix ?? ''}${field}`;
+    const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
+      this.persistentValue(path(field), fallback);
+    const locked = (field: string): boolean => this.originReadOnly(path(field), disabled);
     return html`
       <div class="form-grid wide-form-grid">
         <label for="signature-category-${entry.id}">Category</label>
-        <input id="signature-category-${entry.id}" maxlength="128" .value=${signature.category}
-          .readOnly=${disabled} />
+        <input id="signature-category-${entry.id}" maxlength="128" .value=${scalar('cat', signature.category)}
+          .readOnly=${locked('cat')} />
         <label for="signature-name-${entry.id}">Name</label>
-        <input id="signature-name-${entry.id}" maxlength="128" .value=${signature.name}
-          .readOnly=${disabled} />
+        <input id="signature-name-${entry.id}" maxlength="128" .value=${scalar('name', signature.name)}
+          .readOnly=${locked('name')} />
         <label for="signature-side-${entry.id}">Connection side</label>
-        <select id="signature-side-${entry.id}" .value=${signature.side} ?disabled=${disabled}>
+        <select id="signature-side-${entry.id}" .value=${scalar('side', signature.side)} ?disabled=${locked('side')}>
           <option value="client">Client</option>
           <option value="server">Server</option>
         </select>
         <label for="signature-severity-${entry.id}">Severity</label>
         <input id="signature-severity-${entry.id}" type="number" min="-2147483648" max="2147483647"
-          .value=${String(signature.severity)} .readOnly=${disabled} />
+          .value=${String(scalar('severity', signature.severity))} .readOnly=${locked('severity')} />
         <label for="signature-group-${entry.id}">Group</label>
-        <input id="signature-group-${entry.id}" maxlength="128" .value=${signature.group}
-          .readOnly=${disabled} />
+        <input id="signature-group-${entry.id}" maxlength="128" .value=${scalar('group', signature.group)}
+          .readOnly=${locked('group')} />
         <label for="signature-enables-${entry.id}">Enables</label>
-        <input id="signature-enables-${entry.id}" maxlength="128" .value=${signature.enables}
-          .readOnly=${disabled} />
+        <input id="signature-enables-${entry.id}" maxlength="128" .value=${scalar('enables', signature.enables)}
+          .readOnly=${locked('enables')} />
         <label for="signature-engine-${entry.id}">Engine</label>
-        <input id="signature-engine-${entry.id}" maxlength="128" .value=${signature.engine}
-          .readOnly=${disabled} />
+        <input id="signature-engine-${entry.id}" maxlength="128" .value=${scalar('engine', signature.engine)}
+          .readOnly=${locked('engine')} />
       </div>
       <div class="section">
         <h3>Ordered flow</h3>
@@ -4217,25 +4290,30 @@ export class SmithproxyApp extends LitElement {
     const step = signature?.flow.find(item => item.id === entry.id);
     if (!signature || !step) return nothing;
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const prefix = this.originPrefix(entry);
+    const path = (field: string) => `${prefix ?? ''}${field}`;
+    const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
+      this.persistentValue(path(field), fallback);
+    const locked = (field: string): boolean => this.originReadOnly(path(field), disabled);
     return html`
       <div class="form-grid wide-form-grid">
         <label>Signature</label><span>${signature.name}</span>
         <label for="signature-flow-side-${entry.id}">Direction</label>
-        <select id="signature-flow-side-${entry.id}" .value=${step.side} ?disabled=${disabled}>
+        <select id="signature-flow-side-${entry.id}" .value=${scalar('side', step.side)} ?disabled=${locked('side')}>
           <option value="r">Read</option>
           <option value="w">Write</option>
         </select>
         <label for="signature-flow-type-${entry.id}">Matcher</label>
-        <select id="signature-flow-type-${entry.id}" .value=${step.type} ?disabled=${disabled}>
+        <select id="signature-flow-type-${entry.id}" .value=${scalar('type', step.type)} ?disabled=${locked('type')}>
           <option value="regex">Regular expression</option>
           <option value="simple">Simple bytes</option>
         </select>
         <label for="signature-flow-start-${entry.id}">Byte offset</label>
         <input id="signature-flow-start-${entry.id}" type="number" min="0"
-          .value=${String(step.bytesStart)} .readOnly=${disabled} />
+          .value=${String(scalar('bytes_start', step.bytesStart))} .readOnly=${locked('bytes_start')} />
         <label for="signature-flow-maximum-${entry.id}">Byte window</label>
         <input id="signature-flow-maximum-${entry.id}" type="number" min="0"
-          .value=${String(step.bytesMax)} .readOnly=${disabled} />
+          .value=${String(scalar('bytes_max', step.bytesMax))} .readOnly=${locked('bytes_max')} />
         <label for="signature-flow-write-expression-${entry.id}-mode">Expression</label>
         <div class="write-only-control">
           <select id="signature-flow-write-expression-${entry.id}-mode" ?disabled=${disabled}>

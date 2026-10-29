@@ -872,6 +872,102 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   await verify(/legacy-auth authentication Typed details/u, 'legacy-auth', 'Authenticate', 'false');
 });
 
+test('binds system, capture, and nested security editors to persistent values', async ({page}) => {
+  const origin = (
+    path: string, persistent_value: boolean | number | string, effective_value: boolean | number | string,
+  ): NonNullable<MockState['valueOrigins']>[number] => ({
+    path, persistent_value, effective_value,
+    layers: [{id: 'runtime-override', priority: 90, value: effective_value, active: true}],
+    editable: false,
+  });
+  const state: MockState = {
+    smithproxy: 'ready',
+    valueOrigins: [
+      origin('settings.accept_tproxy', false, true),
+      origin('settings.ssl_workers', 7, 4),
+      origin('settings.syslog_family', 6, 4),
+      origin('settings.http_api.port', 60000, 55555),
+      origin('settings.webhook.sift_lored_mode', 'required', 'disabled'),
+      origin('settings.tuning.host_bufsz_min', 4096, 2048),
+      origin('debug.log_data_crc', true, false),
+      origin('debug.log.proxy', 4, 6),
+      origin('captures.local.enabled', true, false),
+      origin('captures.local.format', 'pcap', 'pcap_single'),
+      origin('captures.remote.tun_ttl', 64, 1),
+      origin('tls_ca.[0].name', 'base-ca', 'default'),
+      origin('detection_signatures.[0].severity', 7, 4),
+      origin('detection_signatures.[0].flow.[0].bytes_max', 512, 200),
+      origin('content_profiles.[0].content_rules.[0].fill_length', false, true),
+      origin('content_profiles.[0].content_rules.[0].replace_each_nth', 3, 0),
+    ],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+
+  const trafficCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Traffic admission'}),
+  });
+  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  const settings = page.getByRole('dialog', {name: 'Edit System settings'});
+  await expect(settings.getByLabel('TPROXY listener')).toHaveValue('false');
+  await expect(settings.getByLabel('TPROXY listener')).toBeDisabled();
+  await expect(settings.getByLabel('TLS workers', {exact: true})).toHaveValue('7');
+  await expect(settings.getByLabel('TLS workers', {exact: true})).toHaveAttribute('readonly', '');
+  await expect(settings.getByLabel('Syslog address family')).toHaveValue('6');
+  await expect(settings.getByLabel('Syslog address family')).toBeDisabled();
+  await expect(settings.getByLabel('API port')).toHaveValue('60000');
+  await expect(settings.getByLabel('API port')).toHaveAttribute('readonly', '');
+  await expect(settings.getByLabel('Sift LoreD enrichment')).toHaveValue('required');
+  await expect(settings.getByLabel('Sift LoreD enrichment')).toBeDisabled();
+  await expect(settings.getByLabel('Initial host buffer (bytes)')).toHaveValue('4096');
+  await expect(settings.getByLabel('Payload CRC logging')).toHaveValue('true');
+  await expect(settings.getByLabel('proxy module override')).toHaveValue('4');
+  await page.keyboard.press('Escape');
+
+  const captureCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Capture posture'}),
+  });
+  await captureCard.getByRole('button', {name: 'Edit'}).click();
+  const captures = page.getByRole('dialog', {name: 'Edit Capture settings'});
+  await expect(captures.getByLabel('Local capture')).toHaveValue('true');
+  await expect(captures.getByLabel('Local capture')).toBeDisabled();
+  await expect(captures.getByLabel('Local format')).toHaveValue('pcap');
+  await expect(captures.getByLabel('Local format')).toBeDisabled();
+  await expect(captures.getByLabel('Tunnel TTL')).toHaveValue('64');
+  await expect(captures.getByLabel('Tunnel TTL')).toHaveAttribute('readonly', '');
+  await page.keyboard.press('Escape');
+
+  const trust = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
+  await trust.getByText('Detection signatures', {exact: true}).last().click();
+  await trust.getByRole('button', {name: /http\/request · 1 flow step/u}).click();
+  const signature = page.getByRole('dialog', {name: 'Edit http/request'});
+  await expect(signature.getByRole('spinbutton', {name: 'Severity'})).toHaveValue('7');
+  await expect(signature.getByRole('spinbutton', {name: 'Severity'})).toHaveAttribute('readonly', '');
+  await signature.getByRole('button', {name: /1\. R · regex/u}).click();
+  const flow = page.getByRole('dialog', {name: 'Edit Flow R'});
+  await expect(flow.getByLabel('Byte window')).toHaveValue('512');
+  await expect(flow.getByLabel('Byte window')).toHaveAttribute('readonly', '');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await trust.getByRole('button', {name: /default · path configured/u}).click();
+  const authority = page.getByRole('dialog', {name: 'Edit default'});
+  await expect(authority.getByRole('textbox', {name: 'Name'})).toHaveValue('base-ca');
+  await expect(authority.getByRole('textbox', {name: 'Name'})).toHaveAttribute('readonly', '');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await profiles.getByRole('button', {name: /capture content Typed details/u}).click();
+  const content = page.getByRole('dialog', {name: 'Edit capture'});
+  await content.getByRole('button', {name: /Rule 1/u}).click();
+  const rule = page.getByRole('dialog', {name: 'Edit Content rule 1'});
+  await expect(rule.getByLabel('Preserve matched length')).toHaveValue('false');
+  await expect(rule.getByLabel('Preserve matched length')).toBeDisabled();
+  await expect(rule.getByLabel('Replace every Nth match')).toHaveValue('3');
+  await expect(rule.getByLabel('Replace every Nth match')).toHaveAttribute('readonly', '');
+});
+
 test('restores drawer routes and manages focus across the chain', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'});
   await page.goto('/');
