@@ -145,17 +145,21 @@ const captureBooleanFields = [
   ['options.calculate_checksums', 'checksums'],
 ] as const;
 
-type SimpleProfileCreateType = 'routing' | 'detection' | 'dns' | 'authentication';
+type ProfileCreateType =
+  'routing' | 'detection' | 'dns' | 'authentication' | 'content' | 'ssh' | 'script';
 
-const simpleProfileCollections: Readonly<Record<SimpleProfileCreateType, DraftCreateOperation['collection']>> = {
+const profileCreateCollections: Readonly<Record<ProfileCreateType, DraftCreateOperation['collection']>> = {
   routing: 'routing',
   detection: 'detection_profiles',
   dns: 'alg_dns_profiles',
   authentication: 'auth_profiles',
+  content: 'content_profiles',
+  ssh: 'ssh_profiles',
+  script: 'script_profiles',
 };
 
-const simpleProfileTypes = new Set<SimpleProfileCreateType>(
-  Object.keys(simpleProfileCollections) as SimpleProfileCreateType[],
+const supportedProfileCreateTypes = new Set<ProfileCreateType>(
+  Object.keys(profileCreateCollections) as ProfileCreateType[],
 );
 
 const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
@@ -339,7 +343,7 @@ export class SmithproxyApp extends LitElement {
   private readonly referencePreviewValues = new Map<string, string>();
   private readonly contentRuleCreateParents = new Map<string, string>();
   private readonly signatureFlowCreateParents = new Map<string, string>();
-  private readonly profileCreateTypes = new Map<string, SimpleProfileCreateType>();
+  private readonly profileCreateTypes = new Map<string, ProfileCreateType>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -1642,7 +1646,7 @@ export class SmithproxyApp extends LitElement {
       if (operation.op === 'create' && operation.collection === 'proto_objects') {
         objects.add(`protocol-create:${operation.localId}`);
       }
-      if (operation.op === 'create' && Object.values(simpleProfileCollections).includes(operation.collection)) {
+      if (operation.op === 'create' && Object.values(profileCreateCollections).includes(operation.collection)) {
         objects.add(`profile-create:${operation.localId}`);
       }
       if (operation.op === 'create' && operation.collection === 'content_profiles.content_rules') {
@@ -1965,20 +1969,20 @@ export class SmithproxyApp extends LitElement {
     if (operation?.op !== 'create' || ![
       'address_objects', 'port_objects', 'proto_objects', 'policy', 'content_profiles.content_rules',
       'starttls_signatures.flow', 'detection_signatures.flow',
-      ...Object.values(simpleProfileCollections),
+      ...Object.values(profileCreateCollections),
     ].includes(operation.collection)) return;
     const kind = operation.collection === 'policy' ? 'policy-create'
       : operation.collection === 'address_objects' ? 'address-create'
         : operation.collection === 'port_objects' ? 'port-create'
           : operation.collection === 'proto_objects' ? 'protocol-create'
-            : Object.values(simpleProfileCollections).includes(operation.collection) ? 'profile-create'
+            : Object.values(profileCreateCollections).includes(operation.collection) ? 'profile-create'
             : operation.collection === 'content_profiles.content_rules'
               ? 'content-rule-create' : 'signature-flow-create';
     const fallback = operation.collection === 'policy' ? 'New policy'
       : operation.collection === 'address_objects' ? 'New address object'
         : operation.collection === 'port_objects' ? 'New port object'
           : operation.collection === 'proto_objects' ? 'New protocol object'
-            : Object.values(simpleProfileCollections).includes(operation.collection) ? 'New profile'
+            : Object.values(profileCreateCollections).includes(operation.collection) ? 'New profile'
             : operation.collection === 'content_profiles.content_rules'
               ? 'New content rule' : 'New signature flow step';
     this.openObjectDrawer({
@@ -2964,13 +2968,13 @@ export class SmithproxyApp extends LitElement {
     }
     if (entry.kind === 'profile-create') {
       const operation = this.workspaceDraft?.structuralOperations.find(item =>
-        item.op === 'create' && Object.values(simpleProfileCollections).includes(item.collection) &&
+        item.op === 'create' && Object.values(profileCreateCollections).includes(item.collection) &&
         item.localId === entry.id);
       if (operation?.op !== 'create') {
         return this.profileCreateTypes.has(entry.id) ? {id: entry.id, name: 'New profile'} : undefined;
       }
-      const type = (Object.entries(simpleProfileCollections) as Array<[
-        SimpleProfileCreateType, DraftCreateOperation['collection']
+      const type = (Object.entries(profileCreateCollections) as Array<[
+        ProfileCreateType, DraftCreateOperation['collection']
       ]>).find(([, collection]) => collection === operation.collection)?.[0];
       if (type) this.profileCreateTypes.set(entry.id, type);
       return {id: operation.localId, name: String(operation.fields['name'] ?? 'New profile')};
@@ -3408,18 +3412,18 @@ export class SmithproxyApp extends LitElement {
     return operation?.op === 'create' ? operation : undefined;
   }
 
-  private pendingSimpleProfileCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+  private pendingProfileCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
     const operation = this.workspaceDraft?.structuralOperations.find(item =>
-      item.op === 'create' && Object.values(simpleProfileCollections).includes(item.collection) &&
+      item.op === 'create' && Object.values(profileCreateCollections).includes(item.collection) &&
       item.localId === entry.id);
     return operation?.op === 'create' ? operation : undefined;
   }
 
-  private simpleProfileCreateType(entry: DrawerEntry): SimpleProfileCreateType {
-    const operation = this.pendingSimpleProfileCreate(entry);
+  private profileCreateType(entry: DrawerEntry): ProfileCreateType {
+    const operation = this.pendingProfileCreate(entry);
     if (operation) {
-      const type = (Object.entries(simpleProfileCollections) as Array<[
-        SimpleProfileCreateType, DraftCreateOperation['collection']
+      const type = (Object.entries(profileCreateCollections) as Array<[
+        ProfileCreateType, DraftCreateOperation['collection']
       ]>).find(([, collection]) => collection === operation.collection)?.[0];
       if (type) return type;
     }
@@ -3510,14 +3514,15 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
-  private async saveSimpleProfileCreate(entry: DrawerEntry): Promise<void> {
+  private async saveProfileCreate(entry: DrawerEntry): Promise<void> {
     if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    const operation = this.pendingProfileCreate(entry);
     const element = <T extends HTMLInputElement | HTMLSelectElement>(field: string) =>
       this.renderRoot.querySelector<T>(`#profile-create-${field}-${entry.id}`);
     const typeInput = element<HTMLSelectElement>('type');
     const nameInput = element<HTMLInputElement>('name');
-    if (!typeInput || !nameInput || !simpleProfileTypes.has(typeInput.value as SimpleProfileCreateType)) return;
-    const type = typeInput.value as SimpleProfileCreateType;
+    if (!typeInput || !nameInput || !supportedProfileCreateTypes.has(typeInput.value as ProfileCreateType)) return;
+    const type = typeInput.value as ProfileCreateType;
     const name = nameInput.value.trim();
     const printable = (value: string, maximum: number, empty = false) =>
       (empty || value.length > 0) && value.length <= maximum && !/[\u0000-\u001f\u007f]/u.test(value);
@@ -3525,10 +3530,13 @@ export class SmithproxyApp extends LitElement {
       this.drawerError = 'A printable profile name from 1 to 128 characters is required.';
       return;
     }
-    const collection = simpleProfileCollections[type];
+    const collection = profileCreateCollections[type];
     const sameProfileType = (profile: ProfileObject): boolean => type === 'routing' ? profile.routing !== null
       : type === 'detection' ? profile.detection !== null
-        : type === 'dns' ? profile.dns !== null : profile.authentication !== null;
+        : type === 'dns' ? profile.dns !== null
+          : type === 'authentication' ? profile.authentication !== null
+            : type === 'content' ? profile.content !== null
+              : type === 'ssh' ? profile.ssh !== null : profile.script !== null;
     const duplicateLive = this.snapshot?.profiles.some(profile =>
       sameProfileType(profile) && this.profileDisplayName(profile) === name);
     const duplicateDraft = this.workspaceDraft?.structuralOperations.some(operation =>
@@ -3579,15 +3587,85 @@ export class SmithproxyApp extends LitElement {
           [match.value, randomize.value, cached.value].some(value => !['true', 'false'].includes(value))) return;
       fields = {name, match_request_id: match.value === 'true', randomize_id: randomize.value === 'true',
         cached_responses: cached.value === 'true'};
-    } else {
+    } else if (type === 'authentication') {
       const authenticate = element<HTMLSelectElement>('authenticate');
       const resolve = element<HTMLSelectElement>('resolve');
       if (!authenticate || !resolve ||
           [authenticate.value, resolve.value].some(value => !['true', 'false'].includes(value))) return;
       fields = {name, authenticate: authenticate.value === 'true', resolve: resolve.value === 'true'};
+    } else if (type === 'content') {
+      const format = element<HTMLSelectElement>('content-format');
+      const filterMode = element<HTMLSelectElement>('content-filter-mode');
+      const filter = this.renderRoot.querySelector<HTMLTextAreaElement>(
+        `#profile-create-content-filter-${entry.id}`,
+      );
+      const booleanNames = [
+        ['content-write-payload', 'write_payload'], ['content-webhook', 'webhook_enable'],
+        ['content-webhook-lock', 'webhook_lock_traffic'], ['content-ja4-client', 'ja4_tls_ch'],
+        ['content-ja4-ignore-sni', 'ja4_tls_ch_ignore_sni'], ['content-ja4-server', 'ja4_tls_sh'],
+        ['content-ja4-http', 'ja4_http'],
+      ] as const;
+      const booleanValues: Record<string, boolean> = {};
+      for (const [id, fieldName] of booleanNames) {
+        const input = element<HTMLSelectElement>(id);
+        if (!input || !['true', 'false'].includes(input.value)) return;
+        booleanValues[fieldName] = input.value === 'true';
+      }
+      if (!format || !filterMode || !filter || !['smcap', 'pcap', 'pcap_single'].includes(format.value) ||
+          !['empty', 'replace'].includes(filterMode.value) ||
+          (filterMode.value === 'replace' &&
+            (filter.value.length === 0 || filter.value.length > 65536 || filter.value.includes('\0')))) {
+        this.drawerError = operation
+          ? 'Re-enter the write-only session filter or explicitly select an empty filter before updating.'
+          : 'Content profile fields and the optional session filter must fit the configuration limits.';
+        return;
+      }
+      fields = {name, ...booleanValues, write_format: format.value,
+        rules_session_filter: filterMode.value === 'replace' ? filter.value : ''};
+    } else if (type === 'ssh') {
+      const policy = element<HTMLSelectElement>('ssh-policy');
+      const hostKeyMode = element<HTMLSelectElement>('ssh-host-key-mode');
+      const hostKey = element<HTMLInputElement>('ssh-host-key');
+      const actionNames = [
+        ['ssh-shell', 'shell'], ['ssh-exec', 'exec'], ['ssh-subsystem', 'subsystem'],
+        ['ssh-pty', 'pty'], ['ssh-environment', 'environment'],
+        ['ssh-local-forward', 'local_forward'], ['ssh-remote-forward', 'remote_forward'],
+        ['ssh-x11', 'x11'], ['ssh-agent', 'agent'],
+      ] as const;
+      const actions: Record<string, string> = {};
+      for (const [id, fieldName] of actionNames) {
+        const input = element<HTMLSelectElement>(id);
+        if (!input || !['pass', 'reject'].includes(input.value)) return;
+        actions[fieldName] = input.value;
+      }
+      const hostKeyValue = hostKey?.value.trim() ?? '';
+      if (!policy || !hostKeyMode || !hostKey || !['insecure', 'accept-new', 'strict'].includes(policy.value) ||
+          !['empty', 'replace'].includes(hostKeyMode.value) ||
+          (hostKeyMode.value === 'replace' && !printable(hostKeyValue, 1024))) {
+        this.drawerError = operation
+          ? 'Re-enter the write-only host-key path or explicitly select an empty path before updating.'
+          : 'SSH profile fields and the optional host-key path must fit the configuration limits.';
+        return;
+      }
+      fields = {name, hostkey_policy: policy.value, ...actions,
+        host_key: hostKeyMode.value === 'replace' ? hostKeyValue : ''};
+    } else {
+      const runtime = element<HTMLSelectElement>('script-runtime');
+      const moduleMode = element<HTMLSelectElement>('script-module-mode');
+      const modulePath = element<HTMLInputElement>('script-module');
+      const moduleValue = modulePath?.value.trim() ?? '';
+      if (!runtime || !moduleMode || !modulePath || !['-1', '0', '1'].includes(runtime.value) ||
+          !['empty', 'replace'].includes(moduleMode.value) ||
+          (moduleMode.value === 'replace' && !printable(moduleValue, 1024))) {
+        this.drawerError = operation
+          ? 'Re-enter the write-only module path or explicitly select an empty path before updating.'
+          : 'Script runtime and the optional module path must fit the configuration limits.';
+        return;
+      }
+      fields = {name, type: runtime.value, 'script-file': moduleMode.value === 'replace' ? moduleValue : ''};
     }
 
-    const existing = this.pendingSimpleProfileCreate(entry);
+    const existing = operation;
     const unchanged = existing?.collection === collection &&
       Object.keys(existing.fields).length === Object.keys(fields).length &&
       Object.entries(fields).every(([field, value]) =>
@@ -3609,6 +3687,14 @@ export class SmithproxyApp extends LitElement {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.profileCreateTypes.set(entry.id, type);
       this.applyDraft(draft);
+      for (const selector of [
+        `#profile-create-content-filter-${entry.id}`,
+        `#profile-create-ssh-host-key-${entry.id}`,
+        `#profile-create-script-module-${entry.id}`,
+      ]) {
+        const secret = this.renderRoot.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
+        if (secret) secret.value = '';
+      }
       this.markDrawerSaved(entry);
       await this.loadDraftPreflight();
     } catch (error) {
@@ -3635,7 +3721,7 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     if (entry.kind === 'profile-create') {
-      await this.saveSimpleProfileCreate(entry);
+      await this.saveProfileCreate(entry);
       return;
     }
     if (entry.kind === 'content-rule-create') {
@@ -4986,7 +5072,7 @@ export class SmithproxyApp extends LitElement {
                     'address_objects', 'port_objects', 'proto_objects', 'policy',
                     'content_profiles.content_rules',
                     'starttls_signatures.flow', 'detection_signatures.flow',
-                    ...Object.values(simpleProfileCollections),
+                    ...Object.values(profileCreateCollections),
                   ].includes(operation.collection)) ||
                     (operation.op === 'move' && (operation.collection === 'policy' ||
                       operation.collection === 'content_profiles.content_rules' ||
@@ -7155,9 +7241,9 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
-  private renderSimpleProfileCreateEditor(entry: DrawerEntry) {
-    const operation = this.pendingSimpleProfileCreate(entry);
-    const type = this.simpleProfileCreateType(entry);
+  private renderProfileCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingProfileCreate(entry);
+    const type = this.profileCreateType(entry);
     const field = (name: string, fallback: DraftScalar): DraftScalar => operation?.fields[name] ?? fallback;
     const stringList = (name: string): ReadonlyArray<string> => {
       const value = field(name, []);
@@ -7167,19 +7253,35 @@ export class SmithproxyApp extends LitElement {
       const value = field(name, fallback);
       return typeof value === 'boolean' ? value : fallback;
     };
+    const stringField = (name: string, fallback: string): string => {
+      const value = field(name, fallback);
+      return typeof value === 'string' && !value.startsWith('[redacted:') ? value : fallback;
+    };
     const readOnly = !this.structuralDraftsAvailable;
     const booleanSelect = (id: string, label: string, value: boolean) => html`
       <label for="profile-create-${id}-${entry.id}">${label}</label>
       <select id="profile-create-${id}-${entry.id}" .value=${String(value)} ?disabled=${readOnly}>
         <option value="true">Enabled</option><option value="false">Disabled</option>
       </select>`;
+    const actionSelect = (id: string, label: string, value: string) => html`
+      <label for="profile-create-${id}-${entry.id}">${label}</label>
+      <select id="profile-create-${id}-${entry.id}" .value=${value} ?disabled=${readOnly}>
+        <option value="pass">Pass</option><option value="reject">Reject</option>
+      </select>`;
+    const writeOnlyMode = (id: string, label: string) => html`
+      <label for="profile-create-${id}-mode-${entry.id}">${label}</label>
+      <select id="profile-create-${id}-mode-${entry.id}"
+        .value=${operation ? 'unchanged' : 'empty'} ?disabled=${readOnly}>
+        ${operation ? html`<option value="unchanged">Re-entry required before update</option>` : nothing}
+        <option value="empty">Keep empty</option><option value="replace">Set value</option>
+      </select>`;
     return html`
       <div class="form-grid wide-form-grid">
         <label for="profile-create-type-${entry.id}">Profile type</label>
         <select id="profile-create-type-${entry.id}" .value=${type} ?disabled=${readOnly || operation !== undefined}
           @change=${(event: Event) => {
-            const value = (event.currentTarget as HTMLSelectElement).value as SimpleProfileCreateType;
-            if (simpleProfileTypes.has(value)) {
+            const value = (event.currentTarget as HTMLSelectElement).value as ProfileCreateType;
+            if (supportedProfileCreateTypes.has(value)) {
               const name = this.renderRoot.querySelector<HTMLInputElement>(
                 `#profile-create-name-${entry.id}`,
               )?.value ?? '';
@@ -7197,6 +7299,9 @@ export class SmithproxyApp extends LitElement {
           <option value="detection">Detection</option>
           <option value="dns">DNS ALG</option>
           <option value="authentication">Authentication</option>
+          <option value="content">Content</option>
+          <option value="ssh">SSH</option>
+          <option value="script">Script</option>
         </select>
         <label for="profile-create-name-${entry.id}">Name</label>
         <input id="profile-create-name-${entry.id}" .value=${String(field('name', ''))}
@@ -7234,9 +7339,62 @@ export class SmithproxyApp extends LitElement {
           ${booleanSelect('match-request', 'Match request ID', booleanField('match_request_id', true))}
           ${booleanSelect('randomize', 'Randomize response ID', booleanField('randomize_id', true))}
           ${booleanSelect('cached', 'Cached responses', booleanField('cached_responses', true))}
-        ` : html`
+        ` : type === 'authentication' ? html`
           ${booleanSelect('authenticate', 'Authenticate', booleanField('authenticate', true))}
           ${booleanSelect('resolve', 'Resolve identities', booleanField('resolve', true))}
+        ` : type === 'content' ? html`
+          ${booleanSelect('content-write-payload', 'Payload capture', booleanField('write_payload', false))}
+          <label for="profile-create-content-format-${entry.id}">Capture format</label>
+          <select id="profile-create-content-format-${entry.id}"
+            .value=${stringField('write_format', 'smcap')} ?disabled=${readOnly}>
+            <option value="smcap">SMCAP</option><option value="pcap">PCAP</option>
+            <option value="pcap_single">Single PCAP</option>
+          </select>
+          ${booleanSelect('content-webhook', 'Webhook', booleanField('webhook_enable', false))}
+          ${booleanSelect('content-webhook-lock', 'Webhook traffic lock',
+            booleanField('webhook_lock_traffic', false))}
+          ${booleanSelect('content-ja4-client', 'JA4 TLS ClientHello', booleanField('ja4_tls_ch', false))}
+          ${booleanSelect('content-ja4-ignore-sni', 'JA4 ignores SNI',
+            booleanField('ja4_tls_ch_ignore_sni', false))}
+          ${booleanSelect('content-ja4-server', 'JA4 TLS ServerHello', booleanField('ja4_tls_sh', false))}
+          ${booleanSelect('content-ja4-http', 'JA4 HTTP', booleanField('ja4_http', false))}
+          ${writeOnlyMode('content-filter', 'Session filter')}
+          <label for="profile-create-content-filter-${entry.id}">Filter value</label>
+          <textarea id="profile-create-content-filter-${entry.id}" maxlength="65536"
+            aria-label="New session filter" autocomplete="off" placeholder="Write-only expression"
+            .readOnly=${readOnly}></textarea>
+        ` : type === 'ssh' ? html`
+          <label for="profile-create-ssh-policy-${entry.id}">Upstream host-key policy</label>
+          <select id="profile-create-ssh-policy-${entry.id}"
+            .value=${stringField('hostkey_policy', 'strict')} ?disabled=${readOnly}>
+            <option value="insecure">Insecure</option><option value="accept-new">Accept new</option>
+            <option value="strict">Strict</option>
+          </select>
+          ${writeOnlyMode('ssh-host-key', 'Host-key path')}
+          <label for="profile-create-ssh-host-key-${entry.id}">Host-key value</label>
+          <input id="profile-create-ssh-host-key-${entry.id}" maxlength="1024"
+            aria-label="New host-key path" autocomplete="off" placeholder="Write-only path"
+            .readOnly=${readOnly} />
+          ${actionSelect('ssh-shell', 'Shell', stringField('shell', 'reject'))}
+          ${actionSelect('ssh-exec', 'Exec', stringField('exec', 'reject'))}
+          ${actionSelect('ssh-subsystem', 'Subsystem', stringField('subsystem', 'reject'))}
+          ${actionSelect('ssh-pty', 'PTY', stringField('pty', 'reject'))}
+          ${actionSelect('ssh-environment', 'Environment', stringField('environment', 'reject'))}
+          ${actionSelect('ssh-local-forward', 'Local forwarding', stringField('local_forward', 'reject'))}
+          ${actionSelect('ssh-remote-forward', 'Remote forwarding', stringField('remote_forward', 'reject'))}
+          ${actionSelect('ssh-x11', 'X11 forwarding', stringField('x11', 'reject'))}
+          ${actionSelect('ssh-agent', 'Agent forwarding', stringField('agent', 'reject'))}
+        ` : html`
+          <label for="profile-create-script-runtime-${entry.id}">Runtime</label>
+          <select id="profile-create-script-runtime-${entry.id}"
+            .value=${stringField('type', '-1')} ?disabled=${readOnly}>
+            <option value="-1">Unspecified</option><option value="0">Python</option><option value="1">Go</option>
+          </select>
+          ${writeOnlyMode('script-module', 'Module path')}
+          <label for="profile-create-script-module-${entry.id}">Module value</label>
+          <input id="profile-create-script-module-${entry.id}" maxlength="1024"
+            aria-label="New script module path" autocomplete="off" placeholder="Write-only path"
+            .readOnly=${readOnly} />
         `}
       </div>
       <div class="impact">
@@ -7244,6 +7402,9 @@ export class SmithproxyApp extends LitElement {
       </div>
       ${type === 'authentication' ? html`<div class="privacy-note section">
         Identity mappings remain managed by their dedicated API surface and are never inferred by this editor.
+      </div>` : ['content', 'ssh', 'script'].includes(type) ? html`<div class="privacy-note section">
+        Write-only values are accepted by the GUI core, redacted from draft responses, and cleared from this editor.
+        Reopening a pending profile requires explicit re-entry before it can be updated.
       </div>` : nothing}
     `;
   }
@@ -8509,7 +8670,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'port-create') return this.renderPortCreateEditor(entry);
     if (entry.kind === 'protocol') return this.renderProtocolEditor(entry);
     if (entry.kind === 'protocol-create') return this.renderProtocolCreateEditor(entry);
-    if (entry.kind === 'profile-create') return this.renderSimpleProfileCreateEditor(entry);
+    if (entry.kind === 'profile-create') return this.renderProfileCreateEditor(entry);
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);

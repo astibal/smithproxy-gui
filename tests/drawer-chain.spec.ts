@@ -488,18 +488,27 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     const existing = draft.structural_operations.findIndex(
       operation => operation.local_id === body.operation.local_id,
     );
-    const sensitiveCreate = body.operation.collection === 'content_profiles.content_rules' ||
-      body.operation.collection === 'starttls_signatures.flow' ||
-      body.operation.collection === 'detection_signatures.flow';
-    const storedOperation = body.operation.op === 'create' && sensitiveCreate &&
+    const sensitiveFields = body.operation.collection === 'content_profiles.content_rules'
+      ? new Set(['match', 'replace'])
+      : body.operation.collection === 'starttls_signatures.flow' ||
+          body.operation.collection === 'detection_signatures.flow'
+        ? new Set(['signature'])
+        : body.operation.collection === 'content_profiles'
+          ? new Set(['rules_session_filter'])
+          : body.operation.collection === 'ssh_profiles'
+            ? new Set(['host_key'])
+            : body.operation.collection === 'script_profiles'
+              ? new Set(['script-file']) : new Set<string>();
+    const storedOperation = body.operation.op === 'create' && sensitiveFields.size > 0 &&
       typeof body.operation.fields === 'object' && body.operation.fields !== null
       ? {
         ...body.operation,
         fields: Object.fromEntries(Object.entries(body.operation.fields).map(([field, value]) => [
           field,
-          field === 'match' || field === 'signature' ? '[redacted:replace]'
-            : field === 'replace' ? value === '' ? '[redacted:clear]' : '[redacted:replace]'
-              : value,
+          sensitiveFields.has(field)
+            ? value === '' || (Array.isArray(value) && value.length === 0)
+              ? '[redacted:clear]' : '[redacted:replace]'
+            : value,
         ])),
       }
       : body.operation;
@@ -1742,6 +1751,100 @@ test('creates complete typed routing detection DNS and authentication profiles',
   await expect(editor.getByLabel('Profile type')).toHaveValue('routing');
   await expect(editor.getByLabel('Destination addresses')).toHaveValue('backend-a, backend-b');
   await expect(editor.getByLabel('Rewrite SNI target')).toHaveValue('private.example');
+  await expectNoWcagViolations(page);
+});
+
+test('creates sensitive content SSH and script profiles without reflecting write-only values', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await page.getByRole('button', {name: 'New profile'}).click();
+  let editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Profile type').selectOption('content');
+  await editor.getByLabel('Name').fill('branch-content');
+  await editor.getByLabel('Payload capture').selectOption('true');
+  await editor.getByLabel('Capture format').selectOption('pcap_single');
+  await editor.getByLabel('Webhook', {exact: true}).selectOption('true');
+  await editor.getByLabel('JA4 TLS ClientHello').selectOption('true');
+  await editor.getByLabel('Session filter', {exact: true}).selectOption('replace');
+  await editor.getByLabel('New session filter').fill('PRIVATE-CONTENT-FILTER');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor.getByLabel('New session filter')).toHaveValue('');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'New profile'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Profile type').selectOption('ssh');
+  await editor.getByLabel('Name').fill('branch-ssh');
+  await editor.getByLabel('Upstream host-key policy').selectOption('strict');
+  await editor.getByLabel('Host-key path', {exact: true}).selectOption('replace');
+  await editor.getByLabel('New host-key path').fill('/private/branch-host-key');
+  await editor.getByLabel('Exec').selectOption('pass');
+  await editor.getByLabel('Subsystem').selectOption('pass');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByLabel('New host-key path')).toHaveValue('');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'New profile'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Profile type').selectOption('script');
+  await editor.getByLabel('Name').fill('branch-script');
+  await editor.getByLabel('Runtime').selectOption('0');
+  await editor.getByLabel('Module path', {exact: true}).selectOption('replace');
+  await editor.getByLabel('New script module path').fill('/private/branch.py');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByLabel('New script module path')).toHaveValue('');
+
+  expect(state.structuralMutationRequests).toHaveLength(3);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0, csrf: '1', operation: {
+      op: 'create', collection: 'content_profiles',
+      fields: {
+        name: 'branch-content', write_payload: true, write_format: 'pcap_single',
+        webhook_enable: true, webhook_lock_traffic: false,
+        ja4_tls_ch: true, ja4_tls_ch_ignore_sni: false, ja4_tls_sh: false, ja4_http: false,
+        rules_session_filter: 'PRIVATE-CONTENT-FILTER',
+      },
+    },
+  });
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 1, csrf: '1', operation: {
+      op: 'create', collection: 'ssh_profiles',
+      fields: {
+        name: 'branch-ssh', hostkey_policy: 'strict', host_key: '/private/branch-host-key',
+        shell: 'reject', exec: 'pass', subsystem: 'pass', pty: 'reject', environment: 'reject',
+        local_forward: 'reject', remote_forward: 'reject', x11: 'reject', agent: 'reject',
+      },
+    },
+  });
+  expect(state.structuralMutationRequests![2]).toMatchObject({
+    expectedVersion: 2, csrf: '1', operation: {
+      op: 'create', collection: 'script_profiles',
+      fields: {name: 'branch-script', type: '0', 'script-file': '/private/branch.py'},
+    },
+  });
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 3'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  for (const secret of ['PRIVATE-CONTENT-FILTER', '/private/branch-host-key', '/private/branch.py']) {
+    await expect(table).not.toContainText(secret);
+  }
+  const contentRow = table.getByRole('row').filter({hasText: 'content_profiles · create'});
+  await contentRow.getByRole('button', {name: 'Edit'}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(editor.getByLabel('Session filter', {exact: true})).toHaveValue('unchanged');
+  await expect(editor.getByLabel('New session filter')).toHaveValue('');
+  await editor.getByLabel('Name').fill('branch-content-updated');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(/Re-enter the write-only session filter/u)).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(3);
   await expectNoWcagViolations(page);
 });
 

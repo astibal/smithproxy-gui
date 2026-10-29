@@ -201,7 +201,7 @@ draft revision. The review surface already counts, displays, removes, validates,
 and commits scalar and structural operations as one transaction.
 When the core advertises `structural_drafts`, the Objects and Policy views enable
 typed right-side creation drawers for address, port, protocol, policy, routing,
-detection, DNS ALG, and authentication entries.
+detection, DNS ALG, authentication, content, SSH, and script entries.
 They reject duplicate identities and invalid ranges locally, store ordered create
 operations under optimistic draft concurrency, and reopen pending items from draft
 review. A policy can be placed first, last, or immediately before an existing stable
@@ -213,10 +213,13 @@ same draft as confirmed delete operations; active references and conflicting pen
 field edits block the delete locally before the authoritative Smithproxy validation.
 Stable routing, TLS, detection, content, SSH, DNS, script, and authentication
 profiles use the same confirmed deletion path and cannot be deleted while referenced.
-New routing, detection, DNS ALG, and authentication profiles submit complete typed
-payloads, reject duplicate names and invalid bounded lists locally, and reopen from
-draft review under stable optimistic identifiers. Authentication identity mappings
-remain outside this editor and are never inferred from redacted posture data.
+New routing, detection, DNS ALG, authentication, content, SSH, and script profiles
+submit complete typed payloads, reject duplicate names and invalid bounded values
+locally, and reopen from draft review under stable optimistic identifiers. Sensitive
+session filters, host-key paths, and script paths are cleared after acceptance and
+redacted from every draft response. Updating such a pending create requires explicit
+write-only re-entry. Authentication identity mappings remain outside this editor and
+are never inferred from redacted posture data.
 Content profiles expose nested creation, confirmed deletion, and first/before/last
 ordering for stable content rules. New write-only match and replacement expressions
 are cleared from the editor after the GUI core accepts them and must be re-entered
