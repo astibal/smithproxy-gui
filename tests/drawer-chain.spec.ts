@@ -1332,6 +1332,43 @@ test('removes a pending rename and its cascaded references when restored', async
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
 });
 
+test('removes a pending rename only after its draft reference changes', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', draftRemovalRequests: [],
+    initialDraftChanges: [
+      {path: 'address_objects.[1].name', value: 'public-internet'},
+      {path: 'policy.[0].dst', value: ['public-internet']},
+      {path: 'routing.[0].dnat_address', value: ['public-internet']},
+    ],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 3'}).click();
+  const renameRemove = page.getByRole('button', {
+    name: 'Remove address_objects.[1].name from draft',
+  });
+  await expect(renameRemove).toBeDisabled();
+  await expect(renameRemove).toHaveAttribute(
+    'title', 'Remove pending references before removing this rename change.',
+  );
+  await page.getByRole('button', {name: 'Remove policy.[0].dst from draft'}).click();
+  await expect(renameRemove).toBeDisabled();
+  await page.getByRole('button', {name: 'Remove routing.[0].dnat_address from draft'}).click();
+  await expect(renameRemove).toBeEnabled();
+  await renameRemove.click();
+  await expect(page.getByText('No pending changes')).toBeVisible();
+  expect(state.draftRemovalRequests).toEqual([{
+    expectedVersion: 1, paths: ['policy.[0].dst'],
+    keys: ['expected_version', 'path'], csrf: '1',
+  }, {
+    expectedVersion: 2, paths: ['routing.[0].dnat_address'],
+    keys: ['expected_version', 'path'], csrf: '1',
+  }, {
+    expectedVersion: 3, paths: ['address_objects.[1].name'],
+    keys: ['expected_version', 'path'], csrf: '1',
+  }]);
+});
+
 test('validates the immutable workspace draft through the Smithproxy transaction', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',

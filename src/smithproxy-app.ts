@@ -1941,6 +1941,11 @@ export class SmithproxyApp extends LitElement {
 
   private async removeDraftChange(path: string): Promise<void> {
     if (!this.draftAvailable || !this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const dependencyBlocker = this.draftChangeRemovalBlocker(path);
+    if (dependencyBlocker) {
+      this.draftError = dependencyBlocker;
+      return;
+    }
     this.draftSaving = true;
     const accessEpoch = this.configurationAccessEpoch;
     this.draftError = undefined;
@@ -2239,6 +2244,22 @@ export class SmithproxyApp extends LitElement {
     const specifications = this.referenceSpecifications(operation.collection);
     return specifications.length > 0 && this.draftReferencesName(name, specifications, localId)
       ? 'Remove pending draft references before removing this create operation.'
+      : undefined;
+  }
+
+  private draftChangeRemovalBlocker(path: string): string | undefined {
+    const change = this.workspaceDraft?.changes.find(item => item.path === path);
+    if (!change || typeof change.value !== 'string' || !path.endsWith('].name')) return undefined;
+    const collections: ReadonlyArray<DraftCreateOperation['collection']> = [
+      'address_objects', 'port_objects', 'proto_objects', 'routing', 'tls_profiles',
+      'content_profiles', 'ssh_profiles', 'detection_profiles', 'alg_dns_profiles',
+      'script_profiles', 'auth_profiles',
+    ];
+    const collection = collections.find(candidate => path.startsWith(`${candidate}.[`));
+    if (!collection) return undefined;
+    const specifications = this.referenceSpecifications(collection);
+    return specifications.length > 0 && this.draftReferencesName(change.value, specifications)
+      ? 'Remove pending references before removing this rename change.'
       : undefined;
   }
 
@@ -5489,6 +5510,7 @@ export class SmithproxyApp extends LitElement {
             </div>
             ${changes.map(change => {
               const target = this.draftTargetForPath(change.path);
+              const removalBlocker = this.draftChangeRemovalBlocker(change.path);
               return html`<div class="draft-row" role="row">
                 <span class="draft-path" role="cell">${change.path}</span>
                 <span class="draft-value" role="cell">${this.draftValueSummary(change.path, change.value)}</span>
@@ -5501,7 +5523,9 @@ export class SmithproxyApp extends LitElement {
                   ` : nothing}
                   <button class="secondary" type="button"
                     aria-label=${`Remove ${change.path} from draft`}
-                    ?disabled=${this.draftSaving || this.draftValidating || this.draftCommitting}
+                    title=${removalBlocker ?? nothing}
+                    ?disabled=${removalBlocker !== undefined || this.draftSaving ||
+                      this.draftValidating || this.draftCommitting}
                     @click=${() => this.removeDraftChange(change.path)}>Remove</button>
                 </span>
               </div>`;

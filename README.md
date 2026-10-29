@@ -217,7 +217,8 @@ References introduced by pending policy or routing edits and structural creates 
 included in that blocker, so an internally contradictory draft is not offered as a
 valid local workflow. Draft review applies the same dependency ordering to pending
 create operations: dependent policy or routing operations must be removed before
-the object or profile they reference.
+the object or profile they reference. A pending object/profile rename is similarly
+protected until every cascaded draft reference to its new name has been removed.
 Stable routing, TLS, detection, content, SSH, DNS, script, and authentication
 profiles use the same confirmed deletion path and cannot be deleted while referenced.
 New routing, TLS, detection, DNS ALG, authentication, content, SSH, and script profiles
