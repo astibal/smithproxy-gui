@@ -30,6 +30,10 @@ schema, rolí, browserů a chybových stavů. Samotné procento line coverage ne
 - visual regression pro Grill/Petroleum, dark/light a klíčové stavy;
 - testy offline/stale SSE, konfliktů revision a obnovy draftu.
 
+CI spouští celý Playwright scénář nad Chromium, Firefox a WebKit. Lokální
+vývojový příkaz používá pro rychlost Chromium; shodný tříbrowserový matrix se
+zapíná proměnnou `PLAYWRIGHT_ALL_BROWSERS=1`.
+
 ## Backend a API
 
 - unit testy autentizace, autorizace, limitů a normalizace;

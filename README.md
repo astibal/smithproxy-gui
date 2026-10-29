@@ -36,10 +36,11 @@ documentation:
 
 ## Development
 
-Every push and pull request runs the frontend unit and Chromium end-to-end
-suites, a production TypeScript build, a production dependency audit, and the
-C++ unit/integration suite under AddressSanitizer and UndefinedBehaviorSanitizer.
-Compiler warnings fail the backend quality gate.
+Every push and pull request runs the frontend unit suite and the complete
+Chromium, Firefox, and WebKit end-to-end matrix, a production TypeScript build,
+a production dependency audit, and the C++ unit/integration suite under
+AddressSanitizer and UndefinedBehaviorSanitizer. Compiler warnings fail the
+backend quality gate.
 
 Node.js 22.12 or newer and pnpm 11.25 are required.
 
@@ -49,6 +50,13 @@ pnpm dev
 pnpm build
 pnpm test:unit
 pnpm test:e2e
+```
+
+The local end-to-end command defaults to Chromium for a fast development loop.
+After installing all Playwright browsers, run the same matrix as CI with:
+
+```sh
+PLAYWRIGHT_ALL_BROWSERS=1 pnpm test:e2e
 ```
 
 The backend requires C++23, CMake, pkg-config, libcurl, libmicrohttpd, and
