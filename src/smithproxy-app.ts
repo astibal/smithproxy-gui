@@ -542,6 +542,7 @@ export class SmithproxyApp extends LitElement {
     .status.disabled { color: var(--app-muted); }
     .row-meta { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; align-items: center; }
     .overlay-badge { padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--app-warning) 55%, var(--app-border)); border-radius: 2px; background: var(--app-warning-bg); color: var(--app-warning); font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .pending-badge { padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--app-brand) 60%, var(--app-border)); border-radius: 2px; color: var(--app-brand); font-size: 10px; font-weight: 700; white-space: nowrap; }
     .action { text-transform: capitalize; }
 
     .drawer {
@@ -1592,17 +1593,19 @@ export class SmithproxyApp extends LitElement {
       return match ? items[Number(match[1])] : undefined;
     };
     const policy = indexed(/^policy\.\[(\d+)\]\./u, this.snapshot?.policies ?? []);
-    if (policy) return {kind: 'policy', id: policy.id, title: policy.name};
+    if (policy) return {kind: 'policy', id: policy.id, title: this.policyDisplayName(policy)};
     const address = indexed(/^address_objects\.\[(\d+)\]\./u, this.snapshot?.addresses ?? []);
-    if (address) return {kind: 'address', id: address.id, title: address.name};
+    if (address) return {kind: 'address', id: address.id, title: this.addressDisplayName(address)};
     const port = indexed(/^port_objects\.\[(\d+)\]\./u, this.snapshot?.ports ?? []);
-    if (port) return {kind: 'port', id: port.id, title: port.name};
+    if (port) return {kind: 'port', id: port.id, title: this.portDisplayName(port)};
     const protocol = indexed(/^proto_objects\.\[(\d+)\]\./u, this.snapshot?.protocols ?? []);
-    if (protocol) return {kind: 'protocol', id: protocol.id, title: protocol.name};
+    if (protocol) return {kind: 'protocol', id: protocol.id, title: this.protocolDisplayName(protocol)};
     const authority = indexed(
       /^tls_ca\.\[(\d+)\]\./u, this.snapshot?.securityAssets?.certificateAuthorities ?? [],
     );
-    if (authority) return {kind: 'authority', id: authority.id, title: authority.name};
+    if (authority) {
+      return {kind: 'authority', id: authority.id, title: this.authorityDisplayName(authority.id, authority.name)};
+    }
 
     const signatureMatch = /^(?:starttls|detection)_signatures\.\[(\d+)\](?:\.flow\.\[(\d+)\])?\./u
       .exec(path);
@@ -1615,7 +1618,9 @@ export class SmithproxyApp extends LitElement {
       if (step) {
         return {kind: 'signature-flow', id: step.id, title: `Flow ${step.side.toUpperCase()}`};
       }
-      if (signature) return {kind: 'signature', id: signature.id, title: signature.name};
+      if (signature) {
+        return {kind: 'signature', id: signature.id, title: this.signatureDisplayName(signature.id, signature.name)};
+      }
     }
 
     const profileSections: ReadonlyArray<{
@@ -1640,7 +1645,7 @@ export class SmithproxyApp extends LitElement {
       const rule = ruleMatch ? profile.content?.rules[Number(ruleMatch[1])] : undefined;
       return rule
         ? {kind: 'content-rule', id: rule.id, title: `Content rule ${Number(ruleMatch![1]) + 1}`}
-        : {kind: 'profile', id: profile.id, title: profile.name};
+        : {kind: 'profile', id: profile.id, title: this.profileDisplayName(profile)};
     }
     return undefined;
   }
@@ -1916,32 +1921,70 @@ export class SmithproxyApp extends LitElement {
     return text.length > 160 ? `${text.slice(0, 157)}…` : text;
   }
 
+  private policyDisplayName(policy: PolicySummary): string {
+    const index = this.snapshot?.policies.findIndex(item => item.id === policy.id) ?? -1;
+    return index < 0 ? policy.name : this.presentedValue(`policy.[${index}].name`, policy.name);
+  }
+
+  private addressDisplayName(address: AddressObject): string {
+    const index = this.snapshot?.addresses.findIndex(item => item.id === address.id) ?? -1;
+    return index < 0 ? address.name : this.presentedValue(`address_objects.[${index}].name`, address.name);
+  }
+
+  private portDisplayName(port: PortObject): string {
+    const index = this.snapshot?.ports.findIndex(item => item.id === port.id) ?? -1;
+    return index < 0 ? port.name : this.presentedValue(`port_objects.[${index}].name`, port.name);
+  }
+
+  private protocolDisplayName(protocol: ProtocolObject): string {
+    const index = this.snapshot?.protocols.findIndex(item => item.id === protocol.id) ?? -1;
+    return index < 0 ? protocol.name : this.presentedValue(`proto_objects.[${index}].name`, protocol.name);
+  }
+
+  private profileDisplayName(profile: ProfileObject): string {
+    const prefix = this.profileOriginPrefixes().get(profile.id);
+    return prefix ? this.presentedValue(`${prefix}name`, profile.name) : profile.name;
+  }
+
+  private authorityDisplayName(id: string, fallback: string): string {
+    const index = this.snapshot?.securityAssets?.certificateAuthorities.findIndex(item => item.id === id) ?? -1;
+    return index < 0 ? fallback : this.presentedValue(`tls_ca.[${index}].name`, fallback);
+  }
+
+  private signatureDisplayName(id: string, fallback: string): string {
+    const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === id);
+    if (!signature) return fallback;
+    const index = this.snapshot!.securityAssets!.signatures
+      .filter(item => item.kind === signature.kind).findIndex(item => item.id === id);
+    return index < 0 ? fallback : this.presentedValue(`${signature.kind}_signatures.[${index}].name`, fallback);
+  }
+
   private openPolicy(policy: PolicySummary, origin?: HTMLElement): void {
-    this.openObjectDrawer({kind: 'policy', id: policy.id, title: policy.name}, origin);
+    this.openObjectDrawer({kind: 'policy', id: policy.id, title: this.policyDisplayName(policy)}, origin);
   }
 
   private openAddress(id: string, origin?: HTMLElement): void {
     const address = this.snapshot?.addresses.find(item => item.id === id);
     if (!address) return;
-    this.openObjectDrawer({kind: 'address', id: address.id, title: address.name}, origin);
+    this.openObjectDrawer({kind: 'address', id: address.id, title: this.addressDisplayName(address)}, origin);
   }
 
   private openPort(id: string, origin?: HTMLElement): void {
     const port = this.snapshot?.ports.find(item => item.id === id);
     if (!port) return;
-    this.openObjectDrawer({kind: 'port', id: port.id, title: port.name}, origin);
+    this.openObjectDrawer({kind: 'port', id: port.id, title: this.portDisplayName(port)}, origin);
   }
 
   private openProtocol(id: string, origin?: HTMLElement): void {
     const protocol = this.snapshot?.protocols.find(item => item.id === id);
     if (!protocol) return;
-    this.openObjectDrawer({kind: 'protocol', id: protocol.id, title: protocol.name}, origin);
+    this.openObjectDrawer({kind: 'protocol', id: protocol.id, title: this.protocolDisplayName(protocol)}, origin);
   }
 
   private openProfile(id: string, origin?: HTMLElement): void {
     const profile = this.snapshot?.profiles.find(item => item.id === id);
     if (!profile) return;
-    this.openObjectDrawer({kind: 'profile', id: profile.id, title: profile.name}, origin);
+    this.openObjectDrawer({kind: 'profile', id: profile.id, title: this.profileDisplayName(profile)}, origin);
   }
 
   private openUsage(reference: ConfigUsage, origin?: HTMLElement): void {
@@ -1970,13 +2013,17 @@ export class SmithproxyApp extends LitElement {
   private openAuthority(id: string, origin?: HTMLElement): void {
     const authority = this.snapshot?.securityAssets?.certificateAuthorities.find(item => item.id === id);
     if (!authority) return;
-    this.openObjectDrawer({kind: 'authority', id: authority.id, title: authority.name}, origin);
+    this.openObjectDrawer({
+      kind: 'authority', id: authority.id, title: this.authorityDisplayName(authority.id, authority.name),
+    }, origin);
   }
 
   private openSignature(id: string, origin?: HTMLElement): void {
     const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === id);
     if (!signature) return;
-    this.openObjectDrawer({kind: 'signature', id: signature.id, title: signature.name}, origin);
+    this.openObjectDrawer({
+      kind: 'signature', id: signature.id, title: this.signatureDisplayName(signature.id, signature.name),
+    }, origin);
   }
 
   private openSignatureFlow(id: string, origin?: HTMLElement): void {
@@ -2246,6 +2293,22 @@ export class SmithproxyApp extends LitElement {
       return undefined;
     }
     return value;
+  }
+
+  private presentedValue<T extends ConfigScalar>(path: string, liveValue: T): T {
+    const pending = this.pendingDraftValue(path);
+    return pending !== undefined && !Array.isArray(pending) && typeof pending === typeof liveValue
+      ? pending as T
+      : liveValue;
+  }
+
+  private presentedListValue<T extends string | number>(
+    path: string, liveValue: ReadonlyArray<T>, itemType: 'string' | 'number',
+  ): ReadonlyArray<T> {
+    const pending = this.pendingDraftValue(path);
+    return Array.isArray(pending) && pending.every(item => typeof item === itemType)
+      ? pending as ReadonlyArray<T>
+      : liveValue;
   }
 
   private persistentValue<T extends ConfigScalar>(path: string, fallback: T): T {
@@ -3351,19 +3414,30 @@ export class SmithproxyApp extends LitElement {
           <div class="row heading" aria-hidden="true">
             <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
           </div>
-          ${this.snapshot?.policies.map((policy, index) => html`
-            <button class="row" type="button"
+          ${this.snapshot?.policies.map((policy, index) => {
+            const base = `policy.[${index}]`;
+            const name = this.presentedValue(`${base}.name`, policy.name);
+            const sources = this.presentedListValue(
+              `${base}.src`, policy.sources.map(item => item.name), 'string',
+            );
+            const destinations = this.presentedListValue(
+              `${base}.dst`, policy.destinations.map(item => item.name), 'string',
+            );
+            const action = this.presentedValue(`${base}.action`, policy.action);
+            const enabled = !this.presentedValue(`${base}.disabled`, !policy.enabled);
+            return html`<button class="row" type="button"
               @click=${(event: MouseEvent) => this.openPolicy(policy, event.currentTarget as HTMLElement)}>
-              <strong>${policy.name}</strong>
-              <span>${this.referenceSummary(policy.sources)}</span>
-              <span>${this.referenceSummary(policy.destinations)}</span>
-              <span class="action">${policy.action}</span>
+              <strong>${name}</strong>
+              <span>${this.referenceNameSummary(sources)}</span>
+              <span>${this.referenceNameSummary(destinations)}</span>
+              <span class="action">${action}</span>
               <span class="row-meta">
-                <span class="status ${policy.enabled ? '' : 'disabled'}">${policy.enabled ? 'Enabled' : 'Disabled'}</span>
+                <span class="status ${enabled ? '' : 'disabled'}">${enabled ? 'Enabled' : 'Disabled'}</span>
+                ${this.renderPendingBadge('policy', policy.id)}
                 ${this.renderOverlayBadge(`policy.[${index}].`, overlayCounts)}
               </span>
-            </button>
-          `)}
+            </button>`;
+          })}
         </div>
       </div>
     `;
@@ -3383,17 +3457,55 @@ export class SmithproxyApp extends LitElement {
   private renderSearchResults() {
     const query = this.searchQuery.trim().toLocaleLowerCase();
     if (!query || !this.snapshot) return html`<div class="empty-state"><h2>Search</h2><p>Enter a policy or object name.</p></div>`;
-    const policies = this.snapshot.policies.filter(policy => this.searchMatches([
-      policy.name, policy.action, policy.protocol, ...policy.sources.map(item => item.name),
-      ...policy.sourcePorts, ...policy.destinations.map(item => item.name), ...policy.destinationPorts,
-      ...policy.features, policy.nat, policy.routing, policy.tlsProfile, policy.sshProfile,
-      policy.detectionProfile, policy.contentProfile, policy.authProfile, policy.dnsProfile,
-      policy.scriptProfile,
-    ], query));
-    const addresses = this.snapshot.addresses.filter(item => this.searchMatches([item.name, item.type, item.value], query));
-    const ports = this.snapshot.ports.filter(item => this.searchMatches([item.name, item.start, item.end], query));
-    const protocols = this.snapshot.protocols.filter(item => this.searchMatches([item.name, item.number], query));
-    const profiles = this.snapshot.profiles.filter(item => this.searchMatches([item.name, item.type], query));
+    const policies = this.snapshot.policies.map((item, index) => {
+      const base = `policy.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const action = this.presentedValue(`${base}.action`, item.action);
+      const values: ReadonlyArray<string | number> = [
+        name, action, this.presentedValue(`${base}.proto`, item.protocol),
+        ...this.presentedListValue(`${base}.src`, item.sources.map(source => source.name), 'string'),
+        ...this.presentedListValue(`${base}.sport`, item.sourcePorts, 'string'),
+        ...this.presentedListValue(`${base}.dst`, item.destinations.map(destination => destination.name), 'string'),
+        ...this.presentedListValue(`${base}.dport`, item.destinationPorts, 'string'),
+        ...this.presentedListValue(`${base}.features`, item.features, 'string'),
+        this.presentedValue(`${base}.nat`, item.nat),
+        this.presentedValue(`${base}.routing`, item.routing),
+        this.presentedValue(`${base}.tls_profile`, item.tlsProfile),
+        this.presentedValue(`${base}.ssh_profile`, item.sshProfile),
+        this.presentedValue(`${base}.detection_profile`, item.detectionProfile),
+        this.presentedValue(`${base}.content_profile`, item.contentProfile),
+        this.presentedValue(`${base}.auth_profile`, item.authProfile),
+        this.presentedValue(`${base}.alg_dns_profile`, item.dnsProfile),
+        this.presentedValue(`${base}.script_profile`, item.scriptProfile),
+      ];
+      return {item, name, action, matches: this.searchMatches(values, query)};
+    }).filter(item => item.matches);
+    const addresses = this.snapshot.addresses.map((item, index) => {
+      const base = `address_objects.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const type = this.presentedValue(`${base}.type`, item.type);
+      const value = this.presentedValue(`${base}.value`, item.value);
+      return {item, name, type, value, matches: this.searchMatches([name, type, value], query)};
+    }).filter(item => item.matches);
+    const ports = this.snapshot.ports.map((item, index) => {
+      const base = `port_objects.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const start = this.presentedValue(`${base}.start`, item.start);
+      const end = this.presentedValue(`${base}.end`, item.end);
+      return {item, name, start, end, matches: this.searchMatches([name, start, end], query)};
+    }).filter(item => item.matches);
+    const protocols = this.snapshot.protocols.map((item, index) => {
+      const base = `proto_objects.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const number = this.presentedValue(`${base}.id`, item.number);
+      return {item, name, number, matches: this.searchMatches([name, number], query)};
+    }).filter(item => item.matches);
+    const profilePrefixes = this.profileOriginPrefixes();
+    const profiles = this.snapshot.profiles.map(item => {
+      const prefix = profilePrefixes.get(item.id);
+      const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
+      return {item, name, matches: this.searchMatches([name, item.type], query)};
+    }).filter(item => item.matches);
     const count = policies.length + addresses.length + ports.length + protocols.length + profiles.length;
     const row = (kind: string, name: string, detail: string, open: (origin: HTMLElement) => void) => html`
       <button class="row object-row" type="button"
@@ -3406,19 +3518,19 @@ export class SmithproxyApp extends LitElement {
         ${count === 0 ? html`<div class="empty-state"><h2>No matches</h2><p>Try a name, type, value, action, or reference.</p></div>` : html`
           <div class="table" role="group" aria-label="Search results">
             <div class="row object-row heading" aria-hidden="true"><span>Name</span><span>Kind</span><span>Match context</span><span></span></div>
-            ${policies.map(item => row('Policy', item.name, item.action, origin => this.openPolicy(item, origin)))}
-            ${addresses.map(item => row('Address', item.name, `${item.type} · ${item.value}`, origin => this.openAddress(item.id, origin)))}
-            ${ports.map(item => row('Port', item.name, item.start === item.end ? String(item.start) : `${item.start}–${item.end}`, origin => this.openPort(item.id, origin)))}
-            ${protocols.map(item => row('Protocol', item.name, String(item.number), origin => this.openProtocol(item.id, origin)))}
-            ${profiles.map(item => row('Profile', item.name, item.type, origin => this.openProfile(item.id, origin)))}
+            ${policies.map(result => row('Policy', result.name, result.action, origin => this.openPolicy(result.item, origin)))}
+            ${addresses.map(result => row('Address', result.name, `${result.type} · ${result.value}`, origin => this.openAddress(result.item.id, origin)))}
+            ${ports.map(result => row('Port', result.name, result.start === result.end ? String(result.start) : `${result.start}–${result.end}`, origin => this.openPort(result.item.id, origin)))}
+            ${protocols.map(result => row('Protocol', result.name, String(result.number), origin => this.openProtocol(result.item.id, origin)))}
+            ${profiles.map(result => row('Profile', result.name, result.item.type, origin => this.openProfile(result.item.id, origin)))}
           </div>`}
       </div>`;
   }
 
-  private referenceSummary(references: PolicySummary['sources']): string {
-    if (references.length === 0) return 'None';
-    const [first, ...rest] = references;
-    return `${first!.name}${rest.length > 0 ? ` +${rest.length}` : ''}`;
+  private referenceNameSummary(names: ReadonlyArray<string>): string {
+    if (names.length === 0) return 'None';
+    const [first, ...rest] = names;
+    return `${first!}${rest.length > 0 ? ` +${rest.length}` : ''}`;
   }
 
   private renderObjects() {
@@ -3441,15 +3553,16 @@ export class SmithproxyApp extends LitElement {
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.addresses.map((address, index) => html`
-              <button class="row object-row" type="button"
+            ${this.snapshot?.addresses.map((address, index) => {
+              const base = `address_objects.[${index}]`;
+              return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
-                <strong>${address.name}</strong>
-                <span class="action">${address.type}</span>
-                <span class="object-value">${address.value}</span>
-                <span class="row-meta"><span>${address.usedBy.length}</span>${this.renderOverlayBadge(`address_objects.[${index}].`, overlayCounts)}</span>
-              </button>
-            `)}
+                <strong>${this.presentedValue(`${base}.name`, address.name)}</strong>
+                <span class="action">${this.presentedValue(`${base}.type`, address.type)}</span>
+                <span class="object-value">${this.presentedValue(`${base}.value`, address.value)}</span>
+                <span class="row-meta"><span>${address.usedBy.length}</span>${this.renderPendingBadge('address', address.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
+              </button>`;
+            })}
           </div>
         </section>
         <section class="object-section">
@@ -3458,14 +3571,17 @@ export class SmithproxyApp extends LitElement {
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.ports.map((port, index) => html`
-              <button class="row object-row" type="button"
+            ${this.snapshot?.ports.map((port, index) => {
+              const base = `port_objects.[${index}]`;
+              const start = this.presentedValue(`${base}.start`, port.start);
+              const end = this.presentedValue(`${base}.end`, port.end);
+              return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openPort(port.id, event.currentTarget as HTMLElement)}>
-                <strong>${port.name}</strong><span>Port range</span>
-                <span class="object-value">${port.start === port.end ? port.start : `${port.start}–${port.end}`}</span>
-                <span class="row-meta"><span>${port.usedBy.length}</span>${this.renderOverlayBadge(`port_objects.[${index}].`, overlayCounts)}</span>
-              </button>
-            `)}
+                <strong>${this.presentedValue(`${base}.name`, port.name)}</strong><span>Port range</span>
+                <span class="object-value">${start === end ? start : `${start}–${end}`}</span>
+                <span class="row-meta"><span>${port.usedBy.length}</span>${this.renderPendingBadge('port', port.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
+              </button>`;
+            })}
           </div>
         </section>
         <section class="object-section">
@@ -3474,14 +3590,15 @@ export class SmithproxyApp extends LitElement {
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.protocols.map((protocol, index) => html`
-              <button class="row object-row" type="button"
+            ${this.snapshot?.protocols.map((protocol, index) => {
+              const base = `proto_objects.[${index}]`;
+              return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
-                <strong>${protocol.name}</strong><span>IP protocol</span>
-                <span class="object-value">${protocol.number}</span>
-                <span class="row-meta"><span>${protocol.usedBy.length}</span>${this.renderOverlayBadge(`proto_objects.[${index}].`, overlayCounts)}</span>
-              </button>
-            `)}
+                <strong>${this.presentedValue(`${base}.name`, protocol.name)}</strong><span>IP protocol</span>
+                <span class="object-value">${this.presentedValue(`${base}.id`, protocol.number)}</span>
+                <span class="row-meta"><span>${protocol.usedBy.length}</span>${this.renderPendingBadge('protocol', protocol.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
+              </button>`;
+            })}
           </div>
         </section>
         <section class="object-section">
@@ -3490,16 +3607,18 @@ export class SmithproxyApp extends LitElement {
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value exposure</span><span>Uses</span>
             </div>
-            ${this.snapshot?.profiles.map(profile => html`
-              <button class="row object-row" type="button"
+            ${this.snapshot?.profiles.map(profile => {
+              const prefix = profilePrefixes.get(profile.id);
+              const name = prefix ? this.presentedValue(`${prefix}name`, profile.name) : profile.name;
+              return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
-                <strong>${profile.name}</strong><span class="action">${profile.type}</span>
+                <strong>${name}</strong><span class="action">${profile.type}</span>
                 <span class="row-meta"><span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh ||
                   profile.dns || profile.script || profile.authentication
-                  ? 'Typed details' : 'Metadata only'}</span>${this.renderOverlayBadge(profilePrefixes.get(profile.id), overlayCounts)}</span>
+                  ? 'Typed details' : 'Metadata only'}</span>${this.renderPendingBadge('profile', profile.id)}${this.renderOverlayBadge(prefix, overlayCounts)}</span>
                 <span>${profile.usedBy.length}</span>
-              </button>
-            `)}
+              </button>`;
+            })}
           </div>
         </section>
       </div>
@@ -5808,6 +5927,11 @@ export class SmithproxyApp extends LitElement {
     return html`<span class="overlay-badge" title="${count} persistent ${count === 1 ? 'field is' : 'fields are'} overridden by an active augment">
       ${count} overridden
     </span>`;
+  }
+
+  private renderPendingBadge(kind: DrawerEntry['kind'], id: string) {
+    if (!this.draftObjects.has(`${kind}:${id}`)) return nothing;
+    return html`<span class="pending-badge" title="This row includes pending workspace draft values">Pending</span>`;
   }
 
   private renderAugmentOrigins(entry: DrawerEntry) {

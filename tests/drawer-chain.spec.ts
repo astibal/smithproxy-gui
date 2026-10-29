@@ -997,7 +997,7 @@ test('rehydrates pending scalar and reference values when an editor is reopened'
   })).toBeVisible();
   await page.getByRole('button', {name: 'Edit policy.[0].name'}).click();
 
-  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const editor = page.getByRole('dialog', {name: 'Edit Pending office policy'});
   await expect(editor.getByLabel('Name', {exact: true})).toHaveValue('Pending office policy');
   await expect(editor.getByLabel('Action')).toHaveValue('reject');
   await expect(editor.getByLabel('Destinations')).toHaveValue('office');
@@ -1021,7 +1021,7 @@ test('atomically removes only the active editor changes from the workspace draft
   await page.getByRole('button', {name: 'Review draft · 3'}).click();
   await page.getByRole('button', {name: 'Edit policy.[0].name'}).click();
 
-  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const editor = page.getByRole('dialog', {name: 'Edit Pending office policy'});
   await expect(editor.getByLabel('Name', {exact: true})).toHaveValue('Pending office policy');
   await editor.getByRole('button', {name: 'Remove 2 draft changes'}).click();
   const confirm = editor.getByRole('button', {name: 'Confirm remove 2 draft changes'});
@@ -1038,6 +1038,50 @@ test('atomically removes only the active editor changes from the workspace draft
     keys: ['expected_version', 'paths'],
     csrf: '1',
   }]);
+});
+
+test('shows pending policy and object values in their configuration lists', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    initialDraftChanges: [
+      {path: 'policy.[0].name', value: 'Pending policy'},
+      {path: 'policy.[0].dst', value: ['office']},
+      {path: 'policy.[0].action', value: 'reject'},
+      {path: 'policy.[0].disabled', value: true},
+      {path: 'address_objects.[0].name', value: 'pending-office'},
+      {path: 'address_objects.[0].type', value: 'fqdn'},
+      {path: 'address_objects.[0].value', value: 'pending.example'},
+      {path: 'port_objects.[0].name', value: 'pending-https'},
+      {path: 'port_objects.[0].start', value: 8443},
+      {path: 'port_objects.[0].end', value: 9443},
+      {path: 'proto_objects.[0].name', value: 'pending-tcp'},
+      {path: 'proto_objects.[0].id', value: 17},
+      {path: 'routing.[0].name', value: 'pending-main'},
+    ],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  const policies = page.getByRole('group', {name: 'Policies'});
+  await expect(policies.getByRole('button', {name: /Pending policy office office reject Disabled Pending/i}))
+    .toBeVisible();
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await expect(page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button', {name: /pending-office fqdn pending.example .* Pending/i})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Port objects'})
+    .getByRole('button', {name: /pending-https Port range 8443–9443 .* Pending/i})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Protocol objects'})
+    .getByRole('button', {name: /pending-tcp IP protocol 17 .* Pending/i})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /pending-main routing Typed details Pending/i})).toBeVisible();
+
+  const search = page.getByRole('searchbox', {name: 'Search'});
+  await search.fill('Pending policy');
+  await expect(page.getByRole('group', {name: 'Search results'})
+    .getByRole('button', {name: /Pending policy Policy reject/i})).toBeVisible();
+  await search.fill('pending.example');
+  await expect(page.getByRole('group', {name: 'Search results'})
+    .getByRole('button', {name: /pending-office Address fqdn · pending.example/i})).toBeVisible();
 });
 
 test('requires bound validation and explicit confirmation before atomic commit', async ({page}) => {
@@ -1810,8 +1854,8 @@ test('clears draft state without discarding live config when draft capability is
   await expect(statusbar).toContainText('Config: Ready');
   await expect(statusbar).toContainText('Draft: 1 changes');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  const policy = page.getByRole('button', {name: /Policy 1 office internet accept/i});
-  await policy.click();
+  const pendingPolicy = page.getByRole('button', {name: /Policy 1 office internet reject/i});
+  await pendingPolicy.click();
   await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
 
   state.disabledConfigurationFeatures = ['drafts', 'draft_preflight'];
@@ -1820,7 +1864,7 @@ test('clears draft state without discarding live config when draft capability is
   await expect(statusbar).toContainText('Config: Ready');
   await expect(statusbar).toContainText('Draft: 0 changes');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(policy).toBeVisible();
+  await expect(page.getByRole('button', {name: /Policy 1 office internet accept/i})).toBeVisible();
 });
 
 test('rejects management capabilities that contradict the gateway session', async ({page}) => {
