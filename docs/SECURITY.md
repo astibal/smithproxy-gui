@@ -113,6 +113,10 @@ workspace draft. The legacy multi-section reader synthesizes display IDs from
 indexes and therefore can never enable structural writes. Removing a retained
 structural operation remains available after capability loss so an operator can
 always recover or discard the draft.
+The browser consumes one explicit `structural_drafts` feature bit and rejects it
+unless configuration writes and drafts are also enabled. The GUI core computes
+the bit only for an authenticated gateway request after safely binding an empty
+draft; an unauthenticated capability request cannot mutate the draft version.
 
 Canonical revision acquisition is also fail-closed. The core accepts only an
 exact `sha256:` prefix followed by 64 lowercase hexadecimal characters in a

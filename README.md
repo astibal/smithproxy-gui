@@ -199,6 +199,11 @@ snapshot reader because its display IDs are index-derived; activation requires
 an exact reviewed collection schema and opaque stable entity IDs bound to the
 draft revision. The review surface already counts, displays, removes, validates,
 and commits scalar and structural operations as one transaction.
+When the core advertises `structural_drafts`, the Objects view enables a typed
+right-side address-object creation drawer. It rejects duplicate names locally,
+stores the create operation under optimistic draft concurrency, and reopens the
+pending object from draft review. Current legacy deployments keep the control
+disabled because their snapshot IDs are not stable.
 
 Control-plane health and listener monitoring use the production C++ backend. A
 bounded five-minute runtime history visualizes active sessions and aggregate

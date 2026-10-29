@@ -184,10 +184,14 @@ The core accepts structural writes only while Smithproxy advertises the exact
 reviewed collection schema and compatible nesting and ordering semantics, and
 the current configuration snapshot carries opaque stable entity IDs bound to
 the draft base revision. IDs synthesized by the legacy multi-section reader are
-never accepted for structural operations. A capability loss blocks new structural writes but never
-blocks removing or discarding an already retained operation. Draft snapshots
+never accepted for structural operations. A capability loss blocks new
+structural writes but never blocks removing or discarding an already retained
+operation. Draft snapshots
 return structural operations with the same write-only redaction rules as scalar
 changes, and preflight counts each structural operation exactly once.
+Capability discovery exposes this complete conjunction as
+`features.structural_drafts`; the browser never infers structural readiness from
+`config_write` alone.
 An editor can atomically reconcile one bounded `changes` batch with a disjoint
 `remove_paths` array through `POST /api/v1/config/draft/changes`. This keeps a
 field restored to its persistent value from passing through a transient set

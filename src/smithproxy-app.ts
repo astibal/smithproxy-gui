@@ -6,6 +6,7 @@ import {
   draftOperationCount,
   type DraftChange,
   type DraftCommit,
+  type DraftCreateOperation,
   type DraftPreflight,
   type DraftScalar,
   type DraftSnapshot,
@@ -270,6 +271,7 @@ export class SmithproxyApp extends LitElement {
   @state() private focusMode = false;
   @state() private configReadAvailable = false;
   @state() private configWriteAvailable = false;
+  @state() private structuralDraftsAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftPreflightAvailable = false;
   @state() private jobsAvailable = false;
@@ -1196,20 +1198,24 @@ export class SmithproxyApp extends LitElement {
       const draftWasAvailable = this.draftAvailable;
       const configReadWasAvailable = this.configReadAvailable;
       const configWriteWasAvailable = this.configWriteAvailable;
+      const structuralDraftsWereAvailable = this.structuralDraftsAvailable;
       const draftPreflightWasAvailable = this.draftPreflightAvailable;
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
+      const nextStructuralDraftsAvailable = capabilities.features.structuralDrafts;
       const nextDraftAvailable = capabilities.features.drafts;
       const nextDraftPreflightAvailable = capabilities.features.draftPreflight;
       const configurationCapabilitiesChanged =
         nextConfigReadAvailable !== configReadWasAvailable ||
         nextConfigWriteAvailable !== configWriteWasAvailable ||
+        nextStructuralDraftsAvailable !== structuralDraftsWereAvailable ||
         nextDraftAvailable !== draftWasAvailable ||
         nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
       this.transactionCapabilityState = capabilities.transactionState;
       this.configReadAvailable = nextConfigReadAvailable;
       this.configWriteAvailable = nextConfigWriteAvailable;
+      this.structuralDraftsAvailable = nextStructuralDraftsAvailable;
       this.draftAvailable = nextDraftAvailable;
       this.draftPreflightAvailable = nextDraftPreflightAvailable;
       if (configurationCapabilitiesChanged) this.configurationAccessEpoch += 1;
@@ -1247,6 +1253,7 @@ export class SmithproxyApp extends LitElement {
       }
       this.configRefreshDeferred = false;
       this.configWriteAvailable = false;
+      this.structuralDraftsAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
       this.updateMonitoringCapabilities(undefined);
@@ -1590,6 +1597,11 @@ export class SmithproxyApp extends LitElement {
       if (change.path.startsWith('debug.')) objects.add('settings:settings');
       if (change.path.startsWith('captures.')) objects.add('captures:captures');
     }
+    for (const operation of snapshot.structuralOperations) {
+      if (operation.op === 'create' && operation.collection === 'address_objects') {
+        objects.add(`address-create:${operation.localId}`);
+      }
+    }
     this.draftObjects = objects;
   }
 
@@ -1865,6 +1877,16 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private openDraftStructuralOperation(localId: string, origin: HTMLElement): void {
+    const operation = this.workspaceDraft?.structuralOperations.find(item => item.localId === localId);
+    if (operation?.op !== 'create' || operation.collection !== 'address_objects') return;
+    this.openObjectDrawer({
+      kind: 'address-create',
+      id: operation.localId,
+      title: String(operation.fields['name'] ?? 'New address object'),
+    }, origin);
+  }
+
   private draftPathsForDrawer(entry: Pick<DrawerEntry, 'kind' | 'id'>): ReadonlyArray<string> {
     const key = this.drawerKey(entry);
     return (this.workspaceDraft?.changes ?? [])
@@ -2000,6 +2022,14 @@ export class SmithproxyApp extends LitElement {
     const address = this.snapshot?.addresses.find(item => item.id === id);
     if (!address) return;
     this.openObjectDrawer({kind: 'address', id: address.id, title: this.addressDisplayName(address)}, origin);
+  }
+
+  private openNewAddress(origin?: HTMLElement): void {
+    if (!this.structuralDraftsAvailable) return;
+    const localId = `create-address-${crypto.randomUUID()}`;
+    this.openObjectDrawer({
+      kind: 'address-create', id: localId, title: 'New address object',
+    }, origin);
   }
 
   private openPort(id: string, origin?: HTMLElement): void {
@@ -2275,6 +2305,14 @@ export class SmithproxyApp extends LitElement {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'policy') return this.snapshot.policies.find(item => item.id === entry.id);
     if (entry.kind === 'address') return this.snapshot.addresses.find(item => item.id === entry.id);
+    if (entry.kind === 'address-create') {
+      const operation = this.workspaceDraft?.structuralOperations.find(
+        item => item.op === 'create' && item.collection === 'address_objects' && item.localId === entry.id,
+      );
+      return operation?.op === 'create'
+        ? {id: operation.localId, name: String(operation.fields['name'] ?? 'New address object')}
+        : undefined;
+    }
     if (entry.kind === 'port') return this.snapshot.ports.find(item => item.id === entry.id);
     if (entry.kind === 'protocol') return this.snapshot.protocols.find(item => item.id === entry.id);
     if (entry.kind === 'settings' && entry.id === 'settings' && this.snapshot.settings) {
@@ -2312,7 +2350,69 @@ export class SmithproxyApp extends LitElement {
     (target ?? active)?.focus();
   }
 
+  private async saveAddressCreate(entry: DrawerEntry): Promise<void> {
+    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#address-create-name-${entry.id}`);
+    const typeInput = this.renderRoot.querySelector<HTMLSelectElement>(`#address-create-type-${entry.id}`);
+    const valueInput = this.renderRoot.querySelector<HTMLInputElement>(`#address-create-value-${entry.id}`);
+    const name = nameInput?.value.trim() ?? '';
+    const type = typeInput?.value ?? '';
+    const value = valueInput?.value.trim() ?? '';
+    const addressTypes = new Set(['cidr', 'fqdn', 'host', 'subnet', 'range']);
+    if (name.length === 0 || name.length > 128 || value.length === 0 || value.length > 1024 ||
+        !addressTypes.has(type)) {
+      this.drawerError = 'Name, type, and address are required and must fit the configuration limits.';
+      return;
+    }
+    const duplicateLive = this.snapshot?.addresses.some(address =>
+      address.name === name || this.addressDisplayName(address) === name);
+    const duplicateDraft = this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'create' && operation.collection === 'address_objects' &&
+      operation.localId !== entry.id && operation.fields['name'] === name);
+    if (duplicateLive || duplicateDraft) {
+      this.drawerError = 'An address object with this name already exists.';
+      return;
+    }
+    const existing = this.pendingAddressCreate(entry);
+    if (existing?.fields['name'] === name && existing.fields['type'] === type &&
+        existing.fields['value'] === value) {
+      this.drawerError = undefined;
+      this.markDrawerSaved(entry);
+      return;
+    }
+    this.draftSaving = true;
+    this.drawerError = undefined;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create',
+        localId: entry.id,
+        collection: 'address_objects',
+        clientId: entry.id,
+        parentId: null,
+        position: {kind: 'last', reference: null},
+        fields: {name, type, value},
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.markDrawerSaved(entry);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Address object could not be added to the draft.';
+      await this.loadDraft();
+      this.drawerError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private async saveToDraft(entry: DrawerEntry): Promise<void> {
+    if (entry.kind === 'address-create') {
+      await this.saveAddressCreate(entry);
+      return;
+    }
     if (this.snapshot?.source !== 'live') {
       this.draftObjects = new Set(this.draftObjects).add(`${entry.kind}:${entry.id}`);
       this.draftChangeCount = this.draftObjects.size;
@@ -3644,10 +3744,18 @@ export class SmithproxyApp extends LitElement {
                 </span>
                 <span class="draft-value" role="cell">
                   ${operation.op === 'create'
-                    ? `${operation.clientId} · ${Object.keys(operation.fields).length} fields`
+                    ? `${typeof operation.fields['name'] === 'string'
+                      ? operation.fields['name'] : operation.clientId} · ${Object.keys(operation.fields).length} fields`
                     : operation.entityId}
                 </span>
                 <span class="draft-actions" role="cell">
+                  ${operation.op === 'create' && operation.collection === 'address_objects' ? html`
+                    <button class="secondary" type="button"
+                      ?disabled=${!this.structuralDraftsAvailable}
+                      @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                        operation.localId, event.currentTarget as HTMLElement,
+                      )}>Edit</button>
+                  ` : nothing}
                   <button class="secondary" type="button"
                     aria-label=${`Remove ${operation.op} operation ${operation.localId} from draft`}
                     ?disabled=${this.draftSaving || this.draftValidating || this.draftCommitting}
@@ -4105,10 +4213,14 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Configuration objects</h2><p>Reusable values referenced by policy</p></div>
           <div class="structural-action">
-            <button class="primary" type="button" disabled aria-describedby="new-address-blocker">
+            <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              aria-describedby="new-address-blocker"
+              @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>
               New address object
             </button>
-            <small id="new-address-blocker">Requires the reviewed structural transaction API.</small>
+            <small id="new-address-blocker">${this.structuralDraftsAvailable
+              ? 'Creates one operation in the shared workspace draft.'
+              : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
         </div>
         <section class="object-section">
@@ -5565,6 +5677,41 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private pendingAddressCreate(entry: DrawerEntry): DraftCreateOperation | undefined {
+    const operation = this.workspaceDraft?.structuralOperations.find(
+      item => item.op === 'create' && item.collection === 'address_objects' && item.localId === entry.id,
+    );
+    return operation?.op === 'create' ? operation : undefined;
+  }
+
+  private renderAddressCreateEditor(entry: DrawerEntry) {
+    const operation = this.pendingAddressCreate(entry);
+    const field = (name: string, fallback: DraftScalar): DraftScalar => operation?.fields[name] ?? fallback;
+    const name = String(field('name', ''));
+    const type = String(field('type', 'cidr'));
+    const value = String(field('value', ''));
+    const readOnly = !this.structuralDraftsAvailable;
+    return html`
+      <div class="form-grid">
+        <label for="address-create-name-${entry.id}">Name</label>
+        <input id="address-create-name-${entry.id}" .value=${name} maxlength="128" required
+          autocomplete="off" .readOnly=${readOnly} />
+        <label for="address-create-type-${entry.id}">Type</label>
+        <select id="address-create-type-${entry.id}" .value=${type} ?disabled=${readOnly}>
+          <option value="cidr">CIDR</option><option value="fqdn">FQDN</option>
+          <option value="host">Host</option><option value="subnet">Subnet</option>
+          <option value="range">Range</option>
+        </select>
+        <label for="address-create-value-${entry.id}">Address</label>
+        <input id="address-create-value-${entry.id}" .value=${value} maxlength="1024" required
+          autocomplete="off" .readOnly=${readOnly} />
+      </div>
+      <div class="impact">
+        The new object is retained only in the workspace draft until Smithproxy validates and commits the transaction.
+      </div>
+    `;
+  }
+
   private renderPortEditor(entry: DrawerEntry) {
     const port = this.snapshot?.ports.find(item => item.id === entry.id);
     if (!port) return nothing;
@@ -6629,6 +6776,7 @@ export class SmithproxyApp extends LitElement {
   private renderDrawerBody(entry: DrawerEntry) {
     if (entry.kind === 'policy') return this.renderPolicyEditor(entry);
     if (entry.kind === 'address') return this.renderAddressEditor(entry);
+    if (entry.kind === 'address-create') return this.renderAddressCreateEditor(entry);
     if (entry.kind === 'port') return this.renderPortEditor(entry);
     if (entry.kind === 'protocol') return this.renderProtocolEditor(entry);
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
@@ -6642,7 +6790,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderDrawer(entry: DrawerEntry, index: number) {
     const saved = this.draftObjects.has(`${entry.kind}:${entry.id}`);
-    const editLabel = `Edit ${entry.title}`;
+    const editLabel = entry.kind === 'address-create' ? 'Create address object' : `Edit ${entry.title}`;
     const closeLabel = `Close ${entry.title}`;
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
@@ -6658,8 +6806,10 @@ export class SmithproxyApp extends LitElement {
       profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns ||
       profile?.script || profile?.authentication,
     );
-    const draftable = this.snapshot?.source !== 'live' ||
-      (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
+    const draftable = entry.kind === 'address-create'
+      ? this.structuralDraftsAvailable
+      : this.snapshot?.source !== 'live' ||
+        (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
     const readOnly = !draftable;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
     const drawerDraftPaths = this.draftPathsForDrawer(entry);
@@ -6673,7 +6823,8 @@ export class SmithproxyApp extends LitElement {
         @input=${(event: Event) => this.markDrawerDirty(entry, event)}
         @change=${(event: Event) => this.markDrawerDirty(entry, event)}>
         <header class="drawer-head">
-          <div class="drawer-title"><small>Edit ${entry.kind}</small><h2>${entry.title}</h2></div>
+          <div class="drawer-title"><small>${entry.kind === 'address-create'
+            ? 'Create address object' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}

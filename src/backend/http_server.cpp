@@ -961,20 +961,26 @@ private:
                     ",\"checked_at_unix_ms\":" + timestamp_json(status.checked_at) + "}}"};
     }
 
-    Response capabilities(MHD_Connection* connection) const {
-        const auto status = monitor_.status();
+    Response capabilities(MHD_Connection* connection) {
         const bool config_read = monitor_.config_enabled() && gateway_authenticated(connection);
+        if (config_read) bind_empty_draft_revision();
+        const auto status = monitor_.status();
         const bool monitoring = management_authenticated(connection);
         const auto transaction_state = config_read
             ? status.transaction_capabilities.state
             : std::string{"unavailable"};
         const bool config_write = config_read && transaction_state == "ready";
+        const auto draft = draft_.snapshot();
+        const bool structural_drafts = config_write && status.config_snapshot.stable_entity_ids &&
+            status.config_snapshot.revision && draft.base_revision &&
+            *status.config_snapshot.revision == *draft.base_revision;
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
                     ",\"config_transaction_state\":" + json_string(transaction_state) +
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":" + (config_write ? "true" : "false") +
+                    ",\"structural_drafts\":" + (structural_drafts ? "true" : "false") +
                     ",\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"draft_preflight\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":" + (monitoring ? "true" : "false") +

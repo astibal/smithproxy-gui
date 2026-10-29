@@ -1,5 +1,5 @@
 export type DrawerKind =
-  'policy' | 'address' | 'port' | 'protocol' | 'profile' | 'settings' | 'captures' | 'authority' |
+  'policy' | 'address' | 'address-create' | 'port' | 'protocol' | 'profile' | 'settings' | 'captures' | 'authority' |
   'signature' | 'signature-flow' | 'content-rule';
 
 export interface DrawerEntry {

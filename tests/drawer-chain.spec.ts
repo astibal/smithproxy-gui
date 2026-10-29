@@ -90,8 +90,14 @@ type MockState = {
     localId: string;
     csrf: string | null;
   }>;
+  structuralMutationRequests?: Array<{
+    expectedVersion: number;
+    operation: Record<string, unknown>;
+    csrf: string | null;
+  }>;
   validationReady?: boolean;
   commitReady?: boolean;
+  structuralDraftsReady?: boolean;
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   commitRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   validationOperationDelta?: number;
@@ -147,6 +153,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     const featureFlags = {
       config_read: configuration,
       config_write: Boolean(state.commitReady) && configurationFeature('config_write'),
+      structural_drafts: Boolean(state.structuralDraftsReady && state.commitReady) &&
+        configurationFeature('config_write'),
       drafts: configurationFeature('drafts'),
       draft_preflight: configurationFeature('draft_preflight'),
       jobs: monitoringFeature('jobs'),
@@ -458,6 +466,30 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       return;
     }
     draft = {...draft, version: draft.version + 1, changes: [], structural_operations: []};
+    await route.fulfill({json: draft});
+  });
+  await page.route('**/api/v1/config/draft/operations', async route => {
+    const request = route.request();
+    const body = request.postDataJSON() as {
+      expected_version: number;
+      operation: {local_id: string; [key: string]: unknown};
+    };
+    state.structuralMutationRequests?.push({
+      expectedVersion: body.expected_version,
+      operation: body.operation,
+      csrf: await request.headerValue('X-Smithproxy-GUI-CSRF'),
+    });
+    if (body.expected_version !== draft.version) {
+      await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
+      return;
+    }
+    const existing = draft.structural_operations.findIndex(
+      operation => operation.local_id === body.operation.local_id,
+    );
+    const operations = [...draft.structural_operations];
+    if (existing < 0) operations.push(body.operation as typeof operations[number]);
+    else operations[existing] = body.operation as typeof operations[number];
+    draft = {...draft, version: draft.version + 1, structural_operations: operations};
     await route.fulfill({json: draft});
   });
   await page.route('**/api/v1/config/draft/operations/remove', async route => {
@@ -1459,6 +1491,54 @@ test('reviews and removes a structural draft operation', async ({page}) => {
   expect(state.structuralRemovalRequests).toEqual([{
     expectedVersion: 1, localId: 'move-policy-1', csrf: '1',
   }]);
+});
+
+test('creates and reopens an address object through a structural drawer', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    validationReady: true,
+    commitReady: true,
+    structuralDraftsReady: true,
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const create = page.getByRole('button', {name: 'New address object'});
+  await expect(create).toBeEnabled();
+  await create.click();
+
+  let editor = page.getByRole('dialog', {name: 'Create address object'});
+  await editor.getByLabel('Name').fill('office');
+  await editor.getByLabel('Address', {exact: true}).fill('192.0.2.0/24');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('An address object with this name already exists.')).toBeVisible();
+  expect(state.structuralMutationRequests).toEqual([]);
+
+  await editor.getByLabel('Name').fill('branch-office');
+  await editor.getByLabel('Type').selectOption('cidr');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  const request = state.structuralMutationRequests![0]!;
+  expect(request.expectedVersion).toBe(0);
+  expect(request.csrf).toBe('1');
+  expect(request.operation).toMatchObject({
+    op: 'create', collection: 'address_objects', position: {last: true},
+    fields: {name: 'branch-office', type: 'cidr', value: '192.0.2.0/24'},
+  });
+  expect(request.operation.local_id).toMatch(/^create-address-[0-9a-f-]{36}$/u);
+  expect(request.operation.client_id).toBe(request.operation.local_id);
+
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  const table = page.getByRole('table', {name: 'Pending draft changes'});
+  await expect(table).toContainText('address_objects · create');
+  await expect(table).toContainText('branch-office');
+  await table.getByRole('button', {name: 'Edit'}).click();
+  editor = page.getByRole('dialog', {name: 'Create address object'});
+  await expect(editor.getByLabel('Name')).toHaveValue('branch-office');
+  await expect(editor.getByLabel('Address', {exact: true})).toHaveValue('192.0.2.0/24');
 });
 
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {
@@ -2529,7 +2609,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await expect(page.getByRole('button', {name: 'New address object'})).toBeDisabled();
-  await expect(page.getByText('Requires the reviewed structural transaction API.')).toBeVisible();
+  await expect(page.getByText('Requires reviewed structural transactions and stable entity IDs.')).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Protocol objects'})).toBeVisible();

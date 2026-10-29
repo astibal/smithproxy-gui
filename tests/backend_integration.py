@@ -415,6 +415,7 @@ def main() -> int:
         assert capabilities["config_transaction_state"] == "unavailable"
         assert capabilities["features"]["config_read"] is False
         assert capabilities["features"]["config_write"] is False
+        assert capabilities["features"]["structural_drafts"] is False
         assert capabilities["features"]["drafts"] is False
         assert capabilities["features"]["draft_preflight"] is False
         assert capabilities["features"]["jobs"] is True
@@ -908,6 +909,9 @@ def main() -> int:
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["draft_preflight"] is True
+            assert json.loads(request(
+                configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
+                "features"]["structural_drafts"] is False
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["metrics"] is True

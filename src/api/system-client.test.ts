@@ -27,7 +27,8 @@ describe('SystemClient', () => {
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
       config_transaction_state: 'not-advertised',
       features: {
-        config_read: false, config_write: false, drafts: false, draft_preflight: false,
+        config_read: false, config_write: false, structural_drafts: false,
+        drafts: false, draft_preflight: false,
         jobs: false, events: true, alerts: true, audit: true,
         smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
@@ -38,7 +39,7 @@ describe('SystemClient', () => {
 
     await expect(client.capabilities()).resolves.toMatchObject({
       apiVersion: 'v1', smithproxyState: 'unconfigured', transactionState: 'not-advertised',
-      features: {configWrite: false, drafts: false, draftPreflight: false, events: true,
+      features: {configWrite: false, structuralDrafts: false, drafts: false, draftPreflight: false, events: true,
         alerts: true, audit: true, smithproxyEvents: false, metrics: true},
     });
   });
@@ -47,7 +48,8 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'ready',
       features: {
-        config_read: false, config_write: false, drafts: true, draft_preflight: true,
+        config_read: false, config_write: false, structural_drafts: false,
+        drafts: true, draft_preflight: true,
         jobs: false, events: true, alerts: true, audit: true, smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
         interface_monitoring: true,
@@ -61,7 +63,8 @@ describe('SystemClient', () => {
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'ready',
       config_transaction_state: 'ready',
       features: {
-        config_read: true, config_write: true, drafts: true, draft_preflight: true,
+        config_read: true, config_write: true, structural_drafts: true,
+        drafts: true, draft_preflight: true,
         jobs: true, events: true, alerts: true, audit: true, smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
         interface_monitoring: true,
@@ -71,8 +74,14 @@ describe('SystemClient', () => {
     const client = (payload: unknown, basePath = '/') =>
       new SystemClient('/api/v1', basePath, async () => jsonResponse(payload));
 
+    await expect(client(capabilities()).capabilities()).resolves.toMatchObject({
+      transactionState: 'ready', features: {configWrite: true, structuralDrafts: true},
+    });
     await expect(client(capabilities({features: {
       ...capabilities().features, draft_preflight: false,
+    }})).capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
+    await expect(client(capabilities({features: {
+      ...capabilities().features, config_write: false, structural_drafts: true,
     }})).capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
     await expect(client(capabilities({config_transaction_state: 'review-required'}))
       .capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
@@ -92,7 +101,8 @@ describe('SystemClient', () => {
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'ready',
       config_transaction_state: 'optimistic',
       features: {
-        config_read: false, config_write: false, drafts: false, draft_preflight: false,
+        config_read: false, config_write: false, structural_drafts: false,
+        drafts: false, draft_preflight: false,
         jobs: false, events: true, alerts: true, audit: true, smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
         interface_monitoring: true,

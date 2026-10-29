@@ -7,7 +7,7 @@ export interface DrawerRouteEntry {
 
 const safeIdentifier = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u;
 const drawerKinds = new Set<DrawerKind>([
-  'policy', 'address', 'port', 'protocol', 'profile', 'settings', 'captures', 'authority',
+  'policy', 'address', 'address-create', 'port', 'protocol', 'profile', 'settings', 'captures', 'authority',
   'signature', 'signature-flow',
   'content-rule',
 ]);

@@ -38,6 +38,7 @@ export interface SystemCapabilities {
   features: {
     configRead: boolean;
     configWrite: boolean;
+    structuralDrafts: boolean;
     drafts: boolean;
     draftPreflight: boolean;
     jobs: boolean;
@@ -384,6 +385,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   if (basePath !== value.base_path) throw new Error('Capability base path must be canonical.');
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
+      typeof features.structural_drafts !== 'boolean' ||
       typeof features.drafts !== 'boolean' || typeof features.draft_preflight !== 'boolean' ||
       typeof features.jobs !== 'boolean' ||
       typeof features.events !== 'boolean' || typeof features.alerts !== 'boolean' ||
@@ -402,6 +404,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
        (features.config_write || features.drafts || features.draft_preflight)) ||
       (features.config_write && (!features.drafts || !features.draft_preflight ||
         transactionState !== 'ready')) ||
+      (features.structural_drafts && (!features.config_write || !features.drafts)) ||
       (features.draft_preflight && !features.drafts)) {
     throw new Error('Inconsistent privileged capabilities.');
   }
@@ -417,6 +420,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
     features: {
       configRead: features.config_read,
       configWrite: features.config_write,
+      structuralDrafts: features.structural_drafts,
       drafts: features.drafts,
       draftPreflight: features.draft_preflight,
       jobs: features.jobs,
