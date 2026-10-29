@@ -85,6 +85,22 @@ describe('DraftClient', () => {
     await expect(client.remove(4, '../unsafe')).rejects.toThrow('Invalid draft path');
   });
 
+  it('removes a bounded unique path group atomically', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      id: 'workspace-draft', base_revision: null, version: 5, changes: [],
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+    const paths = ['policy.[0].name', 'policy.[0].action'];
+    await expect(client.removeMany(4, paths)).resolves.toMatchObject({version: 5, changes: []});
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/draft/changes/remove', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({expected_version: 4, paths}),
+      headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+    }));
+    await expect(client.removeMany(5, [])).rejects.toThrow('Invalid draft paths');
+    await expect(client.removeMany(5, [paths[0]!, paths[0]!])).rejects.toThrow('Invalid draft path');
+  });
+
   it('loads a bounded redacted preflight impact summary', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       source: 'gui-core', draft_id: 'workspace-draft', draft_version: 7,

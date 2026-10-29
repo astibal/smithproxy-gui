@@ -100,6 +100,8 @@ samostatnými povinnými důkazy.
 
 Jednotlivé odebrání draft změny je testováno přes browser klienta, HTTP boundary
 i workspace review UI včetně stale-version konfliktu a value-free auditu.
+Skupinové odebrání změn editoru navíc ověřuje all-or-nothing chování, duplicity,
+chybějící cesty, audit targets a zachování změn ostatních editorů.
 
 Deterministický robustness corpus mutuje validní JSON obálky, libovolné bajtové
 payloady, schema cesty a všechny podporované varianty draft hodnot. Každý běh

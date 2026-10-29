@@ -73,6 +73,12 @@ type MockState = {
   draftLoadDelayMs?: number;
   conflictNextDraftWrite?: boolean;
   draftMutationVersions?: number[];
+  draftRemovalRequests?: Array<{
+    expectedVersion: number;
+    paths: string[];
+    keys: string[];
+    csrf: string | null;
+  }>;
   validationReady?: boolean;
   commitReady?: boolean;
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
@@ -428,19 +434,31 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     await route.fulfill({json: draft});
   });
   await page.route('**/api/v1/config/draft/changes/remove', async route => {
-    const body = route.request().postDataJSON() as {expected_version: number; path: string};
+    const request = route.request();
+    const body = request.postDataJSON() as {
+      expected_version: number;
+      path?: string;
+      paths?: string[];
+    };
+    const paths = body.paths ?? (body.path ? [body.path] : []);
+    state.draftRemovalRequests?.push({
+      expectedVersion: body.expected_version,
+      paths,
+      keys: Object.keys(body).sort(),
+      csrf: await request.headerValue('X-Smithproxy-GUI-CSRF'),
+    });
     if (body.expected_version !== draft.version) {
       await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
       return;
     }
-    if (!draft.changes.some(change => change.path === body.path)) {
+    if (paths.length === 0 || paths.some(path => !draft.changes.some(change => change.path === path))) {
       await route.fulfill({status: 404, json: {error: 'draft change not found'}});
       return;
     }
     draft = {
       ...draft,
       version: draft.version + 1,
-      changes: draft.changes.filter(change => change.path !== body.path),
+      changes: draft.changes.filter(change => !paths.includes(change.path)),
     };
     await route.fulfill({json: draft});
   });
@@ -986,6 +1004,40 @@ test('rehydrates pending scalar and reference values when an editor is reopened'
   await expect(editor.getByLabel('Source ports')).toHaveValue('https');
   await expect(editor.getByLabel('Destinations').locator('..').getByRole('button', {name: /office/i})).toBeVisible();
   await expect(editor.getByLabel('Source ports').locator('..').getByRole('button', {name: /https/i})).toBeVisible();
+});
+
+test('atomically removes only the active editor changes from the workspace draft', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    draftRemovalRequests: [],
+    initialDraftChanges: [
+      {path: 'policy.[0].name', value: 'Pending office policy'},
+      {path: 'policy.[0].action', value: 'reject'},
+      {path: 'settings.policy_fail_open', value: true},
+    ],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 3'}).click();
+  await page.getByRole('button', {name: 'Edit policy.[0].name'}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(editor.getByLabel('Name', {exact: true})).toHaveValue('Pending office policy');
+  await editor.getByRole('button', {name: 'Remove 2 draft changes'}).click();
+  const confirm = editor.getByRole('button', {name: 'Confirm remove 2 draft changes'});
+  await expect(confirm).toBeVisible();
+  await confirm.click();
+
+  await expect(page.getByText('Draft: 1 change')).toBeVisible();
+  await expect(editor.getByLabel('Name', {exact: true})).toHaveValue('Policy 1');
+  await expect(editor.getByLabel('Action')).toHaveValue('accept');
+  await expect(editor.getByRole('button', {name: /remove .* draft change/i})).toHaveCount(0);
+  expect(state.draftRemovalRequests).toEqual([{
+    expectedVersion: 1,
+    paths: ['policy.[0].name', 'policy.[0].action'],
+    keys: ['expected_version', 'paths'],
+    csrf: '1',
+  }]);
 });
 
 test('requires bound validation and explicit confirmation before atomic commit', async ({page}) => {

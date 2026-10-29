@@ -348,6 +348,23 @@ export class DraftClient {
     }));
   }
 
+  async removeMany(expectedVersion: number, paths: ReadonlyArray<string>): Promise<DraftSnapshot> {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid draft version.');
+    if (paths.length === 0 || paths.length > 4096) throw new Error('Invalid draft paths.');
+    const unique = new Set<string>();
+    for (const path of paths) {
+      if (path.length === 0 || path.length > 512 || !/^[A-Za-z0-9_.\[\]-]+$/u.test(path) || unique.has(path)) {
+        throw new Error('Invalid draft path.');
+      }
+      unique.add(path);
+    }
+    return parseDraft(await this.#request(`${this.#endpoint}/changes/remove`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Smithproxy-GUI-CSRF': '1'},
+      body: JSON.stringify({expected_version: expectedVersion, paths}),
+    }));
+  }
+
   async clear(expectedVersion: number): Promise<DraftSnapshot> {
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid draft version.');
     return parseDraft(await this.#request(`${this.#endpoint}/clear`, {

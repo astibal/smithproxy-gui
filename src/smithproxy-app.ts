@@ -283,6 +283,7 @@ export class SmithproxyApp extends LitElement {
   @state() private draftCommitArmed = false;
   @state() private draftCommitError: string | undefined;
   @state() private draftCommitResult: DraftCommit | undefined;
+  @state() private draftRemovalArmedKey: string | undefined;
   @state() private drawerError: string | undefined;
   @state() private dirtyDrawerKeys = new Set<string>();
   @state() private pendingCloseIndex: number | undefined;
@@ -292,7 +293,6 @@ export class SmithproxyApp extends LitElement {
 
   private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
-  private draftChangeTargets = new Map<string, DrawerEntry>();
   private runtime?: RuntimeConfig;
   private systemClient?: SystemClient;
   private configClient?: ApiConfigClient;
@@ -1087,7 +1087,6 @@ export class SmithproxyApp extends LitElement {
 
   private clearDraftSessionState(): void {
     this.workspaceDraft = undefined;
-    this.draftChangeTargets = new Map();
     this.draftVersion = 0;
     this.draftChangeCount = 0;
     this.draftObjects = new Set<string>();
@@ -1109,6 +1108,7 @@ export class SmithproxyApp extends LitElement {
     this.draftCommitArmed = false;
     this.draftCommitError = undefined;
     this.draftCommitResult = undefined;
+    this.draftRemovalArmedKey = undefined;
   }
 
   private clearPrivilegedConfigurationState(): void {
@@ -1486,10 +1486,10 @@ export class SmithproxyApp extends LitElement {
       this.draftCommitArmed = false;
       this.draftCommitError = undefined;
       this.draftCommitResult = undefined;
+      this.draftRemovalArmedKey = undefined;
     }
     if (snapshot.changes.length === 0) this.discardDraftArmed = false;
     const objects = new Set<string>();
-    const targets = new Map<string, DrawerEntry>();
     for (const change of snapshot.changes) {
       const policy = /^policy\.\[(\d+)\]\./u.exec(change.path);
       if (policy) {
@@ -1575,10 +1575,7 @@ export class SmithproxyApp extends LitElement {
       if (change.path.startsWith('settings.')) objects.add('settings:settings');
       if (change.path.startsWith('debug.')) objects.add('settings:settings');
       if (change.path.startsWith('captures.')) objects.add('captures:captures');
-      const target = this.draftTargetForPath(change.path);
-      if (target) targets.set(change.path, target);
     }
-    this.draftChangeTargets = targets;
     this.draftObjects = objects;
   }
 
@@ -1830,6 +1827,48 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private draftPathsForDrawer(entry: Pick<DrawerEntry, 'kind' | 'id'>): ReadonlyArray<string> {
+    const key = this.drawerKey(entry);
+    return (this.workspaceDraft?.changes ?? [])
+      .filter(change => {
+        const target = this.draftTargetForPath(change.path);
+        return target !== undefined && this.drawerKey(target) === key;
+      })
+      .map(change => change.path);
+  }
+
+  private async removeDrawerDraftChanges(entry: DrawerEntry): Promise<void> {
+    if (!this.draftAvailable || !this.draftClient || this.draftSaving || this.draftCommitting ||
+        this.dirtyDrawerKeys.has(this.drawerKey(entry))) return;
+    const paths = this.draftPathsForDrawer(entry);
+    if (paths.length === 0) return;
+    const key = this.drawerKey(entry);
+    if (this.draftRemovalArmedKey !== key) {
+      this.draftRemovalArmedKey = key;
+      return;
+    }
+    this.draftSaving = true;
+    const accessEpoch = this.configurationAccessEpoch;
+    this.draftError = undefined;
+    try {
+      const draft = await this.draftClient.removeMany(this.draftVersion, paths);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+      this.markDrawerSaved(entry);
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Editor draft changes could not be removed.';
+      await this.loadDraft();
+      this.draftError = message;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) {
+        this.draftSaving = false;
+        this.draftRemovalArmedKey = undefined;
+      }
+    }
+  }
+
   private draftValueSummary(path: string, value: DraftScalar): string {
     if (value === '[redacted:clear]') return 'Cleared · redacted';
     if (value === '[redacted:replace]') return 'Replaced · redacted';
@@ -1954,6 +1993,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openObjectDrawer(entry: DrawerEntry, origin?: HTMLElement): void {
+    this.draftRemovalArmedKey = undefined;
     const existing = this.drawerStore.entries.findIndex(
       item => item.kind === entry.kind && item.id === entry.id,
     );
@@ -1991,6 +2031,7 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     const key = this.drawerKey(entry);
+    if (this.draftRemovalArmedKey === key) this.draftRemovalArmedKey = undefined;
     if (!this.dirtyDrawerKeys.has(key)) {
       this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
     }
@@ -2033,6 +2074,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private closeDrawer(index: number): void {
+    this.draftRemovalArmedKey = undefined;
     const remainingDirty = new Set(this.dirtyDrawerKeys);
     for (const entry of this.drawerStore.entries.slice(index)) remainingDirty.delete(this.drawerKey(entry));
     this.dirtyDrawerKeys = remainingDirty;
@@ -3267,7 +3309,7 @@ export class SmithproxyApp extends LitElement {
               <span role="columnheader">Action</span>
             </div>
             ${changes.map(change => {
-              const target = this.draftChangeTargets.get(change.path);
+              const target = this.draftTargetForPath(change.path);
               return html`<div class="draft-row" role="row">
                 <span class="draft-path" role="cell">${change.path}</span>
                 <span class="draft-value" role="cell">${this.draftValueSummary(change.path, change.value)}</span>
@@ -5863,6 +5905,8 @@ export class SmithproxyApp extends LitElement {
       (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
     const readOnly = !draftable;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
+    const drawerDraftPaths = this.draftPathsForDrawer(entry);
+    const removalArmed = this.draftRemovalArmedKey === this.drawerKey(entry);
     const closePending = active && this.pendingCloseIndex !== undefined;
     const closeFromIndex = this.pendingCloseIndex ?? index;
     return html`
@@ -5899,6 +5943,15 @@ export class SmithproxyApp extends LitElement {
             <span class="validation ${dirty ? 'warning' : ''}" role="status" aria-live="polite">
               ${this.drawerError ?? this.draftError ?? (dirty ? 'Unsaved changes' : readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}
             </span>
+            ${drawerDraftPaths.length > 0 ? html`
+              <button class="secondary danger-button" type="button"
+                ?disabled=${dirty || this.draftSaving || this.draftValidating || this.draftCommitting}
+                @click=${() => this.removeDrawerDraftChanges(entry)}>
+                ${removalArmed
+                  ? `Confirm remove ${drawerDraftPaths.length} draft change${drawerDraftPaths.length === 1 ? '' : 's'}`
+                  : `Remove ${drawerDraftPaths.length} draft change${drawerDraftPaths.length === 1 ? '' : 's'}`}
+              </button>
+            ` : nothing}
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>
             <button class="primary" type="button"
               ?disabled=${readOnly || this.draftSaving || this.draftCommitting}

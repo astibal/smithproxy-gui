@@ -85,9 +85,10 @@ request host and the request carries JSON content type plus the custom
 `same-origin`. The GUI core does not emit permissive CORS headers. These checks
 are enforced independently of trusted-gateway authentication. Individual
 requests are limited to 64 KiB, accumulated draft values to 1 MiB, and browser
-responses to 8 MiB before parsing. Removing one draft path or clearing the
-complete draft uses the same authentication, CSRF, and optimistic-concurrency
-checks as an upsert.
+responses to 8 MiB before parsing. Removing one draft path, an atomic bounded
+path group, or the complete draft uses the same authentication, CSRF, and
+optimistic-concurrency checks as an upsert. Group removal rejects duplicates or
+missing paths without partially changing the draft.
 
 Browser validation is never authoritative. The core accepts only pinned schema
 paths emitted by the typed editors and independently checks canonical indexes,

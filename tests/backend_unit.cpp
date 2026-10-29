@@ -82,6 +82,28 @@ int main() {
     assert(draft.clear(4U) == DraftMutationResult::Applied);
     assert(draft.snapshot().version == 5U);
 
+    DraftStore grouped_removal{"grouped-removal"};
+    assert(grouped_removal.upsert_many(0U, {
+        {"policy.[0].name", std::string("office")},
+        {"policy.[0].action", std::string("accept")},
+        {"settings.policy_fail_open", true},
+    }) == DraftMutationResult::Applied);
+    assert(grouped_removal.remove_many(0U, {
+        "policy.[0].name", "policy.[0].action",
+    }) == DraftMutationResult::VersionConflict);
+    assert(grouped_removal.remove_many(1U, {
+        "policy.[0].name", "policy.[0].name",
+    }) == DraftMutationResult::InvalidPath);
+    assert(grouped_removal.remove_many(1U, {
+        "policy.[0].name", "policy.[0].missing",
+    }) == DraftMutationResult::Missing);
+    assert(grouped_removal.snapshot().changes.size() == 3U);
+    assert(grouped_removal.remove_many(1U, {
+        "policy.[0].name", "policy.[0].action",
+    }) == DraftMutationResult::Applied);
+    assert(grouped_removal.snapshot().version == 2U);
+    assert(grouped_removal.snapshot().changes.size() == 1U);
+
     const std::string canonical_revision_a = "sha256:" + std::string(64U, 'a');
     const std::string canonical_revision_b = "sha256:" + std::string(64U, 'b');
     const auto revision_observation = std::chrono::steady_clock::now();

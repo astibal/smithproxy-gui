@@ -113,13 +113,29 @@ DraftMutationResult DraftStore::upsert_many(
 }
 
 DraftMutationResult DraftStore::remove(const std::uint64_t expected_version, const std::string& path) {
-    if (!valid_path(path)) return DraftMutationResult::InvalidPath;
+    return remove_many(expected_version, {path});
+}
+
+DraftMutationResult DraftStore::remove_many(
+    const std::uint64_t expected_version, std::vector<std::string> paths) {
+    if (paths.empty() || paths.size() > maximum_changes) return DraftMutationResult::InvalidPath;
+    for (std::size_t index = 0; index < paths.size(); ++index) {
+        if (!valid_path(paths[index])) return DraftMutationResult::InvalidPath;
+        if (std::find(paths.begin(), paths.begin() + static_cast<std::ptrdiff_t>(index), paths[index]) !=
+            paths.begin() + static_cast<std::ptrdiff_t>(index)) {
+            return DraftMutationResult::InvalidPath;
+        }
+    }
     std::scoped_lock lock(mutex_);
     if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
-    const auto found = std::find_if(draft_.changes.begin(), draft_.changes.end(),
-                                    [&](const DraftChange& item) { return item.path == path; });
-    if (found == draft_.changes.end()) return DraftMutationResult::Missing;
-    draft_.changes.erase(found);
+    for (const auto& path : paths) {
+        const auto found = std::find_if(draft_.changes.begin(), draft_.changes.end(),
+                                        [&](const DraftChange& item) { return item.path == path; });
+        if (found == draft_.changes.end()) return DraftMutationResult::Missing;
+    }
+    std::erase_if(draft_.changes, [&](const DraftChange& change) {
+        return std::find(paths.begin(), paths.end(), change.path) != paths.end();
+    });
     ++draft_.version;
     return DraftMutationResult::Applied;
 }

@@ -140,6 +140,8 @@ MutationAuditMetadata mutation_audit_metadata(
     };
     if (document.contains("path")) {
         append_target(document["path"]);
+    } else if (document.contains("paths") && document["paths"].is_array()) {
+        for (const auto& path : document["paths"]) append_target(path);
     } else if (document.contains("changes") && document["changes"].is_array()) {
         for (const auto& change : document["changes"]) {
             if (change.is_object() && change.contains("path")) append_target(change["path"]);
@@ -636,14 +638,30 @@ private:
         if (*relative == "/api/v1/config/draft/changes/remove") {
             if (document.is_discarded() || !document.is_object() || document.size() != 2U ||
                 !document.contains("expected_version") ||
-                !document["expected_version"].is_number_unsigned() ||
-                !document.contains("path") || !document["path"].is_string()) {
+                !document["expected_version"].is_number_unsigned()) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid draft remove request\"}"};
+            }
+            std::vector<std::string> paths;
+            if (document.contains("path") && document["path"].is_string()) {
+                paths.push_back(document["path"].get<std::string>());
+            } else if (document.contains("paths") && document["paths"].is_array() &&
+                       !document["paths"].empty() && document["paths"].size() <= 4096U) {
+                paths.reserve(document["paths"].size());
+                for (const auto& path : document["paths"]) {
+                    if (!path.is_string()) {
+                        return {400, "application/json; charset=utf-8",
+                                "{\"error\":\"invalid draft remove request\"}"};
+                    }
+                    paths.push_back(path.get<std::string>());
+                }
+            } else {
                 return {400, "application/json; charset=utf-8",
                         "{\"error\":\"invalid draft remove request\"}"};
             }
             const auto result = commit_coordinator_.mutate([&] {
-                return draft_.remove(document["expected_version"].get<std::uint64_t>(),
-                                     document["path"].get<std::string>());
+                return draft_.remove_many(document["expected_version"].get<std::uint64_t>(),
+                                          std::move(paths));
             });
             if (result == DraftMutationResult::Busy) {
                 return {409, "application/json; charset=utf-8",

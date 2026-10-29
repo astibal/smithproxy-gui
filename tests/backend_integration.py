@@ -1248,7 +1248,33 @@ def main() -> int:
                 body=json.dumps({
                     "expected_version": 4, "path": "policy.[0].action"}),
             ), 404, "draft.change_not_found")
-            clear_change = json.dumps({"expected_version": 4})
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes/remove", "POST",
+                headers=mutation_headers,
+                body=json.dumps({"expected_version": 4, "paths": []}),
+            ), 400, "draft.invalid_request")
+            status, _, body = request(
+                configured_port, "/api/v1/config/draft/changes/remove", "POST",
+                headers=mutation_headers,
+                body=json.dumps({
+                    "expected_version": 4,
+                    "paths": ["policy.[0].name", "policy.[0].disabled"],
+                }))
+            assert status == 200
+            grouped_snapshot = json.loads(body)
+            assert grouped_snapshot["version"] == 5
+            assert not {"policy.[0].name", "policy.[0].disabled"}.intersection(
+                change["path"] for change in grouped_snapshot["changes"])
+            status, _, audit_body = request(
+                configured_port, "/api/v1/audit/recent", headers=gateway_headers)
+            assert status == 200
+            grouped_audit = json.loads(audit_body)["entries"][-1]
+            assert grouped_audit["operation"] == "config.draft.remove"
+            assert grouped_audit["outcome"] == "succeeded"
+            assert grouped_audit["target_count"] == 2
+            assert grouped_audit["targets"] == [
+                "policy.[0].name", "policy.[0].disabled"]
+            clear_change = json.dumps({"expected_version": 5})
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",
                 headers={**mutation_headers, "Origin": "https://attacker.invalid"},
@@ -1259,7 +1285,7 @@ def main() -> int:
                 headers=mutation_headers, body=clear_change)
             assert status == 200
             cleared_snapshot = json.loads(body)
-            assert cleared_snapshot["version"] == 5
+            assert cleared_snapshot["version"] == 6
             assert cleared_snapshot["changes"] == []
             assert request(
                 configured_port, "/api/v1/config/draft/clear", "POST",
