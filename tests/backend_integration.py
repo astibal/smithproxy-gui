@@ -65,6 +65,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         "settings": {
             "accept_tproxy": "true", "accept_redirect": "true",
             "accept_socks": "false", "accept_http_connect": "true", "accept_api": "true",
+            "extended_local_destination_protection": "true",
             "policy_fail_open": "false", "policy_access_request_fail_open": "false",
             "plaintext_workers": "2", "ssl_workers": "4", "udp_workers": "1",
             "dtls_workers": "1", "quic_workers": "-1", "socks_workers": "-1",
@@ -109,6 +110,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                 "sift_url": "http://private-sift.example/webhook",
                 "sift_tenant_id": "private-tenant", "sift_instance_id": "private-instance",
                 "sift_payload_limit_per_direction": "524288", "hostid": "private-host-id",
+                "sift_lored_mode": "optional", "sift_lored_include_url": "true",
                 "bind_interface": "private-webhook0", "api_override": "false",
                 "ping_interval": "60", "nbr_update_interval": "600",
                 "nbr_tag_refresh_age": "240", "task_debug": "true",
@@ -586,6 +588,7 @@ def main() -> int:
                 "socks_ip_version_mixing": True,
                 "socks_prefer_ipv6": False,
             }
+            assert config_snapshot["settings"]["extended_local_destination_protection"] is True
             assert config_snapshot["settings"]["nameservers"] == ["192.0.2.53"]
             assert config_snapshot["settings"]["http_api"] == {
                 "key_count": 1,
@@ -605,6 +608,7 @@ def main() -> int:
                 "sift_enabled": True, "sift_url_configured": True,
                 "sift_tenant_configured": True, "sift_instance_configured": True,
                 "sift_payload_limit_per_direction": 524288,
+                "sift_lored_mode": "optional", "sift_lored_include_url": True,
                 "hostid_configured": True, "bind_interface_configured": True,
                 "api_override": False, "ping_interval": 60,
                 "nbr_update_interval": 600, "nbr_tag_refresh_age": 240,

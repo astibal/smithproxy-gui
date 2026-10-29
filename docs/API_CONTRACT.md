@@ -155,7 +155,8 @@ remote destinations, and bound interfaces use explicit write-only replacement
 or clearing. Allowed addresses and other non-secret lists use bounded typed
 editors. The active settings set emitted by the current Smithproxy saver is
 covered in full, including performance tuning, certificate transparency and CA
-bundle files, and the write-only administration group. Deprecated ignored
+bundle files, local explicit-proxy destination protection, Sift LoreD policy,
+URL-disclosure consent, and the write-only administration group. Deprecated ignored
 tuning keys are deliberately omitted from the editor.
 The current detection, capture, SSH, routing, and script schemas are also
 covered in full. Their coverage manifest entries are pinned to exact active
@@ -212,7 +213,8 @@ core does not parse the administrative CLI.
 severity, titles, and details come from a fixed server vocabulary; arbitrary
 upstream log text is never forwarded. The current rules cover control-plane
 reachability and rolling availability, collector health and freshness, and TLS
-cache capacity. A control-plane outage suppresses derivative collector alerts
+cache capacity. Disabling local explicit-proxy destination protection emits a
+configuration-posture warning. A control-plane outage suppresses derivative collector alerts
 to avoid an alert storm.
 
 `/events` používá SSE. Každá událost obsahuje typ, čas serveru, monotónní event ID,

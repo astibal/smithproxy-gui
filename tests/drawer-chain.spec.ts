@@ -244,7 +244,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       ],
       settings: {
         accept_tproxy: true, accept_redirect: true, accept_socks: false,
-        accept_http_connect: true, accept_api: true, policy_fail_open: false,
+        accept_http_connect: true, accept_api: true, extended_local_destination_protection: true,
+        policy_fail_open: false,
         access_request_fail_open: false,
         workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 0, http_connect: 1},
         ports: {plaintext: 50080, tls: 50443, udp: 50080, dtls: 50443, quic: 443, socks: 1080, http_connect: 3128},
@@ -281,7 +282,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         webhook: {
           enabled: false, tls_verify: true, url_configured: false, sift_enabled: false,
           sift_url_configured: true, sift_tenant_configured: true, sift_instance_configured: false,
-          sift_payload_limit_per_direction: 262144, hostid_configured: false,
+          sift_payload_limit_per_direction: 262144, sift_lored_mode: 'disabled',
+          sift_lored_include_url: false, hostid_configured: false,
           bind_interface_configured: false, api_override: false, ping_interval: 120,
           nbr_update_interval: 900, nbr_tag_refresh_age: 300, task_debug: false,
           task_debug_dump: false,
@@ -833,9 +835,12 @@ test('saves typed system and capture settings without exposing redacted values',
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
+  await expect(trafficCard).toContainText('Local destination protection');
+  await expect(trafficCard).toContainText('Enforced');
   await trafficCard.getByRole('button', {name: 'Edit'}).click();
   const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
   await settingsEditor.getByLabel('Policy failure').selectOption('true');
+  await settingsEditor.getByLabel('Protect local explicit-proxy destinations').selectOption('false');
   await settingsEditor.getByLabel('TLS workers', {exact: true}).fill('8');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('5443');
   await settingsEditor.getByLabel('API header access').selectOption('true');
@@ -855,6 +860,8 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('Webhook URL', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Webhook URL replacement').fill('https://hooks.example.test/smithproxy');
   await settingsEditor.getByLabel('Sift payload limit per direction').fill('524288');
+  await settingsEditor.getByLabel('Sift LoreD enrichment').selectOption('required');
+  await settingsEditor.getByLabel('Allow LoreD URL disclosure').selectOption('true');
   await settingsEditor.getByLabel('Sift URL', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Sift URL replacement').fill('http://private-sift.test/webhook');
   await settingsEditor.getByLabel('Sift tenant ID', {exact: true}).selectOption('replace');
@@ -881,7 +888,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(11);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 86 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 89 changes')).toBeVisible();
   await expect(settingsEditor.getByLabel('HTTP API keys replacement')).toHaveValue('');
   await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -899,11 +906,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 95 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 98 changes')).toBeVisible();
   await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 95'}).click();
+  await page.getByRole('button', {name: 'Review draft · 98'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
@@ -924,6 +931,10 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('settings.http_api.bind_interface');
   await expect(changes).toContainText('settings.webhook.url');
   await expect(changes).toContainText('settings.webhook.sift_payload_limit_per_direction');
+  await expect(changes).toContainText('settings.extended_local_destination_protection');
+  await expect(changes).toContainText('settings.webhook.sift_lored_mode');
+  await expect(changes).toContainText('settings.webhook.sift_lored_include_url');
+  await expect(changes).toContainText('required');
   await expect(changes).toContainText('settings.webhook.sift_url');
   await expect(changes).toContainText('settings.webhook.sift_tenant_id');
   await expect(changes).toContainText('settings.webhook.sift_instance_id');

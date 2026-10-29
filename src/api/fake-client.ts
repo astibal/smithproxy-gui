@@ -199,7 +199,7 @@ const snapshot: ConfigSnapshot = {
   ],
   settings: {
     acceptTproxy: true, acceptRedirect: true, acceptSocks: true,
-    acceptHttpConnect: true, acceptApi: true,
+    acceptHttpConnect: true, acceptApi: true, extendedLocalDestinationProtection: true,
     policyFailOpen: false, accessRequestFailOpen: false,
     workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, httpConnect: 1},
     ports: {plaintext: 50080, tls: 50443, udp: 50080, dtls: 50443, quic: 443, socks: 1080, httpConnect: 3128},
@@ -236,7 +236,8 @@ const snapshot: ConfigSnapshot = {
     webhook: {
       enabled: false, tlsVerify: true, urlConfigured: false, siftEnabled: false,
       siftUrlConfigured: true, siftTenantConfigured: true, siftInstanceConfigured: false,
-      siftPayloadLimitPerDirection: 262144, hostIdConfigured: false,
+      siftPayloadLimitPerDirection: 262144, siftLoredMode: 'disabled', siftLoredIncludeUrl: false,
+      hostIdConfigured: false,
       bindInterfaceConfigured: false, apiOverride: false, pingInterval: 120,
       neighborUpdateInterval: 900, neighborTagRefreshAge: 300,
       taskDebug: false, taskDebugDump: false,

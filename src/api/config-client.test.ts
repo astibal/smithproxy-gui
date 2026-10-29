@@ -88,7 +88,8 @@ const liveSnapshot = {
   ],
   settings: {
     accept_tproxy: true, accept_redirect: true, accept_socks: false,
-    accept_http_connect: true, accept_api: true, policy_fail_open: false,
+    accept_http_connect: true, accept_api: true, extended_local_destination_protection: true,
+    policy_fail_open: false,
     access_request_fail_open: false,
     workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, http_connect: 1},
     ports: {plaintext: 50080, tls: 50443, udp: 50080, dtls: 50443, quic: 443, socks: 1080, http_connect: 3128},
@@ -125,7 +126,8 @@ const liveSnapshot = {
     webhook: {
       enabled: false, tls_verify: true, url_configured: false, sift_enabled: false,
       sift_url_configured: true, sift_tenant_configured: true, sift_instance_configured: false,
-      sift_payload_limit_per_direction: 262144, hostid_configured: false,
+      sift_payload_limit_per_direction: 262144, sift_lored_mode: 'disabled',
+      sift_lored_include_url: false, hostid_configured: false,
       bind_interface_configured: false, api_override: false, ping_interval: 120,
       nbr_update_interval: 900, nbr_tag_refresh_age: 300, task_debug: false,
       task_debug_dump: false,
@@ -219,7 +221,7 @@ describe('ApiConfigClient', () => {
       ],
     });
     expect(snapshot.settings).toMatchObject({
-      policyFailOpen: false,
+      extendedLocalDestinationProtection: true, policyFailOpen: false,
       workers: {tls: 4, quic: -1, socks: -1},
       ports: {tls: 50443, quic: 443},
       ocspStatusTtl: 1800,
@@ -231,6 +233,7 @@ describe('ApiConfigClient', () => {
         allowedIps: ['127.0.0.1'], keyTimeout: 3600, port: 55555,
         keyExtendOnAccess: true, bindAddressConfigured: true,
       },
+      webhook: {siftLoredMode: 'disabled', siftLoredIncludeUrl: false},
     });
     expect(snapshot.captures).toMatchObject({local: {enabled: true, quotaMiB: 512}});
     expect(snapshot.securityAssets).toMatchObject({
@@ -338,6 +341,13 @@ describe('ApiConfigClient', () => {
         http_api: {...liveSnapshot.settings.http_api, port: 1024},
       },
     })).toThrow('Invalid API port');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      settings: {
+        ...liveSnapshot.settings,
+        webhook: {...liveSnapshot.settings.webhook, sift_lored_mode: 'unexpected'},
+      },
+    })).toThrow('Invalid Sift LoreD mode');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,
       debug: {

@@ -178,6 +178,7 @@ export interface SystemSettings {
   acceptSocks: boolean;
   acceptHttpConnect: boolean;
   acceptApi: boolean;
+  extendedLocalDestinationProtection: boolean;
   policyFailOpen: boolean;
   accessRequestFailOpen: boolean;
   workers: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'dtls' | 'quic' | 'socks' | 'httpConnect', number>>;
@@ -255,6 +256,8 @@ export interface SystemSettings {
     siftTenantConfigured: boolean;
     siftInstanceConfigured: boolean;
     siftPayloadLimitPerDirection: number;
+    siftLoredMode: 'disabled' | 'optional' | 'required';
+    siftLoredIncludeUrl: boolean;
     hostIdConfigured: boolean;
     bindInterfaceConfigured: boolean;
     apiOverride: boolean;

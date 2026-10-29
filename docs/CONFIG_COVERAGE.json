@@ -2,7 +2,7 @@
   "schema_version": 1,
   "upstream": {
     "repository": "astibal/smithproxy",
-    "revision": "495d0aa51bf5b86c39d999222152b4d2789f2ede",
+    "revision": "11839d412764a825638d30d1edf62ff9503b69ee",
     "reference_config": "etc/smithproxy.cfg"
   },
   "status_definitions": {
@@ -18,7 +18,8 @@
       "sensitivity": "secret-bearing",
       "tracked_fields": [
         "accept_tproxy", "accept_redirect", "accept_socks", "accept_http_connect",
-        "accept_api", "policy_fail_open", "policy_access_request_fail_open",
+        "accept_api", "extended_local_destination_protection", "policy_fail_open",
+        "policy_access_request_fail_open",
         "plaintext_workers", "ssl_workers", "udp_workers", "dtls_workers",
         "quic_workers", "socks_workers", "http_connect_workers", "plaintext_port",
         "ssl_port", "udp_port", "dtls_port", "quic_port", "socks_port", "http_connect_port",
@@ -30,7 +31,8 @@
         "ca_bundle_path", "ca_bundle_file", "admin", "tuning",
         "messages_dir", "write_payload_file_prefix", "write_payload_file_suffix",
         "cli", "web_rating", "tpool_log", "socks",
-        "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
+        "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook",
+        "webhook.sift_lored_mode", "webhook.sift_lored_include_url"
       ],
       "notes": "All active settings emitted by the current Smithproxy saver are typed and editable. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys use write-only replace/clear controls. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."
     },

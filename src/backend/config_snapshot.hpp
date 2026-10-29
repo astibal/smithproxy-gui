@@ -172,6 +172,7 @@ struct ConfigSystemSettings {
     bool accept_socks{};
     bool accept_http_connect{};
     bool accept_api{};
+    bool extended_local_destination_protection{true};
     bool policy_fail_open{};
     bool access_request_fail_open{};
     std::int64_t plaintext_workers{};
@@ -252,6 +253,8 @@ struct ConfigSystemSettings {
     bool webhook_sift_tenant_configured{};
     bool webhook_sift_instance_configured{};
     std::uint64_t webhook_sift_payload_limit{};
+    std::string webhook_sift_lored_mode;
+    bool webhook_sift_lored_include_url{};
     bool webhook_host_id_configured{};
     bool webhook_bind_interface_configured{};
     bool webhook_api_override{};

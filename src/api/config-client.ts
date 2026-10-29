@@ -73,6 +73,12 @@ function allowedInteger(value: unknown, label: string, allowed: ReadonlyArray<nu
   return value;
 }
 
+function allowedString(value: unknown, label: string, allowed: ReadonlyArray<string>): string {
+  const result = safeString(value, label, 128);
+  if (!allowed.includes(result)) throw new Error(`Invalid ${label}.`);
+  return result;
+}
+
 function safeBoolean(value: unknown, label: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`Invalid ${label}.`);
   return value;
@@ -522,6 +528,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       acceptSocks: safeBoolean(value.settings.accept_socks, 'SOCKS listener state'),
       acceptHttpConnect: safeBoolean(value.settings.accept_http_connect, 'HTTP CONNECT listener state'),
       acceptApi: safeBoolean(value.settings.accept_api, 'Smithproxy API listener state'),
+      extendedLocalDestinationProtection: safeBoolean(
+        value.settings.extended_local_destination_protection, 'local destination protection state',
+      ),
       policyFailOpen: safeBoolean(value.settings.policy_fail_open, 'policy fail-open state'),
       accessRequestFailOpen: safeBoolean(
         value.settings.access_request_fail_open, 'access-request fail-open state',
@@ -690,6 +699,13 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         siftPayloadLimitPerDirection: rangedInteger(
           value.settings.webhook.sift_payload_limit_per_direction,
           'Sift payload limit', 1, 1073741824,
+        ),
+        siftLoredMode: allowedString(
+          value.settings.webhook.sift_lored_mode,
+          'Sift LoreD mode', ['disabled', 'optional', 'required'],
+        ) as SystemSettings['webhook']['siftLoredMode'],
+        siftLoredIncludeUrl: safeBoolean(
+          value.settings.webhook.sift_lored_include_url, 'Sift LoreD URL disclosure state',
         ),
         hostIdConfigured: safeBoolean(value.settings.webhook.hostid_configured, 'webhook host ID state'),
         bindInterfaceConfigured: safeBoolean(
