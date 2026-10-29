@@ -226,7 +226,14 @@ const snapshot: ConfigSnapshot = {
       loopbackOnly: true, pamLogin: false, allowApiHeader: false,
       bindAddressConfigured: true, bindInterfaceConfigured: false,
     },
-    webhook: {enabled: false, tlsVerify: true, urlConfigured: false, siftEnabled: false, apiOverride: false},
+    webhook: {
+      enabled: false, tlsVerify: true, urlConfigured: false, siftEnabled: false,
+      siftUrlConfigured: true, siftTenantConfigured: true, siftInstanceConfigured: false,
+      siftPayloadLimitPerDirection: 262144, hostIdConfigured: false,
+      bindInterfaceConfigured: false, apiOverride: false, pingInterval: 120,
+      neighborUpdateInterval: 900, neighborTagRefreshAge: 300,
+      taskDebug: false, taskDebugDump: false,
+    },
   },
   debug: {
     logDataCrc: false, logSockets: false, logOnlineConnectionName: false,

@@ -725,6 +725,9 @@ export class SmithproxyApp extends LitElement {
       'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
       'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
       'settings.http_api.bind_address', 'settings.http_api.bind_interface',
+      'settings.webhook.sift_url', 'settings.webhook.sift_tenant_id',
+      'settings.webhook.sift_instance_id', 'settings.webhook.hostid',
+      'settings.webhook.bind_interface',
       'captures.local.dir', 'captures.local.file_prefix', 'captures.local.file_suffix',
       'captures.remote.tun_dst', 'captures.remote.bind_interface',
     ]);
@@ -1577,6 +1580,8 @@ export class SmithproxyApp extends LitElement {
       ['http_api.pam_login', 'api-pam'], ['http_api.allow_api_header', 'api-header'],
       ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
       ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
+      ['webhook.task_debug', 'webhook-task-debug'],
+      ['webhook.task_debug_dump', 'webhook-task-debug-dump'],
       ['default_write_payload', 'logging-default-payload'], ['log_console', 'logging-console'],
       ['tpool_log', 'aux-thread-pool-log'], ['socks.async_dns', 'aux-socks-async-dns'],
       ['socks.ipver_mixing', 'aux-socks-ipver-mixing'],
@@ -1614,6 +1619,9 @@ export class SmithproxyApp extends LitElement {
       ['syslog_facility', 'logging-syslog-facility', 23],
       ['syslog_level', 'logging-syslog-level', 10],
       ['cli.port', 'aux-cli-port', 65535],
+      ['webhook.ping_interval', 'webhook-ping-interval', 2147483647],
+      ['webhook.nbr_update_interval', 'webhook-neighbor-update-interval', 2147483647],
+      ['webhook.nbr_tag_refresh_age', 'webhook-neighbor-tag-refresh-age', 2147483647],
     ] as const;
     for (const [path, id, maximum] of numericFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-${id}`);
@@ -1659,6 +1667,14 @@ export class SmithproxyApp extends LitElement {
     }
     changes.push({path: 'settings.http_api.key_timeout', value: apiKeyTimeoutValue});
     changes.push({path: 'settings.http_api.port', value: apiPortValue});
+    const siftPayloadLimit = this.renderRoot.querySelector<HTMLInputElement>('#settings-webhook-sift-payload-limit');
+    const siftPayloadLimitValue = siftPayloadLimit?.valueAsNumber ?? Number.NaN;
+    if (!siftPayloadLimit || !Number.isInteger(siftPayloadLimitValue) ||
+        siftPayloadLimitValue < 1 || siftPayloadLimitValue > 1073741824) {
+      this.draftError = 'Sift payload limit must be an integer from 1 to 1073741824 bytes.';
+      return undefined;
+    }
+    changes.push({path: 'settings.webhook.sift_payload_limit_per_direction', value: siftPayloadLimitValue});
     const apiKeysMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-api-keys-mode');
     const apiKeysInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-keys-value');
     if (!apiKeysMode || !apiKeysInput || !['unchanged', 'replace', 'clear'].includes(apiKeysMode.value)) {
@@ -1693,6 +1709,11 @@ export class SmithproxyApp extends LitElement {
       ['web_rating.wot_key', 'web-rating-key', 'secret'],
       ['http_api.bind_address', 'api-bind-address', 'ipv4'],
       ['http_api.bind_interface', 'api-bind-interface', 'host'],
+      ['webhook.sift_url', 'webhook-sift-url', 'url'],
+      ['webhook.sift_tenant_id', 'webhook-sift-tenant', 'text'],
+      ['webhook.sift_instance_id', 'webhook-sift-instance', 'text'],
+      ['webhook.hostid', 'webhook-host-id', 'text'],
+      ['webhook.bind_interface', 'webhook-bind-interface', 'host'],
     ] as const;
     for (const [path, id, kind] of writeOnlyFields) {
       const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-write-${id}-mode`);
@@ -2647,6 +2668,9 @@ export class SmithproxyApp extends LitElement {
                 <dt>URL</dt><dd>${settings.webhook.urlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>TLS verification</dt><dd>${settings.webhook.tlsVerify ? 'Required' : 'Disabled'}</dd>
                 <dt>Sift</dt><dd>${settings.webhook.siftEnabled ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Sift endpoint</dt><dd>${settings.webhook.siftUrlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Sift payload limit</dt><dd>${settings.webhook.siftPayloadLimitPerDirection} bytes / direction</dd>
+                <dt>Ping interval</dt><dd>${settings.webhook.pingInterval}s</dd>
                 <dt>API override</dt><dd>${settings.webhook.apiOverride ? 'Allowed' : 'Blocked'}</dd>
                 <dt>Nameservers</dt><dd>${settings.nameservers.join(', ') || 'None'}</dd>
               </dl>
@@ -3380,6 +3404,12 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
         ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
         ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
+        ${numericField('webhook-sift-payload-limit', 'Sift payload limit per direction', settings.webhook.siftPayloadLimitPerDirection, 1073741824)}
+        ${numericField('webhook-ping-interval', 'Webhook ping interval (seconds)', settings.webhook.pingInterval, 2147483647)}
+        ${numericField('webhook-neighbor-update-interval', 'Neighbor update interval (seconds)', settings.webhook.neighborUpdateInterval, 2147483647)}
+        ${numericField('webhook-neighbor-tag-refresh-age', 'Neighbor tag refresh age (seconds)', settings.webhook.neighborTagRefreshAge, 2147483647)}
+        ${booleanField('webhook-task-debug', 'Webhook task diagnostics', settings.webhook.taskDebug)}
+        ${booleanField('webhook-task-debug-dump', 'Webhook task dump diagnostics', settings.webhook.taskDebugDump)}
         <label for="settings-nameservers">Nameservers</label>
         <input id="settings-nameservers" .value=${settings.nameservers.join(', ')}
           placeholder="192.0.2.53, resolver.example" .readOnly=${disabled} />
@@ -3398,6 +3428,11 @@ export class SmithproxyApp extends LitElement {
         <input id="settings-api-allowed-ips" .value=${settings.httpApi.allowedIps.join(', ')}
           placeholder="127.0.0.1, 192.0.2.0/24" .readOnly=${disabled} />
         ${writeOnlyField('webhook-url', 'Webhook URL', settings.webhook.urlConfigured)}
+        ${writeOnlyField('webhook-sift-url', 'Sift URL', settings.webhook.siftUrlConfigured)}
+        ${writeOnlyField('webhook-sift-tenant', 'Sift tenant ID', settings.webhook.siftTenantConfigured)}
+        ${writeOnlyField('webhook-sift-instance', 'Sift instance ID', settings.webhook.siftInstanceConfigured)}
+        ${writeOnlyField('webhook-host-id', 'Webhook host ID', settings.webhook.hostIdConfigured)}
+        ${writeOnlyField('webhook-bind-interface', 'Webhook bind interface', settings.webhook.bindInterfaceConfigured)}
         ${this.snapshot?.debug ? html`
           <h3 class="form-span">Debug logging</h3>
           <label for="debug-data-crc">Payload CRC logging</label>

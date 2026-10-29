@@ -237,7 +237,18 @@ struct ConfigSystemSettings {
     bool webhook_tls_verify{};
     bool webhook_url_configured{};
     bool webhook_sift_enabled{};
+    bool webhook_sift_url_configured{};
+    bool webhook_sift_tenant_configured{};
+    bool webhook_sift_instance_configured{};
+    std::uint64_t webhook_sift_payload_limit{};
+    bool webhook_host_id_configured{};
+    bool webhook_bind_interface_configured{};
     bool webhook_api_override{};
+    std::uint64_t webhook_ping_interval{};
+    std::uint64_t webhook_neighbor_update_interval{};
+    std::uint64_t webhook_neighbor_tag_refresh_age{};
+    bool webhook_task_debug{};
+    bool webhook_task_debug_dump{};
 };
 
 struct ConfigDebugSettings {

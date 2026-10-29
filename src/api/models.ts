@@ -238,7 +238,18 @@ export interface SystemSettings {
     tlsVerify: boolean;
     urlConfigured: boolean;
     siftEnabled: boolean;
+    siftUrlConfigured: boolean;
+    siftTenantConfigured: boolean;
+    siftInstanceConfigured: boolean;
+    siftPayloadLimitPerDirection: number;
+    hostIdConfigured: boolean;
+    bindInterfaceConfigured: boolean;
     apiOverride: boolean;
+    pingInterval: number;
+    neighborUpdateInterval: number;
+    neighborTagRefreshAge: number;
+    taskDebug: boolean;
+    taskDebugDump: boolean;
   };
 }
 

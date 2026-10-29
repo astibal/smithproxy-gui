@@ -115,7 +115,14 @@ const liveSnapshot = {
       loopback_only: true, pam_login: false, allow_api_header: false,
       bind_address_configured: true, bind_interface_configured: false,
     },
-    webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
+    webhook: {
+      enabled: false, tls_verify: true, url_configured: false, sift_enabled: false,
+      sift_url_configured: true, sift_tenant_configured: true, sift_instance_configured: false,
+      sift_payload_limit_per_direction: 262144, hostid_configured: false,
+      bind_interface_configured: false, api_override: false, ping_interval: 120,
+      nbr_update_interval: 900, nbr_tag_refresh_age: 300, task_debug: false,
+      task_debug_dump: false,
+    },
   },
   debug: {
     log_data_crc: false, log_sockets: true, log_online_cx_name: false,

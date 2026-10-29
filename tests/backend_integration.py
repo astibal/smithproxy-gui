@@ -97,7 +97,14 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             },
             "webhook": {
                 "enabled": "true", "tls_verify": "true",
-                "url": "https://private-webhook.example/", "sift": "false", "api_override": "false",
+                "url": "https://private-webhook.example/", "sift": "true",
+                "sift_url": "http://private-sift.example/webhook",
+                "sift_tenant_id": "private-tenant", "sift_instance_id": "private-instance",
+                "sift_payload_limit_per_direction": "524288", "hostid": "private-host-id",
+                "bind_interface": "private-webhook0", "api_override": "false",
+                "ping_interval": "60", "nbr_update_interval": "600",
+                "nbr_tag_refresh_age": "240", "task_debug": "true",
+                "task_debug_dump": "false",
             },
         },
         "debug": {
@@ -531,6 +538,16 @@ def main() -> int:
                 "bind_address_configured": True,
                 "bind_interface_configured": True,
             }
+            assert config_snapshot["settings"]["webhook"] == {
+                "enabled": True, "tls_verify": True, "url_configured": True,
+                "sift_enabled": True, "sift_url_configured": True,
+                "sift_tenant_configured": True, "sift_instance_configured": True,
+                "sift_payload_limit_per_direction": 524288,
+                "hostid_configured": True, "bind_interface_configured": True,
+                "api_override": False, "ping_interval": 60,
+                "nbr_update_interval": 600, "nbr_tag_refresh_age": 240,
+                "task_debug": True, "task_debug_dump": False,
+            }
             assert config_snapshot["captures"]["local"]["file_prefix_configured"] is True
             assert config_snapshot["captures"]["local"]["file_suffix_configured"] is True
             assert config_snapshot["debug"] == {
@@ -561,6 +578,11 @@ def main() -> int:
             assert b"192.0.2.77" not in config_body
             assert b"private-api0" not in config_body
             assert b"private-webhook.example" not in config_body
+            assert b"private-sift.example" not in config_body
+            assert b"private-tenant" not in config_body
+            assert b"private-instance" not in config_body
+            assert b"private-host-id" not in config_body
+            assert b"private-webhook0" not in config_body
             assert b"/private/captures" not in config_body
             assert b"192.0.2.10" not in config_body
             assert b"private0" not in config_body
@@ -696,6 +718,11 @@ def main() -> int:
                     {"path": "settings.http_api.key_extend_on_access", "value": False},
                     {"path": "settings.http_api.bind_address", "value": "192.0.2.88"},
                     {"path": "settings.http_api.bind_interface", "value": "private-api1"},
+                    {"path": "settings.webhook.sift_url", "value": "http://new-private-sift/webhook"},
+                    {"path": "settings.webhook.sift_tenant_id", "value": "new-private-tenant"},
+                    {"path": "settings.webhook.sift_instance_id", "value": "new-private-instance"},
+                    {"path": "settings.webhook.hostid", "value": "new-private-host"},
+                    {"path": "settings.webhook.bind_interface", "value": "private-webhook1"},
                     {"path": "captures.local.dir", "value": "/new/private/captures"},
                     {"path": "captures.remote.tun_dst", "value": ""},
                     {"path": "ssh_profiles.[0].host_key", "value": "/new/private/ssh-key"},
@@ -726,6 +753,11 @@ def main() -> int:
                 "settings.http_api.keys": "[redacted:replace:2]",
                 "settings.http_api.bind_address": "[redacted:replace]",
                 "settings.http_api.bind_interface": "[redacted:replace]",
+                "settings.webhook.sift_url": "[redacted:replace]",
+                "settings.webhook.sift_tenant_id": "[redacted:replace]",
+                "settings.webhook.sift_instance_id": "[redacted:replace]",
+                "settings.webhook.hostid": "[redacted:replace]",
+                "settings.webhook.bind_interface": "[redacted:replace]",
                 "captures.local.dir": "[redacted:replace]",
                 "captures.remote.tun_dst": "[redacted:clear]",
                 "ssh_profiles.[0].host_key": "[redacted:replace]",
@@ -744,6 +776,11 @@ def main() -> int:
             assert b"overlap-api-key" not in body
             assert b"192.0.2.88" not in body
             assert b"private-api1" not in body
+            assert b"new-private-sift" not in body
+            assert b"new-private-tenant" not in body
+            assert b"new-private-instance" not in body
+            assert b"new-private-host" not in body
+            assert b"private-webhook1" not in body
             assert b"/new/private/captures" not in body
             assert b"/new/private/ssh-key" not in body
             assert b"/new/private/audit.py" not in body

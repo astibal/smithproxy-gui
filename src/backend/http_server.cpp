@@ -99,6 +99,9 @@ bool sensitive_draft_path(const std::string_view path) {
         "settings.write_payload_file_prefix", "settings.write_payload_file_suffix",
         "settings.cli.enable_password", "settings.web_rating.wot_key", "settings.http_api.keys",
         "settings.http_api.bind_address", "settings.http_api.bind_interface",
+        "settings.webhook.sift_url", "settings.webhook.sift_tenant_id",
+        "settings.webhook.sift_instance_id", "settings.webhook.hostid",
+        "settings.webhook.bind_interface",
         "captures.local.dir", "captures.local.file_prefix", "captures.local.file_suffix",
         "captures.remote.tun_dst", "captures.remote.bind_interface",
     };
@@ -712,7 +715,18 @@ private:
                        ",\"tls_verify\":" + (value.webhook_tls_verify ? "true" : "false") +
                        ",\"url_configured\":" + (value.webhook_url_configured ? "true" : "false") +
                        ",\"sift_enabled\":" + (value.webhook_sift_enabled ? "true" : "false") +
-                       ",\"api_override\":" + (value.webhook_api_override ? "true" : "false") + "}}";
+                       ",\"sift_url_configured\":" + (value.webhook_sift_url_configured ? "true" : "false") +
+                       ",\"sift_tenant_configured\":" + (value.webhook_sift_tenant_configured ? "true" : "false") +
+                       ",\"sift_instance_configured\":" + (value.webhook_sift_instance_configured ? "true" : "false") +
+                       ",\"sift_payload_limit_per_direction\":" + std::to_string(value.webhook_sift_payload_limit) +
+                       ",\"hostid_configured\":" + (value.webhook_host_id_configured ? "true" : "false") +
+                       ",\"bind_interface_configured\":" + (value.webhook_bind_interface_configured ? "true" : "false") +
+                       ",\"api_override\":" + (value.webhook_api_override ? "true" : "false") +
+                       ",\"ping_interval\":" + std::to_string(value.webhook_ping_interval) +
+                       ",\"nbr_update_interval\":" + std::to_string(value.webhook_neighbor_update_interval) +
+                       ",\"nbr_tag_refresh_age\":" + std::to_string(value.webhook_neighbor_tag_refresh_age) +
+                       ",\"task_debug\":" + (value.webhook_task_debug ? "true" : "false") +
+                       ",\"task_debug_dump\":" + (value.webhook_task_debug_dump ? "true" : "false") + "}}";
         }
         std::string captures{"null"};
         std::string debug{"null"};

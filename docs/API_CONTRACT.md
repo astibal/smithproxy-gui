@@ -145,7 +145,9 @@ System-setting batches cover listener admission, all listener ports, fail-open
 behavior, worker pools, TLS detection, SOCKS IP-version behavior, thread-pool
 task logging, HTTP API token lifetime/refresh, listener port, access
 posture, and webhook switches. HTTP API bind address/interface values remain
-write-only. Capture batches cover enablement, formats, quota, tunnel TTL, and
+write-only. Webhook and Sift endpoints, identities, and bound interfaces are
+also write-only; payload limits, control-plane intervals, and task diagnostics
+are typed. Capture batches cover enablement, formats, quota, tunnel TTL, and
 checksum behavior. Nameservers, API credentials, webhook URLs, capture paths,
 remote destinations, and bound interfaces use explicit write-only replacement
 or clearing. Allowed addresses and other non-secret lists use bounded typed

@@ -31,7 +31,7 @@
         "cli", "web_rating", "tpool_log", "socks",
         "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "Core listener, logging, SOCKS, and HTTP API fields are typed and editable. The HTTP API slice covers token lifetime/refresh, port, allowlists, login posture, and write-only bind targets. Filesystem paths, credentials, API keys, webhook and syslog targets, filename components, and rating keys use write-only replace/clear controls. Tuning, administration, and newer webhook/Sift fields remain partial."
+      "notes": "Core listener, logging, SOCKS, HTTP API, webhook, and Sift fields are typed and editable. HTTP API and webhook identities, endpoints, bind targets, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys use write-only replace/clear controls. Tuning and administration remain partial."
     },
     {
       "name": "debug",

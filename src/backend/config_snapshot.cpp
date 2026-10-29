@@ -661,7 +661,21 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto webhook_tls_verify = boolean_scalar(webhook, "tls_verify", true);
     const auto webhook_url = bounded_string(webhook, "url", maximum_value_length, true);
     const auto webhook_sift = boolean_scalar(webhook, "sift", false);
+    const auto webhook_sift_url = bounded_string(webhook, "sift_url", maximum_value_length, true);
+    const auto webhook_sift_tenant = bounded_string(webhook, "sift_tenant_id", maximum_value_length, true);
+    const auto webhook_sift_instance = bounded_string(webhook, "sift_instance_id", maximum_value_length, true);
+    const auto webhook_sift_payload_limit = optional_decimal(
+        webhook, "sift_payload_limit_per_direction", 262144U, 1073741824U);
+    const auto webhook_host_id = bounded_string(webhook, "hostid", maximum_value_length, true);
+    const auto webhook_bind_interface = bounded_string(webhook, "bind_interface", maximum_value_length, true);
     const auto webhook_api_override = boolean_scalar(webhook, "api_override", false);
+    const auto webhook_ping_interval = optional_decimal(webhook, "ping_interval", 120U, 2147483647U);
+    const auto webhook_neighbor_update_interval = optional_decimal(
+        webhook, "nbr_update_interval", 900U, 2147483647U);
+    const auto webhook_neighbor_tag_refresh_age = optional_decimal(
+        webhook, "nbr_tag_refresh_age", 300U, 2147483647U);
+    const auto webhook_task_debug = boolean_scalar(webhook, "task_debug", false);
+    const auto webhook_task_debug_dump = boolean_scalar(webhook, "task_debug_dump", false);
 
     if (!accept_tproxy || !accept_redirect || !accept_socks || !accept_http_connect || !accept_api ||
         !policy_fail_open || !access_fail_open || !plaintext_workers || !tls_workers || !udp_workers ||
@@ -680,7 +694,11 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !api_key_timeout || *api_key_timeout == 0U || !api_port || *api_port < 1025U || !key_extend ||
         !loopback_only || !pam_login || !api_header || !bind_address || !bind_interface ||
         !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
-        !webhook_api_override) {
+        !webhook_sift_url || !webhook_sift_tenant || !webhook_sift_instance ||
+        !webhook_sift_payload_limit || *webhook_sift_payload_limit == 0U || !webhook_host_id ||
+        !webhook_bind_interface || !webhook_api_override || !webhook_ping_interval ||
+        !webhook_neighbor_update_interval || !webhook_neighbor_tag_refresh_age ||
+        !webhook_task_debug || !webhook_task_debug_dump) {
         return {std::nullopt, "Smithproxy returned invalid system settings fields"};
     }
     for (const auto& port : *udp_quick_ports) {
@@ -715,7 +733,12 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *api_keys, allowed_ips->size(), *allowed_ips,
                 *api_key_timeout, *api_port, *key_extend, *loopback_only, *pam_login, *api_header,
                 !bind_address->empty(), !bind_interface->empty(), *webhook_enabled, *webhook_tls_verify,
-                !webhook_url->empty(), *webhook_sift, *webhook_api_override,
+                !webhook_url->empty(), *webhook_sift, !webhook_sift_url->empty(),
+                !webhook_sift_tenant->empty(), !webhook_sift_instance->empty(),
+                *webhook_sift_payload_limit, !webhook_host_id->empty(),
+                !webhook_bind_interface->empty(), *webhook_api_override, *webhook_ping_interval,
+                *webhook_neighbor_update_interval, *webhook_neighbor_tag_refresh_age,
+                *webhook_task_debug, *webhook_task_debug_dump,
             }, {}};
 }
 

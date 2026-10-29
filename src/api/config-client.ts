@@ -639,7 +639,35 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         tlsVerify: safeBoolean(value.settings.webhook.tls_verify, 'webhook TLS verification state'),
         urlConfigured: safeBoolean(value.settings.webhook.url_configured, 'webhook URL state'),
         siftEnabled: safeBoolean(value.settings.webhook.sift_enabled, 'Sift state'),
+        siftUrlConfigured: safeBoolean(
+          value.settings.webhook.sift_url_configured, 'Sift URL state',
+        ),
+        siftTenantConfigured: safeBoolean(
+          value.settings.webhook.sift_tenant_configured, 'Sift tenant state',
+        ),
+        siftInstanceConfigured: safeBoolean(
+          value.settings.webhook.sift_instance_configured, 'Sift instance state',
+        ),
+        siftPayloadLimitPerDirection: rangedInteger(
+          value.settings.webhook.sift_payload_limit_per_direction,
+          'Sift payload limit', 1, 1073741824,
+        ),
+        hostIdConfigured: safeBoolean(value.settings.webhook.hostid_configured, 'webhook host ID state'),
+        bindInterfaceConfigured: safeBoolean(
+          value.settings.webhook.bind_interface_configured, 'webhook bind-interface state',
+        ),
         apiOverride: safeBoolean(value.settings.webhook.api_override, 'webhook API override state'),
+        pingInterval: safeInteger(value.settings.webhook.ping_interval, 'webhook ping interval', 2147483647),
+        neighborUpdateInterval: safeInteger(
+          value.settings.webhook.nbr_update_interval, 'neighbor update interval', 2147483647,
+        ),
+        neighborTagRefreshAge: safeInteger(
+          value.settings.webhook.nbr_tag_refresh_age, 'neighbor tag refresh age', 2147483647,
+        ),
+        taskDebug: safeBoolean(value.settings.webhook.task_debug, 'webhook task debug state'),
+        taskDebugDump: safeBoolean(
+          value.settings.webhook.task_debug_dump, 'webhook task debug-dump state',
+        ),
       },
     };
   }

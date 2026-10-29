@@ -262,7 +262,14 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           loopback_only: true, pam_login: false, allow_api_header: false,
           bind_address_configured: true, bind_interface_configured: false,
         },
-        webhook: {enabled: false, tls_verify: true, url_configured: false, sift_enabled: false, api_override: false},
+        webhook: {
+          enabled: false, tls_verify: true, url_configured: false, sift_enabled: false,
+          sift_url_configured: true, sift_tenant_configured: true, sift_instance_configured: false,
+          sift_payload_limit_per_direction: 262144, hostid_configured: false,
+          bind_interface_configured: false, api_override: false, ping_interval: 120,
+          nbr_update_interval: 900, nbr_tag_refresh_age: 300, task_debug: false,
+          task_debug_dump: false,
+        },
       },
       debug: {
         log_data_crc: false, log_sockets: false, log_online_cx_name: false,
@@ -755,16 +762,27 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('HTTP API allowed IPs').fill('127.0.0.1, 192.0.2.0/24');
   await settingsEditor.getByLabel('Webhook URL', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Webhook URL replacement').fill('https://hooks.example.test/smithproxy');
+  await settingsEditor.getByLabel('Sift payload limit per direction').fill('524288');
+  await settingsEditor.getByLabel('Sift URL', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('Sift URL replacement').fill('http://private-sift.test/webhook');
+  await settingsEditor.getByLabel('Sift tenant ID', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('Sift tenant ID replacement').fill('private-tenant');
+  await settingsEditor.getByLabel('Sift instance ID', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('Sift instance ID replacement').fill('private-instance');
+  await settingsEditor.getByLabel('Webhook host ID', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('Webhook host ID replacement').fill('private-host');
+  await settingsEditor.getByLabel('Webhook bind interface', {exact: true}).selectOption('replace');
+  await settingsEditor.getByLabel('Webhook bind interface replacement').fill('private-webhook0');
   await settingsEditor.getByLabel('Certificate password', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Certificate password replacement').fill('new-private-password');
   await settingsEditor.getByLabel('Syslog server', {exact: true}).selectOption('clear');
   await settingsEditor.getByLabel('HTTP API keys', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('HTTP API keys replacement').fill('["new-api-key", "overlap-api-key"]');
   await settingsEditor.getByLabel('proxy module override').fill('8');
-  await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(7);
+  await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(10);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 64 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 75 changes')).toBeVisible();
   await expect(settingsEditor.getByLabel('HTTP API keys replacement')).toHaveValue('');
   await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -782,11 +800,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 73 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 84 changes')).toBeVisible();
   await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 73'}).click();
+  await page.getByRole('button', {name: 'Review draft · 84'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
@@ -806,6 +824,12 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('settings.http_api.bind_address');
   await expect(changes).toContainText('settings.http_api.bind_interface');
   await expect(changes).toContainText('settings.webhook.url');
+  await expect(changes).toContainText('settings.webhook.sift_payload_limit_per_direction');
+  await expect(changes).toContainText('settings.webhook.sift_url');
+  await expect(changes).toContainText('settings.webhook.sift_tenant_id');
+  await expect(changes).toContainText('settings.webhook.sift_instance_id');
+  await expect(changes).toContainText('settings.webhook.hostid');
+  await expect(changes).toContainText('settings.webhook.bind_interface');
   await expect(changes).toContainText('settings.certs_ca_key_password');
   await expect(changes).toContainText('settings.http_api.keys');
   await expect(changes).toContainText('settings.syslog_server');
@@ -824,6 +848,11 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).not.toContainText('overlap-api-key');
   await expect(changes).not.toContainText('192.0.2.77');
   await expect(changes).not.toContainText('private-api0');
+  await expect(changes).not.toContainText('private-sift.test');
+  await expect(changes).not.toContainText('private-tenant');
+  await expect(changes).not.toContainText('private-instance');
+  await expect(changes).not.toContainText('private-host');
+  await expect(changes).not.toContainText('private-webhook0');
   await expect(changes).not.toContainText('/new/private/captures');
 });
 

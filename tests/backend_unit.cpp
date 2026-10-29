@@ -290,7 +290,7 @@ int main() {
         R"({"success":{"script_profiles":{"bad":{"type":"7"}}}})",
         "script_profiles", "script").profiles);
     const auto settings = parse_config_settings(
-        R"({"success":{"settings":{"accept_tproxy":"true","policy_fail_open":"false","plaintext_workers":"2","ssl_workers":"4","quic_workers":"-1","socks_workers":"-1","plaintext_port":"50080","ssl_port":"50443","udp_port":"50080","dtls_port":"50444","quic_port":"443","socks_port":"1081","http_connect_port":"3128","tpool_log":"true","ssl_ocsp_status_ttl":"1800","ssl_crl_status_ttl":"86400","default_write_payload":"false","write_payload_dir":"/private/payloads","write_pcap_single_quota":"100","log_level":"6","log_file":"/private/messages.log","log_console":"true","sslkeylog_file":"/private/tls.keys","syslog_server":"192.0.2.60","syslog_port":"514","syslog_facility":"23","syslog_level":"6","syslog_family":"4","udp_quick_ports":["0"],"certs_path":"/private/certs","certs_ca_key_password":"password","ca_bundle_path":"/private/ca","messages_dir":"/private/messages","write_payload_file_prefix":"prefix","write_payload_file_suffix":"suffix","cli":{"port":"50000","enable_password":"password"},"web_rating":{"wot_key":"key"},"socks":{"async_dns":"true","ipver_mixing":"false","prefer_ipv6":"true"},"nameservers":["192.0.2.53"],"http_api":{"keys":["secret"],"allowed_ips":["127.0.0.1"],"loopback_only":"true"},"webhook":{"enabled":"true","tls_verify":"true","url":"https://private.example/"}}}})");
+        R"({"success":{"settings":{"accept_tproxy":"true","policy_fail_open":"false","plaintext_workers":"2","ssl_workers":"4","quic_workers":"-1","socks_workers":"-1","plaintext_port":"50080","ssl_port":"50443","udp_port":"50080","dtls_port":"50444","quic_port":"443","socks_port":"1081","http_connect_port":"3128","tpool_log":"true","ssl_ocsp_status_ttl":"1800","ssl_crl_status_ttl":"86400","default_write_payload":"false","write_payload_dir":"/private/payloads","write_pcap_single_quota":"100","log_level":"6","log_file":"/private/messages.log","log_console":"true","sslkeylog_file":"/private/tls.keys","syslog_server":"192.0.2.60","syslog_port":"514","syslog_facility":"23","syslog_level":"6","syslog_family":"4","udp_quick_ports":["0"],"certs_path":"/private/certs","certs_ca_key_password":"password","ca_bundle_path":"/private/ca","messages_dir":"/private/messages","write_payload_file_prefix":"prefix","write_payload_file_suffix":"suffix","cli":{"port":"50000","enable_password":"password"},"web_rating":{"wot_key":"key"},"socks":{"async_dns":"true","ipver_mixing":"false","prefer_ipv6":"true"},"nameservers":["192.0.2.53"],"http_api":{"keys":["secret"],"allowed_ips":["127.0.0.1"],"loopback_only":"true"},"webhook":{"enabled":"true","tls_verify":"true","url":"https://private.example/","sift":"true","sift_url":"http://private-sift/","sift_tenant_id":"tenant","sift_instance_id":"instance","sift_payload_limit_per_direction":"524288","hostid":"host","bind_interface":"vrf0","ping_interval":"60","nbr_update_interval":"600","nbr_tag_refresh_age":"240","task_debug":"true","task_debug_dump":"false"}}}})");
     assert(settings.settings);
     assert(settings.settings->accept_tproxy);
     assert(settings.settings->tls_workers == 4);
@@ -313,6 +313,18 @@ int main() {
     assert(settings.settings->thread_pool_logging);
     assert(!settings.settings->socks_ip_version_mixing);
     assert(settings.settings->socks_prefer_ipv6);
+    assert(settings.settings->webhook_sift_enabled);
+    assert(settings.settings->webhook_sift_url_configured);
+    assert(settings.settings->webhook_sift_tenant_configured);
+    assert(settings.settings->webhook_sift_instance_configured);
+    assert(settings.settings->webhook_sift_payload_limit == 524288U);
+    assert(settings.settings->webhook_host_id_configured);
+    assert(settings.settings->webhook_bind_interface_configured);
+    assert(settings.settings->webhook_ping_interval == 60U);
+    assert(settings.settings->webhook_neighbor_update_interval == 600U);
+    assert(settings.settings->webhook_neighbor_tag_refresh_age == 240U);
+    assert(settings.settings->webhook_task_debug);
+    assert(!settings.settings->webhook_task_debug_dump);
     assert(settings.settings->nameservers == std::vector<std::string>{"192.0.2.53"});
     assert(settings.settings->api_key_count == 1U);
     assert(settings.settings->api_allowed_ips == std::vector<std::string>{"127.0.0.1"});
