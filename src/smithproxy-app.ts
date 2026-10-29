@@ -492,6 +492,8 @@ export class SmithproxyApp extends LitElement {
     .status { display: inline-flex; width: fit-content; gap: 6px; align-items: center; color: var(--app-success); }
     .status::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ''; }
     .status.disabled { color: var(--app-muted); }
+    .row-meta { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; align-items: center; }
+    .overlay-badge { padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--app-warning) 55%, var(--app-border)); border-radius: 2px; background: var(--app-warning-bg); color: var(--app-warning); font-size: 10px; font-weight: 700; white-space: nowrap; }
     .action { text-transform: capitalize; }
 
     .drawer {
@@ -2773,6 +2775,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderPolicyList() {
+    const overlayCounts = this.overlayCounts();
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -2786,14 +2789,17 @@ export class SmithproxyApp extends LitElement {
           <div class="row heading" aria-hidden="true">
             <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
           </div>
-          ${this.snapshot?.policies.map(policy => html`
+          ${this.snapshot?.policies.map((policy, index) => html`
             <button class="row" type="button"
               @click=${(event: MouseEvent) => this.openPolicy(policy, event.currentTarget as HTMLElement)}>
               <strong>${policy.name}</strong>
               <span>${this.referenceSummary(policy.sources)}</span>
               <span>${this.referenceSummary(policy.destinations)}</span>
               <span class="action">${policy.action}</span>
-              <span class="status ${policy.enabled ? '' : 'disabled'}">${policy.enabled ? 'Enabled' : 'Disabled'}</span>
+              <span class="row-meta">
+                <span class="status ${policy.enabled ? '' : 'disabled'}">${policy.enabled ? 'Enabled' : 'Disabled'}</span>
+                ${this.renderOverlayBadge(`policy.[${index}].`, overlayCounts)}
+              </span>
             </button>
           `)}
         </div>
@@ -2854,6 +2860,8 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderObjects() {
+    const overlayCounts = this.overlayCounts();
+    const profilePrefixes = this.profileOriginPrefixes();
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -2871,13 +2879,13 @@ export class SmithproxyApp extends LitElement {
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.addresses.map(address => html`
+            ${this.snapshot?.addresses.map((address, index) => html`
               <button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
                 <strong>${address.name}</strong>
                 <span class="action">${address.type}</span>
                 <span class="object-value">${address.value}</span>
-                <span>${address.usedBy.length}</span>
+                <span class="row-meta"><span>${address.usedBy.length}</span>${this.renderOverlayBadge(`address_objects.[${index}].`, overlayCounts)}</span>
               </button>
             `)}
           </div>
@@ -2888,12 +2896,12 @@ export class SmithproxyApp extends LitElement {
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.ports.map(port => html`
+            ${this.snapshot?.ports.map((port, index) => html`
               <button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openPort(port.id, event.currentTarget as HTMLElement)}>
                 <strong>${port.name}</strong><span>Port range</span>
                 <span class="object-value">${port.start === port.end ? port.start : `${port.start}–${port.end}`}</span>
-                <span>${port.usedBy.length}</span>
+                <span class="row-meta"><span>${port.usedBy.length}</span>${this.renderOverlayBadge(`port_objects.[${index}].`, overlayCounts)}</span>
               </button>
             `)}
           </div>
@@ -2904,11 +2912,12 @@ export class SmithproxyApp extends LitElement {
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.protocols.map(protocol => html`
+            ${this.snapshot?.protocols.map((protocol, index) => html`
               <button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
                 <strong>${protocol.name}</strong><span>IP protocol</span>
-                <span class="object-value">${protocol.number}</span><span>${protocol.usedBy.length}</span>
+                <span class="object-value">${protocol.number}</span>
+                <span class="row-meta"><span>${protocol.usedBy.length}</span>${this.renderOverlayBadge(`proto_objects.[${index}].`, overlayCounts)}</span>
               </button>
             `)}
           </div>
@@ -2923,9 +2932,10 @@ export class SmithproxyApp extends LitElement {
               <button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
                 <strong>${profile.name}</strong><span class="action">${profile.type}</span>
-                <span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh ||
+                <span class="row-meta"><span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh ||
                   profile.dns || profile.script || profile.authentication
-                  ? 'Typed details' : 'Metadata only'}</span><span>${profile.usedBy.length}</span>
+                  ? 'Typed details' : 'Metadata only'}</span>${this.renderOverlayBadge(profilePrefixes.get(profile.id), overlayCounts)}</span>
+                <span>${profile.usedBy.length}</span>
               </button>
             `)}
           </div>
@@ -4975,6 +4985,39 @@ export class SmithproxyApp extends LitElement {
     if (!section) return undefined;
     const index = this.snapshot.profiles.filter(item => item.type === profile.type).findIndex(item => item.id === entry.id);
     return index < 0 ? undefined : `${section}.[${index}].`;
+  }
+
+  private overlayCounts(): ReadonlyMap<string, number> {
+    const counts = new Map<string, number>();
+    for (const origin of this.snapshot?.valueOrigins ?? []) {
+      const prefix = /^([A-Za-z][A-Za-z0-9_]*\.\[\d+\]\.)/u.exec(origin.path)?.[1];
+      if (prefix) counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  private profileOriginPrefixes(): ReadonlyMap<string, string> {
+    const prefixes = new Map<string, string>();
+    const indexes = new Map<string, number>();
+    for (const profile of this.snapshot?.profiles ?? []) {
+      const section = profile.routing ? 'routing' : profile.tls ? 'tls_profiles' :
+        profile.detection ? 'detection_profiles' : profile.content ? 'content_profiles' :
+        profile.ssh ? 'ssh_profiles' : profile.dns ? 'alg_dns_profiles' :
+        profile.script ? 'script_profiles' : profile.authentication ? 'auth_profiles' : undefined;
+      if (!section) continue;
+      const index = indexes.get(section) ?? 0;
+      prefixes.set(profile.id, `${section}.[${index}].`);
+      indexes.set(section, index + 1);
+    }
+    return prefixes;
+  }
+
+  private renderOverlayBadge(prefix: string | undefined, counts: ReadonlyMap<string, number>) {
+    const count = prefix ? counts.get(prefix) ?? 0 : 0;
+    if (count === 0) return nothing;
+    return html`<span class="overlay-badge" title="${count} persistent ${count === 1 ? 'field is' : 'fields are'} overridden by an active augment">
+      ${count} overridden
+    </span>`;
   }
 
   private renderAugmentOrigins(entry: DrawerEntry) {

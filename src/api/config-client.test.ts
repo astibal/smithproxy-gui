@@ -250,12 +250,18 @@ describe('ApiConfigClient', () => {
       augment_support: true,
       value_origins: [{
         path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
-        layers: [{id: 'temporary-office-access', priority: 100, value: 'accept', active: true}], editable: false,
+        layers: [
+          {id: 'temporary-office-access', priority: 50, value: 'reject', active: false},
+          {id: 'incident-response', priority: 100, value: 'accept', active: true},
+        ], editable: false,
       }],
     });
     expect(augmented.valueOrigins[0]).toMatchObject({
       path: 'policy.[0].action', persistentValue: 'reject', effectiveValue: 'accept',
-      layers: [{id: 'temporary-office-access', priority: 100, value: 'accept', active: true}],
+      layers: [
+        {id: 'temporary-office-access', priority: 50, value: 'reject', active: false},
+        {id: 'incident-response', priority: 100, value: 'accept', active: true},
+      ],
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/config/snapshot',
@@ -336,6 +342,33 @@ describe('ApiConfigClient', () => {
         layers: [{id: 'wrong-value', priority: null, value: 'reject', active: true}], editable: false,
       }],
     })).toThrow('Invalid active augment layer');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+        layers: [
+          {id: 'priority-200', priority: 200, value: 'reject', active: false},
+          {id: 'priority-100', priority: 100, value: 'accept', active: true},
+        ], editable: false,
+      }],
+    })).toThrow('strictly increasing');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+        layers: [
+          {id: 'ordered-layer', priority: null, value: 'reject', active: false},
+          {id: 'priority-100', priority: 100, value: 'accept', active: true},
+        ], editable: false,
+      }],
+    })).toThrow('Inconsistent augment layer priorities');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+        layers: [{id: 'unsafe layer', priority: null, value: 'accept', active: true}], editable: false,
+      }],
+    })).toThrow('Invalid augment layer');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,
       debug: {...liveSnapshot.debug, module_override_count: 2},

@@ -1055,16 +1055,23 @@ test('rejects tampering with augment-owned persistent values', async ({page}) =>
     draftMutationVersions: [],
     valueOrigins: [{
       path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
-      layers: [{id: 'incident-response', priority: 200, value: 'accept', active: true}],
+      layers: [
+        {id: 'temporary-office-access', priority: 100, value: 'reject', active: false},
+        {id: 'incident-response', priority: 200, value: 'accept', active: true},
+      ],
       editable: false,
     }],
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  await page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /^Policy 1 /u}).click();
+  const policyRow = page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /^Policy 1 /u});
+  await expect(policyRow).toContainText('1 overridden');
+  await policyRow.click();
 
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(editor.getByRole('list', {name: 'action overlay chain'}).locator('.origin-id'))
+    .toHaveText(['temporary-office-access', 'incident-response']);
   const action = editor.locator('#action-policy-0');
   await expect(action).toHaveValue('reject');
   await expect(action).toHaveAttribute('readonly', '');
@@ -1106,6 +1113,8 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await expect(profiles.getByRole('button', {name: /main routing Typed details/u}))
+    .toContainText('1 overridden');
 
   const verify = async (
     buttonName: RegExp, dialogName: string, label: string, value: string,

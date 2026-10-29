@@ -937,14 +937,26 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     originPaths.add(item.path);
     const layerIds = new Set<string>();
     const rawLayers = item.layers;
+    const prioritized = rawLayers.some(layer => isObject(layer) && layer.priority !== null);
+    if (prioritized && rawLayers.some(layer => !isObject(layer) || layer.priority === null)) {
+      throw new Error('Inconsistent augment layer priorities.');
+    }
     let activeLayerCount = 0;
+    let previousPriority = -1;
     const layers = rawLayers.map((layer, index) => {
       if (!isObject(layer) || typeof layer.id !== 'string' || layer.id.length === 0 ||
-          layer.id.length > 128 || layerIds.has(layer.id) ||
+          layer.id.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(layer.id) ||
+          layerIds.has(layer.id) ||
           typeof layer.active !== 'boolean' ||
           !(layer.priority === null || (typeof layer.priority === 'number' &&
             Number.isSafeInteger(layer.priority) && layer.priority >= 0))) {
         throw new Error('Invalid augment layer.');
+      }
+      if (typeof layer.priority === 'number') {
+        if (layer.priority <= previousPriority) {
+          throw new Error('Augment layer priorities must be strictly increasing.');
+        }
+        previousPriority = layer.priority;
       }
       layerIds.add(layer.id);
       const layerValue = configScalar(layer.value, 'augment layer value');

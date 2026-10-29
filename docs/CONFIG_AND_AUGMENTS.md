@@ -28,6 +28,10 @@ anonymní JSON strom.
 Aktuální frontend vykresluje obecnou provenance sekci ve všech typech editorů.
 Podporuje seřazený řetěz více vrstev, hodnotu každé vrstvy, priority, explicitního
 aktivního vlastníka, persistentní i efektivní hodnotu a příznak editovatelnosti.
+Seznamy policy a objektů označují počet efektivně přepsaných polí ještě před
+otevřením editoru. Prioritizovaný řetěz musí mít úplnou a striktně rostoucí
+prioritu; řetěz bez priorit používá pouze autoritativní pořadí pole. Smíšené nebo
+regresivní pořadí klient odmítne celé.
 Všechny typované scalar controls v policy, objektech, profilech, system/capture
 nastavení a vnořených security/rule editorech se vážou přímo na persistentní
 hodnotu a pole vlastněné aktivní vrstvou zobrazují pouze pro čtení. Centrální

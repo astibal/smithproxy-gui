@@ -107,7 +107,11 @@ The snapshot carries `augment_support` and a bounded `value_origins` collection.
 Each origin identifies a stable schema path, persistent and effective scalar
 values, editability, and an ordered augment layer chain. Every layer carries its
 scalar value, optional priority, and an explicit active flag. Exactly one active
-layer terminates the chain and its value must equal the effective value.
+layer terminates the chain and its value must equal the effective value. A chain
+either omits every priority and relies on its explicit array order, or assigns a
+strictly increasing non-negative priority to every layer. Layer identifiers use
+bounded schema-safe ASCII identifiers; mixed, duplicate, or descending priority
+metadata fails closed.
 The GUI renders effective values but preserves the persistent value and layer
 ownership in the editor. Until Smithproxy exposes this data through its HTTP API,
 the live GUI core returns `augment_support: false` with an empty origin collection.
