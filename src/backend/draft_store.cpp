@@ -22,6 +22,8 @@ std::size_t value_size(const DraftScalar& value) {
             std::size_t total{};
             for (const auto& entry : item) total += entry.size();
             return total;
+        } else if constexpr (std::is_same_v<Value, std::vector<std::int64_t>>) {
+            return item.size() * sizeof(std::int64_t);
         } else {
             return sizeof(item);
         }
@@ -129,6 +131,8 @@ bool DraftStore::valid_value(const DraftScalar& value) {
                            return character == 0U;
                        });
             });
+        } else if constexpr (std::is_same_v<Value, std::vector<std::int64_t>>) {
+            return item.size() <= maximum_array_items;
         } else if constexpr (std::is_same_v<Value, double>) {
             return std::isfinite(item);
         } else {

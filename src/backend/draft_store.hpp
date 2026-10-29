@@ -9,7 +9,8 @@
 
 namespace smithproxy::gui {
 
-using DraftScalar = std::variant<bool, std::int64_t, double, std::string, std::vector<std::string>>;
+using DraftScalar = std::variant<bool, std::int64_t, double, std::string,
+                                 std::vector<std::string>, std::vector<std::int64_t>>;
 
 struct DraftChange {
     std::string path;

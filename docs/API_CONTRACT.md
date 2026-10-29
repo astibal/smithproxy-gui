@@ -100,9 +100,10 @@ The GUI core currently exposes one workspace-scoped foundation draft at
 `POST /api/v1/config/draft/clear`. A batch carries one expected version and a
 bounded `changes` array; it is rejected without partial application when any
 path or value is invalid. Supported foundation values are booleans, finite
-numbers, strings, and bounded string arrays. Every mutation requires the trusted
-gateway handoff, an exact same-origin `Origin`, `Sec-Fetch-Site: same-origin` when the
-browser supplies it, JSON content type, and `X-Smithproxy-GUI-CSRF: 1`. The
+numbers, strings, and bounded homogeneous string or integer arrays. Every
+mutation requires the trusted gateway handoff, an exact same-origin `Origin`,
+`Sec-Fetch-Site: same-origin` when the browser supplies it, JSON content type,
+and `X-Smithproxy-GUI-CSRF: 1`. The
 custom header and absent CORS support prevent cross-origin form submission.
 Requests are limited to 64 KiB, the accumulated draft payload is limited to
 1 MiB, paths and values are bounded, and an expected draft version is mandatory;
@@ -126,12 +127,15 @@ protocol objects. Routing profile batches cover their name, destination address
 and port references, load-balancing method, and paired SNI rewrite values while
 preserving nested links to the referenced objects. Detection and DNS ALG profile
 batches cover their names and all currently exposed typed mode/boolean fields.
-TLS profile batches cover the exposed validation, negotiation, timeout, client
-certificate, alert, and diagnostic controls. Redacted SNI bypass collections
-support write-only replacement and clearing. Content profile batches cover capture,
-webhook, JA4 controls, write-only session-filter replacement, and nested
-write-only content-rule match/replacement rotation. SSH profile batches cover the host-key policy and channel,
-forwarding, X11, agent actions, and write-only private host-key path rotation.
+TLS profile batches cover all fields saved by the current Smithproxy runtime:
+directional PFS and session reuse, trust validation, OCSP, certificate lookup,
+failure replacement and override policy, SNI/DNS matching, bounded warning ports,
+timeouts, client certificates, alerts, and diagnostics. Redacted SNI bypass
+collections support write-only replacement and clearing. Content profile
+batches cover capture, webhook, JA4 controls, write-only session-filter
+replacement, and nested write-only content-rule match/replacement rotation. SSH
+profile batches cover the host-key policy and channel, forwarding, X11, agent
+actions, and write-only private host-key path rotation.
 Script profile batches cover the runtime and write-only module-path rotation.
 Certificate-authority batches cover names and write-only path rotation.
 Deprecated authentication profile batches cover authentication

@@ -39,14 +39,30 @@ struct ConfigRoutingProfile {
 
 struct ConfigTlsProfile {
     bool inspect{};
+    bool use_pfs{};
+    bool left_use_pfs{};
+    bool right_use_pfs{};
+    bool left_disable_reuse{};
+    bool right_disable_reuse{};
     bool allow_untrusted_issuers{};
     bool allow_invalid_certificates{};
     bool allow_self_signed{};
     bool certificate_transparency{};
+    std::uint64_t ocsp_mode{};
     bool ocsp_stapling{};
+    std::uint64_t ocsp_stapling_mode{};
     bool block_alpn{};
+    bool sni_based_certificates{};
+    bool ip_based_certificates{};
     bool only_custom_certificates{};
     bool no_fallback_bypass{};
+    bool sni_filter_uses_dns_cache{};
+    bool sni_filter_uses_dns_domain_tree{};
+    std::vector<std::uint64_t> redirect_warning_ports;
+    bool failed_certificate_replacement{};
+    bool failed_certificate_override{};
+    std::uint64_t failed_certificate_override_timeout{};
+    std::uint64_t failed_certificate_override_timeout_type{};
     bool ssl_key_log{};
     std::uint64_t client_hello_timeout_ms{};
     std::uint64_t handshake_timeout_ms{};

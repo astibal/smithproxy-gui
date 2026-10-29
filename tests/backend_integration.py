@@ -639,6 +639,15 @@ def main() -> int:
                 headers=mutation_headers,
                 body=json.dumps({"expected_version": 1, "path": "../unsafe", "value": True}),
             )[0] == 400
+            assert request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers,
+                body=json.dumps({
+                    "expected_version": 1,
+                    "path": "tls_profiles.[0].redirect_warning_ports",
+                    "value": [443, "8443"],
+                }),
+            )[0] == 400
             batch_change = json.dumps({
                 "expected_version": 1,
                 "changes": [
@@ -652,6 +661,7 @@ def main() -> int:
                     {"path": "ssh_profiles.[0].host_key", "value": "/new/private/ssh-key"},
                     {"path": "script_profiles.[0].script-file", "value": "/new/private/audit.py"},
                     {"path": "tls_profiles.[0].sni_filter_bypass", "value": ["private.example"]},
+                    {"path": "tls_profiles.[0].redirect_warning_ports", "value": [443, 44443]},
                     {"path": "content_profiles.[0].rules_session_filter", "value": "secret session expression"},
                     {"path": "content_profiles.[0].content_rules.[0].match", "value": "secret content match"},
                     {"path": "content_profiles.[0].content_rules.[0].replace", "value": "secret content replacement"},
@@ -667,6 +677,7 @@ def main() -> int:
             assert batch_snapshot["version"] == 2
             changes_by_path = {item["path"]: item["value"] for item in batch_snapshot["changes"]}
             assert changes_by_path["policy.[0].dst"] == ["internet", "backup"]
+            assert changes_by_path["tls_profiles.[0].redirect_warning_ports"] == [443, 44443]
             expected_redactions = {
                 "settings.certs_ca_key_password": "[redacted:replace]",
                 "settings.http_api.keys": "[redacted:replace:2]",

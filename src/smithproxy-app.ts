@@ -1281,14 +1281,25 @@ export class SmithproxyApp extends LitElement {
         if (index < 0) return undefined;
         const booleanFields = [
           ['inspect', 'inspect'],
+          ['use_pfs', 'use-pfs'],
+          ['left_use_pfs', 'left-use-pfs'],
+          ['right_use_pfs', 'right-use-pfs'],
+          ['left_disable_reuse', 'left-disable-reuse'],
+          ['right_disable_reuse', 'right-disable-reuse'],
           ['allow_untrusted_issuers', 'allow-untrusted'],
           ['allow_invalid_certs', 'allow-invalid'],
           ['allow_self_signed', 'allow-self-signed'],
           ['ct_enable', 'certificate-transparency'],
           ['ocsp_stapling', 'ocsp-stapling'],
           ['alpn_block', 'block-alpn'],
+          ['sni_based_cert', 'sni-cert'],
+          ['ip_based_cert', 'ip-cert'],
           ['only_custom_certs', 'custom-only'],
           ['no_fallback_bypass', 'no-fallback'],
+          ['sni_filter_use_dns_cache', 'sni-dns-cache'],
+          ['sni_filter_use_dns_domain_tree', 'sni-dns-tree'],
+          ['failed_certcheck_replacement', 'failed-replacement'],
+          ['failed_certcheck_override', 'failed-override'],
           ['sslkeylog', 'key-log'],
         ] as const;
         const booleanChanges: DraftChange[] = [];
@@ -1299,15 +1310,31 @@ export class SmithproxyApp extends LitElement {
         }
         const helloTimeout = this.renderRoot.querySelector<HTMLInputElement>(`#tls-hello-timeout-${entry.id}`);
         const handshakeTimeout = this.renderRoot.querySelector<HTMLInputElement>(`#tls-handshake-timeout-${entry.id}`);
+        const ocspMode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-ocsp-mode-${entry.id}`);
+        const staplingMode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-ocsp-stapling-mode-${entry.id}`);
+        const warningPorts = this.renderRoot.querySelector<HTMLInputElement>(`#tls-warning-ports-${entry.id}`);
+        const overrideTimeout = this.renderRoot.querySelector<HTMLInputElement>(`#tls-failed-override-timeout-${entry.id}`);
+        const overrideTimeoutType = this.renderRoot.querySelector<HTMLSelectElement>(
+          `#tls-failed-override-timeout-type-${entry.id}`,
+        );
         const clientAction = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-client-action-${entry.id}`);
         const alerts = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-alerts-${entry.id}`);
         const bypassMode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-write-sni-${entry.id}-mode`);
         const bypassInput = this.renderRoot.querySelector<HTMLTextAreaElement>(`#tls-write-sni-${entry.id}-value`);
         const helloValue = helloTimeout?.valueAsNumber ?? Number.NaN;
         const handshakeValue = handshakeTimeout?.valueAsNumber ?? Number.NaN;
-        if (!helloTimeout || !handshakeTimeout || !clientAction || !alerts || !bypassMode || !bypassInput ||
-            !Number.isInteger(helloValue) || helloValue < 1 || helloValue > 3600000 ||
-            !Number.isInteger(handshakeValue) || handshakeValue < 1 || handshakeValue > 3600000 ||
+        const overrideTimeoutValue = overrideTimeout?.valueAsNumber ?? Number.NaN;
+        const warningPortValues = (warningPorts?.value ?? '').split(',')
+          .map(value => value.trim()).filter(Boolean).map(Number);
+        if (!helloTimeout || !handshakeTimeout || !ocspMode || !staplingMode || !warningPorts ||
+            !overrideTimeout || !overrideTimeoutType || !clientAction || !alerts || !bypassMode || !bypassInput ||
+            !Number.isInteger(helloValue) || helloValue < 1 || helloValue > 2147483647 ||
+            !Number.isInteger(handshakeValue) || handshakeValue < 1 || handshakeValue > 2147483647 ||
+            !['0', '1', '2'].includes(ocspMode.value) || !['0', '1', '2'].includes(staplingMode.value) ||
+            !Number.isInteger(overrideTimeoutValue) || overrideTimeoutValue < 1 || overrideTimeoutValue > 2147483647 ||
+            !['0', '1'].includes(overrideTimeoutType.value) || warningPortValues.length > 256 ||
+            !warningPortValues.every(value => Number.isInteger(value) && value >= 0 && value <= 65535) ||
+            new Set(warningPortValues).size !== warningPortValues.length ||
             !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
             !['all', 'unusual', 'mute'].includes(alerts.value) ||
             !['unchanged', 'replace', 'clear'].includes(bypassMode.value)) {
@@ -1334,6 +1361,11 @@ export class SmithproxyApp extends LitElement {
         return [
           {path: `tls_profiles.[${index}].name`, value: name.value.trim()},
           ...booleanChanges,
+          {path: `tls_profiles.[${index}].ocsp_mode`, value: Number(ocspMode.value)},
+          {path: `tls_profiles.[${index}].ocsp_stapling_mode`, value: Number(staplingMode.value)},
+          {path: `tls_profiles.[${index}].redirect_warning_ports`, value: warningPortValues},
+          {path: `tls_profiles.[${index}].failed_certcheck_override_timeout`, value: overrideTimeoutValue},
+          {path: `tls_profiles.[${index}].failed_certcheck_override_timeout_type`, value: Number(overrideTimeoutType.value)},
           {path: `tls_profiles.[${index}].client_hello_timeout`, value: helloValue},
           {path: `tls_profiles.[${index}].handshake_timeout`, value: handshakeValue},
           {path: `tls_profiles.[${index}].client_cert_action`, value: clientAction.value},
@@ -2954,6 +2986,16 @@ export class SmithproxyApp extends LitElement {
         ` : tls ? html`
           <label for="tls-inspect-${entry.id}">Inspection</label>
           ${this.renderBooleanSelect(`tls-inspect-${entry.id}`, tls.inspect, mappedReadOnly)}
+          <label for="tls-use-pfs-${entry.id}">Perfect forward secrecy</label>
+          ${this.renderBooleanSelect(`tls-use-pfs-${entry.id}`, tls.usePfs, mappedReadOnly)}
+          <label for="tls-left-use-pfs-${entry.id}">Downstream PFS</label>
+          ${this.renderBooleanSelect(`tls-left-use-pfs-${entry.id}`, tls.leftUsePfs, mappedReadOnly)}
+          <label for="tls-right-use-pfs-${entry.id}">Upstream PFS</label>
+          ${this.renderBooleanSelect(`tls-right-use-pfs-${entry.id}`, tls.rightUsePfs, mappedReadOnly)}
+          <label for="tls-left-disable-reuse-${entry.id}">Downstream session reuse</label>
+          ${this.renderBooleanSelect(`tls-left-disable-reuse-${entry.id}`, tls.leftDisableReuse, mappedReadOnly, 'Disabled', 'Allowed')}
+          <label for="tls-right-disable-reuse-${entry.id}">Upstream session reuse</label>
+          ${this.renderBooleanSelect(`tls-right-disable-reuse-${entry.id}`, tls.rightDisableReuse, mappedReadOnly, 'Disabled', 'Allowed')}
           <label for="tls-allow-untrusted-${entry.id}">Allow untrusted issuers</label>
           ${this.renderBooleanSelect(`tls-allow-untrusted-${entry.id}`, tls.allowUntrustedIssuers, mappedReadOnly, 'Allowed', 'Rejected')}
           <label for="tls-allow-invalid-${entry.id}">Allow invalid certificates</label>
@@ -2962,21 +3004,54 @@ export class SmithproxyApp extends LitElement {
           ${this.renderBooleanSelect(`tls-allow-self-signed-${entry.id}`, tls.allowSelfSigned, mappedReadOnly, 'Allowed', 'Rejected')}
           <label for="tls-certificate-transparency-${entry.id}">Certificate transparency</label>
           ${this.renderBooleanSelect(`tls-certificate-transparency-${entry.id}`, tls.certificateTransparency, mappedReadOnly)}
+          <label for="tls-ocsp-mode-${entry.id}">OCSP certificate checks</label>
+          <select id="tls-ocsp-mode-${entry.id}" .value=${String(tls.ocspMode)} ?disabled=${mappedReadOnly}>
+            <option value="0">Disabled</option><option value="1">Leaf certificate</option>
+            <option value="2">Full chain</option>
+          </select>
           <label for="tls-ocsp-stapling-${entry.id}">OCSP stapling</label>
           ${this.renderBooleanSelect(`tls-ocsp-stapling-${entry.id}`, tls.ocspStapling, mappedReadOnly)}
+          <label for="tls-ocsp-stapling-mode-${entry.id}">OCSP stapling policy</label>
+          <select id="tls-ocsp-stapling-mode-${entry.id}"
+            .value=${String(tls.ocspStaplingMode)} ?disabled=${mappedReadOnly}>
+            <option value="0">Loose</option><option value="1">Strict</option><option value="2">Required</option>
+          </select>
           <label for="tls-block-alpn-${entry.id}">ALPN negotiation</label>
           ${this.renderBooleanSelect(`tls-block-alpn-${entry.id}`, tls.blockAlpn, mappedReadOnly, 'Blocked', 'Allowed')}
+          <label for="tls-sni-cert-${entry.id}">SNI certificate lookup</label>
+          ${this.renderBooleanSelect(`tls-sni-cert-${entry.id}`, tls.sniBasedCertificates, mappedReadOnly)}
+          <label for="tls-ip-cert-${entry.id}">IP certificate lookup</label>
+          ${this.renderBooleanSelect(`tls-ip-cert-${entry.id}`, tls.ipBasedCertificates, mappedReadOnly)}
           <label for="tls-custom-only-${entry.id}">Custom certificates only</label>
           ${this.renderBooleanSelect(`tls-custom-only-${entry.id}`, tls.onlyCustomCertificates, mappedReadOnly, 'Required', 'Not required')}
           <label for="tls-no-fallback-${entry.id}">Fallback bypass</label>
           ${this.renderBooleanSelect(`tls-no-fallback-${entry.id}`, tls.noFallbackBypass, mappedReadOnly, 'Blocked', 'Allowed')}
+          <label for="tls-sni-dns-cache-${entry.id}">SNI filter DNS cache</label>
+          ${this.renderBooleanSelect(`tls-sni-dns-cache-${entry.id}`, tls.sniFilterUsesDnsCache, mappedReadOnly)}
+          <label for="tls-sni-dns-tree-${entry.id}">SNI filter DNS tree</label>
+          ${this.renderBooleanSelect(`tls-sni-dns-tree-${entry.id}`, tls.sniFilterUsesDnsDomainTree, mappedReadOnly)}
+          <label for="tls-warning-ports-${entry.id}">Certificate warning ports</label>
+          <input id="tls-warning-ports-${entry.id}" .value=${tls.redirectWarningPorts.join(', ')}
+            .readOnly=${mappedReadOnly} placeholder="443, 44443" />
+          <label for="tls-failed-replacement-${entry.id}">Certificate failure replacement</label>
+          ${this.renderBooleanSelect(`tls-failed-replacement-${entry.id}`, tls.failedCertificateReplacement, mappedReadOnly)}
+          <label for="tls-failed-override-${entry.id}">Certificate failure override</label>
+          ${this.renderBooleanSelect(`tls-failed-override-${entry.id}`, tls.failedCertificateOverride, mappedReadOnly)}
+          <label for="tls-failed-override-timeout-${entry.id}">Override timeout</label>
+          <input id="tls-failed-override-timeout-${entry.id}" type="number" min="1" max="2147483647"
+            .value=${String(tls.failedCertificateOverrideTimeout)} .readOnly=${mappedReadOnly} />
+          <label for="tls-failed-override-timeout-type-${entry.id}">Override timeout behavior</label>
+          <select id="tls-failed-override-timeout-type-${entry.id}"
+            .value=${String(tls.failedCertificateOverrideTimeoutType)} ?disabled=${mappedReadOnly}>
+            <option value="0">Absolute expiry</option><option value="1">Idle expiry</option>
+          </select>
           <label for="tls-key-log-${entry.id}">SSL key logging</label>
           ${this.renderBooleanSelect(`tls-key-log-${entry.id}`, tls.sslKeyLog, mappedReadOnly)}
           <label for="tls-hello-timeout-${entry.id}">Client hello timeout</label>
-          <input id="tls-hello-timeout-${entry.id}" type="number" min="1" max="3600000"
+          <input id="tls-hello-timeout-${entry.id}" type="number" min="1" max="2147483647"
             .value=${String(tls.clientHelloTimeoutMs)} .readOnly=${mappedReadOnly} />
           <label for="tls-handshake-timeout-${entry.id}">Handshake timeout</label>
-          <input id="tls-handshake-timeout-${entry.id}" type="number" min="1" max="3600000"
+          <input id="tls-handshake-timeout-${entry.id}" type="number" min="1" max="2147483647"
             .value=${String(tls.handshakeTimeoutMs)} .readOnly=${mappedReadOnly} />
           <label for="tls-client-action-${entry.id}">Client certificate action</label>
           <select id="tls-client-action-${entry.id}" .value=${tls.clientCertificateAction} ?disabled=${mappedReadOnly}>

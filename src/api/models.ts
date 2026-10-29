@@ -64,14 +64,30 @@ export interface RoutingProfileDetails {
 
 export interface TlsProfileDetails {
   inspect: boolean;
+  usePfs: boolean;
+  leftUsePfs: boolean;
+  rightUsePfs: boolean;
+  leftDisableReuse: boolean;
+  rightDisableReuse: boolean;
   allowUntrustedIssuers: boolean;
   allowInvalidCertificates: boolean;
   allowSelfSigned: boolean;
   certificateTransparency: boolean;
+  ocspMode: 0 | 1 | 2;
   ocspStapling: boolean;
+  ocspStaplingMode: 0 | 1 | 2;
   blockAlpn: boolean;
+  sniBasedCertificates: boolean;
+  ipBasedCertificates: boolean;
   onlyCustomCertificates: boolean;
   noFallbackBypass: boolean;
+  sniFilterUsesDnsCache: boolean;
+  sniFilterUsesDnsDomainTree: boolean;
+  redirectWarningPorts: ReadonlyArray<number>;
+  failedCertificateReplacement: boolean;
+  failedCertificateOverride: boolean;
+  failedCertificateOverrideTimeout: number;
+  failedCertificateOverrideTimeoutType: 0 | 1;
   sslKeyLog: boolean;
   clientHelloTimeoutMs: number;
   handshakeTimeoutMs: number;

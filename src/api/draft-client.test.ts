@@ -33,24 +33,29 @@ describe('DraftClient', () => {
     });
   });
 
-  it('validates and sends atomic batches including string arrays', async () => {
+  it('validates and sends atomic batches including typed arrays', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       id: 'workspace-draft', base_revision: null, version: 1,
       changes: [
         {path: 'policy.[0].name', value: 'office'},
         {path: 'policy.[0].dst', value: ['internet', 'backup']},
+        {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, 44443]},
       ],
     }));
     const client = new DraftClient('/api/v1', fetcher);
     await expect(client.upsertMany(0, [
       {path: 'policy.[0].name', value: 'office'},
       {path: 'policy.[0].dst', value: ['internet', 'backup']},
+      {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, 44443]},
     ])).resolves.toMatchObject({version: 1});
     await expect(client.upsertMany(1, [])).rejects.toThrow('Invalid draft changes');
     await expect(client.upsertMany(1, [
       {path: 'policy.[0].name', value: 'one'},
       {path: 'policy.[0].name', value: 'two'},
     ])).rejects.toThrow('Invalid draft path');
+    await expect(client.upsertMany(1, [
+      {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, '8443'] as never},
+    ])).rejects.toThrow('Invalid draft scalar');
   });
 
   it('clears a draft with optimistic concurrency headers', async () => {

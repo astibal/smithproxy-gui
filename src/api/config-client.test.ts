@@ -26,9 +26,17 @@ const liveSnapshot = {
     {
       id: 'tls-0', name: 'inspect', type: 'tls', routing: null,
       tls: {
-        inspect: true, allow_untrusted_issuers: false, allow_invalid_certificates: false,
+        inspect: true, use_pfs: true, left_use_pfs: true, right_use_pfs: true,
+        left_disable_reuse: false, right_disable_reuse: false,
+        allow_untrusted_issuers: false, allow_invalid_certificates: false,
         allow_self_signed: false, certificate_transparency: true, ocsp_stapling: true,
-        block_alpn: false, only_custom_certificates: false, no_fallback_bypass: true,
+        ocsp_mode: 1, ocsp_stapling_mode: 1, block_alpn: false,
+        sni_based_certificates: true, ip_based_certificates: true,
+        only_custom_certificates: false, no_fallback_bypass: true,
+        sni_filter_uses_dns_cache: true, sni_filter_uses_dns_domain_tree: true,
+        redirect_warning_ports: [443, 44443], failed_certificate_replacement: true,
+        failed_certificate_override: false, failed_certificate_override_timeout: 600,
+        failed_certificate_override_timeout_type: 0,
         ssl_key_log: false, client_hello_timeout_ms: 3000, handshake_timeout_ms: 10000,
         sni_bypass_entries: 2, client_certificate_action: 'use_configured', alerts: 'unusual',
       },
@@ -177,6 +185,11 @@ describe('ApiConfigClient', () => {
     ]);
     expect(snapshot.protocols[0]?.usedBy).toEqual([{id: 'policy-0', kind: 'policy', name: 'Policy 1'}]);
     expect(snapshot.profiles.map(item => item.usedBy.length)).toEqual([1, 1, 1, 1]);
+    expect(snapshot.profiles[0]?.tls).toMatchObject({
+      ocspMode: 1, ocspStaplingMode: 1, redirectWarningPorts: [443, 44443],
+      sniBasedCertificates: true, ipBasedCertificates: true,
+      failedCertificateOverrideTimeout: 600,
+    });
     expect(snapshot.profiles[1]?.routing).toMatchObject({loadBalancingMethod: 'sticky-l3'});
     expect(snapshot.addresses[1]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
     expect(snapshot.ports[0]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
@@ -234,6 +247,12 @@ describe('ApiConfigClient', () => {
         ? {...profile, content: {...profile.content, rule_count: 3}}
         : profile),
     })).toThrow('Invalid content rule count');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      profiles: liveSnapshot.profiles.map(profile => profile.type === 'tls'
+        ? {...profile, tls: {...profile.tls, redirect_warning_ports: [443, 443]}}
+        : profile),
+    })).toThrow('Duplicate TLS redirect warning port');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,
       security_assets: {

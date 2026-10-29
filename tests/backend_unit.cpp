@@ -47,12 +47,15 @@ int main() {
         {"policy.[0].name", std::string("office")},
         {"policy.[0].disabled", false},
         {"policy.[0].dst", std::vector<std::string>{"internet", "backup"}},
+        {"tls_profiles.[0].redirect_warning_ports", std::vector<std::int64_t>{443, 44443}},
     }) == DraftMutationResult::Applied);
     const auto batched = draft.snapshot();
     assert(batched.version == 3U);
-    assert(batched.changes.size() == 4U);
-    assert(std::get<std::vector<std::string>>(batched.changes.back().value) ==
+    assert(batched.changes.size() == 5U);
+    assert(std::get<std::vector<std::string>>(batched.changes[3].value) ==
            std::vector<std::string>({"internet", "backup"}));
+    assert(std::get<std::vector<std::int64_t>>(batched.changes.back().value) ==
+           std::vector<std::int64_t>({443, 44443}));
     assert(draft.upsert_many(3U, {
         {"policy.[0].name", std::string("changed")},
         {"policy.[0].name", std::string("duplicate")},
@@ -61,7 +64,7 @@ int main() {
     assert(std::get<std::string>(draft.snapshot().changes[1].value) == "office");
     assert(draft.remove(3U, "settings.missing") == DraftMutationResult::Missing);
     assert(draft.remove(3U, "policy.[0].action") == DraftMutationResult::Applied);
-    assert(draft.snapshot().changes.size() == 3U);
+    assert(draft.snapshot().changes.size() == 4U);
     assert(draft.clear(4U) == DraftMutationResult::Applied);
     assert(draft.snapshot().version == 5U);
 
@@ -207,15 +210,24 @@ int main() {
         R"({"success":{"routing":{"bad":{"rewrite_sni":"one-sided.example"}}}})",
         "routing", "routing").profiles);
     const auto tls_profiles = parse_config_profiles(
-        R"({"success":{"tls_profiles":{"strict":{"inspect":"true","allow_invalid_certs":"false","client_hello_timeout":"3000","handshake_timeout":"10000","sni_filter_bypass":["secret.example"],"client_cert_action":"use_configured","alerts":"unusual"}}}})",
+        R"({"success":{"tls_profiles":{"strict":{"inspect":"true","use_pfs":"true","left_use_pfs":"false","right_use_pfs":"true","left_disable_reuse":"true","right_disable_reuse":"false","allow_invalid_certs":"false","ocsp_mode":"2","ocsp_stapling":"true","ocsp_stapling_mode":"1","sni_based_cert":"true","ip_based_cert":"false","sni_filter_use_dns_cache":"true","sni_filter_use_dns_domain_tree":"false","redirect_warning_ports":[443,"44443"],"failed_certcheck_replacement":"true","failed_certcheck_override":"true","failed_certcheck_override_timeout":"900","failed_certcheck_override_timeout_type":"1","client_hello_timeout":"3000","handshake_timeout":"10000","sni_filter_bypass":["secret.example"],"client_cert_action":"use_configured","alerts":"unusual"}}}})",
         "tls_profiles", "tls");
     assert(tls_profiles.profiles);
     assert(tls_profiles.profiles->front().tls);
     assert(tls_profiles.profiles->front().tls->inspect);
+    assert(!tls_profiles.profiles->front().tls->left_use_pfs);
+    assert(tls_profiles.profiles->front().tls->left_disable_reuse);
+    assert(tls_profiles.profiles->front().tls->ocsp_mode == 2U);
+    assert(tls_profiles.profiles->front().tls->redirect_warning_ports ==
+           std::vector<std::uint64_t>({443U, 44443U}));
+    assert(tls_profiles.profiles->front().tls->failed_certificate_override_timeout == 900U);
     assert(tls_profiles.profiles->front().tls->sni_bypass_entries == 1U);
     assert(tls_profiles.profiles->front().tls->alerts == "unusual");
     assert(!parse_config_profiles(
         R"({"success":{"tls_profiles":{"bad":{"alerts":"verbose"}}}})",
+        "tls_profiles", "tls").profiles);
+    assert(!parse_config_profiles(
+        R"({"success":{"tls_profiles":{"bad":{"redirect_warning_ports":[443,443]}}}})",
         "tls_profiles", "tls").profiles);
     const auto detection_profiles = parse_config_profiles(
         R"({"success":{"detection_profiles":{"default":{"mode":"2","engines_enabled":"true","kb_enabled":"false"}}}})",

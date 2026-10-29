@@ -18,6 +18,7 @@ constexpr std::size_t maximum_references = 256U;
 constexpr std::size_t maximum_name_length = 128U;
 constexpr std::size_t maximum_value_length = 1024U;
 constexpr std::size_t maximum_rule_length = 65536U;
+constexpr std::uint64_t maximum_config_integer = 2147483647U;
 
 bool valid_name(const std::string& value);
 
@@ -57,6 +58,39 @@ std::optional<std::vector<std::string>> string_array(
         auto text = item.get<std::string>();
         if (text.empty() || text.size() > maximum_name_length) return std::nullopt;
         result.push_back(std::move(text));
+    }
+    return result;
+}
+
+std::optional<std::vector<std::uint64_t>> optional_decimal_array(
+    const Json& object, const char* key, const std::uint64_t maximum) {
+    const auto value = object.find(key);
+    if (value == object.end()) return std::vector<std::uint64_t>{};
+    if (!value->is_array() || value->size() > maximum_references) return std::nullopt;
+    std::vector<std::uint64_t> result;
+    result.reserve(value->size());
+    for (const auto& item : *value) {
+        std::uint64_t parsed{};
+        if (item.is_number_unsigned()) {
+            parsed = item.get<std::uint64_t>();
+        } else if (item.is_number_integer()) {
+            const auto signed_value = item.get<std::int64_t>();
+            if (signed_value < 0) return std::nullopt;
+            parsed = static_cast<std::uint64_t>(signed_value);
+        } else if (item.is_string()) {
+            const auto& text = item.get_ref<const std::string&>();
+            const auto [end, error] = std::from_chars(
+                text.data(), text.data() + text.size(), parsed);
+            if (text.empty() || error != std::errc{} || end != text.data() + text.size()) {
+                return std::nullopt;
+            }
+        } else {
+            return std::nullopt;
+        }
+        if (parsed > maximum || std::find(result.begin(), result.end(), parsed) != result.end()) {
+            return std::nullopt;
+        }
+        result.push_back(parsed);
     }
     return result;
 }
@@ -338,22 +372,46 @@ ConfigProfileParseResult parse_config_profiles(
             };
         } else if (type == "tls") {
             const auto inspect = boolean_scalar(profile, "inspect", false);
+            const auto use_pfs = boolean_scalar(profile, "use_pfs", true);
+            const auto left_use_pfs = boolean_scalar(profile, "left_use_pfs", true);
+            const auto right_use_pfs = boolean_scalar(profile, "right_use_pfs", true);
+            const auto left_disable_reuse = boolean_scalar(profile, "left_disable_reuse", false);
+            const auto right_disable_reuse = boolean_scalar(profile, "right_disable_reuse", false);
             const auto allow_untrusted = boolean_scalar(profile, "allow_untrusted_issuers", false);
             const auto allow_invalid = boolean_scalar(profile, "allow_invalid_certs", false);
             const auto allow_self_signed = boolean_scalar(profile, "allow_self_signed", false);
             const auto ct = boolean_scalar(profile, "ct_enable", true);
-            const auto stapling = boolean_scalar(profile, "ocsp_stapling", true);
+            const auto ocsp_mode = optional_decimal(profile, "ocsp_mode", 0U, 2U);
+            const auto stapling = boolean_scalar(profile, "ocsp_stapling", false);
+            const auto stapling_mode = optional_decimal(profile, "ocsp_stapling_mode", 0U, 2U);
             const auto alpn = boolean_scalar(profile, "alpn_block", false);
+            const auto sni_cert = boolean_scalar(profile, "sni_based_cert", true);
+            const auto ip_cert = boolean_scalar(profile, "ip_based_cert", true);
             const auto custom_only = boolean_scalar(profile, "only_custom_certs", false);
             const auto no_fallback = boolean_scalar(profile, "no_fallback_bypass", false);
+            const auto dns_cache = boolean_scalar(profile, "sni_filter_use_dns_cache", true);
+            const auto dns_tree = boolean_scalar(profile, "sni_filter_use_dns_domain_tree", true);
+            const auto warning_ports = optional_decimal_array(profile, "redirect_warning_ports", 65535U);
+            const auto failed_replacement = boolean_scalar(profile, "failed_certcheck_replacement", true);
+            const auto failed_override = boolean_scalar(profile, "failed_certcheck_override", false);
+            const auto override_timeout = optional_decimal(
+                profile, "failed_certcheck_override_timeout", 600U, maximum_config_integer);
+            const auto override_timeout_type = optional_decimal(
+                profile, "failed_certcheck_override_timeout_type", 0U, 1U);
             const auto key_log = boolean_scalar(profile, "sslkeylog", false);
-            const auto hello_timeout = optional_decimal(profile, "client_hello_timeout", 3000U, 3600000U);
-            const auto handshake_timeout = optional_decimal(profile, "handshake_timeout", 10000U, 3600000U);
+            const auto hello_timeout = optional_decimal(
+                profile, "client_hello_timeout", 3000U, maximum_config_integer);
+            const auto handshake_timeout = optional_decimal(
+                profile, "handshake_timeout", 10000U, maximum_config_integer);
             const auto bypass = string_array(profile, "sni_filter_bypass", true);
             const auto client_action = bounded_string(profile, "client_cert_action", 32U, true);
             const auto alerts = bounded_string(profile, "alerts", 16U, true);
-            if (!inspect || !allow_untrusted || !allow_invalid || !allow_self_signed || !ct || !stapling || !alpn ||
-                !custom_only || !no_fallback || !key_log || !hello_timeout || *hello_timeout == 0U ||
+            if (!inspect || !use_pfs || !left_use_pfs || !right_use_pfs || !left_disable_reuse ||
+                !right_disable_reuse || !allow_untrusted || !allow_invalid || !allow_self_signed || !ct ||
+                !ocsp_mode || !stapling || !stapling_mode || !alpn || !sni_cert || !ip_cert ||
+                !custom_only || !no_fallback || !dns_cache || !dns_tree || !warning_ports ||
+                !failed_replacement || !failed_override || !override_timeout || *override_timeout == 0U ||
+                !override_timeout_type || !key_log || !hello_timeout || *hello_timeout == 0U ||
                 !handshake_timeout || *handshake_timeout == 0U || !bypass || !client_action ||
                 (*client_action != "" && *client_action != "block_or_replacement" &&
                  *client_action != "empty_client_cert" && *client_action != "tls_bypass" &&
@@ -362,8 +420,12 @@ ConfigProfileParseResult parse_config_profiles(
                 return {std::nullopt, "Smithproxy returned an invalid TLS profile"};
             }
             tls = ConfigTlsProfile{
-                *inspect, *allow_untrusted, *allow_invalid, *allow_self_signed, *ct, *stapling, *alpn,
-                *custom_only, *no_fallback, *key_log, *hello_timeout, *handshake_timeout, bypass->size(),
+                *inspect, *use_pfs, *left_use_pfs, *right_use_pfs, *left_disable_reuse,
+                *right_disable_reuse, *allow_untrusted, *allow_invalid, *allow_self_signed, *ct,
+                *ocsp_mode, *stapling, *stapling_mode, *alpn, *sni_cert, *ip_cert, *custom_only,
+                *no_fallback, *dns_cache, *dns_tree, *warning_ports, *failed_replacement,
+                *failed_override, *override_timeout, *override_timeout_type, *key_log,
+                *hello_timeout, *handshake_timeout, bypass->size(),
                 client_action->empty() ? "use_configured" : *client_action,
                 alerts->empty() ? "all" : *alerts,
             };

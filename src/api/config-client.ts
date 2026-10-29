@@ -273,24 +273,57 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       if (!['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientCertificateAction)) {
         throw new Error('Invalid TLS client certificate action.');
       }
+      const redirectWarningPorts = boundedArray(
+        item.tls.redirect_warning_ports, 'TLS redirect warning ports', MAX_REFERENCES,
+      ).map(port => safeInteger(port, 'TLS redirect warning port', 65535));
+      if (new Set(redirectWarningPorts).size !== redirectWarningPorts.length) {
+        throw new Error('Duplicate TLS redirect warning port.');
+      }
       tls = {
         inspect: safeBoolean(item.tls.inspect, 'TLS inspection state'),
+        usePfs: safeBoolean(item.tls.use_pfs, 'TLS PFS state'),
+        leftUsePfs: safeBoolean(item.tls.left_use_pfs, 'TLS downstream PFS state'),
+        rightUsePfs: safeBoolean(item.tls.right_use_pfs, 'TLS upstream PFS state'),
+        leftDisableReuse: safeBoolean(item.tls.left_disable_reuse, 'TLS downstream reuse state'),
+        rightDisableReuse: safeBoolean(item.tls.right_disable_reuse, 'TLS upstream reuse state'),
         allowUntrustedIssuers: safeBoolean(item.tls.allow_untrusted_issuers, 'TLS untrusted issuer state'),
         allowInvalidCertificates: safeBoolean(item.tls.allow_invalid_certificates, 'TLS invalid certificate state'),
         allowSelfSigned: safeBoolean(item.tls.allow_self_signed, 'TLS self-signed state'),
         certificateTransparency: safeBoolean(item.tls.certificate_transparency, 'TLS transparency state'),
+        ocspMode: safeInteger(item.tls.ocsp_mode, 'TLS OCSP mode', 2) as 0 | 1 | 2,
         ocspStapling: safeBoolean(item.tls.ocsp_stapling, 'TLS OCSP stapling state'),
+        ocspStaplingMode: safeInteger(item.tls.ocsp_stapling_mode, 'TLS OCSP stapling mode', 2) as 0 | 1 | 2,
         blockAlpn: safeBoolean(item.tls.block_alpn, 'TLS ALPN state'),
+        sniBasedCertificates: safeBoolean(item.tls.sni_based_certificates, 'TLS SNI certificate state'),
+        ipBasedCertificates: safeBoolean(item.tls.ip_based_certificates, 'TLS IP certificate state'),
         onlyCustomCertificates: safeBoolean(item.tls.only_custom_certificates, 'TLS custom certificate state'),
         noFallbackBypass: safeBoolean(item.tls.no_fallback_bypass, 'TLS fallback state'),
+        sniFilterUsesDnsCache: safeBoolean(item.tls.sni_filter_uses_dns_cache, 'TLS SNI DNS-cache state'),
+        sniFilterUsesDnsDomainTree: safeBoolean(
+          item.tls.sni_filter_uses_dns_domain_tree, 'TLS SNI DNS-tree state',
+        ),
+        redirectWarningPorts,
+        failedCertificateReplacement: safeBoolean(
+          item.tls.failed_certificate_replacement, 'TLS failed-certificate replacement state',
+        ),
+        failedCertificateOverride: safeBoolean(
+          item.tls.failed_certificate_override, 'TLS failed-certificate override state',
+        ),
+        failedCertificateOverrideTimeout: safeInteger(
+          item.tls.failed_certificate_override_timeout, 'TLS failed-certificate override timeout', 2147483647,
+        ),
+        failedCertificateOverrideTimeoutType: safeInteger(
+          item.tls.failed_certificate_override_timeout_type, 'TLS failed-certificate timeout type', 1,
+        ) as 0 | 1,
         sslKeyLog: safeBoolean(item.tls.ssl_key_log, 'TLS key log state'),
-        clientHelloTimeoutMs: safeInteger(item.tls.client_hello_timeout_ms, 'TLS client hello timeout', 3600000),
-        handshakeTimeoutMs: safeInteger(item.tls.handshake_timeout_ms, 'TLS handshake timeout', 3600000),
+        clientHelloTimeoutMs: safeInteger(item.tls.client_hello_timeout_ms, 'TLS client hello timeout', 2147483647),
+        handshakeTimeoutMs: safeInteger(item.tls.handshake_timeout_ms, 'TLS handshake timeout', 2147483647),
         sniBypassEntries: safeInteger(item.tls.sni_bypass_entries, 'TLS SNI bypass count', MAX_REFERENCES),
         clientCertificateAction,
         alerts: alerts as 'all' | 'unusual' | 'mute',
       };
-      if (tls.clientHelloTimeoutMs === 0 || tls.handshakeTimeoutMs === 0) throw new Error('Invalid TLS timeout.');
+      if (tls.clientHelloTimeoutMs === 0 || tls.handshakeTimeoutMs === 0 ||
+          tls.failedCertificateOverrideTimeout === 0) throw new Error('Invalid TLS timeout.');
     } else if (item.tls !== null) {
       throw new Error('Invalid non-TLS profile details.');
     }

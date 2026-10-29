@@ -1,4 +1,4 @@
-export type DraftScalar = boolean | number | string | ReadonlyArray<string>;
+export type DraftScalar = boolean | number | string | ReadonlyArray<string> | ReadonlyArray<number>;
 
 export interface DraftChange {
   path: string;
@@ -36,6 +36,10 @@ function scalar(value: unknown): DraftScalar {
   if (typeof value === 'string' && value.length <= 65536 && !value.includes('\0')) return value;
   if (Array.isArray(value) && value.length <= 256 && value.every(item =>
     typeof item === 'string' && item.length > 0 && item.length <= 65536 && !item.includes('\0'))) {
+    return value;
+  }
+  if (Array.isArray(value) && value.length <= 256 && value.every(item =>
+    typeof item === 'number' && Number.isSafeInteger(item))) {
     return value;
   }
   throw new Error('Invalid draft scalar.');

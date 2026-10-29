@@ -111,11 +111,21 @@
     {
       "name": "tls_profiles",
       "origin": "reference_config",
-      "read": "partial",
-      "edit": "partial",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "security-critical",
-      "tracked_fields": ["name", "inspect", "no_fallback_bypass", "use_pfs", "left_ca", "right_ca", "ocsp_mode"],
-      "notes": "Core TLS controls are typed; SNI bypass lists support write-only replace or clear while unrecognized fields remain redacted."
+      "tracked_fields": [
+        "name", "inspect", "no_fallback_bypass", "client_hello_timeout", "handshake_timeout",
+        "use_pfs", "left_use_pfs", "right_use_pfs", "left_disable_reuse", "right_disable_reuse",
+        "allow_untrusted_issuers", "allow_invalid_certs", "allow_self_signed", "ocsp_mode",
+        "ocsp_stapling", "ocsp_stapling_mode", "ct_enable", "alpn_block",
+        "failed_certcheck_replacement", "failed_certcheck_override",
+        "failed_certcheck_override_timeout", "failed_certcheck_override_timeout_type",
+        "client_cert_action", "sni_based_cert", "ip_based_cert", "only_custom_certs",
+        "sni_filter_bypass", "sni_filter_use_dns_cache", "sni_filter_use_dns_domain_tree",
+        "redirect_warning_ports", "sslkeylog", "alerts"
+      ],
+      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed. SNI bypass expressions support write-only replace or clear and never cross the browser boundary."
     },
     {
       "name": "ssh_profiles",

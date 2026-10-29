@@ -70,6 +70,16 @@ std::string string_array_json(const std::vector<std::string>& values) {
     return result;
 }
 
+std::string number_array_json(const std::vector<std::uint64_t>& values) {
+    std::string result{"["};
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index != 0U) result += ',';
+        result += std::to_string(values[index]);
+    }
+    result += ']';
+    return result;
+}
+
 bool constant_time_equal(const std::string_view left, const std::string_view right) {
     const auto size = std::max(left.size(), right.size());
     std::size_t difference = left.size() ^ right.size();
@@ -236,6 +246,20 @@ private:
             if (raw.is_number_float()) return DraftScalar{raw.get<double>()};
             if (raw.is_string()) return DraftScalar{raw.get<std::string>()};
             if (raw.is_array()) {
+                if (raw.empty()) return DraftScalar{std::vector<std::string>{}};
+                if (raw.front().is_number_integer() || raw.front().is_number_unsigned()) {
+                    std::vector<std::int64_t> values;
+                    values.reserve(raw.size());
+                    for (const auto& item : raw) {
+                        if (!item.is_number_integer() && !item.is_number_unsigned()) return std::nullopt;
+                        if (item.is_number_unsigned() &&
+                            item.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+                            return std::nullopt;
+                        }
+                        values.push_back(item.get<std::int64_t>());
+                    }
+                    return DraftScalar{std::move(values)};
+                }
                 std::vector<std::string> values;
                 values.reserve(raw.size());
                 for (const auto& item : raw) {
@@ -465,14 +489,36 @@ private:
             } else {
                 const auto& tls = *profile.tls;
                 profiles += "{\"inspect\":" + std::string(tls.inspect ? "true" : "false") +
+                            ",\"use_pfs\":" + (tls.use_pfs ? "true" : "false") +
+                            ",\"left_use_pfs\":" + (tls.left_use_pfs ? "true" : "false") +
+                            ",\"right_use_pfs\":" + (tls.right_use_pfs ? "true" : "false") +
+                            ",\"left_disable_reuse\":" + (tls.left_disable_reuse ? "true" : "false") +
+                            ",\"right_disable_reuse\":" + (tls.right_disable_reuse ? "true" : "false") +
                             ",\"allow_untrusted_issuers\":" + (tls.allow_untrusted_issuers ? "true" : "false") +
                             ",\"allow_invalid_certificates\":" + (tls.allow_invalid_certificates ? "true" : "false") +
                             ",\"allow_self_signed\":" + (tls.allow_self_signed ? "true" : "false") +
                             ",\"certificate_transparency\":" + (tls.certificate_transparency ? "true" : "false") +
+                            ",\"ocsp_mode\":" + std::to_string(tls.ocsp_mode) +
                             ",\"ocsp_stapling\":" + (tls.ocsp_stapling ? "true" : "false") +
+                            ",\"ocsp_stapling_mode\":" + std::to_string(tls.ocsp_stapling_mode) +
                             ",\"block_alpn\":" + (tls.block_alpn ? "true" : "false") +
+                            ",\"sni_based_certificates\":" + (tls.sni_based_certificates ? "true" : "false") +
+                            ",\"ip_based_certificates\":" + (tls.ip_based_certificates ? "true" : "false") +
                             ",\"only_custom_certificates\":" + (tls.only_custom_certificates ? "true" : "false") +
                             ",\"no_fallback_bypass\":" + (tls.no_fallback_bypass ? "true" : "false") +
+                            ",\"sni_filter_uses_dns_cache\":" +
+                            (tls.sni_filter_uses_dns_cache ? "true" : "false") +
+                            ",\"sni_filter_uses_dns_domain_tree\":" +
+                            (tls.sni_filter_uses_dns_domain_tree ? "true" : "false") +
+                            ",\"redirect_warning_ports\":" + number_array_json(tls.redirect_warning_ports) +
+                            ",\"failed_certificate_replacement\":" +
+                            (tls.failed_certificate_replacement ? "true" : "false") +
+                            ",\"failed_certificate_override\":" +
+                            (tls.failed_certificate_override ? "true" : "false") +
+                            ",\"failed_certificate_override_timeout\":" +
+                            std::to_string(tls.failed_certificate_override_timeout) +
+                            ",\"failed_certificate_override_timeout_type\":" +
+                            std::to_string(tls.failed_certificate_override_timeout_type) +
                             ",\"ssl_key_log\":" + (tls.ssl_key_log ? "true" : "false") +
                             ",\"client_hello_timeout_ms\":" + std::to_string(tls.client_hello_timeout_ms) +
                             ",\"handshake_timeout_ms\":" + std::to_string(tls.handshake_timeout_ms) +

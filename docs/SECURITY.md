@@ -84,8 +84,8 @@ responses use `no-store`; fingerprinted static assets are immutable.
 ## Config a secrets
 
 - secrets jsou write-only/redigované;
-- write-only náhrady zůstávají pouze v serverovém draftu a draft API je vrací
-  jako `[redacted]`;
+- write-only náhrady zůstávají pouze v serverovém draftu a draft API vrací jen
+  redigovaný záměr `clear`/`replace`, případně bezpečný počet položek;
 - audit nesmí obsahovat secrets, tokeny ani citlivé payloady;
 - export diagnostiky používá explicitní allowlist;
 - validace cest a identifikátorů neumožní filesystem traversal;
