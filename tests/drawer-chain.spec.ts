@@ -688,6 +688,34 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(analysis.getByText('0', {exact: true})).toBeVisible();
 });
 
+test('loads independent monitoring surfaces concurrently', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  const endpoints = [
+    '/api/v1/metrics/summary',
+    '/api/v1/sessions/activity',
+    '/api/v1/tls/cache/summary',
+    '/api/v1/network/neighbors/summary',
+    '/api/v1/events/recent',
+    '/api/v1/alerts',
+  ];
+  const pending = new Set(endpoints);
+  let release: () => void = () => undefined;
+  const barrier = new Promise<void>(resolve => { release = resolve; });
+  for (const endpoint of endpoints) {
+    await page.route(`**${endpoint}`, async route => {
+      pending.delete(endpoint);
+      if (pending.size === 0) release();
+      await barrier;
+      await route.fallback();
+    });
+  }
+
+  await page.goto('/');
+  await expect(page.getByRole('region', {name: 'Runtime metrics summary'})).toContainText('19');
+  await expect(page.getByRole('region', {name: 'Active operational alerts'})).toContainText('Clear');
+  expect(pending.size).toBe(0);
+});
+
 test('exposes network, object, and system vertical slices', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'});
   await page.goto('/');

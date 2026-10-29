@@ -488,54 +488,63 @@ export class SmithproxyApp extends LitElement {
     }
     this.systemProbeInFlight = true;
     try {
-      this.systemStatus = statusFromSnapshot(await this.systemClient.status());
-      try {
-        this.runtimeMetrics = await this.systemClient.metricsSummary();
-      } catch (error) {
+      const systemClient = this.systemClient;
+      this.systemStatus = statusFromSnapshot(await systemClient.status());
+      const [metrics, sessions, tlsCache, neighbors, events, alerts] = await Promise.allSettled([
+        systemClient.metricsSummary(),
+        systemClient.sessionActivity(),
+        systemClient.tlsCacheSummary(),
+        systemClient.neighborSummary(),
+        systemClient.recentEvents(),
+        systemClient.activeAlerts(),
+      ] as const);
+      if (metrics.status === 'fulfilled') {
+        this.runtimeMetrics = metrics.value;
+      } else {
         this.runtimeMetrics = {
           ...this.runtimeMetrics,
           state: 'unavailable',
-          detail: error instanceof Error ? error.message : 'Runtime metrics are unavailable.',
+          detail: metrics.reason instanceof Error ? metrics.reason.message : 'Runtime metrics are unavailable.',
         };
       }
-      try {
-        this.sessionActivity = await this.systemClient.sessionActivity();
-      } catch (error) {
+      if (sessions.status === 'fulfilled') {
+        this.sessionActivity = sessions.value;
+      } else {
         this.sessionActivity = {
           ...this.sessionActivity,
           state: 'unavailable',
-          detail: error instanceof Error ? error.message : 'Session activity is unavailable.',
+          detail: sessions.reason instanceof Error ? sessions.reason.message : 'Session activity is unavailable.',
         };
       }
-      try {
-        this.tlsCache = await this.systemClient.tlsCacheSummary();
-      } catch (error) {
+      if (tlsCache.status === 'fulfilled') {
+        this.tlsCache = tlsCache.value;
+      } else {
         this.tlsCache = {
           ...this.tlsCache,
           state: 'unavailable',
-          detail: error instanceof Error ? error.message : 'TLS cache metrics are unavailable.',
+          detail: tlsCache.reason instanceof Error ? tlsCache.reason.message : 'TLS cache metrics are unavailable.',
         };
       }
-      try {
-        this.neighbors = await this.systemClient.neighborSummary();
-      } catch (error) {
+      if (neighbors.status === 'fulfilled') {
+        this.neighbors = neighbors.value;
+      } else {
         this.neighbors = {
           ...this.neighbors,
           state: 'unavailable',
-          detail: error instanceof Error ? error.message : 'Neighborhood metrics are unavailable.',
+          detail: neighbors.reason instanceof Error ? neighbors.reason.message : 'Neighborhood metrics are unavailable.',
         };
       }
-      try {
-        this.operationalEvents = await this.systemClient.recentEvents();
+      if (events.status === 'fulfilled') {
+        this.operationalEvents = events.value;
         this.eventsError = undefined;
-      } catch (error) {
-        this.eventsError = error instanceof Error ? error.message : 'Operational events are unavailable.';
+      } else {
+        this.eventsError = events.reason instanceof Error ? events.reason.message : 'Operational events are unavailable.';
       }
-      try {
-        this.operationalAlerts = await this.systemClient.activeAlerts();
+      if (alerts.status === 'fulfilled') {
+        this.operationalAlerts = alerts.value;
         this.alertsError = undefined;
-      } catch (error) {
-        this.alertsError = error instanceof Error ? error.message : 'Operational alerts are unavailable.';
+      } else {
+        this.alertsError = alerts.reason instanceof Error ? alerts.reason.message : 'Operational alerts are unavailable.';
       }
       await this.refreshConfiguration();
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
