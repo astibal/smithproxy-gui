@@ -161,8 +161,10 @@ filters, and matcher expressions use write-only controls.
 Policy and routing reference fields preview the value being typed. Known objects
 open directly in the next nested editor. Objects and profiles created earlier in
 the same workspace draft are marked as pending and reopen their structural create
-drawer from the reference chain. Literals and unresolved names remain marked for
-review without blocking Smithproxy-specific expressions.
+drawer from the reference chain. Pending renames resolve by their current
+draft-visible name while retaining the live entity's stable ID. Literals and
+unresolved names remain marked for review without blocking Smithproxy-specific
+expressions.
 The global configuration search covers policies, reusable objects, profiles,
 content rules, certificate authorities, protocol signatures, system settings,
 and capture settings. Results use pending draft values and open the matching

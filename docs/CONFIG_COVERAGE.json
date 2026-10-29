@@ -163,7 +163,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "dnat_address", "dnat_port", "dnat_lb_method", "rewrite_sni", "rewrite_sni_to"],
-      "notes": "All active fields emitted by the current routing-profile saver are typed, editable, and structurally creatable with bounded unique destination lists. Stable unreferenced profiles support confirmed structural deletion."
+      "notes": "All active fields emitted by the current routing-profile saver are typed, editable, and structurally creatable with bounded unique destination lists. Address and port references resolve current draft-visible names while preserving stable live entity IDs. Stable unreferenced profiles support confirmed structural deletion."
     },
     {
       "name": "policy",
@@ -176,7 +176,7 @@
         "ssh_profile", "detection_profile", "content_profile", "alg_dns_profile",
         "script_profile", "auth_profile", "nat", "routing", "features", "disabled"
       ],
-      "notes": "All fields currently returned by the policy snapshot contract are represented by typed edit and ordered structural create drawers. References resolve both live entities and named objects or profiles created earlier in the same workspace draft; pending references reopen their structural create drawer. Existing policies support optimistic first, before, and last move operations; restoring the original position removes the pending move. Confirmed structural deletion rejects conflicting pending field edits. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "All fields currently returned by the policy snapshot contract are represented by typed edit and ordered structural create drawers. References resolve live entities by their current draft-visible names and named objects or profiles created earlier in the same workspace draft; pending creates reopen their structural drawer and pending renames retain the stable live entity ID. Existing policies support optimistic first, before, and last move operations; restoring the original position removes the pending move. Confirmed structural deletion rejects conflicting pending field edits. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "starttls_signatures",

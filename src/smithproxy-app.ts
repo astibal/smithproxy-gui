@@ -7595,12 +7595,12 @@ export class SmithproxyApp extends LitElement {
   private renderAddressReferences(entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>) {
     const names = this.previewReferenceNames(entry, inputId, fallback);
     return html`${names.map(name => {
-      const reference = this.snapshot?.addresses.find(item => item.name === name);
+      const reference = this.snapshot?.addresses.find(item => this.addressDisplayName(item) === name);
       const pending = this.pendingNamedCreate(['address_objects'], name);
       return reference ? html`
         <button class="reference" type="button"
           @click=${(event: MouseEvent) => this.openAddress(reference.id, event.currentTarget as HTMLElement)}>
-          <span>${reference.name}</span><span aria-hidden="true">→</span>
+          <span>${name}</span><span aria-hidden="true">→</span>
         </button>
       ` : pending ? this.renderPendingReference(pending, name) : this.renderReferenceAdvisory(name);
     })}`;
@@ -7609,11 +7609,11 @@ export class SmithproxyApp extends LitElement {
   private renderPortReferences(entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>) {
     const names = this.previewReferenceNames(entry, inputId, fallback);
     return html`<div class="reference-stack">${names.map(name => {
-      const port = this.snapshot?.ports.find(item => item.name === name);
+      const port = this.snapshot?.ports.find(item => this.portDisplayName(item) === name);
       const pending = this.pendingNamedCreate(['port_objects'], name);
       return port ? html`<button class="reference" type="button"
         @click=${(event: MouseEvent) => this.openPort(port.id, event.currentTarget as HTMLElement)}>
-        <span>${port.name}</span><span aria-hidden="true">→</span>
+        <span>${name}</span><span aria-hidden="true">→</span>
       </button>` : pending ? this.renderPendingReference(pending, name) : this.renderReferenceAdvisory(name);
     })}</div>`;
   }
@@ -7621,18 +7621,19 @@ export class SmithproxyApp extends LitElement {
   private renderProtocolReference(entry: DrawerEntry, inputId: string, fallback: string) {
     const name = this.previewReferenceNames(entry, inputId, [fallback])[0] ?? '';
     if (name.length === 0) return nothing;
-    const protocol = this.snapshot?.protocols.find(item => item.name === name);
+    const protocol = this.snapshot?.protocols.find(item => this.protocolDisplayName(item) === name);
     const pending = this.pendingNamedCreate(['proto_objects'], name);
     return protocol ? html`<button class="reference" type="button"
       @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
-      <span>${protocol.name}</span><span aria-hidden="true">→</span>
+      <span>${name}</span><span aria-hidden="true">→</span>
     </button>` : pending ? this.renderPendingReference(pending, name) : this.renderReferenceAdvisory(name);
   }
 
   private renderProfileReference(entry: DrawerEntry, inputId: string, type: string, fallback: string) {
     const name = this.previewReferenceNames(entry, inputId, [fallback])[0] ?? '';
     if (name.length === 0 || name === 'none') return html`<span>None</span>`;
-    const profile = this.snapshot?.profiles.find(item => item.type === type && item.name === name);
+    const profile = this.snapshot?.profiles.find(item =>
+      item.type === type && this.profileDisplayName(item) === name);
     const collections: Readonly<Record<string, DraftCreateOperation['collection']>> = {
       tls: 'tls_profiles', routing: 'routing', detection: 'detection_profiles', content: 'content_profiles',
       ssh: 'ssh_profiles', authentication: 'auth_profiles', dns: 'alg_dns_profiles', script: 'script_profiles',
@@ -7641,7 +7642,7 @@ export class SmithproxyApp extends LitElement {
     const pending = collection ? this.pendingNamedCreate([collection], name) : undefined;
     return profile ? html`<button class="reference" type="button"
       @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
-      <span>${profile.name}</span><span aria-hidden="true">→</span>
+      <span>${name}</span><span aria-hidden="true">→</span>
     </button>` : pending ? this.renderPendingReference(pending, name) : this.renderReferenceAdvisory(name);
   }
 

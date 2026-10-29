@@ -1472,6 +1472,57 @@ test('uses pending routing references for links and live previews', async ({page
     .toContainText('upstream-literalLiteral or unresolved');
 });
 
+test('resolves pending renamed entities throughout nested reference chains', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    initialDraftChanges: [
+      {path: 'address_objects.[1].name', value: 'public-internet'},
+      {path: 'port_objects.[0].name', value: 'web-tls'},
+      {path: 'proto_objects.[0].name', value: 'tcp-stream'},
+      {path: 'tls_profiles.[0].name', value: 'strict-inspection'},
+      {path: 'policy.[0].dst', value: ['public-internet']},
+      {path: 'policy.[0].dport', value: ['web-tls']},
+      {path: 'policy.[0].proto', value: 'tcp-stream'},
+      {path: 'policy.[0].tls_profile', value: 'strict-inspection'},
+      {path: 'routing.[0].dnat_address', value: ['public-internet']},
+      {path: 'routing.[0].dnat_port', value: ['web-tls']},
+    ],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office public-internet accept/i}).click();
+
+  const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await policyEditor.getByRole('button', {name: 'public-internet', exact: true}).click();
+  const addressEditor = page.getByRole('dialog', {name: 'Edit public-internet'});
+  await expect(addressEditor).toBeVisible();
+  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await policyEditor.getByRole('button', {name: 'web-tls', exact: true}).click();
+  const portEditor = page.getByRole('dialog', {name: 'Edit web-tls'});
+  await expect(portEditor).toBeVisible();
+  await portEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await policyEditor.getByRole('button', {name: 'tcp-stream', exact: true}).click();
+  const protocolEditor = page.getByRole('dialog', {name: 'Edit tcp-stream'});
+  await expect(protocolEditor).toBeVisible();
+  await protocolEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await policyEditor.getByRole('button', {name: 'strict-inspection', exact: true}).click();
+  const tlsEditor = page.getByRole('dialog', {name: 'Edit strict-inspection'});
+  await expect(tlsEditor).toBeVisible();
+  await tlsEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await policyEditor.getByRole('button', {name: 'main', exact: true}).click();
+  const routingEditor = page.getByRole('dialog', {name: 'Edit main'});
+  await routingEditor.getByRole('button', {name: 'public-internet', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit public-internet'})).toBeVisible();
+  await page.getByRole('dialog', {name: 'Edit public-internet'})
+    .getByRole('button', {name: 'Cancel'}).click();
+  await routingEditor.getByRole('button', {name: 'web-tls', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit web-tls'})).toBeVisible();
+});
+
 test('atomically removes only the active editor changes from the workspace draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
