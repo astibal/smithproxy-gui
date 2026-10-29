@@ -52,6 +52,11 @@ type MockState = {
   smithproxy: 'ready' | 'unreachable';
   gatewayMode?: 'gateway' | 'disabled';
   gatewayAuthenticated?: boolean;
+  forceManagementCapabilities?: boolean;
+  disabledMonitoringFeatures?: Array<
+    'jobs' | 'events' | 'alerts' | 'audit' | 'metrics' | 'session_activity' |
+    'tls_monitoring' | 'neighbor_monitoring' | 'interface_monitoring'
+  >;
   authSessionRequests?: number;
   now?: number;
   collectorLastSuccessAgeMs?: number;
@@ -86,21 +91,39 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     version: state.initialDraftChanges?.length ? 1 : 0,
     changes: state.initialDraftChanges ?? [] as Array<{path: string; value: unknown}>,
   };
-  await page.route('**/api/v1/capabilities', async route => route.fulfill({json: {
-    service: 'smithproxy-gui',
-    api_version: 'v1',
-    base_path: '/',
-    smithproxy_state: state.smithproxy,
-    config_transaction_state: state.validationReady || state.commitReady
-      ? 'ready' : configRead ? 'review-required' : 'unavailable',
-    features: {
-      config_read: configRead, config_write: Boolean(state.commitReady), drafts: configRead,
-      draft_preflight: configRead, jobs: true, events: true, alerts: true, audit: true,
-      smithproxy_events: false,
-      metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
-      interface_monitoring: true,
-    },
-  }}));
+  await page.route('**/api/v1/capabilities', async route => {
+    const gatewayMode = state.gatewayMode ?? (configRead ? 'gateway' : 'disabled');
+    const gatewayAuthenticated = state.gatewayAuthenticated ?? configRead;
+    const management = state.forceManagementCapabilities ??
+      (gatewayMode === 'disabled' || gatewayAuthenticated);
+    const monitoringFeature = (name: NonNullable<MockState['disabledMonitoringFeatures']>[number]): boolean =>
+      management && !state.disabledMonitoringFeatures?.includes(name);
+    const configuration = configRead && gatewayMode === 'gateway' && gatewayAuthenticated;
+    await route.fulfill({json: {
+      service: 'smithproxy-gui',
+      api_version: 'v1',
+      base_path: '/',
+      smithproxy_state: state.smithproxy,
+      config_transaction_state: (state.validationReady || state.commitReady) && configuration
+        ? 'ready' : configuration ? 'review-required' : 'unavailable',
+      features: {
+        config_read: configuration,
+        config_write: Boolean(state.commitReady) && configuration,
+        drafts: configuration,
+        draft_preflight: configuration,
+        jobs: monitoringFeature('jobs'),
+        events: monitoringFeature('events'),
+        alerts: monitoringFeature('alerts'),
+        audit: monitoringFeature('audit'),
+        smithproxy_events: false,
+        metrics: monitoringFeature('metrics'),
+        session_activity: monitoringFeature('session_activity'),
+        tls_monitoring: monitoringFeature('tls_monitoring'),
+        neighbor_monitoring: monitoringFeature('neighbor_monitoring'),
+        interface_monitoring: monitoringFeature('interface_monitoring'),
+      },
+    }});
+  });
   await page.route('**/api/v1/auth/session', async route => {
     state.authSessionRequests = (state.authSessionRequests ?? 0) + 1;
     await route.fulfill({json: {
@@ -1434,6 +1457,14 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   const state: MockState = {
     smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: false,
   };
+  const protectedRequests: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/status' || path === '/api/v1/events' ||
+        path === '/api/v1/metrics/summary') {
+      protectedRequests.push(path);
+    }
+  });
   await mockSystemApi(page, state, true);
   await page.goto('/');
 
@@ -1447,6 +1478,9 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await expect(gatewayCard).toContainText('Configuration readBlocked');
   await expect(gatewayCard).toContainText('Shared draftBlocked');
   await expect(gatewayCard).toContainText(/did not receive a valid trusted gateway handoff/i);
+  await expect(statusbar).toContainText('Events: Unavailable');
+  await expect(statusbar).toContainText('Jobs: Unavailable');
+  expect(protectedRequests).toEqual([]);
 
   state.gatewayAuthenticated = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -1454,6 +1488,74 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await expect(statusbar).toContainText('Gateway: Verified');
   await expect(gatewayCard).toContainText('Current requestVerified');
   await expect(gatewayCard).toContainText('Configuration readAvailable');
+  await expect.poll(() => protectedRequests.length).toBeGreaterThan(0);
+
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
+  const interfaceCount = interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'});
+  await expect(interfaceCount.getByText('3', {exact: true})).toBeVisible();
+
+  const acceptedRequestCount = protectedRequests.length;
+  state.gatewayAuthenticated = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect.poll(() => state.authSessionRequests).toBeGreaterThan(2);
+  await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Events: Unavailable');
+  await expect(interfaceCount.getByText('0', {exact: true})).toBeVisible();
+  await page.waitForTimeout(200);
+  expect(protectedRequests).toHaveLength(acceptedRequestCount);
+});
+
+test('rejects management capabilities that contradict the gateway session', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    gatewayMode: 'gateway',
+    gatewayAuthenticated: false,
+    forceManagementCapabilities: true,
+  };
+  const protectedRequests: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/v1/status' || path === '/api/v1/events' ||
+        path === '/api/v1/metrics/summary') {
+      protectedRequests.push(path);
+    }
+  });
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Core: Offline');
+  await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Events: Unavailable');
+  expect(protectedRequests).toEqual([]);
+});
+
+test('polls only monitoring surfaces advertised for the current session', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    disabledMonitoringFeatures: ['events', 'alerts', 'audit', 'interface_monitoring'],
+  };
+  const requests: string[] = [];
+  page.on('request', request => requests.push(new URL(request.url()).pathname));
+  await mockSystemApi(page, state);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Smithproxy: Ready');
+  await expect(statusbar).toContainText('Alerts: Unavailable');
+  await expect(statusbar).toContainText('Events: Unavailable');
+  expect(requests).toContain('/api/v1/status');
+  expect(requests).toContain('/api/v1/metrics/summary');
+  expect(requests).not.toContain('/api/v1/events');
+  expect(requests).not.toContain('/api/v1/events/recent');
+  expect(requests).not.toContain('/api/v1/alerts');
+  expect(requests).not.toContain('/api/v1/audit/recent');
+  expect(requests).not.toContain('/api/v1/network/interfaces/summary');
+
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Interface synchronization'}))
+    .toContainText('Unavailable · Last data no data');
 });
 
 test('loads independent monitoring surfaces concurrently', async ({page}) => {

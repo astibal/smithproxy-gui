@@ -105,6 +105,12 @@ During rotation, the optional previous secret is accepted alongside the current
 secret. It is rejected when the current secret is absent or identical and should
 be removed after the ingress has switched to the new value.
 
+The browser establishes no management poll or event stream until capability
+discovery has completed. It requests only the monitoring surfaces advertised for
+the current gateway session. Losing a capability disconnects its stream, stops
+the corresponding requests, and clears previously retained aggregates from the
+browser state.
+
 Without gateway mode, every management API request must carry a canonical
 loopback `Host` authority. This keeps local standalone monitoring inaccessible
 through DNS rebinding while leaving the bounded orchestration health probe

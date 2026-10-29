@@ -1,7 +1,7 @@
 export type RuntimeDiagnosticState = 'starting' | 'ready' | 'unavailable' | 'unconfigured';
 export type InterfaceDiagnosticState = RuntimeDiagnosticState | 'degraded' | 'not-advertised';
 export type GatewayDiagnosticState = 'verified' | 'rejected' | 'disabled' | 'unavailable' | 'discovering';
-export type EventStreamDiagnosticState = 'connecting' | 'live' | 'paused' | 'invalid';
+export type EventStreamDiagnosticState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavailable';
 
 interface TimedAggregateInput {
   state: RuntimeDiagnosticState;
@@ -30,6 +30,14 @@ export interface DiagnosticsReportInput {
     drafts: boolean;
     draftPreflight: boolean;
     jobs: boolean;
+    eventsAvailable: boolean;
+    alertsAvailable: boolean;
+    auditAvailable: boolean;
+    metrics: boolean;
+    sessionActivity: boolean;
+    tlsMonitoring: boolean;
+    neighborMonitoring: boolean;
+    interfaceMonitoring: boolean;
     configTransaction: 'starting' | 'not-advertised' | 'review-required' | 'incompatible' | 'unavailable' | 'ready' | 'unknown';
   };
   runtime: TimedAggregateInput & {
@@ -118,6 +126,14 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
       drafts: input.capabilities.drafts,
       draftPreflight: input.capabilities.draftPreflight,
       jobs: input.capabilities.jobs,
+      eventsAvailable: input.capabilities.eventsAvailable,
+      alertsAvailable: input.capabilities.alertsAvailable,
+      auditAvailable: input.capabilities.auditAvailable,
+      metrics: input.capabilities.metrics,
+      sessionActivity: input.capabilities.sessionActivity,
+      tlsMonitoring: input.capabilities.tlsMonitoring,
+      neighborMonitoring: input.capabilities.neighborMonitoring,
+      interfaceMonitoring: input.capabilities.interfaceMonitoring,
       configTransaction: input.capabilities.configTransaction,
     },
     runtime: {

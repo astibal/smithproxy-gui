@@ -49,6 +49,12 @@ and draft actions on a missing, malformed, or contradictory response. It polls
 at a bounded interval and rechecks immediately after connectivity or visibility
 recovery so a reviewed secret rotation can recover without a page reload.
 
+Monitoring follows the same bootstrap boundary. The frontend opens no protected
+poll or event stream until the current capability response enables it. Capability
+loss closes SSE and replaces retained aggregate snapshots with zeroed unavailable
+states, preventing data observed under an earlier gateway session from remaining
+visible after authorization is withdrawn.
+
 Gateway-secret rotation uses a bounded two-value overlap. The current value is
 mandatory; `SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS` is optional, independently
 validated, and must differ. Both comparisons use the constant-time helper. A

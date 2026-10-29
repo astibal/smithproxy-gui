@@ -32,6 +32,14 @@ fixed state vocabulary. Missing gateway authentication reports `unavailable`.
 An advertised schema that is not pinned by the GUI core reports
 `review-required` and does not enable writes.
 
+Frontend polling is capability-driven. The browser does not call `/status`, any
+aggregate monitoring endpoint, jobs, alerts, audit, or the SSE feed before the
+bootstrap response enables the corresponding management feature for the current
+request. A subsequent capability loss stops those requests, closes SSE, and
+zeroes retained browser aggregates. In gateway mode, management capabilities
+combined with an explicitly rejected gateway session are treated as an
+inconsistent fail-closed response.
+
 The internal transaction adapter already builds the reviewed `validate` and
 `commit` envelopes from typed workspace-draft changes. It binds every request
 to the canonical base revision and a core-generated idempotency UUID and rejects

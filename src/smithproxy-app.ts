@@ -33,6 +33,8 @@ import {
   type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
   type SessionActivitySnapshot,
+  type SmithproxyState,
+  type SystemCapabilities,
   type TlsCacheSnapshot,
   type TransactionCapabilityState,
 } from './api/system-client';
@@ -56,7 +58,7 @@ import {
 } from './state/system-status';
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
-type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid';
+type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 type StatusTone = 'success' | 'warning' | 'danger';
 
@@ -287,7 +289,7 @@ export class SmithproxyApp extends LitElement {
   private systemProbeTimer: number | undefined;
   private systemProbeInFlight = false;
   private systemProbePending = false;
-  private capabilityRefreshInFlight = false;
+  private capabilityRefresh: Promise<void> | undefined;
   private nextCapabilityRefreshAt = 0;
   private closeEventStream: (() => void) | undefined;
   private eventStreamDegradedTimer: number | undefined;
@@ -297,6 +299,15 @@ export class SmithproxyApp extends LitElement {
   private drawerOrigins: HTMLElement[] = [];
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
+  private managementApiAvailable = false;
+  private metricsAvailable = false;
+  private sessionActivityAvailable = false;
+  private tlsMonitoringAvailable = false;
+  private neighborMonitoringAvailable = false;
+  private interfaceMonitoringAvailable = false;
+  private eventsAvailable = false;
+  private alertsAvailable = false;
+  private auditAvailable = false;
 
   static styles = css`
     :host {
@@ -660,8 +671,7 @@ export class SmithproxyApp extends LitElement {
       this.systemClient = new SystemClient(this.runtime.apiBase, this.runtime.basePath);
       this.configClient = new ApiConfigClient(this.runtime.apiBase);
       this.draftClient = new DraftClient(this.runtime.apiBase);
-      this.connectEventStream();
-      void this.probeSystem();
+      void this.refreshConnection();
     } catch (error) {
       this.systemStatus = statusFromFailure(error);
     }
@@ -686,21 +696,22 @@ export class SmithproxyApp extends LitElement {
     if (document.visibilityState === 'hidden') {
       this.clearSystemProbe();
       this.disconnectEventStream();
-      this.eventStreamState = 'paused';
+      this.eventStreamState = this.eventsAvailable ? 'paused' : 'unavailable';
     } else {
-      this.connectEventStream();
-      this.nextCapabilityRefreshAt = 0;
-      void this.loadCapabilities();
-      void this.probeSystem();
+      void this.refreshConnection();
     }
   };
 
   private readonly handleOnline = (): void => {
-    this.connectEventStream();
-    this.nextCapabilityRefreshAt = 0;
-    void this.loadCapabilities();
-    void this.probeSystem();
+    void this.refreshConnection();
   };
+
+  private async refreshConnection(): Promise<void> {
+    this.nextCapabilityRefreshAt = 0;
+    await this.loadCapabilities();
+    this.connectEventStream();
+    await this.probeSystem();
+  }
 
   private disconnectEventStream(): void {
     this.clearEventStreamDegradedTimer();
@@ -727,6 +738,10 @@ export class SmithproxyApp extends LitElement {
   }
 
   private connectEventStream(): void {
+    if (!this.eventsAvailable) {
+      this.eventStreamState = 'unavailable';
+      return;
+    }
     if (this.closeEventStream || !this.systemClient || document.visibilityState === 'hidden') return;
     this.eventStreamState = 'connecting';
     this.closeEventStream = this.systemClient.subscribeEvents({
@@ -796,19 +811,20 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     this.systemProbeInFlight = true;
-    if (Date.now() >= this.nextCapabilityRefreshAt) void this.loadCapabilities();
+    if (Date.now() >= this.nextCapabilityRefreshAt) await this.loadCapabilities();
     try {
+      if (!this.managementApiAvailable) return;
       const systemClient = this.systemClient;
       this.systemStatus = statusFromSnapshot(await systemClient.status());
       const [metrics, sessions, tlsCache, neighbors, interfaces, events, alerts, audit, jobs] = await Promise.allSettled([
-        systemClient.metricsSummary(),
-        systemClient.sessionActivity(),
-        systemClient.tlsCacheSummary(),
-        systemClient.neighborSummary(),
-        systemClient.interfaceSummary(),
-        systemClient.recentEvents(),
-        systemClient.activeAlerts(),
-        systemClient.recentAudit(),
+        this.metricsAvailable ? systemClient.metricsSummary() : Promise.resolve(this.runtimeMetrics),
+        this.sessionActivityAvailable ? systemClient.sessionActivity() : Promise.resolve(this.sessionActivity),
+        this.tlsMonitoringAvailable ? systemClient.tlsCacheSummary() : Promise.resolve(this.tlsCache),
+        this.neighborMonitoringAvailable ? systemClient.neighborSummary() : Promise.resolve(this.neighbors),
+        this.interfaceMonitoringAvailable ? systemClient.interfaceSummary() : Promise.resolve(this.interfaces),
+        this.eventsAvailable ? systemClient.recentEvents() : Promise.resolve(this.operationalEvents),
+        this.alertsAvailable ? systemClient.activeAlerts() : Promise.resolve(this.operationalAlerts),
+        this.auditAvailable ? systemClient.recentAudit() : Promise.resolve(this.managementAudit),
         this.jobsAvailable ? systemClient.jobs() : Promise.resolve(initialJobs),
       ] as const);
       if (metrics.status === 'fulfilled') {
@@ -863,17 +879,23 @@ export class SmithproxyApp extends LitElement {
       } else {
         this.eventsError = events.reason instanceof Error ? events.reason.message : 'Operational events are unavailable.';
       }
-      if (alerts.status === 'fulfilled') {
-        this.operationalAlerts = alerts.value;
-        this.alertsError = undefined;
-      } else {
-        this.alertsError = alerts.reason instanceof Error ? alerts.reason.message : 'Operational alerts are unavailable.';
+      if (this.alertsAvailable) {
+        if (alerts.status === 'fulfilled') {
+          this.operationalAlerts = alerts.value;
+          this.alertsError = undefined;
+        } else {
+          this.alertsError = alerts.reason instanceof Error
+            ? alerts.reason.message : 'Operational alerts are unavailable.';
+        }
       }
-      if (audit.status === 'fulfilled') {
-        this.managementAudit = audit.value;
-        this.auditError = undefined;
-      } else {
-        this.auditError = audit.reason instanceof Error ? audit.reason.message : 'Management audit is unavailable.';
+      if (this.auditAvailable) {
+        if (audit.status === 'fulfilled') {
+          this.managementAudit = audit.value;
+          this.auditError = undefined;
+        } else {
+          this.auditError = audit.reason instanceof Error
+            ? audit.reason.message : 'Management audit is unavailable.';
+        }
       }
       if (jobs.status === 'fulfilled') {
         this.backendJobs = jobs.value;
@@ -904,6 +926,11 @@ export class SmithproxyApp extends LitElement {
         state: 'unavailable',
         detail: 'Neighborhood metrics are unavailable while the GUI core is offline.',
       };
+      this.interfaces = {
+        ...this.interfaces,
+        state: 'unavailable',
+        detail: 'Interface monitoring is unavailable while the GUI core is offline.',
+      };
       this.auditError = 'Management audit is unavailable while the GUI core is offline.';
       this.jobsError = 'Backend jobs are unavailable while the GUI core is offline.';
     } finally {
@@ -917,21 +944,104 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private updateMonitoringCapabilities(
+    features: SystemCapabilities['features'] | undefined,
+    smithproxyState?: SmithproxyState,
+  ): void {
+    const eventsWereAvailable = this.eventsAvailable;
+    this.metricsAvailable = features?.metrics ?? false;
+    this.sessionActivityAvailable = features?.sessionActivity ?? false;
+    this.tlsMonitoringAvailable = features?.tlsMonitoring ?? false;
+    this.neighborMonitoringAvailable = features?.neighborMonitoring ?? false;
+    this.interfaceMonitoringAvailable = features?.interfaceMonitoring ?? false;
+    this.eventsAvailable = features?.events ?? false;
+    this.alertsAvailable = features?.alerts ?? false;
+    this.auditAvailable = features?.audit ?? false;
+    this.jobsAvailable = features?.jobs ?? false;
+    this.managementApiAvailable = this.metricsAvailable || this.sessionActivityAvailable ||
+      this.tlsMonitoringAvailable || this.neighborMonitoringAvailable ||
+      this.interfaceMonitoringAvailable || this.eventsAvailable || this.alertsAvailable ||
+      this.auditAvailable || this.jobsAvailable;
+
+    if (!this.metricsAvailable) {
+      this.runtimeMetrics = {...initialRuntimeMetrics, state: 'unavailable',
+        detail: 'Runtime metrics are not available for this management session.'};
+    }
+    if (!this.sessionActivityAvailable) {
+      this.sessionActivity = {...initialSessionActivity, state: 'unavailable',
+        detail: 'Session activity is not available for this management session.'};
+    }
+    if (!this.tlsMonitoringAvailable) {
+      this.tlsCache = {...initialTlsCache, state: 'unavailable',
+        detail: 'TLS cache monitoring is not available for this management session.'};
+    }
+    if (!this.neighborMonitoringAvailable) {
+      this.neighbors = {...initialNeighbors, state: 'unavailable',
+        detail: 'Neighborhood monitoring is not available for this management session.'};
+    }
+    if (!this.interfaceMonitoringAvailable) {
+      this.interfaces = {...initialInterfaces, state: 'unavailable',
+        detail: 'Interface monitoring is not available for this management session.'};
+    }
+    if (!this.eventsAvailable) {
+      this.disconnectEventStream();
+      this.operationalEvents = initialEvents;
+      this.eventsError = undefined;
+      this.eventStreamState = 'unavailable';
+    } else if (!eventsWereAvailable) {
+      this.eventsError = undefined;
+      this.connectEventStream();
+    }
+    if (!this.alertsAvailable) {
+      this.operationalAlerts = initialAlerts;
+      this.alertsError = 'Operational alerts are not available for this management session.';
+    }
+    if (!this.auditAvailable) {
+      this.managementAudit = initialAudit;
+      this.auditError = 'Management audit is not available for this management session.';
+    }
+    if (!this.jobsAvailable) {
+      this.backendJobs = initialJobs;
+      this.jobsError = undefined;
+    }
+    if (!this.managementApiAvailable && smithproxyState) {
+      this.systemStatus = {
+        ...connectingSystemStatus,
+        core: 'online',
+        smithproxy: smithproxyState,
+        detail: 'Management monitoring is not available for this gateway session.',
+      };
+    }
+  }
+
   private async loadCapabilities(): Promise<void> {
-    if (!this.systemClient || this.capabilityRefreshInFlight) return;
-    this.capabilityRefreshInFlight = true;
+    if (!this.systemClient) return;
+    if (this.capabilityRefresh) return this.capabilityRefresh;
+    const refresh = this.refreshCapabilities();
+    this.capabilityRefresh = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (this.capabilityRefresh === refresh) this.capabilityRefresh = undefined;
+    }
+  }
+
+  private async refreshCapabilities(): Promise<void> {
     this.nextCapabilityRefreshAt = Date.now() + 30_000;
     try {
+      const systemClient = this.systemClient;
+      if (!systemClient) throw new Error('System API client is unavailable.');
       const [capabilitiesResult, sessionResult] = await Promise.allSettled([
-        this.systemClient.capabilities(),
-        this.systemClient.authSession(),
+        systemClient.capabilities(),
+        systemClient.authSession(),
       ] as const);
       if (sessionResult.status === 'fulfilled') {
         this.gatewaySession = sessionResult.value;
         this.gatewaySessionError = undefined;
       } else {
         this.gatewaySession = undefined;
-        this.gatewaySessionError = sessionResult.reason instanceof Error
+        this.gatewaySessionError = sessionResult.status === 'rejected' &&
+          sessionResult.reason instanceof Error
           ? sessionResult.reason.message
           : 'Gateway session diagnostics are unavailable.';
       }
@@ -945,6 +1055,14 @@ export class SmithproxyApp extends LitElement {
            !sessionResult.value.authenticated)) {
         throw new Error('Privileged capabilities require a verified trusted gateway session.');
       }
+      const managementCapabilities = capabilities.features.jobs || capabilities.features.events ||
+        capabilities.features.alerts || capabilities.features.audit || capabilities.features.metrics ||
+        capabilities.features.sessionActivity || capabilities.features.tlsMonitoring ||
+        capabilities.features.neighborMonitoring || capabilities.features.interfaceMonitoring;
+      if (managementCapabilities && sessionResult.status === 'fulfilled' &&
+          sessionResult.value.mode === 'gateway' && !sessionResult.value.authenticated) {
+        throw new Error('Management capabilities require a verified trusted gateway session.');
+      }
       const draftWasAvailable = this.draftAvailable;
       this.apiVersion = capabilities.apiVersion;
       this.transactionCapabilityState = capabilities.transactionState;
@@ -953,11 +1071,7 @@ export class SmithproxyApp extends LitElement {
       this.configWriteAvailable = capabilities.features.configWrite;
       this.draftAvailable = capabilities.features.drafts;
       this.draftPreflightAvailable = capabilities.features.draftPreflight;
-      this.jobsAvailable = capabilities.features.jobs;
-      if (!this.jobsAvailable) {
-        this.backendJobs = initialJobs;
-        this.jobsError = undefined;
-      }
+      this.updateMonitoringCapabilities(capabilities.features, capabilities.smithproxyState);
       if (!this.draftPreflightAvailable) {
         this.draftPreflight = undefined;
         this.draftPreflightError = undefined;
@@ -967,7 +1081,7 @@ export class SmithproxyApp extends LitElement {
         this.restoreDrawerRoute();
       }
       if (this.draftAvailable && !draftWasAvailable) await this.loadDraft();
-    } catch {
+    } catch (error) {
       this.apiVersion = 'unavailable';
       this.transactionCapabilityState = 'unavailable';
       this.configReadAvailable = false;
@@ -975,11 +1089,10 @@ export class SmithproxyApp extends LitElement {
       this.configWriteAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
-      this.jobsAvailable = false;
+      this.updateMonitoringCapabilities(undefined);
+      this.systemStatus = statusFromFailure(error);
       this.draftPreflight = undefined;
       this.draftPreflightError = undefined;
-    } finally {
-      this.capabilityRefreshInFlight = false;
     }
   }
 
@@ -1072,6 +1185,14 @@ export class SmithproxyApp extends LitElement {
         drafts: this.draftAvailable,
         draftPreflight: this.draftPreflightAvailable,
         jobs: this.jobsAvailable,
+        eventsAvailable: this.eventsAvailable,
+        alertsAvailable: this.alertsAvailable,
+        auditAvailable: this.auditAvailable,
+        metrics: this.metricsAvailable,
+        sessionActivity: this.sessionActivityAvailable,
+        tlsMonitoring: this.tlsMonitoringAvailable,
+        neighborMonitoring: this.neighborMonitoringAvailable,
+        interfaceMonitoring: this.interfaceMonitoringAvailable,
         configTransaction: this.transactionCapabilityState,
       },
       runtime: {
@@ -5342,7 +5463,8 @@ export class SmithproxyApp extends LitElement {
     const activeJobCount = this.backendJobs.jobs.filter(job =>
       job.state === 'queued' || job.state === 'running' || job.state === 'cancelling').length;
     const failedJobCount = this.backendJobs.jobs.filter(job => job.state === 'failed').length;
-    const jobTone = this.jobsError ? 'danger' : activeJobCount > 0 ? 'warning' : failedJobCount > 0 ? 'danger' : 'success';
+    const jobTone = this.jobsError ? 'danger' : !this.jobsAvailable ? 'warning' :
+      activeJobCount > 0 ? 'warning' : failedJobCount > 0 ? 'danger' : 'success';
     return html`
       <div class="shell" @keydown=${this.handleKeydown}>
         <aside class="sidebar">
@@ -5403,7 +5525,8 @@ export class SmithproxyApp extends LitElement {
           <button class="status-action status-secondary system-state ${jobTone}" type="button"
             title=${this.jobsError ?? 'Open the bounded backend job queue'}
             @click=${() => { this.activeSection = 'System'; }}>
-            ● Jobs: ${this.jobsError ? 'Unavailable' : activeJobCount > 0 ? `${activeJobCount} active` : 'Idle'}
+            ● Jobs: ${this.jobsError || !this.jobsAvailable
+              ? 'Unavailable' : activeJobCount > 0 ? `${activeJobCount} active` : 'Idle'}
           </button>
           <span class="status-secondary ${this.draftChangeCount ? 'draft' : ''}">Draft: ${this.draftChangeCount} changes</span>
           <span class="status-secondary" title=${this.configError ?? this.snapshot?.detail ?? ''}>

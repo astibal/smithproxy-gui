@@ -14,7 +14,9 @@ function fixture(): DiagnosticsReportInput {
     gateway: {mode: 'gateway', authenticated: true, state: 'verified'},
     capabilities: {
       configRead: true, configWrite: false, drafts: true, draftPreflight: true,
-      jobs: true,
+      jobs: true, eventsAvailable: true, alertsAvailable: true, auditAvailable: true, metrics: true,
+      sessionActivity: true, tlsMonitoring: true, neighborMonitoring: true,
+      interfaceMonitoring: true,
       configTransaction: 'review-required',
     },
     runtime: {...timed, workers: 3, sessionsTotal: 19, sessionsActive: 4, bytesUp: 1536, bytesDown: 2304, listenerCount: 2},
@@ -45,7 +47,8 @@ describe('diagnostics report', () => {
       application: {mode: 'embedded', apiVersion: 'v1'},
       runtime: {listenerCount: 2, sessionsActive: 4},
       interfaces: {generation: 42, interfaces: 3, addresses: 5},
-      capabilities: {jobs: true},
+      capabilities: {jobs: true, metrics: true, interfaceMonitoring: true,
+        eventsAvailable: true, alertsAvailable: true, auditAvailable: true},
       operations: {
         eventCount: 4, activeAlertCount: 0, auditEntryCount: 2,
         jobCount: 3, activeJobCount: 1, failedJobCount: 1,
