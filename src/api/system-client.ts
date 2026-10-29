@@ -889,6 +889,7 @@ export class SystemClient {
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
   readonly #eventSourceFactory: EventSourceFactory;
+  readonly #pendingRequests = new Set<AbortController>();
 
   constructor(
     apiBase: string,
@@ -1014,8 +1015,14 @@ export class SystemClient {
     return parseJob(await this.#request(joinedPath(this.#apiBase, `/jobs/${id}`)));
   }
 
+  cancelPendingRequests(): void {
+    for (const controller of this.#pendingRequests) controller.abort();
+    this.#pendingRequests.clear();
+  }
+
   async #request(path: string): Promise<unknown> {
     const controller = new AbortController();
+    this.#pendingRequests.add(controller);
     const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
     try {
       const response = await this.#fetch(path, {
@@ -1029,6 +1036,7 @@ export class SystemClient {
       return await response.json() as unknown;
     } finally {
       globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
     }
   }
 }

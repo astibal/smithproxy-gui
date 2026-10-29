@@ -407,4 +407,21 @@ describe('ApiConfigClient', () => {
     }));
     await expect(oversized.loadSnapshot()).rejects.toThrow('size limit');
   });
+
+  it('cancels an in-flight privileged snapshot request', async () => {
+    let signal: AbortSignal | undefined;
+    const fetcher = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('request cancelled')), {once: true});
+      });
+    });
+    const client = new ApiConfigClient('/api/v1', fetcher);
+    const pending = client.loadSnapshot();
+
+    client.cancelPendingRequests();
+
+    expect(signal?.aborted).toBe(true);
+    await expect(pending).rejects.toThrow('request cancelled');
+  });
 });

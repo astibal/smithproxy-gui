@@ -731,4 +731,25 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({}, 503));
     await expect(client.health()).rejects.toThrow('HTTP 503');
   });
+
+  it('cancels all in-flight management requests', async () => {
+    const signals: AbortSignal[] = [];
+    const fetcher = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal;
+      if (signal) signals.push(signal);
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('request cancelled')), {once: true});
+      });
+    });
+    const client = new SystemClient('/api/v1', '/', fetcher);
+    const status = client.status();
+    const metrics = client.metricsSummary();
+
+    client.cancelPendingRequests();
+
+    expect(signals).toHaveLength(2);
+    expect(signals.every(signal => signal.aborted)).toBe(true);
+    await expect(status).rejects.toThrow('request cancelled');
+    await expect(metrics).rejects.toThrow('request cancelled');
+  });
 });

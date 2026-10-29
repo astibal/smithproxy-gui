@@ -110,9 +110,11 @@ discovery has completed. It requests only the monitoring surfaces advertised for
 the current gateway session. Losing a capability disconnects its stream, stops
 the corresponding requests, and clears previously retained aggregates from the
 browser state. Responses already in flight are fenced by the capability epoch
-that authorized them and cannot restore data after access is withdrawn. Losing
-configuration access also removes the live snapshot, shared draft state, and
-open editors from the browser.
+that authorized them and cannot restore data after access is withdrawn. The
+browser also aborts their underlying fetches instead of waiting for timeouts.
+Losing configuration access removes the live snapshot, shared draft state, and
+open editors from the browser; losing only the draft capability preserves the
+read-only live snapshot while clearing draft and editor state.
 
 Without gateway mode, every management API request must carry a canonical
 loopback `Host` authority. This keeps local standalone monitoring inaccessible

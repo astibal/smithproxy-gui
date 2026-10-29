@@ -305,6 +305,7 @@ export class DraftClient {
   readonly #endpoint: string;
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
+  readonly #pendingRequests = new Set<AbortController>();
 
   constructor(apiBase: string, fetchImplementation: typeof fetch = (input, init) => fetch(input, init), timeoutMs = 5000) {
     const base = normalizedPath(apiBase);
@@ -375,8 +376,14 @@ export class DraftClient {
     }));
   }
 
+  cancelPendingRequests(): void {
+    for (const controller of this.#pendingRequests) controller.abort();
+    this.#pendingRequests.clear();
+  }
+
   async #request(path: string, init: RequestInit, timeoutMs = this.#timeoutMs): Promise<unknown> {
     const controller = new AbortController();
+    this.#pendingRequests.add(controller);
     const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await this.#fetch(path, {
@@ -391,6 +398,7 @@ export class DraftClient {
       return await boundedJson(response);
     } finally {
       globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
     }
   }
 }

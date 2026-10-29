@@ -57,6 +57,7 @@ type MockState = {
     'jobs' | 'events' | 'alerts' | 'audit' | 'metrics' | 'session_activity' |
     'tls_monitoring' | 'neighbor_monitoring' | 'interface_monitoring'
   >;
+  disabledConfigurationFeatures?: Array<'config_write' | 'drafts' | 'draft_preflight'>;
   authSessionRequests?: number;
   metricsRequests?: number;
   metricsDelayMs?: number;
@@ -104,6 +105,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     const monitoringFeature = (name: NonNullable<MockState['disabledMonitoringFeatures']>[number]): boolean =>
       management && !state.disabledMonitoringFeatures?.includes(name);
     const configuration = configRead && gatewayMode === 'gateway' && gatewayAuthenticated;
+    const configurationFeature = (
+      name: NonNullable<MockState['disabledConfigurationFeatures']>[number],
+    ): boolean => configuration && !state.disabledConfigurationFeatures?.includes(name);
     await route.fulfill({json: {
       service: 'smithproxy-gui',
       api_version: 'v1',
@@ -113,9 +117,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         ? 'ready' : configuration ? 'review-required' : 'unavailable',
       features: {
         config_read: configuration,
-        config_write: Boolean(state.commitReady) && configuration,
-        drafts: configuration,
-        draft_preflight: configuration,
+        config_write: Boolean(state.commitReady) && configurationFeature('config_write'),
+        drafts: configurationFeature('drafts'),
+        draft_preflight: configurationFeature('draft_preflight'),
         jobs: monitoringFeature('jobs'),
         events: monitoringFeature('events'),
         alerts: monitoringFeature('alerts'),
@@ -1531,6 +1535,8 @@ test('discards monitoring responses completed after gateway access is revoked', 
     gatewayAuthenticated: true,
     metricsDelayMs: 1_000,
   };
+  const failedRequests: string[] = [];
+  page.on('requestfailed', request => failedRequests.push(new URL(request.url()).pathname));
   await mockSystemApi(page, state, true);
   await page.goto('/');
 
@@ -1548,6 +1554,7 @@ test('discards monitoring responses completed after gateway access is revoked', 
   const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
   await expect(interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'})
     .getByText('0', {exact: true})).toBeVisible();
+  expect(failedRequests).toContain('/api/v1/metrics/summary');
 });
 
 test('ignores late configuration and draft snapshots after gateway revocation', async ({page}) => {
@@ -1559,6 +1566,8 @@ test('ignores late configuration and draft snapshots after gateway revocation', 
     draftLoadDelayMs: 800,
     initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
   };
+  const failedRequests: string[] = [];
+  page.on('requestfailed', request => failedRequests.push(new URL(request.url()).pathname));
   await mockSystemApi(page, state, true);
   await page.goto('/');
 
@@ -1574,6 +1583,9 @@ test('ignores late configuration and draft snapshots after gateway revocation', 
   await expect(statusbar).toContainText('Config: Preview');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(statusbar).toContainText('Draft: 0 changes');
+  expect(failedRequests).toEqual(expect.arrayContaining([
+    '/api/v1/config/snapshot', '/api/v1/config/draft',
+  ]));
 });
 
 test('removes an open live editor when gateway configuration access is revoked', async ({page}) => {
@@ -1598,6 +1610,33 @@ test('removes an open live editor when gateway configuration access is revoked',
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(policy).toHaveCount(0);
   await expect(statusbar).toContainText('Draft: 0 changes');
+});
+
+test('clears draft state without discarding live config when draft capability is revoked', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    gatewayMode: 'gateway',
+    gatewayAuthenticated: true,
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Config: Ready');
+  await expect(statusbar).toContainText('Draft: 1 changes');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  const policy = page.getByRole('button', {name: /Policy 1 office internet accept/i});
+  await policy.click();
+  await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
+
+  state.disabledConfigurationFeatures = ['drafts', 'draft_preflight'];
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+
+  await expect(statusbar).toContainText('Config: Ready');
+  await expect(statusbar).toContainText('Draft: 0 changes');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(policy).toBeVisible();
 });
 
 test('rejects management capabilities that contradict the gateway session', async ({page}) => {

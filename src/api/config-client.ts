@@ -1006,6 +1006,7 @@ export class ApiConfigClient implements ConfigClient {
   readonly #endpoint: string;
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
+  readonly #pendingRequests = new Set<AbortController>();
 
   constructor(apiBase: string, fetchImplementation: typeof fetch = (input, init) => fetch(input, init), timeoutMs = 5000) {
     const base = normalizedPath(apiBase);
@@ -1016,6 +1017,7 @@ export class ApiConfigClient implements ConfigClient {
 
   async loadSnapshot(): Promise<ConfigSnapshot> {
     const controller = new AbortController();
+    this.#pendingRequests.add(controller);
     const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
     try {
       const response = await this.#fetch(this.#endpoint, {
@@ -1029,6 +1031,12 @@ export class ApiConfigClient implements ConfigClient {
       return parseConfigSnapshot(await boundedJson(response));
     } finally {
       globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
     }
+  }
+
+  cancelPendingRequests(): void {
+    for (const controller of this.#pendingRequests) controller.abort();
+    this.#pendingRequests.clear();
   }
 }

@@ -243,4 +243,25 @@ describe('DraftClient', () => {
     expect(() => new DraftClient('https://other.example/api')).toThrow('same-origin');
     expect(() => new DraftClient('/api/../secret')).toThrow('relative path');
   });
+
+  it('cancels all in-flight draft requests', async () => {
+    const signals: AbortSignal[] = [];
+    const fetcher = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal;
+      if (signal) signals.push(signal);
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('request cancelled')), {once: true});
+      });
+    });
+    const client = new DraftClient('/api/v1', fetcher);
+    const load = client.load();
+    const preflight = client.preflight();
+
+    client.cancelPendingRequests();
+
+    expect(signals).toHaveLength(2);
+    expect(signals.every(signal => signal.aborted)).toBe(true);
+    await expect(load).rejects.toThrow('request cancelled');
+    await expect(preflight).rejects.toThrow('request cancelled');
+  });
 });

@@ -688,6 +688,9 @@ export class SmithproxyApp extends LitElement {
   disconnectedCallback(): void {
     this.clearSystemProbe();
     this.disconnectEventStream();
+    this.systemClient?.cancelPendingRequests();
+    this.configClient?.cancelPendingRequests();
+    this.draftClient?.cancelPendingRequests();
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
@@ -966,6 +969,7 @@ export class SmithproxyApp extends LitElement {
     features: SystemCapabilities['features'] | undefined,
     smithproxyState?: SmithproxyState,
   ): void {
+    this.systemClient?.cancelPendingRequests();
     this.monitoringAccessEpoch += 1;
     const eventsWereAvailable = this.eventsAvailable;
     this.metricsAvailable = features?.metrics ?? false;
@@ -1033,13 +1037,31 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
-  private clearPrivilegedConfigurationState(): void {
-    if (this.snapshot?.source === 'live') this.snapshot = undefined;
+  private clearEditorChain(): void {
+    this.drawerStore.clear();
+    this.drawers = [];
+    this.drawerOrigins = [];
+    this.dirtyDrawerKeys = new Set<string>();
+    this.pendingCloseIndex = undefined;
+    this.pendingReturnFocus = undefined;
+    this.drawerHistoryDepth = 0;
+    this.drawerError = undefined;
+    this.focusMode = false;
+    this.replaceDrawerRoute();
+  }
+
+  private clearDraftSessionState(): void {
     this.workspaceDraft = undefined;
     this.draftVersion = 0;
     this.draftChangeCount = 0;
     this.draftObjects = new Set<string>();
     this.discardDraftArmed = false;
+    this.invalidateDraftOperations();
+    this.clearEditorChain();
+  }
+
+  private invalidateDraftOperations(): void {
+    this.draftClient?.cancelPendingRequests();
     this.draftSaving = false;
     this.draftError = undefined;
     this.draftPreflight = undefined;
@@ -1051,21 +1073,17 @@ export class SmithproxyApp extends LitElement {
     this.draftCommitArmed = false;
     this.draftCommitError = undefined;
     this.draftCommitResult = undefined;
+  }
+
+  private clearPrivilegedConfigurationState(): void {
+    this.configClient?.cancelPendingRequests();
+    if (this.snapshot?.source === 'live') this.snapshot = undefined;
+    this.clearDraftSessionState();
     this.configRefreshInFlight = false;
     this.configRefreshDeferred = false;
     this.configError = undefined;
-    this.drawerStore.clear();
-    this.drawers = [];
-    this.drawerOrigins = [];
-    this.dirtyDrawerKeys = new Set<string>();
-    this.pendingCloseIndex = undefined;
-    this.pendingReturnFocus = undefined;
-    this.drawerHistoryDepth = 0;
-    this.drawerError = undefined;
-    this.focusMode = false;
     this.searchQuery = '';
     if (this.activeSection === 'Search') this.activeSection = 'Dashboard';
-    this.replaceDrawerRoute();
   }
 
   private configurationAccessIsCurrent(epoch: number): boolean {
@@ -1127,19 +1145,32 @@ export class SmithproxyApp extends LitElement {
       }
       const draftWasAvailable = this.draftAvailable;
       const configReadWasAvailable = this.configReadAvailable;
+      const configWriteWasAvailable = this.configWriteAvailable;
+      const draftPreflightWasAvailable = this.draftPreflightAvailable;
+      const nextConfigReadAvailable = capabilities.features.configRead;
+      const nextConfigWriteAvailable = capabilities.features.configWrite;
+      const nextDraftAvailable = capabilities.features.drafts;
+      const nextDraftPreflightAvailable = capabilities.features.draftPreflight;
+      const configurationCapabilitiesChanged =
+        nextConfigReadAvailable !== configReadWasAvailable ||
+        nextConfigWriteAvailable !== configWriteWasAvailable ||
+        nextDraftAvailable !== draftWasAvailable ||
+        nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
       this.transactionCapabilityState = capabilities.transactionState;
-      this.configReadAvailable = capabilities.features.configRead;
-      if (this.configReadAvailable !== configReadWasAvailable) {
-        this.configurationAccessEpoch += 1;
-      }
+      this.configReadAvailable = nextConfigReadAvailable;
+      this.configWriteAvailable = nextConfigWriteAvailable;
+      this.draftAvailable = nextDraftAvailable;
+      this.draftPreflightAvailable = nextDraftPreflightAvailable;
+      if (configurationCapabilitiesChanged) this.configurationAccessEpoch += 1;
       if (configReadWasAvailable && !this.configReadAvailable) {
         this.clearPrivilegedConfigurationState();
+      } else if (draftWasAvailable && !this.draftAvailable) {
+        this.clearDraftSessionState();
+      } else if (configurationCapabilitiesChanged) {
+        this.invalidateDraftOperations();
       }
       if (!this.configReadAvailable) this.configRefreshDeferred = false;
-      this.configWriteAvailable = capabilities.features.configWrite;
-      this.draftAvailable = capabilities.features.drafts;
-      this.draftPreflightAvailable = capabilities.features.draftPreflight;
       this.updateMonitoringCapabilities(capabilities.features, capabilities.smithproxyState);
       if (!this.draftPreflightAvailable) {
         this.draftPreflight = undefined;
@@ -1148,13 +1179,14 @@ export class SmithproxyApp extends LitElement {
       if (capabilities.features.configRead && this.snapshot?.source !== 'live') {
         void this.refreshConfiguration(true);
       }
-      if (this.draftAvailable && !draftWasAvailable) void this.loadDraft();
+      if (this.draftAvailable && configurationCapabilitiesChanged) void this.loadDraft();
     } catch (error) {
-      const configReadWasAvailable = this.configReadAvailable;
+      const configurationWasAvailable = this.configReadAvailable || this.configWriteAvailable ||
+        this.draftAvailable || this.draftPreflightAvailable;
       this.apiVersion = 'unavailable';
       this.transactionCapabilityState = 'unavailable';
       this.configReadAvailable = false;
-      if (configReadWasAvailable) {
+      if (configurationWasAvailable) {
         this.configurationAccessEpoch += 1;
         this.clearPrivilegedConfigurationState();
       }

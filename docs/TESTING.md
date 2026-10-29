@@ -55,7 +55,9 @@ odeslat s aktualizovanou optimistic-concurrency verzí.
 
 Gateway rotační scénáře zpožďují monitoring a live config odpovědi přes okamžik
 odebrání přístupu. Pozdní odpověď nesmí obnovit agregáty, snapshot, draft ani
-otevřený editor z předchozí access epochy.
+otevřený editor z předchozí access epochy. Unit testy navíc dokazují abort všech
+probíhajících requestů v system, config a draft klientech; samostatný browser
+scénář ověřuje odebrání draft capability při zachování read-only live configu.
 
 Backend integration suite ověřuje SSE content type, zákaz proxy bufferingu,
 management autentizaci, počáteční snapshot, `Last-Event-ID` replay bez duplikace

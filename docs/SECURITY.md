@@ -55,7 +55,8 @@ loss closes SSE and replaces retained aggregate snapshots with zeroed unavailabl
 states, preventing data observed under an earlier gateway session from remaining
 visible after authorization is withdrawn. Epoch fencing also rejects callbacks
 and HTTP responses that were valid when requested but completed after the
-session changed. Configuration revocation removes the live snapshot, shared
+session changed, while client-owned abort controllers cancel the pending network
+operations. Configuration revocation removes the live snapshot, shared
 draft state, validation results, open drawers, and their form controls; slower
 configuration or draft responses cannot repopulate them.
 
