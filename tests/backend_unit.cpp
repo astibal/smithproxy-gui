@@ -2,6 +2,7 @@
 #include "commit_coordinator.hpp"
 #include "config.hpp"
 #include "config_snapshot.hpp"
+#include "draft_operation.hpp"
 #include "draft_store.hpp"
 #include "json.hpp"
 #include "job_store.hpp"
@@ -104,6 +105,41 @@ int main() {
     assert(grouped_removal.snapshot().version == 2U);
     assert(grouped_removal.snapshot().changes.size() == 1U);
 
+    DraftStore structural_store{"structural-store"};
+    const DraftCreateOperation create_address{
+        .local_id = "create-address-1",
+        .collection = "address_objects",
+        .client_id = "new-office-network",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {
+            {"name", std::string("office-net")},
+            {"type", std::string("cidr")},
+            {"value", std::string("192.0.2.0/24")},
+        },
+    };
+    assert(structural_store.upsert_structural(0U, create_address) ==
+           DraftMutationResult::Applied);
+    assert(structural_store.snapshot().operation_count() == 1U);
+    assert(structural_store.upsert_structural(0U, create_address) ==
+           DraftMutationResult::VersionConflict);
+    auto duplicate_client = create_address;
+    duplicate_client.local_id = "create-address-2";
+    assert(structural_store.upsert_structural(1U, duplicate_client) ==
+           DraftMutationResult::InvalidValue);
+    assert(structural_store.upsert(1U, {"policy.[0].action", std::string("accept")}) ==
+           DraftMutationResult::Applied);
+    assert(structural_store.snapshot().operation_count() == 2U);
+    assert(structural_store.remove_structural(1U, "create-address-1") ==
+           DraftMutationResult::VersionConflict);
+    assert(structural_store.remove_structural(2U, "missing-operation") ==
+           DraftMutationResult::Missing);
+    assert(structural_store.remove_structural(2U, "create-address-1") ==
+           DraftMutationResult::Applied);
+    assert(structural_store.snapshot().operation_count() == 1U);
+    assert(structural_store.clear(3U) == DraftMutationResult::Applied);
+    assert(structural_store.snapshot().empty());
+
     const std::string canonical_revision_a = "sha256:" + std::string(64U, 'a');
     const std::string canonical_revision_b = "sha256:" + std::string(64U, 'b');
     const auto revision_observation = std::chrono::steady_clock::now();
@@ -183,6 +219,21 @@ int main() {
     assert(coordinated_draft.snapshot().version == 2U);
     assert(coordinated_draft.snapshot().base_revision == canonical_revision_b);
     assert(coordinated_draft.snapshot().changes.empty());
+
+    DraftStore structural_commit_draft{"structural-commit-draft", canonical_revision_a};
+    CommitCoordinator structural_coordinator{structural_commit_draft};
+    assert(structural_coordinator.mutate([&] {
+        return structural_commit_draft.upsert_structural(0U, create_address);
+    }) == DraftMutationResult::Applied);
+    auto structural_lease = structural_coordinator.begin(1U);
+    assert(structural_lease);
+    assert(structural_lease.draft().changes.empty());
+    assert(structural_lease.draft().structural_operations.size() == 1U);
+    assert(structural_lease.complete_success(canonical_revision_b) ==
+           DraftMutationResult::Applied);
+    assert(structural_commit_draft.snapshot().version == 2U);
+    assert(structural_commit_draft.snapshot().base_revision == canonical_revision_b);
+    assert(structural_commit_draft.snapshot().empty());
 
     DraftStore invalid_commit_draft{"invalid-commit-draft", "revision-7"};
     assert(invalid_commit_draft.upsert(
@@ -490,10 +541,14 @@ int main() {
         .state = "ready",
         .detail = "reviewed",
         .checked_at = {},
-        .maximum_operations = 4U,
+        .maximum_operations = 8U,
         .maximum_request_bytes = 4096U,
         .operations = {"create", "delete", "move", "set"},
-        .collections = {},
+        .collections = {
+            {"address_objects", false, false, address_revision},
+            {"content_profiles.content_rules", true, true, address_revision},
+            {"policy", true, false, policy_revision},
+        },
     };
     DraftSnapshot transaction_draft{
         .id = "workspace-draft",
@@ -503,6 +558,7 @@ int main() {
             {"policy.[0].action", std::string("reject")},
             {"settings.accept_api", true},
         },
+        .structural_operations = {},
     };
     constexpr std::string_view idempotency_key{"018f47a1-7b2c-7def-8123-123456789abc"};
     const auto generated_idempotency_key = generate_transaction_idempotency_key();
@@ -521,6 +577,71 @@ int main() {
     assert(validation_document["operations"].size() == 2U);
     assert(validation_document["operations"][0] == nlohmann::json({
         {"op", "set"}, {"path", "policy.[0].action"}, {"value", "reject"},
+    }));
+    DraftSnapshot structural_draft{
+        .id = "workspace-draft",
+        .base_revision = transaction_draft.base_revision,
+        .version = 4U,
+        .changes = {},
+        .structural_operations = {
+            DraftCreateOperation{
+                .local_id = "create-address-1",
+                .collection = "address_objects",
+                .client_id = "new-office-network",
+                .parent_id = std::nullopt,
+                .position = {DraftPositionKind::Last, std::nullopt},
+                .fields = {
+                    {"name", std::string("office-net")},
+                    {"type", std::string("cidr")},
+                    {"value", std::string("192.0.2.0/24")},
+                },
+            },
+            DraftDeleteOperation{
+                .local_id = "delete-address-1",
+                .collection = "address_objects",
+                .entity_id = "cfg:address:old",
+            },
+            DraftMoveOperation{
+                .local_id = "move-policy-1",
+                .collection = "policy",
+                .entity_id = "cfg:policy:second",
+                .position = {DraftPositionKind::Before, "cfg:policy:first"},
+            },
+        },
+    };
+    assert(structural_draft.operation_count() == 3U);
+    const auto structural_envelope = build_transaction_envelope(
+        structural_draft, TransactionMode::Validate, idempotency_key, ready_transaction);
+    assert(structural_envelope.body);
+    const auto structural_document = nlohmann::json::parse(*structural_envelope.body);
+    assert(structural_document["operations"] == nlohmann::json::array({
+        {
+            {"op", "create"}, {"collection", "address_objects"},
+            {"client_id", "new-office-network"}, {"position", {{"last", true}}},
+            {"fields", {{"name", "office-net"}, {"type", "cidr"}, {"value", "192.0.2.0/24"}}},
+        },
+        {
+            {"op", "delete"}, {"collection", "address_objects"},
+            {"entity_id", "cfg:address:old"}, {"if_referenced", "reject"},
+        },
+        {
+            {"op", "move"}, {"collection", "policy"},
+            {"entity_id", "cfg:policy:second"}, {"position", {{"before", "cfg:policy:first"}}},
+        },
+    }));
+    auto invalid_structural_draft = structural_draft;
+    std::get<DraftMoveOperation>(invalid_structural_draft.structural_operations.back()).collection =
+        "address_objects";
+    assert(build_transaction_envelope(
+        invalid_structural_draft, TransactionMode::Validate, idempotency_key, ready_transaction)
+        .error_code == "transaction.invalid_draft");
+    assert(!valid_draft_structural_operation(DraftCreateOperation{
+        .local_id = "invalid id",
+        .collection = "address_objects",
+        .client_id = "new-address",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {{"name", std::string("new")}},
     }));
     const auto commit_envelope = build_transaction_envelope(
         transaction_draft, TransactionMode::Commit, idempotency_key, ready_transaction);

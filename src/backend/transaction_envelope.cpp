@@ -1,5 +1,6 @@
 #include "transaction_envelope.hpp"
 
+#include "draft_operation.hpp"
 #include "draft_schema.hpp"
 #include "revision.hpp"
 
@@ -13,6 +14,7 @@
 #include <cmath>
 #include <cctype>
 #include <set>
+#include <type_traits>
 #include <utility>
 
 namespace smithproxy::gui {
@@ -50,6 +52,29 @@ nlohmann::json scalar_json(const DraftScalar& value) {
     return std::visit([](const auto& item) -> nlohmann::json {
         return item;
     }, value);
+}
+
+nlohmann::json position_json(const DraftPosition& position) {
+    switch (position.kind) {
+        case DraftPositionKind::First: return {{"first", true}};
+        case DraftPositionKind::Last: return {{"last", true}};
+        case DraftPositionKind::Before: return {{"before", *position.reference}};
+        case DraftPositionKind::After: return {{"after", *position.reference}};
+    }
+    return nlohmann::json::object();
+}
+
+bool supports_operation(const TransactionCapabilities& capabilities, const std::string_view operation) {
+    return std::find(capabilities.operations.begin(), capabilities.operations.end(), operation) !=
+           capabilities.operations.end();
+}
+
+const TransactionCollectionCapability* collection_capability(
+    const TransactionCapabilities& capabilities, const std::string_view collection) {
+    const auto found = std::find_if(
+        capabilities.collections.begin(), capabilities.collections.end(),
+        [collection](const auto& item) { return item.id == collection; });
+    return found == capabilities.collections.end() ? nullptr : &*found;
 }
 
 TransactionResponse invalid_response() {
@@ -100,15 +125,15 @@ std::optional<std::string> generate_transaction_idempotency_key() noexcept {
 TransactionEnvelope build_transaction_envelope(
     const DraftSnapshot& draft, const TransactionMode mode, const std::string_view idempotency_key,
     const TransactionCapabilities& capabilities) {
+    const auto operation_count = draft.operation_count();
     if (capabilities.state != "ready" || !draft.base_revision ||
         !is_canonical_revision(*draft.base_revision) || !valid_idempotency_key(idempotency_key) ||
-        draft.changes.empty() || draft.changes.size() > hard_maximum_operations ||
+        draft.empty() || operation_count > hard_maximum_operations ||
         capabilities.maximum_operations == 0U ||
-        draft.changes.size() > capabilities.maximum_operations ||
+        operation_count > capabilities.maximum_operations ||
         capabilities.maximum_request_bytes == 0U ||
         capabilities.maximum_request_bytes > hard_maximum_request_bytes ||
-        std::find(capabilities.operations.begin(), capabilities.operations.end(), "set") ==
-            capabilities.operations.end()) {
+        (!draft.changes.empty() && !supports_operation(capabilities, "set"))) {
         return {std::nullopt, "transaction.unavailable"};
     }
 
@@ -128,6 +153,59 @@ TransactionEnvelope build_transaction_envelope(
             {"path", change.path},
             {"value", scalar_json(change.value)},
         });
+    }
+    std::set<std::string, std::less<>> local_ids;
+    std::set<std::string, std::less<>> client_ids;
+    std::set<std::pair<std::string, std::string>> structural_targets;
+    for (const auto& operation : draft.structural_operations) {
+        if (!valid_draft_structural_operation(operation) ||
+            !local_ids.emplace(draft_structural_local_id(operation)).second) {
+            return {std::nullopt, "transaction.invalid_draft"};
+        }
+        const auto* collection = collection_capability(
+            capabilities, draft_structural_collection(operation));
+        if (collection == nullptr) return {std::nullopt, "transaction.invalid_draft"};
+        const auto serialized = std::visit([&](const auto& item) -> std::optional<nlohmann::json> {
+            using Operation = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+                if (!supports_operation(capabilities, "create") ||
+                    collection->nested != item.parent_id.has_value() ||
+                    !client_ids.emplace(item.client_id).second) {
+                    return std::nullopt;
+                }
+                nlohmann::json fields = nlohmann::json::object();
+                for (const auto& [name, value] : item.fields) fields[name] = scalar_json(value);
+                nlohmann::json result{
+                    {"op", "create"}, {"collection", item.collection},
+                    {"client_id", item.client_id}, {"position", position_json(item.position)},
+                    {"fields", std::move(fields)},
+                };
+                if (item.parent_id) result["parent_id"] = *item.parent_id;
+                return std::optional<nlohmann::json>{std::move(result)};
+            } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+                if (!supports_operation(capabilities, "delete") ||
+                    !structural_targets.emplace(item.collection, item.entity_id).second) {
+                    return std::nullopt;
+                }
+                nlohmann::json result{
+                    {"op", "delete"}, {"collection", item.collection},
+                    {"entity_id", item.entity_id}, {"if_referenced", "reject"},
+                };
+                return std::optional<nlohmann::json>{std::move(result)};
+            } else {
+                if (!supports_operation(capabilities, "move") || !collection->ordered ||
+                    !structural_targets.emplace(item.collection, item.entity_id).second) {
+                    return std::nullopt;
+                }
+                nlohmann::json result{
+                    {"op", "move"}, {"collection", item.collection},
+                    {"entity_id", item.entity_id}, {"position", position_json(item.position)},
+                };
+                return std::optional<nlohmann::json>{std::move(result)};
+            }
+        }, operation);
+        if (!serialized) return {std::nullopt, "transaction.invalid_draft"};
+        operations.push_back(*serialized);
     }
     const nlohmann::json document{
         {"mode", mode == TransactionMode::Validate ? "validate" : "commit"},

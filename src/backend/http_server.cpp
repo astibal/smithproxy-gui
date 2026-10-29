@@ -589,7 +589,7 @@ private:
                 return {409, "application/json; charset=utf-8",
                         "{\"error\":\"draft version conflict\"}"};
             }
-            if (draft.changes.empty()) {
+            if (draft.empty()) {
                 return {422, "application/json; charset=utf-8",
                         "{\"error\":\"transaction validation rejected\"}"};
             }
@@ -976,8 +976,8 @@ private:
         }
         nlohmann::json blockers = nlohmann::json::array();
         const bool validation_available = transaction.state == "ready" && draft.base_revision.has_value();
-        const bool commit_available = validation_available && !draft.changes.empty();
-        if (draft.changes.empty()) {
+        const bool commit_available = validation_available && !draft.empty();
+        if (draft.empty()) {
             blockers.push_back({
                 {"code", "draft.empty"},
                 {"message", "The workspace draft has no pending changes."},
@@ -1009,7 +1009,7 @@ private:
             {"draft_id", draft.id},
             {"draft_version", draft.version},
             {"base_revision", draft.base_revision ? nlohmann::json(*draft.base_revision) : nlohmann::json(nullptr)},
-            {"change_count", draft.changes.size()},
+            {"change_count", draft.operation_count()},
             {"sensitive_change_count", sensitive_changes},
             {"schema_validation", "valid"},
             {"upstream_validation", "unavailable"},

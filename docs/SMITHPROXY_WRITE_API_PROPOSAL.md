@@ -193,6 +193,13 @@ Creation, deletion, and movement participate in the same reference validation,
 impact preview, idempotency, persistence, activation, and rollback guarantees as
 scalar updates. No structural operation is committed separately.
 
+The GUI core already models these operations in its versioned workspace draft
+and serializes them into the same atomic transaction envelope as scalar updates.
+It keeps the HTTP and UI entry points disabled until Smithproxy advertises a
+reviewed schema for the affected collection and stable entity IDs for the base
+revision. This prevents an index-derived or partially validated structural edit
+from reaching the control plane.
+
 ## Required guarantees
 
 1. Compare `base_revision` under the configuration lock. Return `409` before any

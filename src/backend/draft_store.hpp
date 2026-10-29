@@ -1,7 +1,9 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -18,11 +20,51 @@ struct DraftChange {
     DraftScalar value;
 };
 
+enum class DraftPositionKind { First, Last, Before, After };
+
+struct DraftPosition {
+    DraftPositionKind kind{DraftPositionKind::Last};
+    std::optional<std::string> reference;
+};
+
+struct DraftCreateOperation {
+    std::string local_id;
+    std::string collection;
+    std::string client_id;
+    std::optional<std::string> parent_id;
+    DraftPosition position;
+    std::map<std::string, DraftScalar, std::less<>> fields;
+};
+
+struct DraftDeleteOperation {
+    std::string local_id;
+    std::string collection;
+    std::string entity_id;
+};
+
+struct DraftMoveOperation {
+    std::string local_id;
+    std::string collection;
+    std::string entity_id;
+    DraftPosition position;
+};
+
+using DraftStructuralOperation =
+    std::variant<DraftCreateOperation, DraftDeleteOperation, DraftMoveOperation>;
+
 struct DraftSnapshot {
     std::string id;
     std::optional<std::string> base_revision;
     std::uint64_t version{};
     std::vector<DraftChange> changes;
+    std::vector<DraftStructuralOperation> structural_operations;
+
+    [[nodiscard]] bool empty() const noexcept {
+        return changes.empty() && structural_operations.empty();
+    }
+    [[nodiscard]] std::size_t operation_count() const noexcept {
+        return changes.size() + structural_operations.size();
+    }
 };
 
 enum class DraftMutationResult {
@@ -51,6 +93,10 @@ public:
         std::vector<std::string> remove_paths);
     DraftMutationResult remove(std::uint64_t expected_version, const std::string& path);
     DraftMutationResult remove_many(std::uint64_t expected_version, std::vector<std::string> paths);
+    DraftMutationResult upsert_structural(
+        std::uint64_t expected_version, DraftStructuralOperation operation);
+    DraftMutationResult remove_structural(
+        std::uint64_t expected_version, const std::string& local_id);
     DraftMutationResult clear(std::uint64_t expected_version);
     DraftMutationResult complete_commit(
         std::uint64_t expected_version, const std::string& committed_revision);

@@ -220,7 +220,7 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
     return parse_transaction_response(
         status_code, response.body, mode, *draft.base_revision,
-        draft.changes.size());
+        draft.operation_count());
 }
 
 void SmithproxyMonitor::run(const std::stop_token stop_token) {

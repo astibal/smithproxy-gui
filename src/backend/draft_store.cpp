@@ -1,5 +1,6 @@
 #include "draft_store.hpp"
 
+#include "draft_operation.hpp"
 #include "draft_schema.hpp"
 #include "revision.hpp"
 
@@ -33,10 +34,73 @@ std::size_t value_size(const DraftScalar& value) {
     }, value);
 }
 
+bool add_size(std::size_t& total, const std::size_t increment) {
+    if (increment > maximum_draft_bytes - total) return false;
+    total += increment;
+    return true;
+}
+
+std::optional<std::size_t> structural_size(const DraftStructuralOperation& operation) {
+    std::size_t total{};
+    const auto valid = std::visit([&](const auto& item) {
+        if (!add_size(total, item.local_id.size()) || !add_size(total, item.collection.size())) {
+            return false;
+        }
+        using Operation = std::decay_t<decltype(item)>;
+        if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+            if (!add_size(total, item.client_id.size()) ||
+                (item.parent_id && !add_size(total, item.parent_id->size())) ||
+                (item.position.reference && !add_size(total, item.position.reference->size()))) {
+                return false;
+            }
+            for (const auto& [name, value] : item.fields) {
+                if (!add_size(total, name.size()) || !add_size(total, value_size(value))) return false;
+            }
+            return true;
+        } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+            return add_size(total, item.entity_id.size());
+        } else {
+            return add_size(total, item.entity_id.size()) &&
+                   (!item.position.reference || add_size(total, item.position.reference->size()));
+        }
+    }, operation);
+    return valid ? std::optional<std::size_t>{total} : std::nullopt;
+}
+
+bool valid_structural_set(const std::vector<DraftStructuralOperation>& operations) {
+    for (std::size_t index = 0; index < operations.size(); ++index) {
+        if (!valid_draft_structural_operation(operations[index])) return false;
+        const auto local_id = draft_structural_local_id(operations[index]);
+        for (std::size_t previous = 0; previous < index; ++previous) {
+            if (draft_structural_local_id(operations[previous]) == local_id) return false;
+        }
+        const auto* create = std::get_if<DraftCreateOperation>(&operations[index]);
+        const auto target = std::visit([](const auto& item) -> std::optional<std::string> {
+            using Operation = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<Operation, DraftCreateOperation>) return std::nullopt;
+            else return item.collection + "\n" + item.entity_id;
+        }, operations[index]);
+        for (std::size_t previous = 0; previous < index; ++previous) {
+            if (create != nullptr) {
+                const auto* previous_create = std::get_if<DraftCreateOperation>(&operations[previous]);
+                if (previous_create != nullptr && previous_create->client_id == create->client_id) return false;
+            } else if (target) {
+                const auto previous_target = std::visit([](const auto& item) -> std::optional<std::string> {
+                    using Operation = std::decay_t<decltype(item)>;
+                    if constexpr (std::is_same_v<Operation, DraftCreateOperation>) return std::nullopt;
+                    else return item.collection + "\n" + item.entity_id;
+                }, operations[previous]);
+                if (previous_target == target) return false;
+            }
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 DraftStore::DraftStore(std::string id, std::optional<std::string> base_revision)
-    : draft_{std::move(id), std::move(base_revision), 0U, {}} {}
+    : draft_{std::move(id), std::move(base_revision), 0U, {}, {}} {}
 
 DraftSnapshot DraftStore::snapshot() const {
     std::scoped_lock lock(mutex_);
@@ -52,7 +116,7 @@ bool DraftStore::bind_base_revision(
         observation_started_at <= minimum_revision_observation_) {
         return false;
     }
-    if (!draft_.changes.empty()) {
+    if (!draft_.empty()) {
         if (draft_.base_revision != revision) return false;
         minimum_revision_observation_ = observation_started_at;
         return true;
@@ -127,18 +191,22 @@ DraftMutationResult DraftStore::reconcile(
         if (found == proposed.end()) proposed.push_back(std::move(change));
         else found->value = std::move(change.value);
     }
-    if (proposed.size() > maximum_changes) return DraftMutationResult::CapacityExceeded;
+    if (proposed.size() + draft_.structural_operations.size() > maximum_changes) {
+        return DraftMutationResult::CapacityExceeded;
+    }
     std::size_t proposed_size{};
     for (const auto& change : proposed) {
-        if (change.path.size() > maximum_draft_bytes - proposed_size) {
+        if (!add_size(proposed_size, change.path.size())) {
             return DraftMutationResult::CapacityExceeded;
         }
-        proposed_size += change.path.size();
         const auto size = value_size(change.value);
-        if (size > maximum_draft_bytes - proposed_size) {
+        if (!add_size(proposed_size, size)) {
             return DraftMutationResult::CapacityExceeded;
         }
-        proposed_size += size;
+    }
+    for (const auto& item : draft_.structural_operations) {
+        const auto size = structural_size(item);
+        if (!size || !add_size(proposed_size, *size)) return DraftMutationResult::CapacityExceeded;
     }
     draft_.changes = std::move(proposed);
     ++draft_.version;
@@ -155,10 +223,56 @@ DraftMutationResult DraftStore::remove_many(
     return reconcile(expected_version, {}, std::move(paths));
 }
 
+DraftMutationResult DraftStore::upsert_structural(
+    const std::uint64_t expected_version, DraftStructuralOperation operation) {
+    if (!valid_draft_structural_operation(operation)) return DraftMutationResult::InvalidValue;
+    std::scoped_lock lock(mutex_);
+    if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
+    auto proposed = draft_.structural_operations;
+    const auto local_id = draft_structural_local_id(operation);
+    const auto found = std::find_if(proposed.begin(), proposed.end(), [local_id](const auto& item) {
+        return draft_structural_local_id(item) == local_id;
+    });
+    if (found == proposed.end()) proposed.push_back(std::move(operation));
+    else *found = std::move(operation);
+    if (draft_.changes.size() + proposed.size() > maximum_changes) {
+        return DraftMutationResult::CapacityExceeded;
+    }
+    if (!valid_structural_set(proposed)) return DraftMutationResult::InvalidValue;
+    std::size_t proposed_size{};
+    for (const auto& change : draft_.changes) {
+        if (!add_size(proposed_size, change.path.size()) ||
+            !add_size(proposed_size, value_size(change.value))) {
+            return DraftMutationResult::CapacityExceeded;
+        }
+    }
+    for (const auto& item : proposed) {
+        const auto size = structural_size(item);
+        if (!size || !add_size(proposed_size, *size)) return DraftMutationResult::CapacityExceeded;
+    }
+    draft_.structural_operations = std::move(proposed);
+    ++draft_.version;
+    return DraftMutationResult::Applied;
+}
+
+DraftMutationResult DraftStore::remove_structural(
+    const std::uint64_t expected_version, const std::string& local_id) {
+    std::scoped_lock lock(mutex_);
+    if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
+    const auto found = std::find_if(
+        draft_.structural_operations.begin(), draft_.structural_operations.end(),
+        [&local_id](const auto& item) { return draft_structural_local_id(item) == local_id; });
+    if (found == draft_.structural_operations.end()) return DraftMutationResult::Missing;
+    draft_.structural_operations.erase(found);
+    ++draft_.version;
+    return DraftMutationResult::Applied;
+}
+
 DraftMutationResult DraftStore::clear(const std::uint64_t expected_version) {
     std::scoped_lock lock(mutex_);
     if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
     draft_.changes.clear();
+    draft_.structural_operations.clear();
     ++draft_.version;
     return DraftMutationResult::Applied;
 }
@@ -168,12 +282,13 @@ DraftMutationResult DraftStore::complete_commit(
     if (!is_canonical_revision(committed_revision)) return DraftMutationResult::InvalidValue;
     std::scoped_lock lock(mutex_);
     if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
-    if (draft_.changes.empty()) return DraftMutationResult::Missing;
+    if (draft_.empty()) return DraftMutationResult::Missing;
     if (!draft_.base_revision || !is_canonical_revision(*draft_.base_revision) ||
         *draft_.base_revision == committed_revision) {
         return DraftMutationResult::InvalidValue;
     }
     draft_.changes.clear();
+    draft_.structural_operations.clear();
     draft_.base_revision = committed_revision;
     minimum_revision_observation_ = std::chrono::steady_clock::now();
     ++draft_.version;
