@@ -184,7 +184,9 @@ struct ConfigSystemSettings {
     std::uint64_t plaintext_port{};
     std::uint64_t tls_port{};
     std::uint64_t udp_port{};
+    std::uint64_t dtls_port{};
     std::uint64_t quic_port{};
+    std::uint64_t socks_port{};
     std::uint64_t http_connect_port{};
     std::uint64_t ocsp_status_ttl{};
     std::uint64_t crl_status_ttl{};
@@ -211,7 +213,10 @@ struct ConfigSystemSettings {
     std::uint64_t cli_port{};
     bool cli_password_configured{};
     bool web_rating_key_configured{};
+    bool thread_pool_logging{};
     bool socks_async_dns{};
+    bool socks_ip_version_mixing{};
+    bool socks_prefer_ipv6{};
     bool tls_autodetect{};
     bool tls_autodetect_harder{};
     bool kernel_tls{};

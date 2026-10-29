@@ -181,7 +181,7 @@ export interface SystemSettings {
   policyFailOpen: boolean;
   accessRequestFailOpen: boolean;
   workers: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'dtls' | 'quic' | 'socks' | 'httpConnect', number>>;
-  ports: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'quic' | 'httpConnect', number>>;
+  ports: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'dtls' | 'quic' | 'socks' | 'httpConnect', number>>;
   ocspStatusTtl: number;
   crlStatusTtl: number;
   logging: {
@@ -210,7 +210,10 @@ export interface SystemSettings {
     cliPort: number;
     cliPasswordConfigured: boolean;
     webRatingKeyConfigured: boolean;
+    threadPoolLogging: boolean;
     socksAsyncDns: boolean;
+    socksIpVersionMixing: boolean;
+    socksPreferIpv6: boolean;
   };
   tlsAutodetect: boolean;
   tlsAutodetectHarder: boolean;

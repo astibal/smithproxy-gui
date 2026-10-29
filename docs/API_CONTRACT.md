@@ -141,8 +141,9 @@ Script profile batches cover the runtime and write-only module-path rotation.
 Certificate-authority batches cover names and write-only path rotation.
 Deprecated authentication profile batches cover authentication
 and identity resolution while redacted identity mappings remain unchanged.
-System-setting batches cover listener admission, fail-open behavior, worker
-pools, TLS detection, HTTP API token lifetime/refresh, listener port, access
+System-setting batches cover listener admission, all listener ports, fail-open
+behavior, worker pools, TLS detection, SOCKS IP-version behavior, thread-pool
+task logging, HTTP API token lifetime/refresh, listener port, access
 posture, and webhook switches. HTTP API bind address/interface values remain
 write-only. Capture batches cover enablement, formats, quota, tunnel TTL, and
 checksum behavior. Nameservers, API credentials, webhook URLs, capture paths,

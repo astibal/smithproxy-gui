@@ -238,7 +238,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         accept_http_connect: true, accept_api: true, policy_fail_open: false,
         access_request_fail_open: false,
         workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 0, http_connect: 1},
-        ports: {plaintext: 50080, tls: 50443, udp: 50080, quic: 443, http_connect: 3128},
+        ports: {plaintext: 50080, tls: 50443, udp: 50080, dtls: 50443, quic: 443, socks: 1080, http_connect: 3128},
         ocsp_status_ttl: 1800, crl_status_ttl: 86400,
         logging: {
           default_write_payload: false, payload_directory_configured: true, pcap_single_quota: 100,
@@ -251,7 +251,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           certificate_password_configured: true, ca_bundle_path_configured: true,
           messages_directory_configured: true, payload_file_prefix_configured: false,
           payload_file_suffix_configured: false, cli_port: 50000, cli_password_configured: false,
-          web_rating_key_configured: false, socks_async_dns: true,
+          web_rating_key_configured: false, thread_pool_logging: false, socks_async_dns: true,
+          socks_ip_version_mixing: true, socks_prefer_ipv6: false,
         },
         tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
         nameserver_count: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
@@ -763,7 +764,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(7);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 59 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 64 changes')).toBeVisible();
   await expect(settingsEditor.getByLabel('HTTP API keys replacement')).toHaveValue('');
   await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
   await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -781,14 +782,19 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('Draft: 68 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 73 changes')).toBeVisible();
   await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
   await captureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 68'}).click();
+  await page.getByRole('button', {name: 'Review draft · 73'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
+  await expect(changes).toContainText('settings.dtls_port');
+  await expect(changes).toContainText('settings.socks_port');
+  await expect(changes).toContainText('settings.tpool_log');
+  await expect(changes).toContainText('settings.socks.ipver_mixing');
+  await expect(changes).toContainText('settings.socks.prefer_ipv6');
   await expect(changes).toContainText('settings.log_level');
   await expect(changes).toContainText('settings.cli.port');
   await expect(changes).toContainText('settings.nameservers');

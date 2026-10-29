@@ -70,7 +70,8 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "dtls_workers": "1", "quic_workers": "-1", "socks_workers": "-1",
             "http_connect_workers": "1", "ssl_autodetect": "true",
             "plaintext_port": "50080", "ssl_port": "50443", "udp_port": "50080",
-            "quic_port": "443", "http_connect_port": "3128",
+            "dtls_port": "50443", "quic_port": "443", "socks_port": "1080",
+            "http_connect_port": "3128", "tpool_log": "false",
             "ssl_ocsp_status_ttl": "1800", "ssl_crl_status_ttl": "86400",
             "default_write_payload": "false", "write_payload_dir": "/private/payloads",
             "write_pcap_single_quota": "100", "log_level": "6",
@@ -85,7 +86,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "write_payload_file_suffix": "private-suffix",
             "cli": {"port": "50000", "enable_password": "private-cli-password"},
             "web_rating": {"wot_key": "private-rating-key"},
-            "socks": {"async_dns": "true"},
+            "socks": {"async_dns": "true", "ipver_mixing": "true", "prefer_ipv6": "false"},
             "ssl_autodetect_harder": "false", "ssl_use_ktls": "false",
             "nameservers": ["192.0.2.53"],
             "http_api": {
@@ -478,7 +479,9 @@ def main() -> int:
                 "plaintext": 50080,
                 "tls": 50443,
                 "udp": 50080,
+                "dtls": 50443,
                 "quic": 443,
+                "socks": 1080,
                 "http_connect": 3128,
             }
             assert config_snapshot["settings"]["ocsp_status_ttl"] == 1800
@@ -509,7 +512,10 @@ def main() -> int:
                 "cli_port": 50000,
                 "cli_password_configured": True,
                 "web_rating_key_configured": True,
+                "thread_pool_logging": False,
                 "socks_async_dns": True,
+                "socks_ip_version_mixing": True,
+                "socks_prefer_ipv6": False,
             }
             assert config_snapshot["settings"]["nameservers"] == ["192.0.2.53"]
             assert config_snapshot["settings"]["http_api"] == {

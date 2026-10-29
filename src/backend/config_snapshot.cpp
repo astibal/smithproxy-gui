@@ -575,7 +575,9 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto plaintext_port = optional_decimal(*value, "plaintext_port", 50080U, 65535U);
     const auto tls_port = optional_decimal(*value, "ssl_port", 50443U, 65535U);
     const auto udp_port = optional_decimal(*value, "udp_port", 50080U, 65535U);
+    const auto dtls_port = optional_decimal(*value, "dtls_port", 50443U, 65535U);
     const auto quic_port = optional_decimal(*value, "quic_port", 443U, 65535U);
+    const auto socks_port = optional_decimal(*value, "socks_port", 1080U, 65535U);
     const auto http_connect_port = optional_decimal(*value, "http_connect_port", 3128U, 65535U);
     constexpr std::uint64_t maximum_status_ttl = 31536000U;
     const auto ocsp_status_ttl = optional_decimal(*value, "ssl_ocsp_status_ttl", 1800U, maximum_status_ttl);
@@ -626,6 +628,9 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     }
     const Json& socks = socks_value != value->end() && socks_value->is_object() ? *socks_value : empty;
     const auto socks_async_dns = boolean_scalar(socks, "async_dns", true);
+    const auto socks_ip_version_mixing = boolean_scalar(socks, "ipver_mixing", true);
+    const auto socks_prefer_ipv6 = boolean_scalar(socks, "prefer_ipv6", false);
+    const auto thread_pool_logging = boolean_scalar(*value, "tpool_log", false);
     const auto tls_autodetect = boolean_scalar(*value, "ssl_autodetect", false);
     const auto tls_autodetect_harder = boolean_scalar(*value, "ssl_autodetect_harder", false);
     const auto kernel_tls = boolean_scalar(*value, "ssl_use_ktls", false);
@@ -661,14 +666,15 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     if (!accept_tproxy || !accept_redirect || !accept_socks || !accept_http_connect || !accept_api ||
         !policy_fail_open || !access_fail_open || !plaintext_workers || !tls_workers || !udp_workers ||
         !dtls_workers || !quic_workers || !socks_workers || !http_connect_workers || !plaintext_port ||
-        !tls_port || !udp_port || !quic_port || !http_connect_port || !ocsp_status_ttl ||
+        !tls_port || !udp_port || !dtls_port || !quic_port || !socks_port || !http_connect_port || !ocsp_status_ttl ||
         !crl_status_ttl || !default_write_payload || !payload_directory ||
         !write_pcap_single_quota || !log_level || !log_file || !log_console ||
         !ssl_key_log_file || !syslog_server || !syslog_port || !syslog_facility ||
         !syslog_level || !syslog_family || (*syslog_family != 4U && *syslog_family != 6U) ||
         !udp_quick_ports || !certificates_path || !certificate_password || !ca_bundle_path ||
         !messages_directory || !payload_file_prefix || !payload_file_suffix || !cli_port ||
-        !cli_password || !rating_key || !socks_async_dns ||
+        !cli_password || !rating_key || !thread_pool_logging || !socks_async_dns ||
+        !socks_ip_version_mixing || !socks_prefer_ipv6 ||
         !tls_autodetect ||
         !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips ||
         !api_key_timeout || *api_key_timeout == 0U || !api_port || *api_port < 1025U || !key_extend ||
@@ -693,7 +699,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *accept_tproxy, *accept_redirect, *accept_socks, *accept_http_connect, *accept_api,
                 *policy_fail_open, *access_fail_open, *plaintext_workers, *tls_workers, *udp_workers,
                 *dtls_workers, *quic_workers, *socks_workers, *http_connect_workers,
-                *plaintext_port, *tls_port, *udp_port, *quic_port, *http_connect_port,
+                *plaintext_port, *tls_port, *udp_port, *dtls_port, *quic_port, *socks_port, *http_connect_port,
                 *ocsp_status_ttl, *crl_status_ttl, *default_write_payload,
                 !payload_directory->empty(), *write_pcap_single_quota, *log_level,
                 !log_file->empty(), *log_console, !ssl_key_log_file->empty(),
@@ -703,7 +709,8 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !certificate_password->empty(), !ca_bundle_path->empty(),
                 !messages_directory->empty(), !payload_file_prefix->empty(),
                 !payload_file_suffix->empty(), *cli_port, !cli_password->empty(),
-                !rating_key->empty(), *socks_async_dns, *tls_autodetect,
+                !rating_key->empty(), *thread_pool_logging, *socks_async_dns,
+                *socks_ip_version_mixing, *socks_prefer_ipv6, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, nameservers->size(), *nameservers,
                 *api_keys, allowed_ips->size(), *allowed_ips,
                 *api_key_timeout, *api_port, *key_extend, *loopback_only, *pam_login, *api_header,

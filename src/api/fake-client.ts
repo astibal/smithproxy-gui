@@ -202,7 +202,7 @@ const snapshot: ConfigSnapshot = {
     acceptHttpConnect: true, acceptApi: true,
     policyFailOpen: false, accessRequestFailOpen: false,
     workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, httpConnect: 1},
-    ports: {plaintext: 50080, tls: 50443, udp: 50080, quic: 443, httpConnect: 3128},
+    ports: {plaintext: 50080, tls: 50443, udp: 50080, dtls: 50443, quic: 443, socks: 1080, httpConnect: 3128},
     ocspStatusTtl: 1800, crlStatusTtl: 86400,
     logging: {
       defaultWritePayload: false, payloadDirectoryConfigured: true, pcapSingleQuota: 100,
@@ -215,7 +215,8 @@ const snapshot: ConfigSnapshot = {
       certificatePasswordConfigured: true, caBundlePathConfigured: true,
       messagesDirectoryConfigured: true, payloadFilePrefixConfigured: false,
       payloadFileSuffixConfigured: false, cliPort: 50000, cliPasswordConfigured: false,
-      webRatingKeyConfigured: false, socksAsyncDns: true,
+      webRatingKeyConfigured: false, threadPoolLogging: false, socksAsyncDns: true,
+      socksIpVersionMixing: true, socksPreferIpv6: false,
     },
     tlsAutodetect: true, tlsAutodetectHarder: false, kernelTls: false,
     nameserverCount: 2, nameservers: ['192.0.2.53', '2001:db8::53'],

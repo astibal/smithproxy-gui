@@ -91,7 +91,7 @@ const liveSnapshot = {
     accept_http_connect: true, accept_api: true, policy_fail_open: false,
     access_request_fail_open: false,
     workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, http_connect: 1},
-    ports: {plaintext: 50080, tls: 50443, udp: 50080, quic: 443, http_connect: 3128},
+    ports: {plaintext: 50080, tls: 50443, udp: 50080, dtls: 50443, quic: 443, socks: 1080, http_connect: 3128},
     ocsp_status_ttl: 1800, crl_status_ttl: 86400,
     logging: {
       default_write_payload: false, payload_directory_configured: true, pcap_single_quota: 100,
@@ -104,7 +104,8 @@ const liveSnapshot = {
       certificate_password_configured: true, ca_bundle_path_configured: true,
       messages_directory_configured: true, payload_file_prefix_configured: false,
       payload_file_suffix_configured: false, cli_port: 50000, cli_password_configured: false,
-      web_rating_key_configured: false, socks_async_dns: true,
+      web_rating_key_configured: false, thread_pool_logging: false, socks_async_dns: true,
+      socks_ip_version_mixing: true, socks_prefer_ipv6: false,
     },
     tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
     nameserver_count: 2, nameservers: ['192.0.2.53', '2001:db8::53'],

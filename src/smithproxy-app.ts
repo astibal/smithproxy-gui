@@ -1578,7 +1578,9 @@ export class SmithproxyApp extends LitElement {
       ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
       ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
       ['default_write_payload', 'logging-default-payload'], ['log_console', 'logging-console'],
-      ['socks.async_dns', 'aux-socks-async-dns'],
+      ['tpool_log', 'aux-thread-pool-log'], ['socks.async_dns', 'aux-socks-async-dns'],
+      ['socks.ipver_mixing', 'aux-socks-ipver-mixing'],
+      ['socks.prefer_ipv6', 'aux-socks-prefer-ipv6'],
     ] as const;
     const changes: DraftChange[] = [];
     for (const [path, id] of booleanFields) {
@@ -1603,6 +1605,7 @@ export class SmithproxyApp extends LitElement {
     const numericFields = [
       ['plaintext_port', 'port-plaintext', 65535], ['ssl_port', 'port-tls', 65535],
       ['udp_port', 'port-udp', 65535], ['quic_port', 'port-quic', 65535],
+      ['dtls_port', 'port-dtls', 65535], ['socks_port', 'port-socks', 65535],
       ['http_connect_port', 'port-http-connect', 65535],
       ['ssl_ocsp_status_ttl', 'ocsp-status-ttl', 31536000],
       ['ssl_crl_status_ttl', 'crl-status-ttl', 31536000],
@@ -3319,7 +3322,9 @@ export class SmithproxyApp extends LitElement {
         ${numericField('port-plaintext', 'Plaintext port', settings.ports.plaintext, 65535)}
         ${numericField('port-tls', 'TLS port', settings.ports.tls, 65535)}
         ${numericField('port-udp', 'UDP port', settings.ports.udp, 65535)}
+        ${numericField('port-dtls', 'DTLS port', settings.ports.dtls, 65535)}
         ${numericField('port-quic', 'QUIC port', settings.ports.quic, 65535)}
+        ${numericField('port-socks', 'SOCKS port', settings.ports.socks, 65535)}
         ${numericField('port-http-connect', 'HTTP CONNECT port', settings.ports.httpConnect, 65535)}
         ${numericField('ocsp-status-ttl', 'OCSP status TTL (seconds)', settings.ocspStatusTtl, 31536000)}
         ${numericField('crl-status-ttl', 'CRL status TTL (seconds)', settings.crlStatusTtl, 31536000)}
@@ -3341,7 +3346,10 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('syslog-server', 'Syslog server', settings.logging.syslogServerConfigured)}
         <h3 class="form-span">Auxiliary services</h3>
         ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 65535)}
+        ${booleanField('aux-thread-pool-log', 'Thread-pool task logging', settings.auxiliary.threadPoolLogging)}
         ${booleanField('aux-socks-async-dns', 'SOCKS asynchronous DNS', settings.auxiliary.socksAsyncDns)}
+        ${booleanField('aux-socks-ipver-mixing', 'SOCKS IP-version mixing', settings.auxiliary.socksIpVersionMixing)}
+        ${booleanField('aux-socks-prefer-ipv6', 'SOCKS prefer IPv6', settings.auxiliary.socksPreferIpv6)}
         ${writeOnlyField('cli-password', 'CLI password', settings.auxiliary.cliPasswordConfigured, true)}
         <label for="settings-udp-quick-ports">UDP quick ports</label>
         <input id="settings-udp-quick-ports" .value=${settings.auxiliary.udpQuickPorts.join(', ')}

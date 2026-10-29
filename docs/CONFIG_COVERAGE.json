@@ -21,17 +21,17 @@
         "accept_api", "policy_fail_open", "policy_access_request_fail_open",
         "plaintext_workers", "ssl_workers", "udp_workers", "dtls_workers",
         "quic_workers", "socks_workers", "http_connect_workers", "plaintext_port",
-        "ssl_port", "udp_port", "quic_port", "http_connect_port",
+        "ssl_port", "udp_port", "dtls_port", "quic_port", "socks_port", "http_connect_port",
         "ssl_ocsp_status_ttl", "ssl_crl_status_ttl", "default_write_payload",
         "write_payload_dir", "write_pcap_single_quota", "log_level", "log_file",
         "log_console", "sslkeylog_file", "syslog_server", "syslog_port",
         "syslog_facility", "syslog_level", "syslog_family", "ssl_autodetect",
         "udp_quick_ports", "certs_path", "certs_ca_key_password", "ca_bundle_path",
         "messages_dir", "write_payload_file_prefix", "write_payload_file_suffix",
-        "cli", "web_rating", "socks",
+        "cli", "web_rating", "tpool_log", "socks",
         "ssl_autodetect_harder", "kernel_tls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "Core listener, logging, and HTTP API fields are typed and editable. The HTTP API slice covers token lifetime/refresh, port, allowlists, login posture, and write-only bind targets. Filesystem paths, credentials, API keys, webhook and syslog targets, filename components, and rating keys use write-only replace/clear controls. Tuning, administration, expanded SOCKS, and newer webhook/Sift fields remain partial."
+      "notes": "Core listener, logging, SOCKS, and HTTP API fields are typed and editable. The HTTP API slice covers token lifetime/refresh, port, allowlists, login posture, and write-only bind targets. Filesystem paths, credentials, API keys, webhook and syslog targets, filename components, and rating keys use write-only replace/clear controls. Tuning, administration, and newer webhook/Sift fields remain partial."
     },
     {
       "name": "debug",

@@ -644,7 +644,9 @@ private:
                        ",\"ports\":{\"plaintext\":" + std::to_string(value.plaintext_port) +
                        ",\"tls\":" + std::to_string(value.tls_port) +
                        ",\"udp\":" + std::to_string(value.udp_port) +
+                       ",\"dtls\":" + std::to_string(value.dtls_port) +
                        ",\"quic\":" + std::to_string(value.quic_port) +
+                       ",\"socks\":" + std::to_string(value.socks_port) +
                        ",\"http_connect\":" + std::to_string(value.http_connect_port) + "}" +
                        ",\"ocsp_status_ttl\":" + std::to_string(value.ocsp_status_ttl) +
                        ",\"crl_status_ttl\":" + std::to_string(value.crl_status_ttl) +
@@ -684,7 +686,10 @@ private:
                        (value.cli_password_configured ? "true" : "false") +
                        ",\"web_rating_key_configured\":" +
                        (value.web_rating_key_configured ? "true" : "false") +
-                       ",\"socks_async_dns\":" + (value.socks_async_dns ? "true" : "false") + "}" +
+                       ",\"thread_pool_logging\":" + (value.thread_pool_logging ? "true" : "false") +
+                       ",\"socks_async_dns\":" + (value.socks_async_dns ? "true" : "false") +
+                       ",\"socks_ip_version_mixing\":" + (value.socks_ip_version_mixing ? "true" : "false") +
+                       ",\"socks_prefer_ipv6\":" + (value.socks_prefer_ipv6 ? "true" : "false") + "}" +
                        ",\"tls_autodetect\":" + (value.tls_autodetect ? "true" : "false") +
                        ",\"tls_autodetect_harder\":" + (value.tls_autodetect_harder ? "true" : "false") +
                        ",\"kernel_tls\":" + (value.kernel_tls ? "true" : "false") +

@@ -538,7 +538,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         plaintext: safeInteger(value.settings.ports.plaintext, 'plaintext port', 65535),
         tls: safeInteger(value.settings.ports.tls, 'TLS port', 65535),
         udp: safeInteger(value.settings.ports.udp, 'UDP port', 65535),
+        dtls: safeInteger(value.settings.ports.dtls, 'DTLS port', 65535),
         quic: safeInteger(value.settings.ports.quic, 'QUIC port', 65535),
+        socks: safeInteger(value.settings.ports.socks, 'SOCKS port', 65535),
         httpConnect: safeInteger(value.settings.ports.http_connect, 'HTTP CONNECT port', 65535),
       },
       ocspStatusTtl: safeInteger(value.settings.ocsp_status_ttl, 'OCSP status TTL', 31536000),
@@ -597,7 +599,16 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         webRatingKeyConfigured: safeBoolean(
           value.settings.auxiliary.web_rating_key_configured, 'web-rating key state',
         ),
+        threadPoolLogging: safeBoolean(
+          value.settings.auxiliary.thread_pool_logging, 'thread-pool logging state',
+        ),
         socksAsyncDns: safeBoolean(value.settings.auxiliary.socks_async_dns, 'SOCKS async DNS state'),
+        socksIpVersionMixing: safeBoolean(
+          value.settings.auxiliary.socks_ip_version_mixing, 'SOCKS IP-version mixing state',
+        ),
+        socksPreferIpv6: safeBoolean(
+          value.settings.auxiliary.socks_prefer_ipv6, 'SOCKS IPv6 preference state',
+        ),
       },
       tlsAutodetect: safeBoolean(value.settings.tls_autodetect, 'TLS autodetection state'),
       tlsAutodetectHarder: safeBoolean(value.settings.tls_autodetect_harder, 'hard TLS autodetection state'),
