@@ -174,7 +174,7 @@
       "tracked_fields": [
         "name", "action", "proto", "src", "sport", "dst", "dport", "tls_profile",
         "ssh_profile", "detection_profile", "content_profile", "alg_dns_profile",
-        "script_profile", "auth_profile", "nat", "routing", "write_payload", "disabled"
+        "script_profile", "auth_profile", "nat", "routing", "features", "disabled"
       ],
       "notes": "All fields currently returned by the policy snapshot contract are represented by the typed editor."
     },

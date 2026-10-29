@@ -366,6 +366,7 @@ int main() {
         {"address_objects.[0].type", std::string("cidr")},
         {"port_objects.[0].start", std::int64_t{443}},
         {"proto_objects.[0].id", std::int64_t{6}},
+        {"policy.[0].features", std::vector<std::string>{"sinkhole", "statistics"}},
         {"routing.[0].dnat_lb_method", std::string("round-robin")},
         {"tls_profiles.[0].client_cert_action", std::string("use_configured")},
         {"content_profiles.[0].write_format", std::string("smcap")},

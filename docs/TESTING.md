@@ -121,6 +121,11 @@ schema node = specialized editor
 
 Tiché ignorování nového config uzlu je chyba buildu.
 
+Coverage gate připíná upstream repozitář, referenční config a úplný seznam polí
+každé typed sekce. U rule-bearing a redigovaných sekcí připíná také přesný
+`full/partial` nebo `partial/partial` kontrakt. Záměna pole mezi sekcemi, změna
+původu na API extension nebo nezdokumentované odebrání proto selže v CI.
+
 ## Security matrix
 
 Každý endpoint se testuje pro:
