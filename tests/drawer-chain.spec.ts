@@ -2811,6 +2811,30 @@ test('creates and removes a signature with its first flow step atomically', asyn
   await expectNoWcagViolations(page);
 });
 
+test('rejects a signature create that collides with a pending rename', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, structuralBatchMutationRequests: [],
+    initialDraftChanges: [{path: 'starttls_signatures.[0].name', value: 'imap-starttls'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trustPosture = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trustPosture.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await trustPosture.getByRole('button', {name: 'New STARTTLS signature'}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Create signature'});
+  await editor.getByLabel('Name').fill('imap-starttls');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByRole('status')).toHaveText(
+    'A STARTTLS signature with this name already exists.',
+  );
+  expect(state.structuralBatchMutationRequests).toEqual([]);
+});
+
 test('rejects validation metadata that is not bound to the complete draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',

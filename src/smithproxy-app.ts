@@ -3535,7 +3535,7 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     const duplicateLive = this.snapshot?.securityAssets?.signatures.some(item =>
-      item.kind === kind && item.name === metadata[1]);
+      item.kind === kind && this.signatureDisplayName(item.id, item.name) === metadata[1]);
     const duplicatePending = this.workspaceDraft?.structuralOperations.some(item =>
       item.op === 'create' && item.localId !== entry.id && item.collection === `${kind}_signatures` &&
       item.fields['name'] === metadata[1]);
