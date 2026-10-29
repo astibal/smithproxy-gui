@@ -825,6 +825,7 @@ private:
                               ",\"category\":" + json_string(signature.category) +
                               ",\"name\":" + json_string(signature.name) +
                               ",\"side\":" + json_string(signature.side) +
+                              ",\"severity\":" + std::to_string(signature.severity) +
                               ",\"group\":" + json_string(signature.group) +
                               ",\"enables\":" + json_string(signature.enables) +
                               ",\"engine\":" + json_string(signature.engine) +

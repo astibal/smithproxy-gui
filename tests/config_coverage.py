@@ -47,6 +47,17 @@ FULL_TYPED_FIELDS = {
     "script_profiles": {"name", "type", "script-file"},
 }
 
+FULL_READ_FIELDS = {
+    "starttls_signatures": {
+        "cat", "name", "side", "severity", "group", "enables", "engine",
+        "flow", "type", "signature", "bytes_start", "bytes_max",
+    },
+    "detection_signatures": {
+        "cat", "name", "side", "severity", "group", "enables", "engine",
+        "flow", "type", "signature", "bytes_start", "bytes_max",
+    },
+}
+
 
 def fail(message: str) -> None:
     raise AssertionError(message)
@@ -105,6 +116,15 @@ def main() -> None:
                 missing = sorted(expected_fields - actual_fields)
                 extra = sorted(actual_fields - expected_fields)
                 fail(f"{name}: audited field inventory drifted; missing={missing}, extra={extra}")
+        expected_read_fields = FULL_READ_FIELDS.get(name)
+        if expected_read_fields is not None:
+            if section["read"] != "full":
+                fail(f"{name}: audited active schema must retain full read coverage")
+            actual_fields = set(section["tracked_fields"])
+            if actual_fields != expected_read_fields:
+                missing = sorted(expected_read_fields - actual_fields)
+                extra = sorted(actual_fields - expected_read_fields)
+                fail(f"{name}: audited read inventory drifted; missing={missing}, extra={extra}")
 
 
 if __name__ == "__main__":

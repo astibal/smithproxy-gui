@@ -135,10 +135,10 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "default": {"path": "/private/ca/default"},
         },
         "starttls_signatures": [
-            {"name": "smtp/starttls", "flow": [{"signature": "secret-starttls-regex"}]},
+            {"name": "smtp/starttls", "severity": "2", "flow": [{"signature": "secret-starttls-regex"}]},
         ],
         "detection_signatures": [
-            {"name": "http/request", "flow": [
+            {"name": "http/request", "severity": "4", "flow": [
                 {"signature": "secret-detection-regex"},
                 {"signature": "another-secret-regex"},
             ]},
@@ -628,7 +628,7 @@ def main() -> int:
                 "signatures": [
                     {
                         "id": "starttls-signature-0", "kind": "starttls", "category": "",
-                        "name": "smtp/starttls", "side": "client", "group": "",
+                        "name": "smtp/starttls", "side": "client", "severity": 2, "group": "",
                         "enables": "", "engine": "", "flow": [{
                             "id": "starttls-signature-0-flow-0", "side": "r", "type": "regex",
                             "expression_configured": True, "bytes_start": 0, "bytes_max": 0,
@@ -636,7 +636,7 @@ def main() -> int:
                     },
                     {
                         "id": "detection-signature-0", "kind": "detection", "category": "",
-                        "name": "http/request", "side": "client", "group": "",
+                        "name": "http/request", "side": "client", "severity": 4, "group": "",
                         "enables": "", "engine": "", "flow": [
                             {
                                 "id": "detection-signature-0-flow-0", "side": "r", "type": "regex",

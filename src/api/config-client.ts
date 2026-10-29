@@ -861,6 +861,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         category: optionalString(item.category, 'signature category'),
         name: safeString(item.name, 'signature name', 128),
         side: side as 'client' | 'server',
+        severity: rangedInteger(item.severity, 'signature severity', -2147483648, 2147483647),
         group: optionalString(item.group, 'signature group'),
         enables: optionalString(item.enables, 'signature enable target'),
         engine: optionalString(item.engine, 'signature engine'),

@@ -179,20 +179,20 @@
     {
       "name": "starttls_signatures",
       "origin": "reference_config",
-      "read": "partial",
+      "read": "full",
       "edit": "partial",
       "sensitivity": "rule-bearing",
-      "tracked_fields": ["cat", "name", "side", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "Signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement; structural add and remove operations still require a transaction schema."
+      "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
+      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement; structural add and remove operations still require a transaction schema."
     },
     {
       "name": "detection_signatures",
       "origin": "reference_config",
-      "read": "partial",
+      "read": "full",
       "edit": "partial",
       "sensitivity": "rule-bearing",
-      "tracked_fields": ["cat", "name", "side", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "Signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement; structural add and remove operations still require a transaction schema."
+      "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
+      "notes": "All active signature metadata and ordered flow controls are typed. Matcher expressions remain server-side and support write-only replacement; structural add and remove operations still require a transaction schema."
     },
     {
       "name": "script_profiles",

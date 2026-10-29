@@ -302,7 +302,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         signatures: [
           {
             id: 'starttls-signature-0', kind: 'starttls', category: 'mail', name: 'smtp/starttls',
-            side: 'client', group: '', enables: '', engine: '',
+            side: 'client', severity: 0, group: '', enables: '', engine: '',
             flow: [
               {id: 'starttls-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
                bytes_start: 0, bytes_max: 16},
@@ -312,7 +312,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           },
           {
             id: 'detection-signature-0', kind: 'detection', category: 'www', name: 'http/request',
-            side: 'client', group: 'base', enables: 'http', engine: 'http1',
+            side: 'client', severity: 4, group: 'base', enables: 'http', engine: 'http1',
             flow: [{
               id: 'detection-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
               bytes_start: 0, bytes_max: 200,
@@ -889,8 +889,9 @@ test('edits nested signature flow metadata with write-only expressions', async (
   await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
   const signatureEditor = page.getByRole('dialog', {name: 'Edit http/request'});
   await signatureEditor.getByLabel('Group').fill('web');
+  await signatureEditor.getByLabel('Severity').fill('5');
   await signatureEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(page.getByText('Draft: 6 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 7 changes')).toBeVisible();
 
   await signatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
   const flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
@@ -898,15 +899,16 @@ test('edits nested signature flow metadata with write-only expressions', async (
   await flowEditor.getByLabel('Expression', {exact: true}).selectOption('replace');
   await flowEditor.getByLabel('Signature expression replacement').fill('^PRIVATE[0-9]+$');
   await flowEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(page.getByText('Draft: 11 changes')).toBeVisible();
+  await expect(page.getByText('Draft: 12 changes')).toBeVisible();
   await expect(flowEditor.getByLabel('Signature expression replacement')).toHaveValue('');
   await expect(flowEditor.getByLabel('Expression', {exact: true})).toHaveValue('unchanged');
   await flowEditor.getByRole('button', {name: 'Cancel'}).click();
   await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Review draft · 11'}).click();
+  await page.getByRole('button', {name: 'Review draft · 12'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('detection_signatures.[0].group');
+  await expect(changes).toContainText('detection_signatures.[0].severity');
   await expect(changes).toContainText('detection_signatures.[0].flow.[0].signature');
   await expect(changes).toContainText('Replaced · redacted');
   await expect(changes).not.toContainText('PRIVATE');

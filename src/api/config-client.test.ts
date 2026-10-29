@@ -155,7 +155,7 @@ const liveSnapshot = {
     signatures: [
       {
         id: 'starttls-signature-0', kind: 'starttls', category: 'mail', name: 'smtp/starttls',
-        side: 'client', group: '', enables: '', engine: '',
+        side: 'client', severity: 0, group: '', enables: '', engine: '',
         flow: [
           {id: 'starttls-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
            bytes_start: 0, bytes_max: 16},
@@ -165,7 +165,7 @@ const liveSnapshot = {
       },
       {
         id: 'detection-signature-0', kind: 'detection', category: 'www', name: 'http/request',
-        side: 'client', group: 'base', enables: 'http', engine: 'http1',
+        side: 'client', severity: 4, group: 'base', enables: 'http', engine: 'http1',
         flow: [{
           id: 'detection-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
           bytes_start: 0, bytes_max: 200,

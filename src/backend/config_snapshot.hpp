@@ -315,6 +315,7 @@ struct ConfigSignature {
     std::string category;
     std::string name;
     std::string side;
+    std::int64_t severity{};
     std::string group;
     std::string enables;
     std::string engine;

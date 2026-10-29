@@ -940,6 +940,8 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
             const auto category = bounded_string(signature, "cat", maximum_name_length, true);
             const auto name = bounded_string(signature, "name", maximum_name_length);
             const auto side = bounded_string(signature, "side", 16U, true);
+            const auto severity = optional_signed_decimal(
+                signature, "severity", 0, -2147483648LL, 2147483647LL);
             const auto group = bounded_string(signature, "group", maximum_name_length, true);
             const auto enables = bounded_string(signature, "enables", maximum_name_length, true);
             const auto engine = bounded_string(signature, "engine", maximum_name_length, true);
@@ -947,7 +949,7 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
             const auto valid_optional_name = [](const std::optional<std::string>& field) {
                 return field && (field->empty() || valid_name(*field));
             };
-            if (!valid_optional_name(category) || !name || !valid_name(*name) || !side ||
+            if (!valid_optional_name(category) || !name || !valid_name(*name) || !side || !severity ||
                 (*side != "" && *side != "client" && *side != "server") ||
                 !valid_optional_name(group) || !valid_optional_name(enables) ||
                 !valid_optional_name(engine) || flow == signature.end() ||
@@ -982,7 +984,7 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
             signatures.push_back(ConfigSignature{
                 stable_id((kind + "-signature").c_str(), signature_index++), kind,
                 *category, *name, side->empty() ? "client" : *side,
-                *group, *enables, *engine, std::move(parsed_flow),
+                *severity, *group, *enables, *engine, std::move(parsed_flow),
             });
             total += flow->size();
         }

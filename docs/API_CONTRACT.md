@@ -158,6 +158,8 @@ tuning keys are deliberately omitted from the editor.
 The current detection, capture, SSH, routing, and script schemas are also
 covered in full. Their coverage manifest entries are pinned to exact active
 field inventories so a schema drift cannot silently retain a `full` claim.
+Signature reads cover severity as well as category, side, engine selection, and
+ordered matcher flows. Expression bodies remain redacted and write-only.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.

@@ -1046,16 +1046,19 @@ export class SmithproxyApp extends LitElement {
       const category = input('category');
       const name = input('name');
       const side = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-side-${entry.id}`);
+      const severity = input('severity');
       const group = input('group');
       const enables = input('enables');
       const engine = input('engine');
-      if (index < 0 || !category || !name || !side || !group || !enables || !engine ||
+      if (index < 0 || !category || !name || !side || !severity || !group || !enables || !engine ||
           !['client', 'server'].includes(side.value)) return undefined;
+      const severityValue = severity.valueAsNumber;
       const values: [string, string, string, string, string] = [
         category.value.trim(), name.value.trim(), group.value.trim(),
         enables.value.trim(), engine.value.trim(),
       ];
-      if (values[1].length === 0 || values.some(value => value.length > 128 ||
+      if (!Number.isInteger(severityValue) || severityValue < -2147483648 || severityValue > 2147483647 ||
+          values[1].length === 0 || values.some(value => value.length > 128 ||
           /[\u0000-\u001f\u007f]/u.test(value))) {
         this.draftError = 'Signature metadata must use bounded printable values and include a name.';
         return undefined;
@@ -1065,6 +1068,7 @@ export class SmithproxyApp extends LitElement {
         {path: `${base}.cat`, value: values[0]},
         {path: `${base}.name`, value: values[1]},
         {path: `${base}.side`, value: side.value},
+        {path: `${base}.severity`, value: severityValue},
         {path: `${base}.group`, value: values[2]},
         {path: `${base}.enables`, value: values[3]},
         {path: `${base}.engine`, value: values[4]},
@@ -3642,6 +3646,9 @@ export class SmithproxyApp extends LitElement {
           <option value="client">Client</option>
           <option value="server">Server</option>
         </select>
+        <label for="signature-severity-${entry.id}">Severity</label>
+        <input id="signature-severity-${entry.id}" type="number" min="-2147483648" max="2147483647"
+          .value=${String(signature.severity)} .readOnly=${disabled} />
         <label for="signature-group-${entry.id}">Group</label>
         <input id="signature-group-${entry.id}" maxlength="128" .value=${signature.group}
           .readOnly=${disabled} />

@@ -272,7 +272,7 @@ const snapshot: ConfigSnapshot = {
     signatures: [
       {
         id: 'starttls-signature-0', kind: 'starttls', category: 'mail', name: 'smtp/starttls',
-        side: 'client', group: '', enables: '', engine: '',
+        side: 'client', severity: 0, group: '', enables: '', engine: '',
         flow: [
           {id: 'starttls-signature-0-flow-0', side: 'r', type: 'regex', expressionConfigured: true,
            bytesStart: 0, bytesMax: 16},
@@ -282,7 +282,7 @@ const snapshot: ConfigSnapshot = {
       },
       {
         id: 'detection-signature-0', kind: 'detection', category: 'www', name: 'http/request',
-        side: 'client', group: 'base', enables: 'http', engine: 'http1',
+        side: 'client', severity: 4, group: 'base', enables: 'http', engine: 'http1',
         flow: [{
           id: 'detection-signature-0-flow-0', side: 'r', type: 'regex', expressionConfigured: true,
           bytesStart: 0, bytesMax: 200,

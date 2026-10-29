@@ -321,6 +321,7 @@ export interface SignatureDefinition {
   category: string;
   name: string;
   side: 'client' | 'server';
+  severity: number;
   group: string;
   enables: string;
   engine: string;
