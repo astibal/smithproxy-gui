@@ -18,6 +18,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <random>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -26,7 +27,9 @@ namespace smithproxy::gui {
 namespace {
 
 struct RequestState final : lmh::ConnectionState {
-    explicit RequestState(lmh::Controller& controller) : ConnectionState(controller) {}
+    RequestState(lmh::Controller& controller, std::string id)
+        : ConnectionState(controller), request_id(std::move(id)) {}
+    const std::string request_id;
     bool body_too_large{};
 };
 
@@ -55,6 +58,28 @@ struct OperationalEventRecord {
 };
 
 constexpr std::size_t maximum_request_body = 64U * 1024U;
+
+std::string request_id_prefix() {
+    std::random_device source;
+    const auto random = (static_cast<std::uint64_t>(source()) << 32U) | source();
+    std::ostringstream output;
+    output << std::hex << random;
+    return output.str();
+}
+
+std::string error_code(const std::string_view message) {
+    if (message == "authentication required") return "auth.required";
+    if (message == "same-origin CSRF check failed") return "auth.csrf_failed";
+    if (message == "request body too large") return "request.body_too_large";
+    if (message == "method not allowed") return "request.method_not_allowed";
+    if (message == "not found" || message == "API endpoint not found") return "request.not_found";
+    if (message == "invalid path") return "request.invalid_path";
+    if (message == "invalid event cursor") return "events.invalid_cursor";
+    if (message == "draft version conflict") return "draft.version_conflict";
+    if (message == "draft change rejected") return "draft.change_rejected";
+    if (message.starts_with("invalid draft")) return "draft.invalid_request";
+    return "request.failed";
+}
 
 std::string mime_type(const std::filesystem::path& path) {
     const auto extension = path.extension().string();
@@ -197,10 +222,13 @@ class GuiController final : public lmh::Controller {
 public:
     GuiController(const AppConfig& config, SmithproxyMonitor& monitor)
         : config_(config), monitor_(monitor), started_at_(std::chrono::steady_clock::now()),
-          draft_("workspace-draft") {}
+          request_id_prefix_(request_id_prefix()), draft_("workspace-draft") {}
 
     bool validPath(const char*, const char*) override { return true; }
-    lmh::ConnectionState* create_state() override { return new RequestState(*this); }
+    lmh::ConnectionState* create_state() override {
+        const auto sequence = request_sequence_.fetch_add(1U, std::memory_order_relaxed) + 1U;
+        return new RequestState(*this, request_id_prefix_ + "-" + std::to_string(sequence));
+    }
 
     int handleRequest(MHD_Connection* connection, const char* url, const char* method,
                       const char* upload_data, std::size_t* upload_data_size, void** ptr) override {
@@ -1159,6 +1187,21 @@ private:
     }
 
     static int send(MHD_Connection* connection, RequestState& state, Response response, const bool head) {
+        if (response.status >= 400U) {
+            const auto legacy = nlohmann::json::parse(response.body, nullptr, false);
+            if (legacy.is_object() && legacy.contains("error") && legacy["error"].is_string()) {
+                const auto message = legacy["error"].get<std::string>();
+                response.content_type = "application/json; charset=utf-8";
+                response.body = nlohmann::json{{"error", {
+                    {"code", error_code(message)},
+                    {"message", message},
+                    {"request_id", state.request_id},
+                    {"retryable", false},
+                    {"fields", nlohmann::json::array()},
+                    {"details", nlohmann::json::object()},
+                }}}.dump();
+            }
+        }
         auto* output = MHD_create_response_from_buffer(
             head ? 0U : response.body.size(), head ? nullptr : response.body.data(), MHD_RESPMEM_MUST_COPY);
         if (output == nullptr) return MHD_NO;
@@ -1170,6 +1213,7 @@ private:
         MHD_add_response_header(output, "Cross-Origin-Opener-Policy", "same-origin");
         MHD_add_response_header(output, "Cross-Origin-Resource-Policy", "same-origin");
         MHD_add_response_header(output, "Origin-Agent-Cluster", "?1");
+        MHD_add_response_header(output, "X-Request-ID", state.request_id.c_str());
         MHD_add_response_header(output, "X-Permitted-Cross-Domain-Policies", "none");
         MHD_add_response_header(output, "Permissions-Policy",
                                 "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()");
@@ -1190,6 +1234,8 @@ private:
     const AppConfig& config_;
     SmithproxyMonitor& monitor_;
     const std::chrono::steady_clock::time_point started_at_;
+    const std::string request_id_prefix_;
+    std::atomic<std::uint64_t> request_sequence_{};
     DraftStore draft_;
 };
 

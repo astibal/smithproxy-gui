@@ -1,3 +1,5 @@
+import {httpStatusError} from './http-error';
+
 export type DraftScalar = boolean | number | string | ReadonlyArray<string> | ReadonlyArray<number>;
 
 export interface DraftChange {
@@ -156,7 +158,7 @@ export class DraftClient {
         redirect: 'error',
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(`Draft API returned HTTP ${response.status}.`);
+      if (!response.ok) throw httpStatusError(response, 'Draft API');
       return await boundedJson(response);
     } finally {
       globalThis.clearTimeout(timeout);

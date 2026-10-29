@@ -1,3 +1,5 @@
+import {httpStatusError} from './http-error';
+
 export type SmithproxyState =
   | 'starting'
   | 'ready'
@@ -630,7 +632,7 @@ export class SystemClient {
         redirect: 'error',
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(`System API returned HTTP ${response.status}.`);
+      if (!response.ok) throw httpStatusError(response, 'System API');
       return await response.json() as unknown;
     } finally {
       globalThis.clearTimeout(timeout);

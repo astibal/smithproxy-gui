@@ -104,6 +104,11 @@ terminator because the GUI core itself serves internal HTTP.
 
 ## Audit
 
+Všechny současné HTTP odpovědi dostávají korelační `X-Request-ID`; error envelope
+obsahuje stejnou hodnotu a stabilní strojový kód. ID neobsahuje uživatelský vstup
+a browser ho reflektuje jen po striktní syntaktické validaci. To poskytuje
+bezpečnou korelaci provozních chyb ještě před zavedením persistentního audit logu.
+
 Každá mutace zaznamená:
 
 - identitu uživatele a session;

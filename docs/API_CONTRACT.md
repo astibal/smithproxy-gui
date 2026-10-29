@@ -267,3 +267,15 @@ zrušitelná, její fázi, progress, deadline, vlastníka a redigovaný výslede
 ```
 
 Lokalizace textu je odpovědnost GUI; stabilní `code` je součástí API kontraktu.
+Každá odpověď zároveň nese stejné opaque ID v hlavičce `X-Request-ID`. Core
+generuje nový identifikátor pro každý request a nikdy do něj nevkládá uživatelská
+data. Frontend zobrazí referenci v diagnostické chybě pouze tehdy, když odpovídá
+omezenému formátu `<hex-instance>-<decimal-sequence>`; nevalidní hlavičku
+nereflektuje.
+
+Aktuální stabilní kódy pokrývají `auth.required`, `auth.csrf_failed`,
+`request.body_too_large`, `request.method_not_allowed`, `request.not_found`,
+`request.invalid_path`, `events.invalid_cursor`, `draft.version_conflict`,
+`draft.change_rejected` a `draft.invalid_request`. Neznámá bezpečně zpracovaná
+chyba používá `request.failed`. `fields` a `details` zůstávají prázdné, dokud
+konkrétní endpoint nemá schválené strukturované detaily.

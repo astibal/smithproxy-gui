@@ -30,6 +30,22 @@ def request(port: int, path: str, method: str = "GET", headers=None, body=None):
     return response.status, headers, body
 
 
+def assert_error_response(result, expected_status: int, expected_code: str) -> str:
+    status, headers, body = result
+    assert status == expected_status
+    request_id = headers["X-Request-ID"]
+    assert re.fullmatch(r"[0-9a-f]+-[1-9][0-9]*", request_id)
+    document = json.loads(body)
+    assert document["error"]["code"] == expected_code
+    assert document["error"]["request_id"] == request_id
+    assert isinstance(document["error"]["message"], str)
+    assert document["error"]["message"]
+    assert document["error"]["retryable"] is False
+    assert document["error"]["fields"] == []
+    assert document["error"]["details"] == {}
+    return request_id
+
+
 class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     api_key = None
     response_status = 200
@@ -323,10 +339,13 @@ def main() -> int:
         assert headers["X-Permitted-Cross-Domain-Policies"] == "none"
         assert "camera=()" in headers["Permissions-Policy"]
         assert headers["Cache-Control"] == "no-store"
+        health_request_id = headers["X-Request-ID"]
+        assert re.fullmatch(r"[0-9a-f]+-[1-9][0-9]*", health_request_id)
 
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/capabilities")
+        status, headers, body = request(port, "/ws001/smithproxy-gui/api/v1/capabilities")
         capabilities = json.loads(body)
         assert status == 200
+        assert headers["X-Request-ID"] != health_request_id
         assert capabilities["base_path"] == "/ws001/smithproxy-gui"
         assert capabilities["features"]["config_read"] is False
         assert capabilities["features"]["config_write"] is False
@@ -450,6 +469,8 @@ def main() -> int:
                 assert request(configured_port, path, headers={
                     "X-Smithproxy-GUI-Gateway": "incorrect-gateway-secret-value-000",
                 })[0] == 401
+            assert_error_response(
+                request(configured_port, "/api/v1/status"), 401, "auth.required")
             assert request(configured_port, "/api/v1/future-management-endpoint")[0] == 401
             assert request(
                 configured_port, "/api/v1/future-management-endpoint",
@@ -785,10 +806,10 @@ def main() -> int:
                 "id": "workspace-draft", "base_revision": None, "version": 0, "changes": []}
             draft_change = json.dumps({
                 "expected_version": 0, "path": "policy.[0].action", "value": "accept"})
-            status, _, _ = request(
+            csrf_failure = request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
                 headers={**gateway_headers, "Content-Type": "application/json"}, body=draft_change)
-            assert status == 403
+            assert_error_response(csrf_failure, 403, "auth.csrf_failed")
             mutation_headers = {
                 **gateway_headers,
                 "Host": f"127.0.0.1:{configured_port}",
@@ -804,9 +825,10 @@ def main() -> int:
             assert json.loads(body)["changes"] == [
                 {"path": "policy.[0].action", "value": "accept"}]
             assert json.loads(body)["version"] == 1
-            assert request(
+            conflict = request(
                 configured_port, "/api/v1/config/draft/changes", "POST",
-                headers=mutation_headers, body=draft_change)[0] == 409
+                headers=mutation_headers, body=draft_change)
+            assert_error_response(conflict, 409, "draft.version_conflict")
             cross_origin_headers = {**mutation_headers, "Origin": "https://attacker.invalid"}
             assert request(
                 configured_port, "/api/v1/config/draft/changes", "POST",

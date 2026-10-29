@@ -14,6 +14,7 @@ import type {
   SystemSettings,
   ValueOrigin,
 } from './models';
+import {httpStatusError} from './http-error';
 
 type JsonObject = Record<string, unknown>;
 type Usage = ConfigUsage;
@@ -1011,7 +1012,7 @@ export class ApiConfigClient implements ConfigClient {
         redirect: 'error',
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(`Configuration API returned HTTP ${response.status}.`);
+      if (!response.ok) throw httpStatusError(response, 'Configuration API');
       return parseConfigSnapshot(await boundedJson(response));
     } finally {
       globalThis.clearTimeout(timeout);
