@@ -1,0 +1,47 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "bom-ref": "smithproxy-gui:@PROJECT_VERSION@",
+      "name": "smithproxy-gui",
+      "version": "@PROJECT_VERSION@"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "lmhpp:@SMITHPROXY_GUI_LMHPP_REVISION@",
+      "name": "lmhpp",
+      "version": "@SMITHPROXY_GUI_LMHPP_REVISION@",
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+      "purl": "pkg:github/astibal/lmhpp@@SMITHPROXY_GUI_LMHPP_REVISION@"
+    },
+    {
+      "type": "library",
+      "bom-ref": "libcurl:@CURL_VERSION@",
+      "name": "libcurl",
+      "version": "@CURL_VERSION@",
+      "licenses": [{ "license": { "id": "curl" } }],
+      "purl": "pkg:generic/libcurl@@CURL_VERSION@"
+    },
+    {
+      "type": "library",
+      "bom-ref": "libmicrohttpd:@MICROHTTPD_VERSION@",
+      "name": "libmicrohttpd",
+      "version": "@MICROHTTPD_VERSION@",
+      "licenses": [{ "license": { "id": "LGPL-2.1-or-later" } }],
+      "purl": "pkg:generic/libmicrohttpd@@MICROHTTPD_VERSION@"
+    },
+    {
+      "type": "library",
+      "bom-ref": "nlohmann-json:@nlohmann_json_VERSION@",
+      "name": "nlohmann-json",
+      "version": "@nlohmann_json_VERSION@",
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:generic/nlohmann-json@@nlohmann_json_VERSION@"
+    }
+  ]
+}

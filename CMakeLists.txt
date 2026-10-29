@@ -15,6 +15,37 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/lmhpp/include/lmhttpd.hpp")
     message(FATAL_ERROR "lmhpp is missing; run: git submodule update --init")
 endif()
 
+set(SMITHPROXY_GUI_LMHPP_REVISION "" CACHE STRING
+    "lmhpp Git revision recorded in the backend SBOM")
+if(SMITHPROXY_GUI_LMHPP_REVISION STREQUAL "")
+    find_package(Git QUIET)
+    if(Git_FOUND)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}/external/lmhpp"
+                    rev-parse HEAD
+            OUTPUT_VARIABLE SMITHPROXY_GUI_LMHPP_REVISION
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+    endif()
+endif()
+
+string(LENGTH "${SMITHPROXY_GUI_LMHPP_REVISION}" LMHPP_REVISION_LENGTH)
+if(NOT LMHPP_REVISION_LENGTH EQUAL 40 OR
+   NOT SMITHPROXY_GUI_LMHPP_REVISION MATCHES "^[0-9a-f]+$")
+    set(SMITHPROXY_GUI_LMHPP_REVISION "unknown")
+    message(WARNING
+        "lmhpp revision is unavailable; set SMITHPROXY_GUI_LMHPP_REVISION for a complete SBOM")
+endif()
+
+set(SMITHPROXY_GUI_BACKEND_SBOM "${CMAKE_CURRENT_BINARY_DIR}/backend-sbom.cdx.json")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/backend-sbom.cdx.json.in"
+    "${SMITHPROXY_GUI_BACKEND_SBOM}"
+    @ONLY
+)
+add_custom_target(backend-sbom DEPENDS "${SMITHPROXY_GUI_BACKEND_SBOM}")
+
 option(SMITHPROXY_GUI_BUILD_FRONTEND "Build the frontend with pnpm" ON)
 set(SMITHPROXY_GUI_FRONTEND_DIR "${CMAKE_CURRENT_BINARY_DIR}/frontend")
 
@@ -115,4 +146,13 @@ if(BUILD_TESTING)
     add_test(NAME config_coverage_tests
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/config_coverage.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/docs/CONFIG_COVERAGE.json")
+    add_test(NAME backend_sbom_tests
+        COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/backend_sbom.py"
+                "${SMITHPROXY_GUI_BACKEND_SBOM}"
+                "${PROJECT_VERSION}"
+                "${SMITHPROXY_GUI_LMHPP_REVISION}"
+                "${CURL_VERSION}"
+                "${MICROHTTPD_VERSION}"
+                "${nlohmann_json_VERSION}"
+                "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
