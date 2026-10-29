@@ -116,10 +116,16 @@ sections and write-only counts, while clearly keeping upstream validation and
 atomic commit blocked until Smithproxy advertises the reviewed transaction API.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
-filters, and matcher expressions use write-only controls. Control-plane health
-and listener monitoring use the production C++ backend. A bounded five-minute
-runtime history visualizes active sessions and aggregate throughput. Live session
-monitoring is aggregated by transport inside the GUI core;
+filters, and matcher expressions use write-only controls.
+
+The GUI core now discovers the proposed authenticated Smithproxy transaction
+capability and strictly validates its versions, operation set, bounded limits,
+collection identities, and schema hashes. Unreviewed schemas are visible as a
+fixed `review-required` diagnostic state but cannot enable configuration writes.
+
+Control-plane health and listener monitoring use the production C++ backend. A
+bounded five-minute runtime history visualizes active sessions and aggregate
+throughput. Live session monitoring is aggregated by transport inside the GUI core;
 endpoint addresses, ports, session identifiers, and policy names are never sent
 to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The

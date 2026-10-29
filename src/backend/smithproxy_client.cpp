@@ -92,6 +92,9 @@ SmithproxyMonitor::SmithproxyMonitor(std::optional<SmithproxyConfig> config, con
         if (config_enabled_) {
             status_.config_snapshot.state = "starting";
             status_.config_snapshot.detail = "Waiting for the first Smithproxy configuration sample";
+            status_.transaction_capabilities.state = "starting";
+            status_.transaction_capabilities.detail =
+                "Waiting for Smithproxy transaction capability discovery";
         }
     }
 }
@@ -127,6 +130,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
         std::optional<LiveSessions> sampled_sessions;
         std::optional<NeighborMetrics> sampled_neighbors;
         std::optional<ConfigSnapshot> sampled_config;
+        std::optional<TransactionCapabilities> sampled_transaction_capabilities;
         if (latest.state == "ready") {
             const auto now = std::chrono::steady_clock::now();
             const bool sample_sessions = now >= next_session_sample;
@@ -137,10 +141,13 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             auto tls_cache_future = std::async(
                 std::launch::async, [this] { return fetch_tls_cache_metrics(); });
             std::optional<std::future<ConfigSnapshot>> config_future;
+            std::optional<std::future<TransactionCapabilities>> transaction_capabilities_future;
             std::optional<std::future<NeighborMetrics>> neighbor_future;
             if (sample_config) {
                 config_future.emplace(std::async(
                     std::launch::async, [this] { return fetch_config_snapshot(); }));
+                transaction_capabilities_future.emplace(std::async(
+                    std::launch::async, [this] { return fetch_transaction_capabilities(); }));
             }
             if (sample_neighbors) {
                 neighbor_future.emplace(std::async(
@@ -151,6 +158,9 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             sampled_tls_cache = tls_cache_future.get();
             if (neighbor_future) sampled_neighbors = neighbor_future->get();
             if (config_future) sampled_config = config_future->get();
+            if (transaction_capabilities_future) {
+                sampled_transaction_capabilities = transaction_capabilities_future->get();
+            }
             if (sample_sessions) {
                 next_session_sample = std::chrono::steady_clock::now() + std::chrono::seconds(10);
             }
@@ -172,6 +182,7 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
             auto previous_sessions = std::move(status_.live_sessions);
             auto previous_neighbors = std::move(status_.neighbor_metrics);
             auto previous_config = std::move(status_.config_snapshot);
+            auto previous_transaction_capabilities = std::move(status_.transaction_capabilities);
             if (latest.state == "ready") {
                 latest.last_success_at = latest.checked_at;
                 latest.consecutive_failures = 0U;
@@ -255,6 +266,11 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 } else {
                     latest.config_snapshot = std::move(previous_config);
                 }
+                if (sampled_transaction_capabilities) {
+                    latest.transaction_capabilities = std::move(*sampled_transaction_capabilities);
+                } else {
+                    latest.transaction_capabilities = std::move(previous_transaction_capabilities);
+                }
             } else {
                 previous_metrics.state = "unavailable";
                 previous_metrics.detail = "Smithproxy runtime metrics are unavailable while the API probe is not ready";
@@ -283,6 +299,13 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                     previous_config.checked_at = latest.checked_at;
                 }
                 latest.config_snapshot = std::move(previous_config);
+                if (config_enabled_) {
+                    previous_transaction_capabilities.state = "unavailable";
+                    previous_transaction_capabilities.detail =
+                        "Transaction discovery is unavailable while the Smithproxy API is not ready";
+                    previous_transaction_capabilities.checked_at = latest.checked_at;
+                }
+                latest.transaction_capabilities = std::move(previous_transaction_capabilities);
             }
             latest.history.push_back({
                 latest.state, latest.checked_at, latest.latency_ms, latest.total_probes,
@@ -516,6 +539,49 @@ LiveSessions SmithproxyMonitor::fetch_live_sessions() const {
     }
     parsed.snapshot->checked_at = sessions.checked_at;
     return std::move(*parsed.snapshot);
+}
+
+TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() const {
+    TransactionCapabilities capabilities{
+        .state = "unavailable",
+        .detail = "Smithproxy transaction capability discovery is unavailable",
+        .checked_at = std::chrono::system_clock::now(),
+        .maximum_operations = 0U,
+        .maximum_request_bytes = 0U,
+        .operations = {},
+        .collections = {},
+    };
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if (!curl) return capabilities;
+
+    std::unique_ptr<curl_slist, HeaderCleanup> headers;
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    if (!headers) return capabilities;
+
+    const std::string endpoint = config_->api_url + "/api/config/v2/capabilities";
+    ResponseBuffer response;
+    configure_request(curl.get(), *config_, endpoint, headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto result = curl_easy_perform(curl.get());
+    capabilities.checked_at = std::chrono::system_clock::now();
+    if (response.exceeded) {
+        capabilities.state = "incompatible";
+        capabilities.detail = "Smithproxy transaction capabilities exceeded the response limit";
+        return capabilities;
+    }
+    if (result != CURLE_OK) return capabilities;
+
+    long status_code{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    if (status_code == 404L) {
+        capabilities.state = "not-advertised";
+        capabilities.detail = "Smithproxy does not advertise atomic configuration transactions";
+        return capabilities;
+    }
+    if (status_code != 200L) return capabilities;
+
+    return parse_transaction_capabilities(response.body, reviewed_transaction_schemas());
 }
 
 ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {

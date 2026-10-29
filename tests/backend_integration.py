@@ -49,6 +49,20 @@ def assert_error_response(result, expected_status: int, expected_code: str) -> s
 class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     api_key = None
     response_status = 200
+    transaction_capabilities = {
+        "success": {
+            "transaction_version": 1,
+            "operation_version": 1,
+            "stable_entity_ids": True,
+            "operations": ["set", "create", "delete", "move"],
+            "maximum_operations": 4096,
+            "maximum_request_bytes": 1048576,
+            "collections": [{
+                "id": "policy", "ordered": True, "nested": False,
+                "schema_revision": "sha256:" + "a" * 64,
+            }],
+        },
+    }
     config_sections = {
         "policy": [{
             "name": "office policy", "disabled": "0",
@@ -171,6 +185,13 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
+            return
+        if self.path == "/api/config/v2/capabilities":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(FakeSmithproxy.transaction_capabilities).encode())
             return
         if self.path == "/api/diag/proxy/listener/stats":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
@@ -347,6 +368,7 @@ def main() -> int:
         assert status == 200
         assert headers["X-Request-ID"] != health_request_id
         assert capabilities["base_path"] == "/ws001/smithproxy-gui"
+        assert capabilities["config_transaction_state"] == "unavailable"
         assert capabilities["features"]["config_read"] is False
         assert capabilities["features"]["config_write"] is False
         assert capabilities["features"]["drafts"] is False
@@ -790,6 +812,11 @@ def main() -> int:
             for feature in ("events", "alerts", "metrics", "session_activity",
                             "tls_monitoring", "neighbor_monitoring"):
                 assert unauthenticated_features[feature] is False
+            assert json.loads(request(configured_port, "/api/v1/capabilities")[2])[
+                "config_transaction_state"] == "unavailable"
+            assert json.loads(request(
+                configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
+                "config_transaction_state"] == "review-required"
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["config_read"] is True

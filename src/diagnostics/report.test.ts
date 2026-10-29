@@ -12,7 +12,10 @@ function fixture(): DiagnosticsReportInput {
       consecutiveFailures: 0, availabilitySamples: 8, availabilitySuccessful: 8,
     },
     gateway: {mode: 'gateway', authenticated: true, state: 'verified'},
-    capabilities: {configRead: true, configWrite: false, drafts: true, draftPreflight: true},
+    capabilities: {
+      configRead: true, configWrite: false, drafts: true, draftPreflight: true,
+      configTransaction: 'review-required',
+    },
     runtime: {...timed, workers: 3, sessionsTotal: 19, sessionsActive: 4, bytesUp: 1536, bytesDown: 2304, listenerCount: 2},
     sessionActivity: {...timed, total: 4, speedUp: 512, speedDown: 1024, protocolCount: 2},
     tlsCache: {...timed, size: 42, capacity: 1000},

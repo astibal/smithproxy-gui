@@ -9,6 +9,7 @@
 #include "path.hpp"
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
+#include "transaction_capabilities.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -171,6 +172,48 @@ int main() {
     assert(!safe_asset_path(root, "/assets\\secret"));
 
     assert(json_string("line\n\"quoted\"") == "\"line\\n\\\"quoted\\\"\"");
+
+    const std::string policy_revision = "sha256:" + std::string(64U, 'a');
+    const std::string address_revision = "sha256:" + std::string(64U, 'b');
+    const auto capability_payload = std::string(R"({"success":{
+        "transaction_version":1,"operation_version":1,"stable_entity_ids":true,
+        "operations":["set","create","delete","move"],
+        "maximum_operations":8192,"maximum_request_bytes":2097152,
+        "collections":[
+          {"id":"policy","ordered":true,"nested":false,"schema_revision":")") +
+        policy_revision + R"("},
+          {"id":"address_objects","ordered":false,"nested":false,"schema_revision":")" +
+        address_revision + R"("}
+        ]}})";
+    const auto unreviewed_capabilities = parse_transaction_capabilities(capability_payload, {});
+    assert(unreviewed_capabilities.state == "review-required");
+    assert(unreviewed_capabilities.maximum_operations == 4096U);
+    assert(unreviewed_capabilities.maximum_request_bytes == 1024U * 1024U);
+    assert(unreviewed_capabilities.collections.size() == 2U);
+
+    const ReviewedTransactionSchemas reviewed_schemas{
+        {"address_objects", address_revision}, {"policy", policy_revision},
+    };
+    const auto ready_capabilities = parse_transaction_capabilities(
+        capability_payload, reviewed_schemas);
+    assert(ready_capabilities.state == "ready");
+    assert(ready_capabilities.operations ==
+           std::vector<std::string>({"create", "delete", "move", "set"}));
+    assert(parse_transaction_capabilities("{}", reviewed_schemas).state == "incompatible");
+    assert(parse_transaction_capabilities(
+        R"({"success":{"transaction_version":2}})", reviewed_schemas).state == "incompatible");
+    const auto duplicate_collection_payload = std::string(R"({"success":{
+        "transaction_version":1,"operation_version":1,"stable_entity_ids":true,
+        "operations":["set","create","delete","move"],
+        "maximum_operations":1,"maximum_request_bytes":1,
+        "collections":[
+          {"id":"policy","ordered":true,"nested":false,"schema_revision":")") +
+        policy_revision + R"("},
+          {"id":"policy","ordered":true,"nested":false,"schema_revision":")" +
+        policy_revision + R"("}
+        ]}})";
+    assert(parse_transaction_capabilities(duplicate_collection_payload, reviewed_schemas).state ==
+           "incompatible");
 
     const auto metrics = parse_listener_metrics(R"({"listeners":[
         {"name":"tcp","workers":2,"sessions_total":12,"sessions_active":3,

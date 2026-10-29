@@ -24,6 +24,14 @@ GET /api/v1/capabilities
 GET /api/v1/config/schema
 ```
 
+The implemented capability response includes a normalized
+`config_transaction_state`. The GUI core probes the authenticated upstream
+`/api/config/v2/capabilities` endpoint, validates contract versions, operation
+coverage, limits, collection identities, and schema hashes, and reports only a
+fixed state vocabulary. Missing gateway authentication reports `unavailable`.
+An advertised schema that is not pinned by the GUI core reports
+`review-required` and does not enable writes.
+
 ## Authenticated runtime snapshot
 
 ```text

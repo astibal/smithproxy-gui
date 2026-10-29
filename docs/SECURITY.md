@@ -71,6 +71,13 @@ Unknown fields and partially invalid batches fail closed before any draft state
 is changed. The same validator is a mandatory boundary for the future upstream
 transaction adapter; a syntactically safe arbitrary libconfig path is not enough.
 
+Transaction capability discovery is fail-closed. The core clamps upstream
+limits to 4,096 operations and 1 MiB, rejects unknown contract versions,
+missing or duplicate operations and collections, malformed schema hashes, and
+unreviewed collection revisions. Discovery never enables `config_write`; that
+flag remains false until the complete validate, commit, idempotency, rollback,
+and audit path is implemented and reviewed.
+
 Draft preflight serializes only bounded aggregate counts and stable blocker
 codes. It does not return paths, values, diffs, or validation payloads and uses
 the same trusted-gateway authentication as the draft itself. The browser rejects

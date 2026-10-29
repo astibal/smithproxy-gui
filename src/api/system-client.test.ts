@@ -25,6 +25,7 @@ describe('SystemClient', () => {
   it('loads and maps capabilities', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
+      config_transaction_state: 'not-advertised',
       features: {
         config_read: false, config_write: false, drafts: false, draft_preflight: false,
         jobs: false, events: true, alerts: true, audit: true,
@@ -35,7 +36,7 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', fetcher);
 
     await expect(client.capabilities()).resolves.toMatchObject({
-      apiVersion: 'v1', smithproxyState: 'unconfigured',
+      apiVersion: 'v1', smithproxyState: 'unconfigured', transactionState: 'not-advertised',
       features: {configWrite: false, drafts: false, draftPreflight: false, events: true,
         alerts: true, audit: true, smithproxyEvents: false, metrics: true},
     });
@@ -51,6 +52,19 @@ describe('SystemClient', () => {
       },
     }));
     await expect(client.capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
+  });
+
+  it('rejects an unknown transaction capability state', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'ready',
+      config_transaction_state: 'optimistic',
+      features: {
+        config_read: false, config_write: false, drafts: false, draft_preflight: false,
+        jobs: false, events: true, alerts: true, audit: true, smithproxy_events: false,
+        metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
+      },
+    }));
+    await expect(client.capabilities()).rejects.toThrow('Invalid transaction capability state');
   });
 
   it('loads and validates the trusted gateway session', async () => {

@@ -23,7 +23,13 @@ export interface DiagnosticsReportInput {
     availabilitySuccessful: number;
   };
   gateway: {mode: 'gateway' | 'disabled' | 'unknown'; authenticated: boolean | null; state: GatewayDiagnosticState};
-  capabilities: {configRead: boolean; configWrite: boolean; drafts: boolean; draftPreflight: boolean};
+  capabilities: {
+    configRead: boolean;
+    configWrite: boolean;
+    drafts: boolean;
+    draftPreflight: boolean;
+    configTransaction: 'starting' | 'not-advertised' | 'review-required' | 'incompatible' | 'unavailable' | 'ready' | 'unknown';
+  };
   runtime: TimedAggregateInput & {
     workers: number; sessionsTotal: number; sessionsActive: number; bytesUp: number; bytesDown: number; listenerCount: number;
   };
@@ -86,6 +92,7 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
       configWrite: input.capabilities.configWrite,
       drafts: input.capabilities.drafts,
       draftPreflight: input.capabilities.draftPreflight,
+      configTransaction: input.capabilities.configTransaction,
     },
     runtime: {
       ...timedAggregate(input.runtime),

@@ -30,6 +30,7 @@ import {
   type RuntimeMetricsSnapshot,
   type SessionActivitySnapshot,
   type TlsCacheSnapshot,
+  type TransactionCapabilityState,
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {
@@ -192,6 +193,7 @@ export class SmithproxyApp extends LitElement {
   @state() private draftObjects = new Set<string>();
   @state() private systemStatus: SystemStatus = connectingSystemStatus;
   @state() private apiVersion = 'discovering';
+  @state() private transactionCapabilityState: TransactionCapabilityState = 'unknown';
   @state() private gatewaySession: GatewaySession | undefined;
   @state() private gatewaySessionError: string | undefined;
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
@@ -858,6 +860,7 @@ export class SmithproxyApp extends LitElement {
       }
       const draftWasAvailable = this.draftAvailable;
       this.apiVersion = capabilities.apiVersion;
+      this.transactionCapabilityState = capabilities.transactionState;
       this.configReadAvailable = capabilities.features.configRead;
       if (!this.configReadAvailable) this.configRefreshDeferred = false;
       this.configWriteAvailable = capabilities.features.configWrite;
@@ -874,6 +877,7 @@ export class SmithproxyApp extends LitElement {
       if (this.draftAvailable && !draftWasAvailable) await this.loadDraft();
     } catch {
       this.apiVersion = 'unavailable';
+      this.transactionCapabilityState = 'unavailable';
       this.configReadAvailable = false;
       this.configRefreshDeferred = false;
       this.configWriteAvailable = false;
@@ -973,6 +977,7 @@ export class SmithproxyApp extends LitElement {
         configWrite: this.configWriteAvailable,
         drafts: this.draftAvailable,
         draftPreflight: this.draftPreflightAvailable,
+        configTransaction: this.transactionCapabilityState,
       },
       runtime: {
         state: this.runtimeMetrics.state,
@@ -3301,6 +3306,10 @@ export class SmithproxyApp extends LitElement {
               <dt>Configuration read</dt><dd>${this.configReadAvailable ? 'Available' : 'Blocked'}</dd>
               <dt>Shared draft</dt><dd>${this.draftAvailable ? 'Available' : 'Blocked'}</dd>
               <dt>Atomic commit</dt><dd>${this.configWriteAvailable ? 'Available' : 'Blocked'}</dd>
+              <dt>Upstream transaction</dt><dd>${this.transactionCapabilityState === 'not-advertised' ? 'Not advertised' :
+                this.transactionCapabilityState === 'review-required' ? 'Schema review required' :
+                this.transactionCapabilityState === 'ready' ? 'Reviewed contract ready' :
+                displayState(this.transactionCapabilityState)}</dd>
             </dl>
             <p role="status">${gateway.detail}</p>
           </article>

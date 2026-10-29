@@ -6,6 +6,7 @@
 #include "neighbor_metrics.hpp"
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
+#include "transaction_capabilities.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -38,6 +39,7 @@ struct SmithproxyStatus {
     LiveSessions live_sessions;
     NeighborMetrics neighbor_metrics;
     ConfigSnapshot config_snapshot;
+    TransactionCapabilities transaction_capabilities;
 };
 
 class SmithproxyMonitor {
@@ -62,6 +64,7 @@ private:
     LiveSessions fetch_live_sessions() const;
     NeighborMetrics fetch_neighbor_metrics() const;
     ConfigSnapshot fetch_config_snapshot() const;
+    TransactionCapabilities fetch_transaction_capabilities() const;
 
     std::optional<SmithproxyConfig> config_;
     bool config_enabled_{};

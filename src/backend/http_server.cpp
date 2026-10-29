@@ -540,9 +540,13 @@ private:
         const auto status = monitor_.status();
         const bool config_read = monitor_.config_enabled() && gateway_authenticated(connection);
         const bool monitoring = management_authenticated(connection);
+        const auto transaction_state = config_read
+            ? status.transaction_capabilities.state
+            : std::string{"unavailable"};
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
+                    ",\"config_transaction_state\":" + json_string(transaction_state) +
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":false,"
                     "\"drafts\":" + (config_read ? "true" : "false") +

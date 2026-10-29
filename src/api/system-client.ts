@@ -8,6 +8,15 @@ export type SmithproxyState =
   | 'unconfigured'
   | 'error';
 
+export type TransactionCapabilityState =
+  | 'starting'
+  | 'not-advertised'
+  | 'review-required'
+  | 'incompatible'
+  | 'unavailable'
+  | 'ready'
+  | 'unknown';
+
 export interface SystemHealth {
   status: 'ok';
   smithproxy: {
@@ -22,6 +31,7 @@ export interface SystemCapabilities {
   apiVersion: string;
   basePath: string;
   smithproxyState: SmithproxyState;
+  transactionState: TransactionCapabilityState;
   features: {
     configRead: boolean;
     configWrite: boolean;
@@ -217,6 +227,12 @@ function isSmithproxyState(value: unknown): value is SmithproxyState {
     ['starting', 'ready', 'unreachable', 'unauthorized', 'unconfigured', 'error'].includes(value);
 }
 
+function isTransactionCapabilityState(value: unknown): value is TransactionCapabilityState {
+  return typeof value === 'string' && [
+    'starting', 'not-advertised', 'review-required', 'incompatible', 'unavailable', 'ready',
+  ].includes(value);
+}
+
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
@@ -280,11 +296,16 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       (features.draft_preflight && !features.drafts)) {
     throw new Error('Inconsistent privileged capabilities.');
   }
+  const transactionState = value.config_transaction_state ?? 'unknown';
+  if (transactionState !== 'unknown' && !isTransactionCapabilityState(transactionState)) {
+    throw new Error('Invalid transaction capability state.');
+  }
   return {
     service: 'smithproxy-gui',
     apiVersion: value.api_version,
     basePath: value.base_path,
     smithproxyState: value.smithproxy_state,
+    transactionState,
     features: {
       configRead: features.config_read,
       configWrite: features.config_write,

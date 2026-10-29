@@ -74,6 +74,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     api_version: 'v1',
     base_path: '/',
     smithproxy_state: state.smithproxy,
+    config_transaction_state: configRead ? 'review-required' : 'unavailable',
     features: {
       config_read: configRead, config_write: false, drafts: configRead,
       draft_preflight: configRead, jobs: false, events: true, alerts: true, audit: true,
@@ -1199,6 +1200,7 @@ test('reports a verified Saslik gateway handoff without exposing credentials', a
   await expect(gatewayCard).toContainText('Configuration readAvailable');
   await expect(gatewayCard).toContainText('Shared draftAvailable');
   await expect(gatewayCard).toContainText('Atomic commitBlocked');
+  await expect(gatewayCard).toContainText('Upstream transactionSchema review required');
   await expect(gatewayCard).toContainText(/verified its gateway handoff/i);
   await expect(gatewayCard).not.toContainText(/secret|credential/i);
 });

@@ -5,6 +5,7 @@
 #include "neighbor_metrics.hpp"
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
+#include "transaction_capabilities.hpp"
 
 #include <array>
 #include <bit>
@@ -104,6 +105,7 @@ void exercise_json_parsers(const std::string_view payload) {
     static_cast<void>(parse_config_debug(payload));
     static_cast<void>(parse_config_captures(payload));
     static_cast<void>(parse_config_security_assets(payload, payload, payload));
+    static_cast<void>(parse_transaction_capabilities(payload, reviewed_transaction_schemas()));
 }
 
 void require(const bool condition, const std::string_view message) {
