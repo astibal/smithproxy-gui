@@ -224,7 +224,9 @@ field edits block the delete locally before the authoritative Smithproxy validat
 Nested content rules and signature flow steps likewise present pending creates and moves
 in their effective draft order inside the parent editor. A new ordered item can target an
 earlier pending create through its transaction-scoped client identifier; later operations
-are excluded to prevent use-before-create drafts.
+are excluded to prevent use-before-create drafts. Existing ordered items can move relative
+to an earlier pending create under the same rule. The effective list projection replays
+structural operations in request order, matching the atomic upstream transaction contract.
 References introduced by pending policy or routing edits and structural creates are
 included in that blocker, so an internally contradictory draft is not offered as a
 valid local workflow. Draft review applies the same dependency ordering to pending

@@ -1738,7 +1738,37 @@ test('renders pending policy creates and moves in effective draft order', async 
   await expect(editor.getByLabel('Draft order')).toHaveValue('last');
 });
 
-test('chains ordered creates through earlier client identifiers', async ({page}) => {
+test('projects ordered draft operations in request order', async ({page}) => {
+  const fields = (name: string) => ({
+    name, disabled: false, proto: 'tcp', src: ['office'], sport: [], dst: ['internet'], dport: [],
+    features: [], action: 'accept', nat: '', routing: '', tls_profile: '', ssh_profile: '',
+    detection_profile: '', content_profile: '', auth_profile: '', alg_dns_profile: '', script_profile: '',
+  });
+  await mockSystemApi(page, {
+    smithproxy: 'ready', structuralDraftsReady: true, secondPolicy: true,
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'ordered-anchor', client_id: 'ordered-anchor',
+      collection: 'policy', position: {last: true}, fields: fields('Pending anchor'),
+    }, {
+      op: 'move', local_id: 'ordered-live-move', collection: 'policy',
+      entity_id: 'policy-0', position: {before: 'client:ordered-anchor'},
+    }, {
+      op: 'create', local_id: 'ordered-after-move', client_id: 'ordered-after-move',
+      collection: 'policy', position: {before: 'policy-0'}, fields: fields('Pending after move'),
+    }],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const rows = page.getByRole('group', {name: 'Policies'}).getByRole('button');
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toContainText('Policy 2');
+  await expect(rows.nth(1)).toContainText('Pending after move');
+  await expect(rows.nth(2)).toContainText('Policy 1');
+  await expect(rows.nth(3)).toContainText('Pending anchor');
+});
+
+test('chains ordered creates and moves through earlier client identifiers', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true, structuralDraftsReady: true,
     structuralMutationRequests: [],
@@ -1784,6 +1814,12 @@ test('chains ordered creates through earlier client identifiers', async ({page})
   await expect(editor.getByLabel('Placement').locator('option[value="before:client:chain-policy-later"]'))
     .toHaveCount(0);
   await editor.getByRole('button', {name: 'Cancel'}).click();
+  await page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /Policy 1/i}).click();
+  editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await editor.getByLabel('Draft order').selectOption('before:client:chain-policy-later');
+  await editor.getByRole('button', {name: 'Save order to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'New policy'}).click();
   editor = page.getByRole('dialog', {name: 'Create policy'});
   await editor.getByLabel('Name').fill('before-pending-policy');
@@ -1796,6 +1832,13 @@ test('chains ordered creates through earlier client identifiers', async ({page})
   await page.getByRole('group', {name: 'Profiles and routing'})
     .getByRole('button', {name: /capture content/i}).click();
   let parent = page.getByRole('dialog', {name: 'Edit capture'});
+  await parent.getByRole('group', {name: 'Content rules'})
+    .getByRole('button', {name: /Rule 1/i}).click();
+  editor = page.getByRole('dialog', {name: 'Edit Content rule 1'});
+  await editor.getByLabel('Draft order').selectOption('before:client:chain-rule');
+  await editor.getByRole('button', {name: 'Save order to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
   await parent.getByRole('button', {name: 'New content rule'}).click();
   editor = page.getByRole('dialog', {name: 'Create content rule'});
   await editor.getByLabel('Placement', {exact: true}).selectOption('before:client:chain-rule');
@@ -1812,6 +1855,12 @@ test('chains ordered creates through earlier client identifiers', async ({page})
   await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
   await trust.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
   parent = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
+  await parent.getByRole('button', {name: /1\. R · regex/i}).click();
+  editor = page.getByRole('dialog', {name: 'Edit Flow R'});
+  await editor.getByLabel('Draft order').selectOption('before:client:chain-flow');
+  await editor.getByRole('button', {name: 'Save order to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
   await parent.getByRole('button', {name: 'New flow step'}).click();
   editor = page.getByRole('dialog', {name: 'Create signature flow step'});
   await editor.getByLabel('Placement', {exact: true}).selectOption('before:client:chain-flow');
@@ -1819,10 +1868,13 @@ test('chains ordered creates through earlier client identifiers', async ({page})
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText('Saved to draft')).toBeVisible();
 
-  expect(state.structuralMutationRequests).toHaveLength(3);
+  expect(state.structuralMutationRequests).toHaveLength(6);
   expect(state.structuralMutationRequests!.map(request => request.operation.position)).toEqual([
+    {before: 'client:chain-policy-later'},
     {before: 'client:chain-policy'},
     {before: 'client:chain-rule'},
+    {before: 'client:chain-rule'},
+    {before: 'client:chain-flow'},
     {before: 'client:chain-flow'},
   ]);
 });
