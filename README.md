@@ -156,7 +156,9 @@ to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The
 Network neighborhood monitoring follows the same rule: only endpoint counts,
 activity windows, observations, and traffic totals reach the browser; hostnames,
-tags, labels, and individual timelines do not. Structured active alerts are
+tags, labels, and individual timelines do not. Every aggregate surface combines
+collector state with interval-aware freshness; delayed values are marked stale
+and rendered as last-known data instead of appearing live. Structured active alerts are
 derived inside the GUI core from reachability, rolling availability, collector
 freshness, TLS cache capacity, and the latest terminal configuration-refresh
 result. They use a bounded fixed vocabulary and never forward arbitrary upstream

@@ -301,6 +301,13 @@ windows, observations, and byte totals. Hostnames, tags, labels, and per-endpoin
 timelines are consumed only inside the GUI core and are never serialized to the
 browser response.
 
+Every aggregate monitoring panel combines the latest collector state with the
+freshness of its last successful sample at that collector's expected interval.
+`ready` alone therefore does not prove that browser-visible data is current:
+aging or stale values change the visual state and are explicitly labeled as the
+last known sample. A listener backed by stale data is never presented as
+currently `Running`.
+
 `/events/recent` currently exposes at most 60 structured GUI-core control-plane
 and backend-job state transitions. Messages are generated from a fixed vocabulary and validated
 for length and control characters in the browser client. The capability response

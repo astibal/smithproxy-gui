@@ -54,6 +54,7 @@ type MockState = {
   gatewayAuthenticated?: boolean;
   authSessionRequests?: number;
   now?: number;
+  collectorLastSuccessAgeMs?: number;
   configFetches?: number;
   conflictNextDraftWrite?: boolean;
   draftMutationVersions?: number[];
@@ -76,6 +77,7 @@ type MockState = {
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
   const now = (): number => state.now ?? Date.now();
+  const collectorLastSuccess = (): number => now() - (state.collectorLastSuccessAgeMs ?? 5_000);
   const baseRevision = state.validationReady || state.commitReady ? `sha256:${'1'.repeat(64)}` : null;
   let draft = {
     id: 'workspace-draft',
@@ -138,7 +140,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current listener metrics' : 'Metrics are stale',
     checked_at_unix_ms: now(),
-    last_success_at_unix_ms: now() - 5000,
+    last_success_at_unix_ms: collectorLastSuccess(),
     totals: {workers: 3, sessions_total: 19, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
     history: [
       {state: 'ready', checked_at_unix_ms: now() - 10000, sessions_active: 2,
@@ -157,7 +159,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current session activity' : 'Session activity is stale',
     checked_at_unix_ms: now(),
-    last_success_at_unix_ms: now() - 5000,
+    last_success_at_unix_ms: collectorLastSuccess(),
     total: 4,
     speed_up: 1536,
     speed_down: 2304,
@@ -169,13 +171,13 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   await page.route('**/api/v1/tls/cache/summary', async route => route.fulfill({json: {
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current TLS cache metrics' : 'TLS cache metrics are stale',
-    checked_at_unix_ms: now(), last_success_at_unix_ms: now() - 5000,
+    checked_at_unix_ms: now(), last_success_at_unix_ms: collectorLastSuccess(),
     size: 42, capacity: 1000,
   }}));
   await page.route('**/api/v1/network/neighbors/summary', async route => route.fulfill({json: {
     state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
     detail: state.smithproxy === 'ready' ? 'Current neighborhood aggregates' : 'Neighborhood is stale',
-    checked_at_unix_ms: now(), last_success_at_unix_ms: now() - 5000,
+    checked_at_unix_ms: now(), last_success_at_unix_ms: collectorLastSuccess(),
     hosts_total: 8, active_today: 3, active_week: 6, tagged_hosts: 4,
     observations: 20, bytes_up: 1000, bytes_down: 2000,
   }}));
@@ -1430,6 +1432,29 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
   await expect(page.getByRole('region', {name: 'Runtime metrics summary'})).toContainText('19');
   await expect(page.getByRole('region', {name: 'Active operational alerts'})).toContainText('Clear');
   expect(pending.size).toBe(0);
+});
+
+test('marks delayed aggregate collectors and retained values as stale', async ({page}) => {
+  const now = Date.now();
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    now,
+    collectorLastSuccessAgeMs: 200_000,
+  });
+  await page.goto('/');
+
+  const runtime = page.getByRole('region', {name: 'Runtime metrics summary'});
+  const tls = page.getByRole('region', {name: 'TLS interception cache'});
+  await expect(runtime).toContainText('Ready · Stale');
+  await expect(runtime).toContainText('values are not current');
+  await expect(tls).toContainText('Ready · Stale');
+
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toContainText('Ready · Stale');
+  await expect(page.getByLabel('Network listeners').getByText('Last known')).toHaveCount(2);
+
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Session activity'})).toContainText('Ready · Stale');
 });
 
 test('surfaces active backend work in the status bar and System view', async ({page}) => {
