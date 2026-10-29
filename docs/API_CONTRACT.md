@@ -64,7 +64,9 @@ GUI core and use explicit write-only replacement controls.
 
 The snapshot carries `augment_support` and a bounded `value_origins` collection.
 Each origin identifies a stable schema path, persistent and effective scalar
-values, editability, and an ordered augment layer chain with optional priorities.
+values, editability, and an ordered augment layer chain. Every layer carries its
+scalar value, optional priority, and an explicit active flag. Exactly one active
+layer terminates the chain and its value must equal the effective value.
 The GUI renders effective values but preserves the persistent value and layer
 ownership in the editor. Until Smithproxy exposes this data through its HTTP API,
 the live GUI core returns `augment_support: false` with an empty origin collection.

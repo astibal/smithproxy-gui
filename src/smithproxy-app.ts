@@ -3887,8 +3887,8 @@ export class SmithproxyApp extends LitElement {
             <strong>${origin.path.slice(prefix!.length)}</strong><br />
             Persistent <strong>${String(origin.persistentValue)}</strong>
             → ${origin.layers.map(layer => layer.priority === null
-              ? layer.id
-              : `${layer.id} (priority ${layer.priority})`).join(' → ')}
+              ? `${layer.id}: ${String(layer.value)}${layer.active ? ' (active)' : ''}`
+              : `${layer.id} (priority ${layer.priority}): ${String(layer.value)}${layer.active ? ' (active)' : ''}`).join(' → ')}
             → effective <strong>${String(origin.effectiveValue)}</strong>.
             ${origin.editable ? 'The persistent value is editable.' : 'The active layer owns this value.'}
           </div>

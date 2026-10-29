@@ -344,6 +344,8 @@ export type ConfigScalar = boolean | number | string;
 export interface AugmentLayer {
   id: string;
   priority: number | null;
+  value: ConfigScalar;
+  active: boolean;
 }
 
 export interface ValueOrigin {

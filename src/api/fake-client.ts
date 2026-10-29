@@ -296,8 +296,8 @@ const snapshot: ConfigSnapshot = {
     persistentValue: 'reject',
     effectiveValue: 'accept',
     layers: [
-      {id: 'temporary-office-access', priority: 100},
-      {id: 'incident-response', priority: 200},
+      {id: 'temporary-office-access', priority: 100, value: 'reject', active: false},
+      {id: 'incident-response', priority: 200, value: 'accept', active: true},
     ],
     editable: false,
   }],

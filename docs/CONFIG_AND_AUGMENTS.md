@@ -26,8 +26,9 @@ GUI nesmí ztratit informaci o původu tím, že efektivní config převede na o
 anonymní JSON strom.
 
 Aktuální frontend vykresluje obecnou provenance sekci ve všech typech editorů.
-Podporuje seřazený řetěz více vrstev, priority, persistentní i efektivní hodnota
-a příznak editovatelnosti. Pole vlastněné aktivní vrstvou je v persistentním
+Podporuje seřazený řetěz více vrstev, hodnotu každé vrstvy, priority, explicitního
+aktivního vlastníka, persistentní i efektivní hodnotu a příznak editovatelnosti.
+Pole vlastněné aktivní vrstvou je v persistentním
 editoru pouze pro čtení; augment se nesmí nevědomky přepsat změnou base configu.
 
 ## Coverage model

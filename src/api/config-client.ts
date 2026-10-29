@@ -918,19 +918,33 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     }
     originPaths.add(item.path);
     const layerIds = new Set<string>();
-    const layers = item.layers.map(layer => {
+    const rawLayers = item.layers;
+    let activeLayerCount = 0;
+    const layers = rawLayers.map((layer, index) => {
       if (!isObject(layer) || typeof layer.id !== 'string' || layer.id.length === 0 ||
           layer.id.length > 128 || layerIds.has(layer.id) ||
+          typeof layer.active !== 'boolean' ||
           !(layer.priority === null || (typeof layer.priority === 'number' &&
             Number.isSafeInteger(layer.priority) && layer.priority >= 0))) {
         throw new Error('Invalid augment layer.');
       }
       layerIds.add(layer.id);
-      return {id: layer.id, priority: layer.priority};
+      const layerValue = configScalar(layer.value, 'augment layer value');
+      if (layer.active) activeLayerCount += 1;
+      if (layer.active && index !== rawLayers.length - 1) {
+        throw new Error('Active augment layer must terminate the chain.');
+      }
+      return {id: layer.id, priority: layer.priority, value: layerValue, active: layer.active};
     });
     const persistentValue = configScalar(item.persistent_value, 'persistent value');
     const effectiveValue = configScalar(item.effective_value, 'effective value');
     if (typeof persistentValue !== typeof effectiveValue) throw new Error('Inconsistent value provenance types.');
+    if (layers.some(layer => typeof layer.value !== typeof persistentValue)) {
+      throw new Error('Inconsistent augment layer value types.');
+    }
+    if (activeLayerCount !== 1 || !Object.is(layers.at(-1)?.value, effectiveValue)) {
+      throw new Error('Invalid active augment layer.');
+    }
     return {path: item.path, persistentValue, effectiveValue, layers, editable: item.editable};
   });
   if (!value.augment_support && valueOrigins.length !== 0) {

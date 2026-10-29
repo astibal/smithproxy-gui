@@ -243,12 +243,12 @@ describe('ApiConfigClient', () => {
       augment_support: true,
       value_origins: [{
         path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
-        layers: [{id: 'temporary-office-access', priority: 100}], editable: false,
+        layers: [{id: 'temporary-office-access', priority: 100, value: 'accept', active: true}], editable: false,
       }],
     });
     expect(augmented.valueOrigins[0]).toMatchObject({
       path: 'policy.[0].action', persistentValue: 'reject', effectiveValue: 'accept',
-      layers: [{id: 'temporary-office-access', priority: 100}],
+      layers: [{id: 'temporary-office-access', priority: 100, value: 'accept', active: true}],
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/config/snapshot',
@@ -307,9 +307,26 @@ describe('ApiConfigClient', () => {
       ...liveSnapshot, augment_support: false,
       value_origins: [{
         path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
-        layers: [{id: 'unexpected', priority: null}], editable: false,
+        layers: [{id: 'unexpected', priority: null, value: 'accept', active: true}], editable: false,
       }],
     })).toThrow('Unexpected provenance without augment support');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+        layers: [
+          {id: 'incorrect-owner', priority: 200, value: 'reject', active: true},
+          {id: 'later-layer', priority: 100, value: 'accept', active: false},
+        ], editable: false,
+      }],
+    })).toThrow('Active augment layer must terminate the chain');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, augment_support: true,
+      value_origins: [{
+        path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+        layers: [{id: 'wrong-value', priority: null, value: 'reject', active: true}], editable: false,
+      }],
+    })).toThrow('Invalid active augment layer');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,
       debug: {...liveSnapshot.debug, module_override_count: 2},

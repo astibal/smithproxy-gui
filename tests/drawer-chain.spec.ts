@@ -589,6 +589,7 @@ test('opens a policy and its referenced address object', async ({page}) => {
   const overlay = page.getByRole('region', {name: 'Effective value overlays'});
   await expect(overlay).toContainText('Persistent reject');
   await expect(overlay).toContainText('effective accept');
+  await expect(overlay).toContainText('incident-response (priority 200): accept (active)');
   await expect(overlay).toContainText('The active layer owns this value');
   await expect(page.locator('#action-policy-office')).toHaveAttribute('readonly', '');
 
