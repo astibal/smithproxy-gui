@@ -221,6 +221,8 @@ draft order while retaining live config indexes for field edits. Existing polici
 unreferenced reusable objects can be placed into the
 same draft as confirmed delete operations; active references and conflicting pending
 field edits block the delete locally before the authoritative Smithproxy validation.
+Nested content rules and signature flow steps likewise present pending creates and moves
+in their effective draft order inside the parent editor.
 References introduced by pending policy or routing edits and structural creates are
 included in that blocker, so an internally contradictory draft is not offered as a
 valid local workflow. Draft review applies the same dependency ordering to pending

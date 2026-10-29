@@ -2733,6 +2733,9 @@ test('reorders and deletes stable nested content rules', async ({page}) => {
     .toMatch(/^move-content-rule-[0-9a-f-]{36}$/u);
 
   await ruleEditor.getByRole('button', {name: 'Cancel'}).click();
+  const ruleRows = profileEditor.getByRole('group', {name: 'Content rules'}).locator('button.reference');
+  await expect(ruleRows.nth(0)).toContainText('every 3th match');
+  await expect(ruleRows.nth(1)).toContainText('empty replacement');
   await profileEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const moveRow = page.getByRole('table', {name: 'Pending draft changes'})
@@ -2809,6 +2812,11 @@ test('creates and safely reopens a nested content rule', async ({page}) => {
     .toMatch(/^create-content-rule-[0-9a-f-]{36}$/u);
 
   await createEditor.getByRole('button', {name: 'Cancel'}).click();
+  const ruleRows = profileEditor.getByRole('group', {name: 'Content rules'}).locator('button.reference');
+  await expect(ruleRows).toHaveCount(3);
+  await expect(ruleRows.nth(0)).toContainText('empty replacement');
+  await expect(ruleRows.nth(1)).toContainText('Pending rule');
+  await expect(ruleRows.nth(2)).toContainText('every 3th match');
   await profileEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   await expect(page.getByText('secret-match')).toHaveCount(0);
@@ -2865,6 +2873,12 @@ test('reorders and deletes stable signature flow steps', async ({page}) => {
     .toMatch(/^move-signature-flow-[0-9a-f-]{36}$/u);
 
   await flowEditor.getByRole('button', {name: 'Cancel'}).click();
+  const flowRows = signatureEditor.getByRole('group', {name: 'Signature flow steps'})
+    .locator('button.reference');
+  await expect(flowRows.nth(0)).toContainText('1. W · regex');
+  await expect(flowRows.nth(0)).toContainText('bytes 0…512');
+  await expect(flowRows.nth(1)).toContainText('2. R · regex');
+  await expect(flowRows.nth(1)).toContainText('bytes 0…16');
   await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const moveRow = page.getByRole('table', {name: 'Pending draft changes'})
@@ -2950,6 +2964,12 @@ test('creates and safely reopens a signature flow step', async ({page}) => {
     .toMatch(/^create-signature-flow-[0-9a-f-]{36}$/u);
 
   await createEditor.getByRole('button', {name: 'Cancel'}).click();
+  const flowRows = signatureEditor.getByRole('group', {name: 'Signature flow steps'})
+    .locator('button.reference');
+  await expect(flowRows).toHaveCount(3);
+  await expect(flowRows.nth(0)).toContainText('1. R · regex');
+  await expect(flowRows.nth(1)).toContainText('Pending · W · simple');
+  await expect(flowRows.nth(2)).toContainText('3. W · regex');
   await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   await expect(page.getByText('PRIVATE-FLOW')).toHaveCount(0);

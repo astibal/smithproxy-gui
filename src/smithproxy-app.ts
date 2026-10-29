@@ -78,6 +78,10 @@ interface CollectorPresentation {
   reportedReady: boolean;
 }
 
+type DraftOrderedRow<T extends {id: string}> =
+  | {kind: 'live'; id: string; item: T; configIndex: number}
+  | {kind: 'create'; id: string; operation: DraftCreateOperation};
+
 const systemBooleanFields = [
   ['accept_tproxy', 'accept-tproxy'], ['accept_redirect', 'accept-redirect'],
   ['accept_socks', 'accept-socks'], ['accept_http_connect', 'accept-http-connect'],
@@ -5579,6 +5583,41 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private draftOrderedRows<T extends {id: string}>(
+    liveItems: ReadonlyArray<T>, creates: ReadonlyArray<DraftCreateOperation>,
+    moves: ReadonlyArray<DraftMoveOperation>,
+  ): Array<DraftOrderedRow<T>> {
+    const rows: Array<DraftOrderedRow<T>> = liveItems.map((item, configIndex) => ({
+      kind: 'live', id: item.id, item, configIndex,
+    }));
+    rows.push(...creates.map(operation => ({
+      kind: 'create' as const, id: operation.clientId, operation,
+    })));
+    const placeRow = (id: string, position: DraftCreateOperation['position']): void => {
+      const currentIndex = rows.findIndex(row => row.id === id);
+      if (currentIndex < 0) return;
+      const [row] = rows.splice(currentIndex, 1);
+      if (!row) return;
+      if (position.kind === 'first') {
+        rows.unshift(row);
+        return;
+      }
+      if (position.kind === 'last') {
+        rows.push(row);
+        return;
+      }
+      const referenceIndex = rows.findIndex(candidate => candidate.id === position.reference);
+      if (referenceIndex < 0) {
+        rows.push(row);
+        return;
+      }
+      rows.splice(position.kind === 'before' ? referenceIndex : referenceIndex + 1, 0, row);
+    };
+    creates.forEach(operation => placeRow(operation.clientId, operation.position));
+    moves.forEach(operation => placeRow(operation.entityId, operation.position));
+    return rows;
+  }
+
   private renderPolicyList() {
     const overlayCounts = this.overlayCounts();
     const structuralOperations = this.workspaceDraft?.structuralOperations ?? [];
@@ -5586,41 +5625,11 @@ export class SmithproxyApp extends LitElement {
       (operation): operation is DraftCreateOperation =>
         operation.op === 'create' && operation.collection === 'policy',
     );
-    type PolicyListRow =
-      | {kind: 'live'; id: string; policy: PolicySummary; configIndex: number}
-      | {kind: 'create'; id: string; operation: DraftCreateOperation};
-    const policyRows: PolicyListRow[] = (this.snapshot?.policies ?? []).map((policy, configIndex) => ({
-      kind: 'live', id: policy.id, policy, configIndex,
-    }));
-    policyRows.push(...pendingPolicies.map(operation => ({
-      kind: 'create' as const, id: operation.clientId, operation,
-    })));
-    const placeRow = (id: string, position: DraftCreateOperation['position']): void => {
-      const currentIndex = policyRows.findIndex(row => row.id === id);
-      if (currentIndex < 0) return;
-      const [row] = policyRows.splice(currentIndex, 1);
-      if (!row) return;
-      if (position.kind === 'first') {
-        policyRows.unshift(row);
-        return;
-      }
-      if (position.kind === 'last') {
-        policyRows.push(row);
-        return;
-      }
-      const referenceIndex = policyRows.findIndex(candidate => candidate.id === position.reference);
-      if (referenceIndex < 0) {
-        policyRows.push(row);
-        return;
-      }
-      policyRows.splice(position.kind === 'before' ? referenceIndex : referenceIndex + 1, 0, row);
-    };
-    pendingPolicies.forEach(operation => placeRow(operation.clientId, operation.position));
-    structuralOperations.forEach(operation => {
-      if (operation.op === 'move' && operation.collection === 'policy') {
-        placeRow(operation.entityId, operation.position);
-      }
-    });
+    const pendingMoves = structuralOperations.filter(
+      (operation): operation is DraftMoveOperation =>
+        operation.op === 'move' && operation.collection === 'policy',
+    );
+    const policyRows = this.draftOrderedRows(this.snapshot?.policies ?? [], pendingPolicies, pendingMoves);
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -5666,7 +5675,7 @@ export class SmithproxyApp extends LitElement {
                 </span>
               </button>`;
             }
-            const {policy, configIndex: index} = row;
+            const {item: policy, configIndex: index} = row;
             const base = `policy.[${index}]`;
             const name = this.presentedValue(`${base}.name`, policy.name);
             const sources = this.presentedListValue(
@@ -8361,6 +8370,13 @@ export class SmithproxyApp extends LitElement {
       (operation): operation is DraftCreateOperation => operation.op === 'create' &&
         operation.collection === 'content_profiles.content_rules' && operation.parentId === profile.id,
     ) : [];
+    const contentRuleIds = new Set(content?.rules.map(rule => rule.id) ?? []);
+    const pendingContentRuleMoves = content ? (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftMoveOperation => operation.op === 'move' &&
+        operation.collection === 'content_profiles.content_rules' && contentRuleIds.has(operation.entityId),
+    ) : [];
+    const contentRuleRows = content
+      ? this.draftOrderedRows(content.rules, pendingContentRules, pendingContentRuleMoves) : [];
     const ssh = profile.ssh;
     const dns = profile.dns;
     const script = profile.script;
@@ -8591,39 +8607,41 @@ export class SmithproxyApp extends LitElement {
               @click=${(event: MouseEvent) => this.openNewContentRule(
                 profile.id, event.currentTarget as HTMLElement,
               )}>New content rule</button>
-            ${content.rules.length === 0 && pendingContentRules.length === 0
+            ${contentRuleRows.length === 0
               ? html`<span>No content rules configured.</span>` :
-              content.rules.map((rule, index) => html`
-                <button class="reference" type="button"
-                  @click=${(event: MouseEvent) => this.openContentRule(
-                    rule.id, event.currentTarget as HTMLElement,
+              contentRuleRows.map((row, index) => {
+                if (row.kind === 'live') {
+                  const rule = row.item;
+                  return html`<button class="reference" type="button"
+                    @click=${(event: MouseEvent) => this.openContentRule(
+                      rule.id, event.currentTarget as HTMLElement,
+                    )}>
+                    <span><strong>Rule ${index + 1}</strong> · match configured ·
+                      ${rule.replacementConfigured
+                        ? rule.replacementHasValue ? 'replacement configured' : 'empty replacement'
+                        : 'no replacement'} · ${rule.fillLength ? 'length preserved' : 'length may change'} ·
+                      ${rule.replaceEachNth <= 1 ? 'every match' : `every ${rule.replaceEachNth}th match`}</span>
+                    <span aria-hidden="true">→</span>
+                  </button>`;
+                }
+                const {operation} = row;
+                const fillLength = operation.fields['fill_length'] === true;
+                const replaceEach = typeof operation.fields['replace_each_nth'] === 'number'
+                  ? operation.fields['replace_each_nth'] : 0;
+                const replacement = operation.fields['replace'];
+                const replacementLabel = replacement === undefined ? 'no replacement'
+                  : replacement === '[redacted:clear]' ? 'empty replacement' : 'replacement configured';
+                return html`<button class="reference" type="button"
+                  @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                    operation.localId, event.currentTarget as HTMLElement,
                   )}>
-                  <span><strong>Rule ${index + 1}</strong> · match configured ·
-                    ${rule.replacementConfigured
-                      ? rule.replacementHasValue ? 'replacement configured' : 'empty replacement'
-                      : 'no replacement'} · ${rule.fillLength ? 'length preserved' : 'length may change'} ·
-                    ${rule.replaceEachNth <= 1 ? 'every match' : `every ${rule.replaceEachNth}th match`}</span>
+                  <span><strong>Pending rule</strong> · match configured · ${replacementLabel} ·
+                    ${fillLength ? 'length preserved' : 'length may change'} ·
+                    ${replaceEach <= 1 ? 'every match' : `every ${replaceEach}th match`} ·
+                    <small class="pending-badge">Pending create</small></span>
                   <span aria-hidden="true">→</span>
-                </button>
-              `)}
-            ${pendingContentRules.map(operation => {
-              const fillLength = operation.fields['fill_length'] === true;
-              const replaceEach = typeof operation.fields['replace_each_nth'] === 'number'
-                ? operation.fields['replace_each_nth'] : 0;
-              const replacement = operation.fields['replace'];
-              const replacementLabel = replacement === undefined ? 'no replacement'
-                : replacement === '[redacted:clear]' ? 'empty replacement' : 'replacement configured';
-              return html`<button class="reference" type="button"
-                @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
-                  operation.localId, event.currentTarget as HTMLElement,
-                )}>
-                <span><strong>Pending rule</strong> · match configured · ${replacementLabel} ·
-                  ${fillLength ? 'length preserved' : 'length may change'} ·
-                  ${replaceEach <= 1 ? 'every match' : `every ${replaceEach}th match`} ·
-                  <small class="pending-badge">Pending create</small></span>
-                <span aria-hidden="true">→</span>
-              </button>`;
-            })}
+                </button>`;
+              })}
           </div>
         ` : ssh ? html`
           <label for="ssh-write-host-key-${entry.id}-mode">Host key</label>
@@ -9239,6 +9257,12 @@ export class SmithproxyApp extends LitElement {
       (operation): operation is DraftCreateOperation => operation.op === 'create' &&
         operation.collection === `${signature.kind}_signatures.flow` && operation.parentId === signature.id,
     );
+    const flowStepIds = new Set(signature.flow.map(step => step.id));
+    const pendingFlowMoves = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftMoveOperation => operation.op === 'move' &&
+        operation.collection === `${signature.kind}_signatures.flow` && flowStepIds.has(operation.entityId),
+    );
+    const flowRows = this.draftOrderedRows(signature.flow, pendingFlowSteps, pendingFlowMoves);
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
     const prefix = this.originPrefix(entry);
     const path = (field: string) => `${prefix ?? ''}${field}`;
@@ -9282,18 +9306,20 @@ export class SmithproxyApp extends LitElement {
             @click=${(event: MouseEvent) => this.openNewSignatureFlow(
               signature.id, event.currentTarget as HTMLElement,
             )}>New flow step</button>
-          ${signature.flow.map((step, index) => html`
-            <button class="reference" type="button"
-              @click=${(event: MouseEvent) => this.openSignatureFlow(
-                step.id, event.currentTarget as HTMLElement,
-              )}>
-              <span><strong>${index + 1}. ${step.side.toUpperCase()} · ${step.type}</strong>
-                · bytes ${step.bytesStart}…${step.bytesMax}
-                · ${step.expressionConfigured ? 'expression configured' : 'expression missing'}</span>
-              <span aria-hidden="true">→</span>
-            </button>
-          `)}
-          ${pendingFlowSteps.map(operation => {
+          ${flowRows.map((row, index) => {
+            if (row.kind === 'live') {
+              const step = row.item;
+              return html`<button class="reference" type="button"
+                @click=${(event: MouseEvent) => this.openSignatureFlow(
+                  step.id, event.currentTarget as HTMLElement,
+                )}>
+                <span><strong>${index + 1}. ${step.side.toUpperCase()} · ${step.type}</strong>
+                  · bytes ${step.bytesStart}…${step.bytesMax}
+                  · ${step.expressionConfigured ? 'expression configured' : 'expression missing'}</span>
+                <span aria-hidden="true">→</span>
+              </button>`;
+            }
+            const {operation} = row;
             const side = typeof operation.fields['side'] === 'string'
               ? operation.fields['side'].toUpperCase() : '?';
             const type = typeof operation.fields['type'] === 'string' ? operation.fields['type'] : 'unknown';

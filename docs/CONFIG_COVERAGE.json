@@ -105,7 +105,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["name", "write_payload", "write_format", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http", "rules_session_filter", "content_rules"],
-      "notes": "Content controls and nested rule action metadata are typed. Complete parent profiles support structural creation. Session filters and rule match/replacement expressions remain server-side and use write-only rotation. Stable unreferenced profiles support confirmed structural deletion. Nested rules support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
+      "notes": "Content controls and nested rule action metadata are typed. Complete parent profiles support structural creation. Session filters and rule match/replacement expressions remain server-side and use write-only rotation. Stable unreferenced profiles support confirmed structural deletion. Nested rules support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
     },
     {
       "name": "tls_ca",
@@ -185,7 +185,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata and ordered flow controls are typed. Parent metadata and the required first flow step support atomic structural creation and linked removal with one draft version increment. Existing signatures support confirmed structural deletion. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
+      "notes": "All active signature metadata and ordered flow controls are typed. Parent metadata and the required first flow step support atomic structural creation and linked removal with one draft version increment. Existing signatures support confirmed structural deletion. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
     },
     {
       "name": "detection_signatures",
@@ -194,7 +194,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata and ordered flow controls are typed. Parent metadata and the required first flow step support atomic structural creation and linked removal with one draft version increment. Existing signatures support confirmed structural deletion. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
+      "notes": "All active signature metadata and ordered flow controls are typed. Parent metadata and the required first flow step support atomic structural creation and linked removal with one draft version increment. Existing signatures support confirmed structural deletion. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
     },
     {
       "name": "script_profiles",
