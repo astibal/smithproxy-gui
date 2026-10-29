@@ -13,6 +13,7 @@ import type {
 } from './api/models';
 import {
   SystemClient,
+  type AlertSnapshot,
   type EventSnapshot,
   type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
@@ -84,6 +85,12 @@ const initialEvents: EventSnapshot = {
   events: [],
 };
 
+const initialAlerts: AlertSnapshot = {
+  source: 'gui-core',
+  generatedAtUnixMs: 0,
+  alerts: [],
+};
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -99,7 +106,9 @@ export class SmithproxyApp extends LitElement {
   @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
   @state() private neighbors: NeighborSnapshot = initialNeighbors;
   @state() private operationalEvents: EventSnapshot = initialEvents;
+  @state() private operationalAlerts: AlertSnapshot = initialAlerts;
   @state() private eventsError: string | undefined;
+  @state() private alertsError: string | undefined;
   @state() private focusMode = false;
   @state() private configWriteAvailable = false;
   @state() private draftAvailable = false;
@@ -253,7 +262,12 @@ export class SmithproxyApp extends LitElement {
     .event-severity { font-size: 12px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
     .event-severity.info { color: var(--app-success); }
     .event-severity.notice, .event-severity.warning { color: var(--app-warning); }
-    .event-severity.error { color: var(--app-danger); }
+    .event-severity.error, .event-severity.critical { color: var(--app-danger); }
+    .alert-list { display: grid; margin-top: 14px; border: 1px solid var(--app-border); background: var(--app-surface); }
+    .alert-row { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 14px; padding: 12px 14px; border-left: 3px solid var(--app-warning); border-bottom: 1px solid var(--app-border); }
+    .alert-row:last-child { border-bottom: 0; }
+    .alert-row.critical { border-left-color: var(--app-danger); }
+    .alert-row p { margin: 3px 0 0; color: var(--app-muted); }
     .capacity-track { height: 8px; overflow: hidden; border-radius: 2px; background: var(--app-border); }
     .capacity-fill { height: 100%; border-radius: inherit; background: var(--app-brand); }
 
@@ -510,6 +524,12 @@ export class SmithproxyApp extends LitElement {
         this.eventsError = undefined;
       } catch (error) {
         this.eventsError = error instanceof Error ? error.message : 'Operational events are unavailable.';
+      }
+      try {
+        this.operationalAlerts = await this.systemClient.activeAlerts();
+        this.alertsError = undefined;
+      } catch (error) {
+        this.alertsError = error instanceof Error ? error.message : 'Operational alerts are unavailable.';
       }
       if (this.apiVersion === 'unavailable') void this.loadCapabilities();
     } catch (error) {
@@ -2265,6 +2285,32 @@ export class SmithproxyApp extends LitElement {
       </div>`;
   }
 
+  private renderActiveAlerts() {
+    const alerts = this.operationalAlerts.alerts;
+    return html`
+      <section class="monitor-panel" aria-label="Active operational alerts">
+        <div class="runtime-heading">
+          <div><h3>Active alerts</h3><p>Locally derived health, freshness, availability, and capacity conditions</p></div>
+          <span class="runtime-state ${this.alertsError || alerts.some(item => item.severity === 'critical')
+            ? 'danger' : alerts.length ? 'warning' : 'success'}">
+            ${this.alertsError ? 'Unavailable' : alerts.length === 0 ? '● Clear' : `${alerts.length} active`}
+          </span>
+        </div>
+        ${this.alertsError ? html`<div class="metrics-message">${this.alertsError}</div>` : alerts.length === 0 ? html`
+          <div class="privacy-note">No active alert condition was detected by the GUI core.</div>
+        ` : html`
+          <div class="alert-list" role="list">
+            ${alerts.map(alert => html`
+              <article class="alert-row ${alert.severity}" role="listitem">
+                <span class="event-severity ${alert.severity}">${alert.severity}</span>
+                <div><strong>${alert.title}</strong><p>${alert.detail}</p></div>
+              </article>
+            `)}
+          </div>
+        `}
+      </section>`;
+  }
+
   private timeLabel(value: number | null): string {
     return value === null ? 'Never' : new Date(value).toLocaleString();
   }
@@ -2464,6 +2510,7 @@ export class SmithproxyApp extends LitElement {
           </article>
         </div>
         ${this.renderOperationalHealth()}
+        ${this.renderActiveAlerts()}
         ${this.renderRuntimeSummary()}
         ${this.renderTlsCache()}
         <section class="monitor-panel" aria-label="Probe history">
@@ -2492,6 +2539,7 @@ export class SmithproxyApp extends LitElement {
           <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
         </div>
         ${this.renderOperationalHealth()}
+        ${this.renderActiveAlerts()}
         ${this.renderProbeAnalysis()}
         ${this.renderRuntimeSummary()}
         ${this.renderRuntimeHistory()}

@@ -327,6 +327,7 @@ def main() -> int:
         assert capabilities["features"]["config_write"] is False
         assert capabilities["features"]["drafts"] is False
         assert capabilities["features"]["events"] is True
+        assert capabilities["features"]["alerts"] is True
         assert capabilities["features"]["smithproxy_events"] is False
         assert capabilities["features"]["metrics"] is True
         assert capabilities["features"]["session_activity"] is True
@@ -362,6 +363,11 @@ def main() -> int:
         assert status == 200
         assert json.loads(body) == {
             "source": "gui-core", "smithproxy_events_available": False, "events": []}
+        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/alerts")
+        assert status == 200
+        alerts = json.loads(body)
+        assert alerts["source"] == "gui-core"
+        assert alerts["alerts"][0]["id"] == "control-plane-unconfigured"
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/auth/session")
         assert status == 200
@@ -426,6 +432,11 @@ def main() -> int:
             assert events["smithproxy_events_available"] is False
             assert events["events"][-1]["message"] == "Smithproxy control plane is reachable"
             assert len(events["events"]) <= 60
+            status, _, body = request(configured_port, "/api/v1/alerts")
+            alerts = json.loads(body)
+            assert status == 200
+            assert isinstance(alerts["generated_at_unix_ms"], int)
+            assert alerts["alerts"] == []
             last_success = snapshot["smithproxy"]["last_success_at_unix_ms"]
             status, _, body = request(configured_port, "/api/v1/metrics/summary")
             metrics = json.loads(body)

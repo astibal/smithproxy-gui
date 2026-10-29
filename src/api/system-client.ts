@@ -26,6 +26,7 @@ export interface SystemCapabilities {
     drafts: boolean;
     jobs: boolean;
     events: boolean;
+    alerts: boolean;
     smithproxyEvents: boolean;
     metrics: boolean;
     sessionActivity: boolean;
@@ -145,6 +146,21 @@ export interface EventSnapshot {
   events: ReadonlyArray<OperationalEvent>;
 }
 
+export type OperationalAlertSeverity = 'notice' | 'warning' | 'critical';
+
+export interface OperationalAlert {
+  id: string;
+  severity: OperationalAlertSeverity;
+  title: string;
+  detail: string;
+}
+
+export interface AlertSnapshot {
+  source: 'gui-core';
+  generatedAtUnixMs: number;
+  alerts: ReadonlyArray<OperationalAlert>;
+}
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -205,7 +221,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof features.drafts !== 'boolean' || typeof features.jobs !== 'boolean' ||
-      typeof features.events !== 'boolean' ||
+      typeof features.events !== 'boolean' || typeof features.alerts !== 'boolean' ||
       typeof features.smithproxy_events !== 'boolean' ||
       typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean' ||
       typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean') {
@@ -222,6 +238,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       drafts: features.drafts,
       jobs: features.jobs,
       events: features.events,
+      alerts: features.alerts,
       smithproxyEvents: features.smithproxy_events,
       metrics: features.metrics,
       sessionActivity: features.session_activity,
@@ -457,6 +474,33 @@ function parseEvents(value: unknown): EventSnapshot {
   return {source: 'gui-core', smithproxyEventsAvailable: value.smithproxy_events_available, events};
 }
 
+function parseAlerts(value: unknown): AlertSnapshot {
+  if (!isObject(value) || value.source !== 'gui-core' ||
+      !isNonNegativeInteger(value.generated_at_unix_ms) || !Array.isArray(value.alerts) ||
+      value.alerts.length > 16) {
+    throw new Error('Invalid operational alert response.');
+  }
+  const ids = new Set<string>();
+  const alerts = value.alerts.map((item): OperationalAlert => {
+    if (!isObject(item) || typeof item.id !== 'string' || !/^[a-z0-9-]{1,64}$/u.test(item.id) ||
+        !['notice', 'warning', 'critical'].includes(String(item.severity)) ||
+        typeof item.title !== 'string' || item.title.length < 1 || item.title.length > 96 ||
+        typeof item.detail !== 'string' || item.detail.length < 1 || item.detail.length > 256 ||
+        /[\u0000-\u001f\u007f]/u.test(item.title) || /[\u0000-\u001f\u007f]/u.test(item.detail)) {
+      throw new Error('Invalid operational alert entry.');
+    }
+    if (ids.has(item.id)) throw new Error('Duplicate operational alert identifier.');
+    ids.add(item.id);
+    return {
+      id: item.id,
+      severity: item.severity as OperationalAlertSeverity,
+      title: item.title,
+      detail: item.detail,
+    };
+  });
+  return {source: 'gui-core', generatedAtUnixMs: value.generated_at_unix_ms, alerts};
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -505,6 +549,10 @@ export class SystemClient {
 
   async recentEvents(): Promise<EventSnapshot> {
     return parseEvents(await this.#request(joinedPath(this.#apiBase, '/events/recent')));
+  }
+
+  async activeAlerts(): Promise<AlertSnapshot> {
+    return parseAlerts(await this.#request(joinedPath(this.#apiBase, '/alerts')));
   }
 
   async #request(path: string): Promise<unknown> {

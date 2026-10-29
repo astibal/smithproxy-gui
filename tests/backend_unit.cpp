@@ -4,11 +4,13 @@
 #include "json.hpp"
 #include "live_sessions.hpp"
 #include "neighbor_metrics.hpp"
+#include "operational_alerts.hpp"
 #include "path.hpp"
 #include "runtime_metrics.hpp"
 #include "tls_metrics.hpp"
 
 #include <cassert>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
@@ -404,6 +406,43 @@ int main() {
         R"({"success":{"tls_ca":{}}})",
         R"({"success":{"starttls_signatures":[{"flow":"secret"}]}})",
         R"({"success":{"detection_signatures":[]}})").security_assets);
+
+    const auto now = std::chrono::system_clock::now();
+    SmithproxyStatus alert_status;
+    alert_status.state = "ready";
+    alert_status.last_success_at = now;
+    alert_status.runtime_metrics.state = "ready";
+    alert_status.runtime_metrics.last_success_at = now;
+    alert_status.live_sessions.state = "ready";
+    alert_status.live_sessions.last_success_at = now;
+    alert_status.tls_cache_metrics.state = "ready";
+    alert_status.tls_cache_metrics.last_success_at = now;
+    alert_status.tls_cache_metrics.capacity = 100U;
+    alert_status.tls_cache_metrics.size = 42U;
+    alert_status.neighbor_metrics.state = "ready";
+    alert_status.neighbor_metrics.last_success_at = now;
+    alert_status.config_snapshot.state = "ready";
+    alert_status.config_snapshot.last_success_at = now;
+    assert(derive_operational_alerts(alert_status, true, true, now).empty());
+
+    alert_status.tls_cache_metrics.size = 90U;
+    auto active_alerts = derive_operational_alerts(alert_status, true, true, now);
+    assert(active_alerts.size() == 1U);
+    assert(active_alerts.front().id == "tls-cache-capacity");
+    assert(active_alerts.front().severity == "warning");
+    alert_status.tls_cache_metrics.size = 100U;
+    active_alerts = derive_operational_alerts(alert_status, true, true, now);
+    assert(active_alerts.front().severity == "critical");
+
+    alert_status.tls_cache_metrics.size = 42U;
+    alert_status.live_sessions.last_success_at = now - std::chrono::seconds{61};
+    active_alerts = derive_operational_alerts(alert_status, true, true, now);
+    assert(active_alerts.size() == 1U);
+    assert(active_alerts.front().id == "session-activity-stale");
+
+    const auto unconfigured_alerts = derive_operational_alerts({}, false, false, now);
+    assert(unconfigured_alerts.size() == 1U);
+    assert(unconfigured_alerts.front().id == "control-plane-unconfigured");
 
     std::vector<std::string> arguments{"smithproxy-gui", "--base-path", "/", "--port", "18082"};
     std::vector<char*> argv;

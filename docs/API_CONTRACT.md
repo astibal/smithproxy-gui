@@ -206,6 +206,13 @@ distinguishes these events from the unavailable Smithproxy event ring. Smithprox
 event text must only be added through a bounded authenticated HTTP API; the GUI
 core does not parse the administrative CLI.
 
+`/alerts` exposes at most 16 active, structured GUI-core conditions. Alert IDs,
+severity, titles, and details come from a fixed server vocabulary; arbitrary
+upstream log text is never forwarded. The current rules cover control-plane
+reachability and rolling availability, collector health and freshness, and TLS
+cache capacity. A control-plane outage suppresses derivative collector alerts
+to avoid an alert storm.
+
 `/events` používá SSE. Každá událost obsahuje typ, čas serveru, monotónní event ID,
 source revision a minimální payload. Po ztrátě kontinuity si klient vyžádá nový
 snapshot místo domýšlení chybějícího stavu.

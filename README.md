@@ -100,8 +100,11 @@ to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The
 Network neighborhood monitoring follows the same rule: only endpoint counts,
 activity windows, observations, and traffic totals reach the browser; hostnames,
-tags, labels, and individual timelines do not. The root web component supports
-integration into Saslik Tools:
+tags, labels, and individual timelines do not. Structured active alerts are
+derived inside the GUI core from reachability,
+rolling availability, collector freshness, and TLS cache capacity. They use a
+bounded fixed vocabulary and never forward arbitrary upstream log text. The root
+web component supports integration into Saslik Tools:
 
 ```html
 <smithproxy-gui

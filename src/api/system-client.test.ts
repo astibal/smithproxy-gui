@@ -26,7 +26,7 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
       features: {
-        config_read: false, config_write: false, drafts: false, jobs: false, events: true,
+        config_read: false, config_write: false, drafts: false, jobs: false, events: true, alerts: true,
         smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
       },
@@ -35,7 +35,7 @@ describe('SystemClient', () => {
 
     await expect(client.capabilities()).resolves.toMatchObject({
       apiVersion: 'v1', smithproxyState: 'unconfigured',
-      features: {configWrite: false, drafts: false, events: true, smithproxyEvents: false, metrics: true},
+      features: {configWrite: false, drafts: false, events: true, alerts: true, smithproxyEvents: false, metrics: true},
     });
   });
 
@@ -59,6 +59,36 @@ describe('SystemClient', () => {
       smithproxy: {latencyMs: 7, totalProbes: 2, availabilityWindow: {samples: 2, successful: 1}},
     });
     expect(fetcher).toHaveBeenCalledWith('/ws001/smithproxy-gui/api/v1/status', expect.anything());
+  });
+
+  it('loads bounded structured operational alerts', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      source: 'gui-core', generated_at_unix_ms: 100,
+      alerts: [{
+        id: 'tls-cache-capacity', severity: 'warning', title: 'TLS cache capacity is high',
+        detail: 'The reported cache size is at least 90% of its configured capacity.',
+      }],
+    }));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+    await expect(client.activeAlerts()).resolves.toMatchObject({
+      generatedAtUnixMs: 100, alerts: [{id: 'tls-cache-capacity', severity: 'warning'}],
+    });
+  });
+
+  it('rejects alert text with control characters', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', generated_at_unix_ms: 100,
+      alerts: [{id: 'bad', severity: 'critical', title: 'Bad\nalert', detail: 'Rejected'}],
+    }));
+    await expect(client.activeAlerts()).rejects.toThrow('Invalid operational alert entry');
+  });
+
+  it('rejects duplicate operational alert identifiers', async () => {
+    const alert = {id: 'duplicate', severity: 'warning', title: 'Repeated', detail: 'Repeated alert'};
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', generated_at_unix_ms: 100, alerts: [alert, alert],
+    }));
+    await expect(client.activeAlerts()).rejects.toThrow('Duplicate operational alert identifier');
   });
 
   it('rejects inconsistent monitoring counters', async () => {

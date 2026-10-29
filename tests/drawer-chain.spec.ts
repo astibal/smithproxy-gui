@@ -10,7 +10,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     base_path: '/',
     smithproxy_state: state.smithproxy,
     features: {
-      config_read: configRead, config_write: false, drafts: configRead, jobs: false, events: true,
+      config_read: configRead, config_write: false, drafts: configRead, jobs: false, events: true, alerts: true,
       smithproxy_events: false,
       metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
     },
@@ -96,6 +96,13 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
       }]),
     ],
+  }}));
+  await page.route('**/api/v1/alerts', async route => route.fulfill({json: {
+    source: 'gui-core', generated_at_unix_ms: Date.now(),
+    alerts: state.smithproxy === 'ready' ? [] : [{
+      id: 'control-plane-unavailable', severity: 'critical', title: 'Control plane is unavailable',
+      detail: 'The GUI core cannot currently reach the authenticated Smithproxy API.',
+    }],
   }}));
   await page.route('**/api/v1/config/draft', async route => route.fulfill({json: draft}));
   await page.route('**/api/v1/config/draft/clear', async route => {
@@ -607,6 +614,8 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
   await expect(page.getByText('Probe latency').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
+  const activeAlerts = page.getByRole('region', {name: 'Active operational alerts'});
+  await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
   await expect(page.getByText(/control-plane health and listener counters are live/i)).toBeVisible();
   await expect(page.getByRole('region', {name: 'Runtime metrics summary'}).getByText('4', {exact: true})).toBeVisible();
   const tlsCache = page.getByRole('region', {name: 'TLS interception cache'});
@@ -630,10 +639,12 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   state.smithproxy = 'unreachable';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Unreachable')).toBeVisible();
+  await expect(activeAlerts.getByText('Control plane is unavailable', {exact: true})).toBeVisible();
 
   state.smithproxy = 'ready';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
+  await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
   const health = page.getByRole('region', {name: 'Operational health matrix'});
   await expect(health.getByRole('heading', {name: 'Control plane'})).toBeVisible();
   await expect(health.getByRole('heading', {name: 'TLS cache'})).toBeVisible();

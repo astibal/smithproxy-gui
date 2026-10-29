@@ -2,6 +2,7 @@
 
 #include "draft_store.hpp"
 #include "json.hpp"
+#include "operational_alerts.hpp"
 #include "path.hpp"
 
 #include <lmhttpd.hpp>
@@ -324,6 +325,7 @@ private:
         if (*relative == "/api/v1/network/neighbors/summary") return neighbor_summary();
         if (*relative == "/api/v1/sessions/activity") return session_activity();
         if (*relative == "/api/v1/events/recent") return recent_events();
+        if (*relative == "/api/v1/alerts") return alerts();
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
         if (*relative == "/api/v1/config/draft") {
@@ -361,7 +363,7 @@ private:
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":false,"
                     "\"drafts\":" + (config_read ? "true" : "false") +
-                    ",\"jobs\":false,\"events\":true,\"smithproxy_events\":false,\"metrics\":true,"
+                    ",\"jobs\":false,\"events\":true,\"alerts\":true,\"smithproxy_events\":false,\"metrics\":true,"
                     "\"session_activity\":true,\"tls_monitoring\":true,"
                     "\"neighbor_monitoring\":true}}"};
     }
@@ -918,6 +920,25 @@ private:
         return {200, "application/json; charset=utf-8",
                 "{\"source\":\"gui-core\",\"smithproxy_events_available\":false,\"events\":" +
                     events + "}"};
+    }
+
+    Response alerts() const {
+        const auto generated_at = std::chrono::system_clock::now();
+        const auto active = derive_operational_alerts(
+            monitor_.status(), monitor_.configured(), monitor_.config_enabled(), generated_at);
+        std::string alerts{"["};
+        for (std::size_t index = 0; index < active.size(); ++index) {
+            if (index != 0U) alerts += ',';
+            const auto& alert = active[index];
+            alerts += "{\"id\":" + json_string(alert.id) +
+                      ",\"severity\":" + json_string(alert.severity) +
+                      ",\"title\":" + json_string(alert.title) +
+                      ",\"detail\":" + json_string(alert.detail) + "}";
+        }
+        alerts += ']';
+        return {200, "application/json; charset=utf-8",
+                "{\"source\":\"gui-core\",\"generated_at_unix_ms\":" +
+                    timestamp_json(generated_at) + ",\"alerts\":" + alerts + "}"};
     }
 
     Response metrics_summary() const {
