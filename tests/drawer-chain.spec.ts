@@ -1369,6 +1369,36 @@ test('renders and protects augment-owned list overlay chains', async ({page}) =>
   expect(state.draftMutationVersions).toEqual([]);
 });
 
+test('keeps persistent, effective, and pending values distinct in overlay chains', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'drop'}],
+    valueOrigins: [{
+      path: 'policy.[0].action',
+      persistent_value: 'accept',
+      effective_value: 'reject',
+      layers: [{id: 'emergency-policy', priority: 100, value: 'reject', active: true}],
+      editable: true,
+    }],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet drop .* Pending .* overridden/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(editor.getByRole('textbox', {name: 'Action', exact: true})).toHaveValue('drop');
+  const chain = editor.getByRole('list', {name: 'action overlay chain'});
+  await expect(chain).toContainText('Persistent');
+  await expect(chain).toContainText('accept');
+  await expect(chain).toContainText('Augment · Priority 100');
+  await expect(chain).toContainText('emergency-policy');
+  await expect(chain).toContainText('Effective');
+  await expect(chain).toContainText('reject');
+  await expect(chain).toContainText('Workspace draft');
+  await expect(chain).toContainText('drop');
+  await expect(chain).toContainText('Not active');
+});
+
 test('binds every profile editor to augment-owned persistent values', async ({page}) => {
   const origin = (
     path: string, persistent_value: MockConfigValue, effective_value: MockConfigValue,

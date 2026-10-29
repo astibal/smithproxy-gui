@@ -10,6 +10,8 @@ persistent config
        ├── augment layers
        ▼
 effective config
+
+workspace draft ── proposal only; not active
 ```
 
 U každé hodnoty musí být dostupné:
@@ -28,6 +30,9 @@ anonymní JSON strom.
 Aktuální frontend vykresluje obecnou provenance sekci ve všech typech editorů.
 Podporuje seřazený řetěz více vrstev, hodnotu každé vrstvy, priority, explicitního
 aktivního vlastníka, persistentní i efektivní hodnotu a příznak editovatelnosti.
+Pokud stejná cesta existuje ve workspace draftu, řetěz ji ukáže jako samostatný
+poslední krok `Workspace draft · Not active`; nikdy ji nezamění za effective
+hodnotu. Write-only návrh zobrazuje pouze redigovaný změnový záměr.
 Seznamy policy a objektů označují počet efektivně přepsaných polí ještě před
 otevřením editoru. Prioritizovaný řetěz musí mít úplnou a striktně rostoucí
 prioritu; řetěz bez priorit používá pouze autoritativní pořadí pole. Smíšené nebo

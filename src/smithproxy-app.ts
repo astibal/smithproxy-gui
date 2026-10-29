@@ -456,6 +456,7 @@ export class SmithproxyApp extends LitElement {
     .origin-chain { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; margin: 12px 0 0; padding: 0; list-style: none; background: var(--app-border); }
     .origin-step { display: grid; min-width: 0; gap: 4px; padding: 10px; background: var(--app-surface); }
     .origin-step.effective { background: color-mix(in srgb, var(--app-success-bg) 70%, var(--app-surface)); }
+    .origin-step.pending { border: 1px dashed var(--app-brand); }
     .origin-kind { color: var(--app-muted); font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
     .origin-value, .origin-id { overflow-wrap: anywhere; color: var(--app-text); }
     .origin-id { font-size: 12px; }
@@ -5943,6 +5944,7 @@ export class SmithproxyApp extends LitElement {
         <h3>Effective value overlays</h3>
         ${origins.map(origin => {
           const field = origin.path.slice(prefix!.length);
+          const pending = this.workspaceDraft?.changes.find(change => change.path === origin.path);
           return html`
             <article class="origin-card">
               <header class="origin-head">
@@ -5968,6 +5970,13 @@ export class SmithproxyApp extends LitElement {
                   <span class="origin-kind">Effective</span>
                   <strong class="origin-value">${this.formatConfigValue(origin.effectiveValue)}</strong>
                 </li>
+                ${pending ? html`
+                  <li class="origin-step pending">
+                    <span class="origin-kind">Workspace draft</span>
+                    <strong class="origin-value">${this.draftValueSummary(pending.path, pending.value)}</strong>
+                    <span class="origin-active">Not active</span>
+                  </li>
+                ` : nothing}
               </ol>
             </article>`;
         })}
