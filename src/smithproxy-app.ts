@@ -287,6 +287,17 @@ export class SmithproxyApp extends LitElement {
     .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
     .origin-note { padding: 9px 11px; border-left: 3px solid var(--app-warning); background: var(--app-warning-bg); color: var(--app-muted); font-size: 12px; }
     .origin-note strong { color: var(--app-text); }
+    .origin-card { margin-top: 10px; padding: 12px; border: 1px solid color-mix(in srgb, var(--app-warning) 45%, var(--app-border)); border-radius: 2px; background: var(--app-warning-bg); }
+    .origin-head { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+    .origin-head code { overflow-wrap: anywhere; color: var(--app-text); font-weight: 700; }
+    .origin-owner { color: var(--app-muted); font-size: 12px; }
+    .origin-owner.locked, .origin-active { color: var(--app-warning); font-weight: 700; }
+    .origin-chain { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; margin: 12px 0 0; padding: 0; list-style: none; background: var(--app-border); }
+    .origin-step { display: grid; min-width: 0; gap: 4px; padding: 10px; background: var(--app-surface); }
+    .origin-step.effective { background: color-mix(in srgb, var(--app-success-bg) 70%, var(--app-surface)); }
+    .origin-kind { color: var(--app-muted); font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    .origin-value, .origin-id { overflow-wrap: anywhere; color: var(--app-text); }
+    .origin-id { font-size: 12px; }
     .event-list { display: grid; overflow: hidden; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .event-row { display: grid; grid-template-columns: 150px 78px minmax(180px, 1fr) 100px; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .event-row:last-child { border-bottom: 0; }
@@ -4269,17 +4280,36 @@ export class SmithproxyApp extends LitElement {
     return html`
       <section class="section" aria-label="Effective value overlays">
         <h3>Effective value overlays</h3>
-        ${origins.map(origin => html`
-          <div class="origin-note">
-            <strong>${origin.path.slice(prefix!.length)}</strong><br />
-            Persistent <strong>${String(origin.persistentValue)}</strong>
-            → ${origin.layers.map(layer => layer.priority === null
-              ? `${layer.id}: ${String(layer.value)}${layer.active ? ' (active)' : ''}`
-              : `${layer.id} (priority ${layer.priority}): ${String(layer.value)}${layer.active ? ' (active)' : ''}`).join(' → ')}
-            → effective <strong>${String(origin.effectiveValue)}</strong>.
-            ${origin.editable ? 'The persistent value is editable.' : 'The active layer owns this value.'}
-          </div>
-        `)}
+        ${origins.map(origin => {
+          const field = origin.path.slice(prefix!.length);
+          return html`
+            <article class="origin-card">
+              <header class="origin-head">
+                <code>${field}</code>
+                <span class="origin-owner ${origin.editable ? '' : 'locked'}">
+                  ${origin.editable ? 'Persistent value editable' : 'Owned by active layer'}
+                </span>
+              </header>
+              <ol class="origin-chain" aria-label="${field} overlay chain">
+                <li class="origin-step">
+                  <span class="origin-kind">Persistent</span>
+                  <strong class="origin-value">${String(origin.persistentValue)}</strong>
+                </li>
+                ${origin.layers.map(layer => html`
+                  <li class="origin-step">
+                    <span class="origin-kind">Augment${layer.priority === null ? '' : ` · Priority ${layer.priority}`}</span>
+                    <strong class="origin-id">${layer.id}</strong>
+                    <span class="origin-value">${String(layer.value)}</span>
+                    ${layer.active ? html`<span class="origin-active">Active owner</span>` : nothing}
+                  </li>
+                `)}
+                <li class="origin-step effective">
+                  <span class="origin-kind">Effective</span>
+                  <strong class="origin-value">${String(origin.effectiveValue)}</strong>
+                </li>
+              </ol>
+            </article>`;
+        })}
       </section>`;
   }
 

@@ -746,13 +746,18 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /office office-net/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
-  await expect(page.getByText(/temporary-office-access \(priority 100\)/i)).toBeVisible();
-  await expect(page.getByText(/incident-response \(priority 200\)/i)).toBeVisible();
   const overlay = page.getByRole('region', {name: 'Effective value overlays'});
-  await expect(overlay).toContainText('Persistent reject');
-  await expect(overlay).toContainText('effective accept');
-  await expect(overlay).toContainText('incident-response (priority 200): accept (active)');
-  await expect(overlay).toContainText('The active layer owns this value');
+  const policyChain = overlay.getByRole('list', {name: 'action overlay chain'});
+  await expect(policyChain).toContainText('Persistent');
+  await expect(policyChain).toContainText('reject');
+  await expect(policyChain).toContainText('temporary-office-access');
+  await expect(policyChain).toContainText('Priority 100');
+  await expect(policyChain).toContainText('incident-response');
+  await expect(policyChain).toContainText('Priority 200');
+  await expect(policyChain).toContainText('Active owner');
+  await expect(policyChain).toContainText('Effective');
+  await expect(policyChain).toContainText('accept');
+  await expect(overlay).toContainText('Owned by active layer');
   await expect(page.locator('#action-policy-office')).toHaveAttribute('readonly', '');
 
   await page.getByRole('button', {name: 'office-net', exact: true}).click();
@@ -761,8 +766,10 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await expect(addressEditor.locator('#address-value-address-office-net')).toHaveValue('10.20.0.0/16');
   await expect(addressEditor.locator('#address-value-address-office-net')).toHaveAttribute('readonly', '');
   const addressOverlay = addressEditor.getByRole('region', {name: 'Effective value overlays'});
-  await expect(addressOverlay).toContainText('maintenance-segment (priority 50)');
-  await expect(addressOverlay).toContainText('effective 10.20.32.0/20');
+  const addressChain = addressOverlay.getByRole('list', {name: 'value overlay chain'});
+  await expect(addressChain).toContainText('maintenance-segment');
+  await expect(addressChain).toContainText('Priority 50');
+  await expect(addressChain).toContainText('10.20.32.0/20');
   await expect(page.getByText('This shared object is used by 4 configuration entries.')).toBeVisible();
 
   const policyEditor = page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true});
