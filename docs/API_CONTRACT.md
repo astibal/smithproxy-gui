@@ -47,6 +47,12 @@ state, dirty editor chain, and any entered write-only values. A narrower draft
 capability loss clears the same mutation state without discarding the still
 authorized live configuration snapshot.
 
+The browser accepts only `api_version: v1` and a canonical `base_path` identical
+to the mount used to construct its API client. Feature dependencies are strict:
+write requires read, drafts, preflight, and a ready transaction contract;
+preflight requires drafts; Smithproxy events require the event surface. An
+incoherent graph disables every protected frontend request.
+
 The internal transaction adapter already builds the reviewed `validate` and
 `commit` envelopes from typed workspace-draft changes. It binds every request
 to the canonical base revision and a core-generated idempotency UUID and rejects

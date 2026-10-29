@@ -116,6 +116,11 @@ Losing configuration access removes the live snapshot, shared draft state, and
 open editors from the browser; losing only the draft capability preserves the
 read-only live snapshot while clearing draft and editor state.
 
+Capability bootstrap accepts only API contract `v1`, a canonical base path that
+exactly matches the application mount, and a coherent feature dependency graph.
+Contradictory transaction, draft, or event flags fail closed before any protected
+request is issued.
+
 Without gateway mode, every management API request must carry a canonical
 loopback `Host` authority. This keeps local standalone monitoring inaccessible
 through DNS rebinding while leaving the bounded orchestration health probe

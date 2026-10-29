@@ -56,6 +56,37 @@ describe('SystemClient', () => {
     await expect(client.capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
   });
 
+  it('rejects incoherent transaction, event, version, and mount capabilities', async () => {
+    const capabilities = (overrides: Record<string, unknown> = {}) => ({
+      service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'ready',
+      config_transaction_state: 'ready',
+      features: {
+        config_read: true, config_write: true, drafts: true, draft_preflight: true,
+        jobs: true, events: true, alerts: true, audit: true, smithproxy_events: false,
+        metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
+        interface_monitoring: true,
+      },
+      ...overrides,
+    });
+    const client = (payload: unknown, basePath = '/') =>
+      new SystemClient('/api/v1', basePath, async () => jsonResponse(payload));
+
+    await expect(client(capabilities({features: {
+      ...capabilities().features, draft_preflight: false,
+    }})).capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
+    await expect(client(capabilities({config_transaction_state: 'review-required'}))
+      .capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
+    await expect(client(capabilities({features: {
+      ...capabilities().features, events: false, smithproxy_events: true,
+    }})).capabilities()).rejects.toThrow('Inconsistent event capabilities');
+    await expect(client(capabilities({api_version: 'v2'})).capabilities())
+      .rejects.toThrow('Invalid capabilities response');
+    await expect(client(capabilities({base_path: '/workspace/'})).capabilities())
+      .rejects.toThrow('canonical');
+    await expect(client(capabilities({base_path: '/other'}), '/expected').capabilities())
+      .rejects.toThrow('does not match');
+  });
+
   it('rejects an unknown transaction capability state', async () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'ready',

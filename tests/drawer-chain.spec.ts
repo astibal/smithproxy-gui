@@ -53,6 +53,7 @@ type MockState = {
   gatewayMode?: 'gateway' | 'disabled';
   gatewayAuthenticated?: boolean;
   forceManagementCapabilities?: boolean;
+  inconsistentPrivilegedCapabilities?: boolean;
   disabledMonitoringFeatures?: Array<
     'jobs' | 'events' | 'alerts' | 'audit' | 'metrics' | 'session_activity' |
     'tls_monitoring' | 'neighbor_monitoring' | 'interface_monitoring'
@@ -98,6 +99,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     changes: state.initialDraftChanges ?? [] as Array<{path: string; value: unknown}>,
   };
   await page.route('**/api/v1/capabilities', async route => {
+    const capabilityPath = new URL(route.request().url()).pathname;
+    const capabilitySuffix = '/api/v1/capabilities';
+    const advertisedBasePath = capabilityPath.slice(0, -capabilitySuffix.length) || '/';
     const gatewayMode = state.gatewayMode ?? (configRead ? 'gateway' : 'disabled');
     const gatewayAuthenticated = state.gatewayAuthenticated ?? configRead;
     const management = state.forceManagementCapabilities ??
@@ -108,29 +112,34 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     const configurationFeature = (
       name: NonNullable<MockState['disabledConfigurationFeatures']>[number],
     ): boolean => configuration && !state.disabledConfigurationFeatures?.includes(name);
+    const featureFlags = {
+      config_read: configuration,
+      config_write: Boolean(state.commitReady) && configurationFeature('config_write'),
+      drafts: configurationFeature('drafts'),
+      draft_preflight: configurationFeature('draft_preflight'),
+      jobs: monitoringFeature('jobs'),
+      events: monitoringFeature('events'),
+      alerts: monitoringFeature('alerts'),
+      audit: monitoringFeature('audit'),
+      smithproxy_events: false,
+      metrics: monitoringFeature('metrics'),
+      session_activity: monitoringFeature('session_activity'),
+      tls_monitoring: monitoringFeature('tls_monitoring'),
+      neighbor_monitoring: monitoringFeature('neighbor_monitoring'),
+      interface_monitoring: monitoringFeature('interface_monitoring'),
+    };
+    if (state.inconsistentPrivilegedCapabilities) {
+      featureFlags.config_write = true;
+      featureFlags.draft_preflight = false;
+    }
     await route.fulfill({json: {
       service: 'smithproxy-gui',
       api_version: 'v1',
-      base_path: '/',
+      base_path: advertisedBasePath,
       smithproxy_state: state.smithproxy,
       config_transaction_state: (state.validationReady || state.commitReady) && configuration
         ? 'ready' : configuration ? 'review-required' : 'unavailable',
-      features: {
-        config_read: configuration,
-        config_write: Boolean(state.commitReady) && configurationFeature('config_write'),
-        drafts: configurationFeature('drafts'),
-        draft_preflight: configurationFeature('draft_preflight'),
-        jobs: monitoringFeature('jobs'),
-        events: monitoringFeature('events'),
-        alerts: monitoringFeature('alerts'),
-        audit: monitoringFeature('audit'),
-        smithproxy_events: false,
-        metrics: monitoringFeature('metrics'),
-        session_activity: monitoringFeature('session_activity'),
-        tls_monitoring: monitoringFeature('tls_monitoring'),
-        neighbor_monitoring: monitoringFeature('neighbor_monitoring'),
-        interface_monitoring: monitoringFeature('interface_monitoring'),
-      },
+      features: featureFlags,
     }});
   });
   await page.route('**/api/v1/auth/session', async route => {
@@ -1660,6 +1669,31 @@ test('rejects management capabilities that contradict the gateway session', asyn
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Core: Offline');
   await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Events: Unavailable');
+  expect(protectedRequests).toEqual([]);
+});
+
+test('rejects an incoherent privileged capability graph before protected requests', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    gatewayMode: 'gateway',
+    gatewayAuthenticated: true,
+    inconsistentPrivilegedCapabilities: true,
+  };
+  const protectedRequests: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path.includes('/api/v1/') &&
+        !path.endsWith('/capabilities') && !path.endsWith('/auth/session')) {
+      protectedRequests.push(path);
+    }
+  });
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Core: Offline');
+  await expect(statusbar).toContainText('Config: Preview');
   await expect(statusbar).toContainText('Events: Unavailable');
   expect(protectedRequests).toEqual([]);
 });

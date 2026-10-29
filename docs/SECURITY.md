@@ -60,6 +60,11 @@ operations. Configuration revocation removes the live snapshot, shared
 draft state, validation results, open drawers, and their form controls; slower
 configuration or draft responses cannot repopulate them.
 
+The public bootstrap response is treated as untrusted input. Its API version,
+canonical mount path, gateway-session relationship, and feature dependency graph
+must agree before the browser enables a protected request. A response for a
+different workspace mount cannot redirect or rebind the client and fails closed.
+
 Gateway-secret rotation uses a bounded two-value overlap. The current value is
 mandatory; `SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS` is optional, independently
 validated, and must differ. Both comparisons use the constant-time helper. A

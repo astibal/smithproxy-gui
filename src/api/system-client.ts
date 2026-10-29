@@ -367,11 +367,13 @@ function parseHealth(value: unknown): SystemHealth {
 }
 
 function parseCapabilities(value: unknown): SystemCapabilities {
-  if (!isObject(value) || value.service !== 'smithproxy-gui' || typeof value.api_version !== 'string' ||
+  if (!isObject(value) || value.service !== 'smithproxy-gui' || value.api_version !== 'v1' ||
       typeof value.base_path !== 'string' || !isSmithproxyState(value.smithproxy_state) ||
       !isObject(value.features)) {
     throw new Error('Invalid capabilities response.');
   }
+  const basePath = normalizedPath(value.base_path, 'Capability base path');
+  if (basePath !== value.base_path) throw new Error('Capability base path must be canonical.');
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof features.drafts !== 'boolean' || typeof features.draft_preflight !== 'boolean' ||
@@ -384,20 +386,24 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       typeof features.interface_monitoring !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
   }
-  if ((!features.config_read &&
-       (features.config_write || features.drafts || features.draft_preflight)) ||
-      (features.config_write && !features.drafts) ||
-      (features.draft_preflight && !features.drafts)) {
-    throw new Error('Inconsistent privileged capabilities.');
-  }
   const transactionState = value.config_transaction_state ?? 'unknown';
   if (transactionState !== 'unknown' && !isTransactionCapabilityState(transactionState)) {
     throw new Error('Invalid transaction capability state.');
   }
+  if ((!features.config_read &&
+       (features.config_write || features.drafts || features.draft_preflight)) ||
+      (features.config_write && (!features.drafts || !features.draft_preflight ||
+        transactionState !== 'ready')) ||
+      (features.draft_preflight && !features.drafts)) {
+    throw new Error('Inconsistent privileged capabilities.');
+  }
+  if (features.smithproxy_events && !features.events) {
+    throw new Error('Inconsistent event capabilities.');
+  }
   return {
     service: 'smithproxy-gui',
     apiVersion: value.api_version,
-    basePath: value.base_path,
+    basePath,
     smithproxyState: value.smithproxy_state,
     transactionState,
     features: {
@@ -910,7 +916,13 @@ export class SystemClient {
   }
 
   async capabilities(): Promise<SystemCapabilities> {
-    return parseCapabilities(await this.#request(joinedPath(this.#apiBase, '/capabilities')));
+    const capabilities = parseCapabilities(
+      await this.#request(joinedPath(this.#apiBase, '/capabilities')),
+    );
+    if (capabilities.basePath !== this.#basePath) {
+      throw new Error('Capability base path does not match the application mount.');
+    }
+    return capabilities;
   }
 
   async authSession(): Promise<GatewaySession> {

@@ -58,6 +58,9 @@ odebrání přístupu. Pozdní odpověď nesmí obnovit agregáty, snapshot, dra
 otevřený editor z předchozí access epochy. Unit testy navíc dokazují abort všech
 probíhajících requestů v system, config a draft klientech; samostatný browser
 scénář ověřuje odebrání draft capability při zachování read-only live configu.
+Capability contract testy odmítají nekanonický nebo cizí workspace mount,
+neznámou API verzi a nemožné závislosti transaction, draft a event příznaků ještě
+před prvním chráněným requestem.
 
 Backend integration suite ověřuje SSE content type, zákaz proxy bufferingu,
 management autentizaci, počáteční snapshot, `Last-Event-ID` replay bez duplikace
