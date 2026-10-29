@@ -1,5 +1,12 @@
 import {describe, expect, it} from 'vitest';
-import {statusFromFailure, statusFromHealth, statusFromSnapshot, statusTone} from './system-status';
+import {
+  connectingSystemStatus,
+  displayState,
+  statusFromFailure,
+  statusFromHealth,
+  statusFromSnapshot,
+  statusTone,
+} from './system-status';
 
 describe('system status mapping', () => {
   it('maps a ready health response to a successful online state', () => {
@@ -38,5 +45,26 @@ describe('system status mapping', () => {
     const status = statusFromFailure(new Error('Connection failed'));
     expect(status).toMatchObject({core: 'offline', smithproxy: 'unknown', detail: 'Connection failed'});
     expect(statusTone(status)).toBe('danger');
+  });
+
+  it('uses a bounded fallback for non-error transport failures', () => {
+    expect(statusFromFailure('offline')).toMatchObject({
+      core: 'offline',
+      smithproxy: 'unknown',
+      detail: 'The Smithproxy GUI core is unavailable.',
+    });
+  });
+
+  it('classifies every status tone without conflating unknown state with failure', () => {
+    expect(statusTone(connectingSystemStatus)).toBe('warning');
+    expect(statusTone({...connectingSystemStatus, core: 'online', smithproxy: 'unauthorized'})).toBe('danger');
+    expect(statusTone({...connectingSystemStatus, core: 'online', smithproxy: 'error'})).toBe('danger');
+    expect(statusTone({...connectingSystemStatus, core: 'online', smithproxy: 'unconfigured'})).toBe('warning');
+    expect(statusTone({...connectingSystemStatus, core: 'online', smithproxy: 'unknown'})).toBe('muted');
+  });
+
+  it('formats machine states for presentation', () => {
+    expect(displayState('ready')).toBe('Ready');
+    expect(displayState('')).toBe('');
   });
 });

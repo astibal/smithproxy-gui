@@ -10,6 +10,7 @@ describe('monitoring freshness', () => {
 
   it('distinguishes a missing success from an old one', () => {
     expect(classifyFreshness(null, 5_000, 100_000)).toEqual({state: 'never', ageMs: null});
+    expect(classifyFreshness(Number.NaN, 5_000, 100_000)).toEqual({state: 'never', ageMs: null});
     expect(freshnessLabel('never')).toBe('No data');
   });
 
@@ -19,5 +20,13 @@ describe('monitoring freshness', () => {
 
   it('rejects invalid sampling intervals', () => {
     expect(() => classifyFreshness(90_000, 0, 100_000)).toThrow(RangeError);
+    expect(() => classifyFreshness(90_000, Number.POSITIVE_INFINITY, 100_000)).toThrow(RangeError);
+  });
+
+  it('labels every freshness state', () => {
+    expect(freshnessLabel('fresh')).toBe('Fresh');
+    expect(freshnessLabel('aging')).toBe('Aging');
+    expect(freshnessLabel('stale')).toBe('Stale');
+    expect(freshnessLabel('never')).toBe('No data');
   });
 });

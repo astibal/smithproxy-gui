@@ -41,4 +41,25 @@ describe('DrawerStore', () => {
     expect(store.open({kind: 'address', id: 'address-2', title: 'Address 2'})).toBe(true);
     expect(store.entries).toHaveLength(3);
   });
+
+  it('closes only the top entry and can clear the chain', () => {
+    const store = new DrawerStore();
+    store.closeTop();
+    store.open({kind: 'policy', id: 'office', title: 'office'});
+    store.open({kind: 'address', id: 'office-net', title: 'office-net'});
+
+    store.closeTop();
+    expect(store.entries.map(entry => entry.id)).toEqual(['office']);
+    store.clear();
+    expect(store.entries).toEqual([]);
+  });
+
+  it('ignores invalid close indexes without changing the chain', () => {
+    const store = new DrawerStore();
+    store.open({kind: 'policy', id: 'office', title: 'office'});
+
+    store.closeFrom(-1);
+    store.closeFrom(1);
+    expect(store.entries.map(entry => entry.id)).toEqual(['office']);
+  });
 });

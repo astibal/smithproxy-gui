@@ -34,6 +34,12 @@ CI spouští celý Playwright scénář nad Chromium, Firefox a WebKit. Lokáln�
 vývojový příkaz používá pro rychlost Chromium; shodný tříbrowserový matrix se
 zapíná proměnnou `PLAYWRIGHT_ALL_BROWSERS=1`.
 
+Unit coverage gate měří importovanou API, config, monitoring a state logiku přes
+V8. Aktuální nepodkročitelné globální prahy jsou 83 % statements, 82 % branches,
+94 % functions a 88 % lines. Prahy jsou baseline proti regresi, nikoliv tvrzení,
+že samy o sobě dokazují near-full coverage; browser, C++ a schema matice zůstávají
+samostatnými povinnými důkazy.
+
 ## Backend a API
 
 - unit testy autentizace, autorizace, limitů a normalizace;
@@ -70,6 +76,6 @@ Každý endpoint se testuje pro:
 
 ## Quality gates
 
-Konkrétní procentní prahy se stanoví po prvním vertikálním řezu. Povinné od
-začátku jsou nulové ignorované schema uzly, nulové známé kritické bezpečnostní
-nálezy, průchod contract testů a test klíčové editace přes celý stack.
+Povinné jsou nepodkročení frontend coverage baseline, nulové ignorované schema
+uzly, nulové známé kritické bezpečnostní nálezy, průchod contract testů a test
+klíčové editace přes celý stack.

@@ -49,6 +49,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 pnpm build
 pnpm test:unit
+pnpm test:coverage
 pnpm test:e2e
 ```
 
