@@ -561,6 +561,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           ? new Set(['rules_session_filter'])
           : body.operation.collection === 'tls_profiles'
             ? new Set(['sni_filter_bypass'])
+            : body.operation.collection === 'auth_profiles'
+              ? new Set(['identities'])
             : body.operation.collection === 'tls_ca'
               ? new Set(['path'])
           : body.operation.collection === 'ssh_profiles'
@@ -575,7 +577,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           field,
           sensitiveFields.has(field)
             ? value === '' || (Array.isArray(value) && value.length === 0)
-              ? '[redacted:clear]' : '[redacted:replace]'
+              ? '[redacted:clear]'
+              : field === 'identities' && Array.isArray(value)
+                ? `[redacted:replace:${value.length}]` : '[redacted:replace]'
             : value,
         ])),
       }
@@ -1046,7 +1050,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await identityEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(identityEditor.getByText('Saved to draft')).toBeVisible();
   await expect(identityEditor.getByLabel('Identity name')).toHaveValue('');
-  await expect(identityEditor.getByText(/pending replacement exists; re-enter every value/i)).toBeVisible();
+  await expect(identityEditor.getByText(/pending write-only change exists; re-enter every value/i)).toBeVisible();
   await identityEditor.getByRole('button', {name: 'Cancel'}).click();
   await authenticationEditor.getByLabel('Authenticate').selectOption('false');
   await authenticationEditor.getByLabel('Resolve identities').selectOption('false');
@@ -1199,7 +1203,7 @@ test('validates and clears write-only authentication identities', async ({page})
   ]]);
   await expect(identityEditor.getByText('Saved to draft')).toBeVisible();
   await expect(identityEditor.getByLabel('Draft action')).toHaveValue('replace');
-  await expect(identityEditor.getByText(/pending replacement exists; re-enter every value/i)).toBeVisible();
+  await expect(identityEditor.getByText(/pending write-only change exists; re-enter every value/i)).toBeVisible();
 });
 
 test('saves only fields changed since the editor opened', async ({page}) => {
@@ -2338,9 +2342,34 @@ test('creates complete typed routing detection DNS and authentication profiles',
   await editor.getByLabel('Authenticate').selectOption('true');
   await editor.getByLabel('Resolve identities').selectOption('false');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.locator('.privacy-note')).toContainText('Identity mappings remain managed');
+  await expect(editor.locator('.privacy-note')).toContainText('Save the profile first');
+  await editor.getByRole('button', {name: /No mappings configured Edit/i}).click();
+  const identities = page.getByRole('dialog', {name: 'Edit branch-auth identities'});
+  await identities.getByLabel('Identity name').fill('branch-private-user');
+  await identities.getByLabel('Detection').selectOption('branch-detect');
+  await identities.getByLabel('DNS').selectOption('branch-dns');
+  await identities.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(identities.getByText('Saved to draft')).toBeVisible();
+  await expect(identities.getByLabel('Identity name')).toHaveValue('');
+  await identities.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor.getByRole('button', {name: 'Replaced · redacted · 1 item Edit →'})).toBeVisible();
+  await expect(page.getByText('branch-private-user')).toHaveCount(0);
 
-  expect(state.structuralMutationRequests).toHaveLength(4);
+  await editor.getByLabel('Resolve identities').selectOption('true');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(/Re-enter the complete write-only identity mapping/i)).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(5);
+  await editor.getByRole('button', {name: 'Replaced · redacted · 1 item Edit →'}).click();
+  await identities.getByLabel('Identity name').fill('branch-private-user-next');
+  await identities.getByLabel('Detection').selectOption('branch-detect');
+  await identities.getByLabel('DNS').selectOption('branch-dns');
+  await identities.getByRole('button', {name: 'Save to draft'}).click();
+  await identities.getByRole('button', {name: 'Cancel'}).click();
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(page.getByText('branch-private-user-next')).toHaveCount(0);
+
+  expect(state.structuralMutationRequests).toHaveLength(6);
   expect(state.structuralMutationRequests![0]).toMatchObject({
     expectedVersion: 0, csrf: '1', operation: {
       op: 'create', collection: 'routing', position: {last: true},
@@ -2366,6 +2395,29 @@ test('creates complete typed routing detection DNS and authentication profiles',
     expectedVersion: 3, csrf: '1', operation: {
       op: 'create', collection: 'auth_profiles',
       fields: {name: 'branch-auth', authenticate: true, resolve: false},
+    },
+  });
+  expect(state.structuralMutationRequests![4]).toMatchObject({
+    expectedVersion: 4, csrf: '1', operation: {
+      op: 'create', collection: 'auth_profiles',
+      fields: {
+        name: 'branch-auth', authenticate: true, resolve: false,
+        identities: [{
+          name: 'branch-private-user', detection_profile: 'branch-detect', alg_dns_profile: 'branch-dns',
+        }],
+      },
+    },
+  });
+  expect(state.structuralMutationRequests![5]).toMatchObject({
+    expectedVersion: 5, csrf: '1', operation: {
+      op: 'create', collection: 'auth_profiles',
+      fields: {
+        name: 'branch-auth', authenticate: true, resolve: true,
+        identities: [{
+          name: 'branch-private-user-next', detection_profile: 'branch-detect',
+          alg_dns_profile: 'branch-dns',
+        }],
+      },
     },
   });
   for (const request of state.structuralMutationRequests!) {

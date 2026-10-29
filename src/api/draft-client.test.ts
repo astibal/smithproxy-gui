@@ -108,6 +108,25 @@ describe('DraftClient', () => {
         entity_id: 'cfg:address:old',
       },
     });
+    await client.upsertOperation(3, {
+      op: 'create', localId: 'create-auth-1', collection: 'auth_profiles',
+      clientId: 'create-auth-1', parentId: null, position: {kind: 'last', reference: null},
+      fields: {
+        name: 'branch-auth', authenticate: true, resolve: false,
+        identities: [{name: 'branch_user', detection_profile: 'branch-detect'}],
+      },
+    });
+    expect(JSON.parse(String((fetcher.mock.calls.at(-1)?.[1] as RequestInit).body))).toEqual({
+      expected_version: 3,
+      operation: {
+        op: 'create', local_id: 'create-auth-1', collection: 'auth_profiles',
+        client_id: 'create-auth-1', position: {last: true},
+        fields: {
+          name: 'branch-auth', authenticate: true, resolve: false,
+          identities: [{name: 'branch_user', detection_profile: 'branch-detect'}],
+        },
+      },
+    });
     await expect(client.upsertOperation(-1, {
       op: 'delete', localId: 'delete-address-1', collection: 'address_objects',
       entityId: 'cfg:address:old',
@@ -201,6 +220,15 @@ describe('DraftClient', () => {
     [{
       id: 'workspace-draft', base_revision: null, version: 1, changes: [],
       structural_operations: [{
+        op: 'create', local_id: 'create-auth', collection: 'auth_profiles', client_id: 'create-auth',
+        position: {last: true}, fields: {
+          name: 'branch-auth', identities: [{name: 'private-user', tls_profile: 'inspect'}],
+        },
+      }],
+    }, 'Unredacted sensitive structural draft field'],
+    [{
+      id: 'workspace-draft', base_revision: null, version: 1, changes: [],
+      structural_operations: [{
         op: 'create', local_id: 'create-ca', collection: 'tls_ca', client_id: 'create-ca',
         position: {last: true}, fields: {name: 'private-ca', path: '/private/ca.pem'},
       }],
@@ -239,6 +267,9 @@ describe('DraftClient', () => {
       structural_operations: [{
         op: 'create', local_id: 'create-ca', collection: 'tls_ca', client_id: 'create-ca',
         position: {last: true}, fields: {name: 'private-ca', path: '[redacted:replace]'},
+      }, {
+        op: 'create', local_id: 'create-auth', collection: 'auth_profiles', client_id: 'create-auth',
+        position: {last: true}, fields: {name: 'branch-auth', identities: '[redacted:replace:2]'},
       }],
     }));
     await expect(client.load()).resolves.toMatchObject({version: 1});

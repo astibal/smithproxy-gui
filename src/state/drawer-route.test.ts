@@ -62,6 +62,12 @@ describe('drawer route', () => {
       {kind: 'profile', id: 'authentication-0'},
       {kind: 'auth-identities', id: 'authentication-0'},
     ]);
+    expect(parseDrawerRoute(
+      '?edit=profile-create:create-auth-0,auth-identities-create:create-auth-0',
+    )).toEqual([
+      {kind: 'profile-create', id: 'create-auth-0'},
+      {kind: 'auth-identities-create', id: 'create-auth-0'},
+    ]);
   });
 
   it.each([

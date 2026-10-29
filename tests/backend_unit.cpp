@@ -129,6 +129,23 @@ int main() {
     });
     assert(parsed_create);
     assert(std::get<DraftCreateOperation>(*parsed_create).fields == create_address.fields);
+    const auto parsed_auth_create = parse_draft_structural_operation(nlohmann::json{
+        {"op", "create"}, {"local_id", "create-auth-1"},
+        {"collection", "auth_profiles"}, {"client_id", "new-auth-profile"},
+        {"position", {{"last", true}}},
+        {"fields", {
+            {"name", "branch-auth"}, {"authenticate", true}, {"resolve", false},
+            {"identities", nlohmann::json::array({{
+                {"name", "branch_user"}, {"detection_profile", "branch-detect"},
+                {"alg_dns_profile", "branch-dns"},
+            }})},
+        }},
+    });
+    assert(parsed_auth_create);
+    const auto& auth_create = std::get<DraftCreateOperation>(*parsed_auth_create);
+    assert(valid_draft_structural_operation(auth_create));
+    assert(std::get<DraftAuthIdentities>(auth_create.fields.at("identities")).front().name ==
+           "branch_user");
     assert(!parse_draft_structural_operation(nlohmann::json{
         {"op", "create"}, {"local_id", "create-address-1"},
         {"collection", "address_objects"}, {"client_id", "new-office-network"},

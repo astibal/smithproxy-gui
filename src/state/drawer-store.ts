@@ -1,6 +1,7 @@
 export type DrawerKind =
   'policy' | 'policy-create' | 'address' | 'address-create' | 'port' | 'port-create' | 'protocol' | 'protocol-create' |
-  'profile' | 'profile-create' | 'auth-identities' | 'settings' | 'captures' | 'authority' | 'authority-create' |
+  'profile' | 'profile-create' | 'auth-identities' | 'auth-identities-create' |
+  'settings' | 'captures' | 'authority' | 'authority-create' |
   'signature' | 'signature-create' | 'signature-flow' | 'signature-flow-create' |
   'content-rule' | 'content-rule-create';
 
