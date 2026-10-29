@@ -121,6 +121,12 @@ exactly matches the application mount, and a coherent feature dependency graph.
 Contradictory transaction, draft, or event flags fail closed before any protected
 request is issued.
 
+All browser JSON clients enforce streaming byte limits even when a response omits
+`Content-Length`: 4 MiB for configuration and 8 MiB for draft and system data.
+The reader cancels a chunked body immediately after the boundary is crossed.
+Browser-visible system diagnostics are additionally limited to short,
+control-character-free text.
+
 Without gateway mode, every management API request must carry a canonical
 loopback `Host` authority. This keeps local standalone monitoring inaccessible
 through DNS rebinding while leaving the bounded orchestration health probe

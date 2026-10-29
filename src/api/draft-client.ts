@@ -1,5 +1,6 @@
 import {httpStatusError} from './http-error';
 import {isCanonicalRevisionOrNull} from './revision';
+import {boundedJson} from './bounded-json';
 
 export type DraftScalar = boolean | number | string | ReadonlyArray<string> | ReadonlyArray<number>;
 
@@ -108,38 +109,6 @@ function scalar(value: unknown): DraftScalar {
     return value;
   }
   throw new Error('Invalid draft scalar.');
-}
-
-async function boundedJson(response: Response): Promise<unknown> {
-  const declaredLength = response.headers.get('Content-Length');
-  if (declaredLength !== null &&
-      (!/^\d+$/u.test(declaredLength) || Number(declaredLength) > MAX_DRAFT_RESPONSE_BYTES)) {
-    throw new Error('Draft response exceeded the size limit.');
-  }
-  if (!response.body) return JSON.parse(await response.text()) as unknown;
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8', {fatal: true});
-  let size = 0;
-  let payload = '';
-  try {
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_DRAFT_RESPONSE_BYTES) {
-        await reader.cancel();
-        throw new Error('Draft response exceeded the size limit.');
-      }
-      payload += decoder.decode(value, {stream: true});
-    }
-    payload += decoder.decode();
-    return JSON.parse(payload) as unknown;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('size limit')) throw error;
-    throw new Error('Draft API returned invalid JSON.');
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 function parseDraft(value: unknown): DraftSnapshot {
@@ -395,7 +364,7 @@ export class DraftClient {
         signal: controller.signal,
       });
       if (!response.ok) throw httpStatusError(response, 'Draft API');
-      return await boundedJson(response);
+      return await boundedJson(response, MAX_DRAFT_RESPONSE_BYTES, 'Draft');
     } finally {
       globalThis.clearTimeout(timeout);
       this.#pendingRequests.delete(controller);

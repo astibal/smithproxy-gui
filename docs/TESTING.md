@@ -62,6 +62,11 @@ Capability contract testy odmítají nekanonický nebo cizí workspace mount,
 neznámou API verzi a nemožné závislosti transaction, draft a event příznaků ještě
 před prvním chráněným requestem.
 
+Shared bounded-JSON testy dělí vícebajtové UTF-8 mezi chunky, překračují limit
+bez `Content-Length`, ověřují aktivní zrušení streamu a odmítají chybnou délku,
+UTF-8 i JSON. System klient navíc testuje deklarovaný oversize payload a
+neomezený nebo control-bearing diagnostický text.
+
 Backend integration suite ověřuje SSE content type, zákaz proxy bufferingu,
 management autentizaci, počáteční snapshot, `Last-Event-ID` replay bez duplikace
 a reset expirované kontinuity. Frontend unit testy ověřují workspace prefix,

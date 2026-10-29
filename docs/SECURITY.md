@@ -65,6 +65,13 @@ canonical mount path, gateway-session relationship, and feature dependency graph
 must agree before the browser enables a protected request. A response for a
 different workspace mount cannot redirect or rebind the client and fails closed.
 
+Every JSON response crosses a streaming byte boundary before `JSON.parse`.
+Declared oversize responses are rejected without reading the body; undeclared
+chunked responses are counted by bytes and actively cancelled at the limit.
+This prevents monitoring and audit endpoints from becoming a browser-memory DoS
+path. Short diagnostic text limits also prevent control-character injection and
+unbounded DOM content.
+
 Gateway-secret rotation uses a bounded two-value overlap. The current value is
 mandatory; `SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS` is optional, independently
 validated, and must differ. Both comparisons use the constant-time helper. A

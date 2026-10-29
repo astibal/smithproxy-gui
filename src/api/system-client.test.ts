@@ -763,6 +763,30 @@ describe('SystemClient', () => {
     await expect(client.health()).rejects.toThrow('HTTP 503');
   });
 
+  it('rejects oversized system responses before JSON parsing', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => new Response('{}', {
+      headers: {'Content-Length': String(8 * 1024 * 1024 + 1)},
+    }));
+    await expect(client.status()).rejects.toThrow('size limit');
+  });
+
+  it('rejects unbounded or control-bearing diagnostic text', async () => {
+    const health = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      status: 'ok', smithproxy: {state: 'ready', detail: 'Connected\nInjected', checked_at_unix_ms: 1},
+    }));
+    await expect(health.health()).rejects.toThrow('Invalid Smithproxy health response');
+
+    const metrics = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', detail: 'x'.repeat(257), checked_at_unix_ms: 1,
+      last_success_at_unix_ms: 1,
+      totals: {workers: 0, sessions_total: 0, sessions_active: 0, bytes_up: 0, bytes_down: 0},
+      listeners: [], history: [{
+        state: 'ready', checked_at_unix_ms: 1, sessions_active: 0, bytes_up: 0, bytes_down: 0,
+      }],
+    }));
+    await expect(metrics.metricsSummary()).rejects.toThrow('Invalid runtime metrics response');
+  });
+
   it('cancels all in-flight management requests', async () => {
     const signals: AbortSignal[] = [];
     const fetcher = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {

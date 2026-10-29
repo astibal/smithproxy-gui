@@ -1,4 +1,7 @@
 import {httpStatusError} from './http-error';
+import {boundedJson} from './bounded-json';
+
+const MAX_SYSTEM_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 export type SmithproxyState =
   | 'starting'
@@ -289,6 +292,11 @@ function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isDiagnosticText(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256 &&
+    !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
 function isSmithproxyState(value: unknown): value is SmithproxyState {
   return typeof value === 'string' &&
     ['starting', 'ready', 'unreachable', 'unauthorized', 'unconfigured', 'error'].includes(value);
@@ -359,7 +367,7 @@ function parseHealth(value: unknown): SystemHealth {
     throw new Error('Invalid health response.');
   }
   const {state, detail, checked_at_unix_ms: checkedAtUnixMs} = value.smithproxy;
-  if (!isSmithproxyState(state) || typeof detail !== 'string' ||
+  if (!isSmithproxyState(state) || !isDiagnosticText(detail) ||
       !(checkedAtUnixMs === null || isPlausibleTimestamp(checkedAtUnixMs))) {
     throw new Error('Invalid Smithproxy health response.');
   }
@@ -441,7 +449,7 @@ function parseStatus(value: unknown): SystemSnapshot {
   }
   const source = value.smithproxy;
   if (typeof source.configured !== 'boolean' || !isSmithproxyState(source.state) ||
-      typeof source.detail !== 'string' || !isNullableNonNegativeInteger(source.checked_at_unix_ms) ||
+      !isDiagnosticText(source.detail) || !isNullableNonNegativeInteger(source.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(source.last_success_at_unix_ms) ||
       !coherentSampleTimes(source.state, source.checked_at_unix_ms, source.last_success_at_unix_ms) ||
       !isNullableNonNegativeInteger(source.latency_ms) || !isNonNegativeInteger(source.total_probes) ||
@@ -513,7 +521,7 @@ function parseMetricsCounters(value: unknown): Omit<ListenerMetrics, 'name'> {
 }
 
 function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
-  if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || !isDiagnosticText(value.detail) ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
       !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
@@ -566,7 +574,7 @@ function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
 }
 
 function parseSessionActivity(value: unknown): SessionActivitySnapshot {
-  if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || !isDiagnosticText(value.detail) ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
       !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
@@ -614,7 +622,7 @@ function parseSessionActivity(value: unknown): SessionActivitySnapshot {
 }
 
 function parseTlsCache(value: unknown): TlsCacheSnapshot {
-  if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || !isDiagnosticText(value.detail) ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
       !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
@@ -633,7 +641,7 @@ function parseTlsCache(value: unknown): TlsCacheSnapshot {
 }
 
 function parseNeighbors(value: unknown): NeighborSnapshot {
-  if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || !isDiagnosticText(value.detail) ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
       !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
@@ -660,7 +668,7 @@ function parseNeighbors(value: unknown): NeighborSnapshot {
 }
 
 function parseInterfaces(value: unknown): InterfaceSnapshot {
-  if (!isObject(value) || !isInterfaceMonitorState(value.state) || typeof value.detail !== 'string' ||
+  if (!isObject(value) || !isInterfaceMonitorState(value.state) || !isDiagnosticText(value.detail) ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
       !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
@@ -1045,7 +1053,7 @@ export class SystemClient {
         signal: controller.signal,
       });
       if (!response.ok) throw httpStatusError(response, 'System API');
-      return await response.json() as unknown;
+      return await boundedJson(response, MAX_SYSTEM_RESPONSE_BYTES, 'System');
     } finally {
       globalThis.clearTimeout(timeout);
       this.#pendingRequests.delete(controller);

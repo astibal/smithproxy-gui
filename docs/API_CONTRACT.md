@@ -355,6 +355,12 @@ tail whose state or timestamp contradicts its enclosing snapshot. A remote
 timestamp can therefore never remain artificially fresh by being far in the
 future.
 
+System JSON responses have an 8 MiB browser-side streaming limit, including
+chunked responses without a declared length. The same shared reader enforces
+4 MiB for live configuration and 8 MiB for draft responses. Crossing a limit
+cancels the response stream before parsing. Health and collector diagnostic
+details contain 1–256 characters and reject ASCII controls.
+
 `/events/recent` currently exposes at most 60 structured GUI-core control-plane
 and backend-job state transitions. Messages are generated from a fixed vocabulary and validated
 for length and control characters in the browser client. The capability response

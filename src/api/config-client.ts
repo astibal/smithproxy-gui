@@ -16,6 +16,7 @@ import type {
 } from './models';
 import {httpStatusError} from './http-error';
 import {isCanonicalRevisionOrNull} from './revision';
+import {boundedJson} from './bounded-json';
 
 type JsonObject = Record<string, unknown>;
 type Usage = ConfigUsage;
@@ -108,38 +109,6 @@ function normalizedPath(value: string): string {
     throw new Error('API base cannot contain relative path segments.');
   }
   return segments.length === 0 ? '/' : `/${segments.join('/')}`;
-}
-
-async function boundedJson(response: Response): Promise<unknown> {
-  const declaredLength = response.headers.get('Content-Length');
-  if (declaredLength !== null && (!/^\d+$/u.test(declaredLength) || Number(declaredLength) > MAX_RESPONSE_BYTES)) {
-    throw new Error('Configuration response exceeded the size limit.');
-  }
-  if (!response.body) return JSON.parse(await response.text()) as unknown;
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8', {fatal: true});
-  let size = 0;
-  let text = '';
-  try {
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_RESPONSE_BYTES) {
-        await reader.cancel();
-        throw new Error('Configuration response exceeded the size limit.');
-      }
-      text += decoder.decode(value, {stream: true});
-    }
-    text += decoder.decode();
-    return JSON.parse(text) as unknown;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('size limit')) throw error;
-    throw new Error('Configuration API returned invalid JSON.');
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 function parseAddress(value: unknown): MutableAddress {
@@ -1028,7 +997,7 @@ export class ApiConfigClient implements ConfigClient {
         signal: controller.signal,
       });
       if (!response.ok) throw httpStatusError(response, 'Configuration API');
-      return parseConfigSnapshot(await boundedJson(response));
+      return parseConfigSnapshot(await boundedJson(response, MAX_RESPONSE_BYTES, 'Configuration'));
     } finally {
       globalThis.clearTimeout(timeout);
       this.#pendingRequests.delete(controller);
