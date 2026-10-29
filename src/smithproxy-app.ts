@@ -3510,7 +3510,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderSearchResults() {
     const query = this.searchQuery.trim().toLocaleLowerCase();
-    if (!query || !this.snapshot) return html`<div class="empty-state"><h2>Search</h2><p>Enter a policy or object name.</p></div>`;
+    if (!query || !this.snapshot) return html`<div class="empty-state"><h2>Search</h2><p>Enter a configuration name, type, value, or field.</p></div>`;
     const policies = this.snapshot.policies.map((item, index) => {
       const base = `policy.[${index}]`;
       const name = this.presentedValue(`${base}.name`, item.name);
@@ -3558,9 +3558,107 @@ export class SmithproxyApp extends LitElement {
     const profiles = this.snapshot.profiles.map(item => {
       const prefix = profilePrefixes.get(item.id);
       const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
-      return {item, name, matches: this.searchMatches([name, item.type], query)};
+      const details: Array<string | number> = [name, item.type];
+      if (item.routing) details.push(
+        ...item.routing.destinationAddresses, ...item.routing.destinationPorts,
+        item.routing.loadBalancingMethod, item.routing.rewriteSni, item.routing.rewriteSniTo,
+      );
+      if (item.tls) details.push(
+        item.tls.clientCertificateAction, item.tls.alerts, item.tls.clientHelloTimeoutMs,
+        item.tls.handshakeTimeoutMs, ...item.tls.redirectWarningPorts,
+      );
+      if (item.detection) details.push(
+        item.detection.mode, Number(item.detection.enginesEnabled), Number(item.detection.knowledgeBaseEnabled),
+      );
+      if (item.content) details.push(
+        item.content.writeFormat, item.content.ruleCount, Number(item.content.writePayload),
+        Number(item.content.webhookEnabled),
+      );
+      if (item.ssh) details.push(item.ssh.hostKeyPolicy);
+      if (item.script) details.push(item.script.runtime);
+      if (item.authentication) details.push(item.authentication.identityCount);
+      return {item, name, matches: this.searchMatches(details, query)};
     }).filter(item => item.matches);
-    const count = policies.length + addresses.length + ports.length + protocols.length + profiles.length;
+    const authorities = (this.snapshot.securityAssets?.certificateAuthorities ?? []).map((item, index) => {
+      const name = this.presentedValue(`tls_ca.[${index}].name`, item.name);
+      const detail = item.pathConfigured ? 'Path configured · redacted' : 'Path not configured';
+      return {
+        item, name, detail,
+        matches: this.searchMatches([name, 'certificate authority', 'ca', detail], query),
+      };
+    }).filter(item => item.matches);
+    const signatureIndexes = {starttls: 0, detection: 0};
+    const signatures = (this.snapshot.securityAssets?.signatures ?? []).map(item => {
+      const index = signatureIndexes[item.kind]++;
+      const base = `${item.kind}_signatures.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const category = this.presentedValue(`${base}.cat`, item.category);
+      const side = this.presentedValue(`${base}.side`, item.side);
+      const severity = this.presentedValue(`${base}.severity`, item.severity);
+      const group = this.presentedValue(`${base}.group`, item.group);
+      const enables = this.presentedValue(`${base}.enables`, item.enables);
+      const engine = this.presentedValue(`${base}.engine`, item.engine);
+      const values: Array<string | number> = [
+        name, category, side, severity, group, enables, engine,
+        item.kind, 'signature', item.flow.length,
+      ];
+      for (const [flowIndex, flow] of item.flow.entries()) {
+        const flowBase = `${base}.flow.[${flowIndex}]`;
+        values.push(
+          this.presentedValue(`${flowBase}.side`, flow.side),
+          this.presentedValue(`${flowBase}.type`, flow.type),
+          this.presentedValue(`${flowBase}.bytes_start`, flow.bytesStart),
+          this.presentedValue(`${flowBase}.bytes_max`, flow.bytesMax),
+        );
+      }
+      return {
+        item, name, detail: `${item.kind.toUpperCase()} · ${category || 'uncategorized'} · ${item.flow.length} flow`,
+        matches: this.searchMatches(values, query),
+      };
+    }).filter(item => item.matches);
+    const contentProfileIndexes = new Map(
+      this.snapshot.profiles.filter(item => item.content !== null).map((item, index) => [item.id, index]),
+    );
+    const contentRules = this.snapshot.profiles.flatMap(profile => {
+      if (!profile.content) return [];
+      const profileIndex = contentProfileIndexes.get(profile.id) ?? -1;
+      const profileName = profilePrefixes.get(profile.id)
+        ? this.presentedValue(`${profilePrefixes.get(profile.id)!}name`, profile.name)
+        : profile.name;
+      return profile.content.rules.map((item, index) => {
+        const base = `content_profiles.[${profileIndex}].content_rules.[${index}]`;
+        const fillLength = this.presentedValue(`${base}.fill_length`, item.fillLength);
+        const replaceEachNth = this.presentedValue(`${base}.replace_each_nth`, item.replaceEachNth);
+        return {
+          item,
+          name: `${profileName} · rule ${index + 1}`,
+          detail: `${item.replacementConfigured ? 'Replacement configured' : 'No replacement'} · every ${replaceEachNth}`,
+          matches: this.searchMatches([
+            profileName, 'content rule', index + 1, Number(fillLength), replaceEachNth,
+            item.matchConfigured ? 'match configured' : 'match missing',
+            item.replacementConfigured ? 'replacement configured' : 'no replacement',
+          ], query),
+        };
+      });
+    }).filter(item => item.matches);
+    const settings = this.snapshot.settings;
+    const systemMatches = settings ? this.searchMatches([
+      'system', 'settings', 'traffic admission', 'workers', 'listener ports', 'logging', 'syslog',
+      'http api', 'webhook', 'sift', 'socks', 'nameservers', 'performance tuning', 'debug logging',
+      ...Object.values(settings.workers), ...Object.values(settings.ports),
+      settings.logging.level, settings.logging.syslogPort, settings.auxiliary.cliPort,
+      settings.nameserverCount, settings.httpApi.allowedIpCount, settings.httpApi.keyCount,
+      settings.webhook.siftLoredMode,
+      ...(this.snapshot.debug?.moduleOverrides.flatMap(item => [item.name, String(item.value)]) ?? []),
+    ], query) : false;
+    const captures = this.snapshot.captures;
+    const capturesMatch = captures ? this.searchMatches([
+      'capture', 'captures', 'local capture', 'remote capture', 'gre', captures.local.format,
+      captures.local.quotaMiB, captures.remote.tunnelType, captures.remote.greFormat,
+      captures.remote.ttl, Number(captures.local.enabled), Number(captures.remote.enabled),
+    ], query) : false;
+    const count = policies.length + addresses.length + ports.length + protocols.length + profiles.length +
+      authorities.length + signatures.length + contentRules.length + Number(systemMatches) + Number(capturesMatch);
     const row = (kind: string, name: string, detail: string, open: (origin: HTMLElement) => void) => html`
       <button class="row object-row" type="button"
         @click=${(event: MouseEvent) => open(event.currentTarget as HTMLElement)}>
@@ -3577,6 +3675,11 @@ export class SmithproxyApp extends LitElement {
             ${ports.map(result => row('Port', result.name, result.start === result.end ? String(result.start) : `${result.start}–${result.end}`, origin => this.openPort(result.item.id, origin)))}
             ${protocols.map(result => row('Protocol', result.name, String(result.number), origin => this.openProtocol(result.item.id, origin)))}
             ${profiles.map(result => row('Profile', result.name, result.item.type, origin => this.openProfile(result.item.id, origin)))}
+            ${contentRules.map(result => row('Content rule', result.name, result.detail, origin => this.openContentRule(result.item.id, origin)))}
+            ${authorities.map(result => row('Certificate authority', result.name, result.detail, origin => this.openAuthority(result.item.id, origin)))}
+            ${signatures.map(result => row('Signature', result.name, result.detail, origin => this.openSignature(result.item.id, origin)))}
+            ${systemMatches ? row('System', 'System settings', 'Typed runtime configuration', origin => this.openSystemDrawer('settings', origin)) : nothing}
+            ${capturesMatch ? row('Captures', 'Capture settings', 'Local and remote capture', origin => this.openSystemDrawer('captures', origin)) : nothing}
           </div>`}
       </div>`;
   }
@@ -6187,7 +6290,7 @@ export class SmithproxyApp extends LitElement {
                 }}>Review draft · ${this.draftChangeCount}</button>
             ` : nothing}
             <input class="search" type="search" aria-label="Search" maxlength="128"
-              placeholder="Search policies and objects" .value=${this.searchQuery}
+              placeholder="Search configuration" .value=${this.searchQuery}
               @input=${(event: InputEvent) => this.updateSearch((event.currentTarget as HTMLInputElement).value)} />
           </header>
           <div class="workspace">

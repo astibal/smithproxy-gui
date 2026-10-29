@@ -155,6 +155,10 @@ draft-version check.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls.
+The global configuration search covers policies, reusable objects, profiles,
+content rules, certificate authorities, protocol signatures, system settings,
+and capture settings. Results use pending draft values and open the matching
+nested editor directly; write-only values never enter the search index.
 Augment provenance preserves both scalar and homogeneous string or integer list
 values, so reference collections are not flattened when upstream support arrives.
 

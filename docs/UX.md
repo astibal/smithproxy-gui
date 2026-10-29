@@ -21,6 +21,11 @@
 Navigace je záměrně doménová, ne kopií struktury konfiguračního souboru.
 Konkrétní položky se mohou během coverage mapování změnit.
 
+Globální hledání pokrývá všechny čitelné konfigurační entity včetně policy,
+objektů, profilů, content rules, certifikačních autorit, signatur, System a
+Captures. Používá pending hodnoty ze sdíleného draftu a výsledek otevře přímo
+ve správné kartě řetězce. Write-only hodnoty se neindexují ani nezobrazují.
+
 Provozní položky ve stavové liště používají stejné severity barvy jako monitoring
 a slouží jako zkratky do detailu. Na úzkém viewportu zůstává viditelný pouze
 stav GUI core a Smithproxy; fronta úloh se zobrazí až s reálným backend API.

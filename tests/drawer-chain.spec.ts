@@ -2604,8 +2604,14 @@ test('rotates nested content rules without exposing expressions', async ({page})
   await expect(page.getByRole('dialog', {name: 'Edit Content rule 1'})).toBeVisible();
 });
 
-test('searches policies and configuration objects without unsafe markup', async ({page}) => {
-  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+test('searches the complete readable configuration without unsafe markup', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    initialDraftChanges: [
+      {path: 'tls_ca.[0].name', value: 'branch-ca'},
+      {path: 'detection_signatures.[0].engine', value: 'pending-http-engine'},
+    ],
+  }, true);
   await page.goto('/');
   const search = page.getByRole('searchbox', {name: 'Search'});
 
@@ -2622,6 +2628,42 @@ test('searches policies and configuration objects without unsafe markup', async 
   await expect(page.getByText('2 matches for “default-ssh”')).toBeVisible();
   await expect(results.getByText('Policy', {exact: true})).toBeVisible();
   await expect(results.getByText('Profile', {exact: true})).toBeVisible();
+
+  await search.fill('pending-http-engine');
+  const signatureResult = results.getByRole('button').filter({hasText: 'Signature'});
+  await expect(signatureResult).toContainText('http/request');
+  await signatureResult.click();
+  await expect(page.getByRole('dialog', {name: 'Edit http/request'})).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await search.fill('certificate authority');
+  const authorityResult = results.getByRole('button').filter({hasText: 'Certificate authority'});
+  await expect(authorityResult).toContainText('branch-ca');
+  await expect(authorityResult).toContainText('Path configured · redacted');
+  await authorityResult.click();
+  await expect(page.getByRole('dialog', {name: 'Edit branch-ca'})).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await search.fill('content rule');
+  const contentRuleResults = results.getByRole('button').filter({hasText: 'Content rule'});
+  await expect(contentRuleResults).toHaveCount(2);
+  await contentRuleResults.first().click();
+  await expect(page.getByRole('dialog', {name: 'Edit Content rule 1'})).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await search.fill('syslog');
+  const systemResult = results.getByRole('button').filter({hasText: 'System settings'});
+  await expect(systemResult).toBeVisible();
+  await systemResult.click();
+  await expect(page.getByRole('dialog', {name: 'Edit System settings'})).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await search.fill('remote capture');
+  const captureResult = results.getByRole('button').filter({hasText: 'Capture settings'});
+  await expect(captureResult).toBeVisible();
+  await captureResult.click();
+  await expect(page.getByRole('dialog', {name: 'Edit Capture settings'})).toBeVisible();
+  await page.keyboard.press('Escape');
 
   await search.fill('<script>');
   await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
