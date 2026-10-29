@@ -397,6 +397,7 @@ export class SmithproxyApp extends LitElement {
     .listener-table th { color: var(--app-muted); font-size: 12px; font-weight: 600; }
     .listener-table tbody tr:last-child td { border-bottom: 0; }
     .listener-name { font-weight: 650; }
+    .collector-table { overflow-x: auto; margin-top: 14px; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 3px; color: var(--app-muted); }
     .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
     .origin-note { padding: 9px 11px; border-left: 3px solid var(--app-warning); background: var(--app-warning-bg); color: var(--app-muted); font-size: 12px; }
@@ -3045,8 +3046,9 @@ export class SmithproxyApp extends LitElement {
     state: string,
     lastSuccessAtUnixMs: number | null,
     expectedIntervalMs: number,
+    knownFreshness?: FreshnessState,
   ): CollectorPresentation {
-    const freshness = classifyFreshness(lastSuccessAtUnixMs, expectedIntervalMs).state;
+    const freshness = knownFreshness ?? classifyFreshness(lastSuccessAtUnixMs, expectedIntervalMs).state;
     const ready = state === 'ready';
     const tone: StatusTone = !ready
       ? state === 'unavailable' ? 'danger' : 'warning'
@@ -3429,6 +3431,75 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderCollectorMatrix() {
+    const collectors = [
+      {
+        name: 'Runtime metrics', state: this.runtimeMetrics.state,
+        lastSuccessAtUnixMs: this.runtimeMetrics.lastSuccessAtUnixMs,
+        expectedIntervalMs: 5_000, detail: this.runtimeMetrics.detail,
+      },
+      {
+        name: 'Session activity', state: this.sessionActivity.state,
+        lastSuccessAtUnixMs: this.sessionActivity.lastSuccessAtUnixMs,
+        expectedIntervalMs: 10_000, detail: this.sessionActivity.detail,
+      },
+      {
+        name: 'TLS cache', state: this.tlsCache.state,
+        lastSuccessAtUnixMs: this.tlsCache.lastSuccessAtUnixMs,
+        expectedIntervalMs: 5_000, detail: this.tlsCache.detail,
+      },
+      {
+        name: 'Network neighbors', state: this.neighbors.state,
+        lastSuccessAtUnixMs: this.neighbors.lastSuccessAtUnixMs,
+        expectedIntervalMs: 30_000, detail: this.neighbors.detail,
+      },
+    ].map(item => {
+      const freshness = classifyFreshness(
+        item.lastSuccessAtUnixMs, item.expectedIntervalMs,
+      ).state;
+      return {
+        ...item,
+        freshness,
+        presentation: this.collectorPresentation(
+          item.state, item.lastSuccessAtUnixMs, item.expectedIntervalMs, freshness,
+        ),
+      };
+    });
+    return html`
+      <section class="monitor-panel" aria-label="Collector health matrix">
+        <div class="runtime-heading">
+          <div><h3>Collector health matrix</h3><p>Reported state and interval-aware data freshness</p></div>
+          <span class="runtime-state">${collectors.filter(item =>
+            item.presentation.current).length}/${collectors.length} current</span>
+        </div>
+        <div class="table collector-table" tabindex="0" aria-label="Scrollable collector health table">
+          <table class="listener-table" aria-label="Collector health">
+            <thead><tr>
+              <th>Collector</th><th>Reported state</th><th>Data freshness</th>
+              <th>Expected cadence</th><th>Last success</th>
+            </tr></thead>
+            <tbody>
+              ${collectors.map(item => {
+                return html`<tr>
+                  <td class="listener-name">${item.name}</td>
+                  <td><span class="runtime-state ${item.presentation.tone}" title=${item.detail}>
+                    ● ${displayState(item.state)}
+                  </span></td>
+                  <td><span class="runtime-state ${this.freshnessTone(item.freshness)}">
+                    ● ${freshnessLabel(item.freshness)}
+                  </span></td>
+                  <td>${item.expectedIntervalMs / 1_000}s</td>
+                  <td title=${this.timeLabel(item.lastSuccessAtUnixMs)}>
+                    ${this.sampleAgeLabel(item.lastSuccessAtUnixMs)}
+                  </td>
+                </tr>`;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>`;
+  }
+
   private renderMonitoring() {
     const metrics = this.runtimeMetrics;
     return html`
@@ -3436,8 +3507,8 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
         </div>
-        ${this.renderOperationalHealth()}
         ${this.renderActiveAlerts()}
+        ${this.renderCollectorMatrix()}
         ${this.renderProbeAnalysis()}
         ${this.renderProbeIncidents()}
         ${this.renderRuntimeSummary()}

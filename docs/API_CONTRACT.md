@@ -312,6 +312,11 @@ aging or stale values change the visual state and are explicitly labeled as the
 last known sample. A listener backed by stale data is never presented as
 currently `Running`.
 
+The Monitoring view also presents a single collector health matrix. It keeps
+the server-reported state separate from interval-aware freshness and shows the
+expected cadence plus the age of the last successful sample for runtime metrics,
+session activity, TLS cache, and network-neighbor aggregates.
+
 Browser validation permits at most five minutes of positive clock skew. It
 rejects health, collector, event, alert, audit, and job snapshots beyond that
 tolerance; `last_success` after `checked`; non-monotonic histories; and a history

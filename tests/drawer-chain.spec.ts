@@ -1377,6 +1377,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).toContainText('Alerts: Clear');
   await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
   await expect(incidentTimeline).toContainText('No control-plane incident was observed');
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   const health = page.getByRole('region', {name: 'Operational health matrix'});
   await expect(health.getByRole('heading', {name: 'Control plane'})).toBeVisible();
   await expect(health.getByRole('heading', {name: 'TLS cache'})).toBeVisible();
@@ -1458,6 +1459,15 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
   await expect(page.getByRole('region', {name: 'Runtime metrics summary'})).toContainText('19');
   await expect(page.getByRole('region', {name: 'Active operational alerts'})).toContainText('Clear');
   expect(pending.size).toBe(0);
+
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  const collectorHealth = page.getByRole('table', {name: 'Collector health'});
+  await expect(collectorHealth.getByRole('row')).toHaveCount(5);
+  await expect(collectorHealth.getByRole('row').filter({hasText: 'Runtime metrics'}))
+    .toContainText('Ready');
+  await expect(collectorHealth.getByRole('row').filter({hasText: 'Runtime metrics'}))
+    .toContainText('Fresh');
+  await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('4/4 current');
 });
 
 test('marks delayed aggregate collectors and retained values as stale', async ({page}) => {
@@ -1481,6 +1491,9 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Session activity'})).toContainText('Ready · Stale');
+  const collectorHealth = page.getByRole('table', {name: 'Collector health'});
+  await expect(collectorHealth.getByRole('row').filter({hasText: 'Stale'})).toHaveCount(4);
+  await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('0/4 current');
 });
 
 test('surfaces active backend work in the status bar and System view', async ({page}) => {
@@ -2046,6 +2059,12 @@ test('meets automated WCAG rules across primary and nested views', async ({page}
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Policies'})).toBeVisible();
   await expectNoWcagViolations(page);
+
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await expect(page.getByRole('table', {name: 'Collector health'})).toBeVisible();
+  await expectNoWcagViolations(page);
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
 
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
   const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
