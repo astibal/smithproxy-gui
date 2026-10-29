@@ -1107,6 +1107,71 @@ test('renames an already pending entity without retaining an intermediate refere
   await expect(page.getByText('Draft: 3 changes')).toBeVisible();
 });
 
+test('removes ordinary pending values when editors restore the live configuration', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    draftReconcileRequests: [],
+    initialDraftChanges: [
+      {path: 'policy.[0].action', value: 'reject'},
+      {path: 'settings.ssl_workers', value: 8},
+    ],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 2'}).click();
+  await page.getByRole('button', {name: 'Edit policy.[0].action'}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await policyEditor.getByLabel('Action', {exact: true}).fill('accept');
+  await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftReconcileRequests?.[0]).toEqual({
+    expectedVersion: 1,
+    changes: [],
+    removePaths: ['policy.[0].action'],
+  });
+  await policyEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Edit settings.ssl_workers'}).click();
+  const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await settingsEditor.getByLabel('TLS workers', {exact: true}).fill('4');
+  await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftReconcileRequests?.[1]).toEqual({
+    expectedVersion: 2,
+    changes: [],
+    removePaths: ['settings.ssl_workers'],
+  });
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
+});
+
+test('removes a pending rename and its cascaded references when restored', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    draftReconcileRequests: [],
+    initialDraftChanges: [
+      {path: 'address_objects.[1].name', value: 'public-internet'},
+      {path: 'policy.[0].dst', value: ['public-internet']},
+      {path: 'routing.[0].dnat_address', value: ['public-internet']},
+    ],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button').filter({hasText: 'public-internet'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit public-internet'});
+  await editor.getByLabel('Name').fill('internet');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftReconcileRequests).toEqual([{
+    expectedVersion: 1,
+    changes: [],
+    removePaths: [
+      'address_objects.[1].name',
+      'policy.[0].dst',
+      'routing.[0].dnat_address',
+    ],
+  }]);
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
+});
+
 test('validates the immutable workspace draft through the Smithproxy transaction', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',

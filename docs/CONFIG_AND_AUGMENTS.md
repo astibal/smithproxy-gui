@@ -96,6 +96,11 @@ přejmenování nenechá ve draftu starý mezistupeň. Duplicitní jméno je odm
 pokud je některá dotčená reference vlastněná aktivním augmentem, nevznikne ani
 částečný rename draft.
 
+Frontend udržuje přesný registr čitelných persistentních hodnot všech typed
+editorů. Pokud operátor vrátí scalar, seznam nebo celý rename řetěz na live
+hodnotu, reconcile změnu z draftu odstraní i v instalaci bez augment provenance.
+Write-only a redigované hodnoty v registru záměrně nejsou.
+
 Base revision se získává dvěma ohraničujícími čteními kanonické SHA-256 revize
 před a po načtení všech config sekcí. Draft se na ni naváže pouze při shodě obou
 čtení. Změna revize prázdného draftu zvýší jeho verzi; neprázdný draft se nikdy

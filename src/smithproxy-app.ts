@@ -42,6 +42,7 @@ import {
   type TransactionCapabilityState,
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
+import {persistentConfigurationValues} from './config/persistent-values';
 import {
   buildDiagnosticsReport,
   serializeDiagnosticsReport,
@@ -2313,10 +2314,11 @@ export class SmithproxyApp extends LitElement {
       return;
     }
     const pendingPaths = new Set((this.workspaceDraft?.changes ?? []).map(change => change.path));
+    const persistentValues = this.snapshot ? persistentConfigurationValues(this.snapshot) : undefined;
     const removePaths: string[] = [];
     const upserts: DraftChange[] = [];
     for (const change of edited) {
-      const persistent = this.valueOrigin(change.path)?.persistentValue;
+      const persistent = this.valueOrigin(change.path)?.persistentValue ?? persistentValues?.get(change.path);
       if (pendingPaths.has(change.path) && persistent !== undefined &&
           this.configValuesEqual(persistent, change.value)) {
         removePaths.push(change.path);
