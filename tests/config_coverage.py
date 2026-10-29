@@ -29,6 +29,24 @@ READ_STATUSES = {"full", "partial", "metadata", "unsupported"}
 EDIT_STATUSES = {"typed", "partial", "none"}
 ORIGINS = {"reference_config", "api_extension"}
 
+FULL_TYPED_FIELDS = {
+    "detection_profiles": {"name", "mode", "engines_enabled", "kb_enabled"},
+    "captures": {
+        "local.enabled", "local.dir", "local.file_prefix", "local.file_suffix",
+        "local.pcap_quota", "local.format", "remote.enabled", "remote.tun_type",
+        "remote.gre_format", "remote.tun_dst", "remote.tun_ttl",
+        "remote.bind_interface", "options.calculate_checksums",
+    },
+    "ssh_profiles": {
+        "name", "host_key", "hostkey_policy", "shell", "exec", "subsystem",
+        "pty", "environment", "local_forward", "remote_forward", "x11", "agent",
+    },
+    "routing": {
+        "name", "dnat_address", "dnat_port", "dnat_lb_method", "rewrite_sni", "rewrite_sni_to",
+    },
+    "script_profiles": {"name", "type", "script-file"},
+}
+
 
 def fail(message: str) -> None:
     raise AssertionError(message)
@@ -78,6 +96,15 @@ def main() -> None:
             fail(f"{name}: unsupported sections cannot claim tracked fields")
         if section["edit"] == "typed" and section["read"] != "full":
             fail(f"{name}: typed editing requires full read coverage")
+        expected_fields = FULL_TYPED_FIELDS.get(name)
+        if expected_fields is not None:
+            if section["read"] != "full" or section["edit"] != "typed":
+                fail(f"{name}: audited active schema must remain full and typed")
+            actual_fields = set(section["tracked_fields"])
+            if actual_fields != expected_fields:
+                missing = sorted(expected_fields - actual_fields)
+                extra = sorted(actual_fields - expected_fields)
+                fail(f"{name}: audited field inventory drifted; missing={missing}, extra={extra}")
 
 
 if __name__ == "__main__":

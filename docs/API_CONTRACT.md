@@ -155,6 +155,9 @@ editors. The active settings set emitted by the current Smithproxy saver is
 covered in full, including performance tuning, certificate transparency and CA
 bundle files, and the write-only administration group. Deprecated ignored
 tuning keys are deliberately omitted from the editor.
+The current detection, capture, SSH, routing, and script schemas are also
+covered in full. Their coverage manifest entries are pinned to exact active
+field inventories so a schema drift cannot silently retain a `full` claim.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.

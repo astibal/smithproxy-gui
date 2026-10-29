@@ -76,20 +76,25 @@
     {
       "name": "detection_profiles",
       "origin": "reference_config",
-      "read": "partial",
-      "edit": "partial",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "configuration",
-      "tracked_fields": ["name", "mode", "engines", "kb_enabled"],
-      "notes": "Common detection controls are typed; unknown future profile fields need a schema-backed fallback."
+      "tracked_fields": ["name", "mode", "engines_enabled", "kb_enabled"],
+      "notes": "All active fields emitted by the current detection-profile saver are typed and editable."
     },
     {
       "name": "captures",
       "origin": "api_extension",
-      "read": "partial",
-      "edit": "partial",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "path-bearing",
-      "tracked_fields": ["local_enabled", "remote_enabled", "remote_port", "remote_ttl", "calculate_checksums"],
-      "notes": "Capture posture is typed. Local paths, filename components, destination addresses, and interface names use write-only replace/clear controls and remain redacted in draft responses."
+      "tracked_fields": [
+        "local.enabled", "local.dir", "local.file_prefix", "local.file_suffix",
+        "local.pcap_quota", "local.format", "remote.enabled", "remote.tun_type",
+        "remote.gre_format", "remote.tun_dst", "remote.tun_ttl",
+        "remote.bind_interface", "options.calculate_checksums"
+      ],
+      "notes": "All active capture fields are typed and editable. Paths, filename components, destination addresses, and interface names use write-only replace/clear controls and remain redacted in draft responses."
     },
     {
       "name": "content_profiles",
@@ -131,11 +136,14 @@
     {
       "name": "ssh_profiles",
       "origin": "reference_config",
-      "read": "partial",
-      "edit": "partial",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "secret-bearing",
-      "tracked_fields": ["name", "inspect", "allow_password_auth", "allow_public_key_auth"],
-      "notes": "Authentication posture is typed; host-key paths support write-only replace or clear while future channel policy fields remain redacted."
+      "tracked_fields": [
+        "name", "host_key", "hostkey_policy", "shell", "exec", "subsystem",
+        "pty", "environment", "local_forward", "remote_forward", "x11", "agent"
+      ],
+      "notes": "All active SSH profile fields are typed and editable; host-key paths are write-only and remain redacted."
     },
     {
       "name": "alg_dns_profiles",
@@ -149,11 +157,11 @@
     {
       "name": "routing",
       "origin": "reference_config",
-      "read": "partial",
-      "edit": "partial",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "configuration",
-      "tracked_fields": ["name", "dnat_address", "dnat_port", "dnat_lb_method", "dnat_lb_state"],
-      "notes": "Current DNAT controls are typed; unknown future routing fields need a schema-backed fallback."
+      "tracked_fields": ["name", "dnat_address", "dnat_port", "dnat_lb_method", "rewrite_sni", "rewrite_sni_to"],
+      "notes": "All active fields emitted by the current routing-profile saver are typed and editable."
     },
     {
       "name": "policy",
@@ -189,11 +197,11 @@
     {
       "name": "script_profiles",
       "origin": "api_extension",
-      "read": "partial",
-      "edit": "partial",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "code-bearing",
-      "tracked_fields": ["name", "runtime", "module_path_configured"],
-      "notes": "Runtime selection is typed; executable paths support write-only replace or clear while script contents remain redacted."
+      "tracked_fields": ["name", "type", "script-file"],
+      "notes": "All active script-profile fields are typed and editable; executable paths are write-only and remain redacted."
     },
     {
       "name": "auth_profiles",
