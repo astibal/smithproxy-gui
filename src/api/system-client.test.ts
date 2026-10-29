@@ -109,6 +109,97 @@ describe('SystemClient', () => {
     expect(fetcher).toHaveBeenCalledWith('/ws001/smithproxy-gui/api/v1/status', expect.anything());
   });
 
+  it('rejects future-dated monitoring and operational snapshots', async () => {
+    const future = Date.now() + 6 * 60 * 1000;
+    const client = (payload: unknown) => new SystemClient(
+      '/api/v1', '/', async () => jsonResponse(payload),
+    );
+    const checks: Array<() => Promise<unknown>> = [
+      () => client({status: 'ok', smithproxy: {
+        state: 'ready', detail: 'Connected', checked_at_unix_ms: future,
+      }}).health(),
+      () => client({service: 'smithproxy-gui', uptime_ms: 1, smithproxy: {
+        configured: true, state: 'ready', detail: 'Connected', checked_at_unix_ms: future,
+        last_success_at_unix_ms: future, latency_ms: 1, total_probes: 1,
+        consecutive_failures: 0, availability_window: {samples: 1, successful: 1},
+        history: [{state: 'ready', checked_at_unix_ms: future, latency_ms: 1}],
+      }}).status(),
+      () => client({state: 'ready', detail: 'Current', checked_at_unix_ms: future,
+        last_success_at_unix_ms: future,
+        totals: {workers: 0, sessions_total: 0, sessions_active: 0, bytes_up: 0, bytes_down: 0},
+        listeners: [], history: [{state: 'ready', checked_at_unix_ms: future,
+          sessions_active: 0, bytes_up: 0, bytes_down: 0}],
+      }).metricsSummary(),
+      () => client({state: 'ready', detail: 'Current', checked_at_unix_ms: future,
+        last_success_at_unix_ms: future, total: 0, speed_up: 0, speed_down: 0, protocols: [],
+      }).sessionActivity(),
+      () => client({state: 'ready', detail: 'Current', checked_at_unix_ms: future,
+        last_success_at_unix_ms: future, size: 0, capacity: 0,
+      }).tlsCacheSummary(),
+      () => client({state: 'ready', detail: 'Current', checked_at_unix_ms: future,
+        last_success_at_unix_ms: future, hosts_total: 0, active_today: 0, active_week: 0,
+        tagged_hosts: 0, observations: 0, bytes_up: 0, bytes_down: 0,
+      }).neighborSummary(),
+      () => client({source: 'gui-core', smithproxy_events_available: false, events: [{
+        id: 'event-1', source_revision: 1, occurred_at_unix_ms: future,
+        category: 'control-plane', code: 'control-plane.ready', severity: 'info',
+        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+      }]}).recentEvents(),
+      () => client({source: 'gui-core', generated_at_unix_ms: future, alerts: []}).activeAlerts(),
+      () => client({source: 'gui-core', actor_available: false, entries: [{
+        id: 'audit-1', occurred_at_unix_ms: future, request_id: 'abc-1',
+        operation: 'api.mutation', outcome: 'rejected', authentication: 'none', actor: null,
+        target_count: 0, targets: [], targets_truncated: false,
+      }]}).recentAudit(),
+      () => client({source: 'gui-core', generated_at_unix_ms: future, owner_available: false,
+        jobs: []}).jobs(),
+    ];
+
+    for (const check of checks) await expect(check()).rejects.toThrow();
+  });
+
+  it('rejects incoherent collector and event timelines', async () => {
+    const tlsClient = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'unavailable', detail: 'Stale', checked_at_unix_ms: 100,
+      last_success_at_unix_ms: 101, size: 1, capacity: 2,
+    }));
+    await expect(tlsClient.tlsCacheSummary()).rejects.toThrow('Invalid TLS cache response');
+
+    const statusClient = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      service: 'smithproxy-gui', uptime_ms: 1, smithproxy: {
+        configured: true, state: 'ready', detail: 'Connected', checked_at_unix_ms: 101,
+        last_success_at_unix_ms: 101, latency_ms: 1, total_probes: 1,
+        consecutive_failures: 0, availability_window: {samples: 1, successful: 1},
+        history: [{state: 'ready', checked_at_unix_ms: 100, latency_ms: 1}],
+      },
+    }));
+    await expect(statusClient.status()).rejects.toThrow('Inconsistent Smithproxy status timeline');
+
+    const metricsClient = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 101,
+      last_success_at_unix_ms: 101,
+      totals: {workers: 0, sessions_total: 0, sessions_active: 0, bytes_up: 0, bytes_down: 0},
+      listeners: [], history: [{state: 'ready', checked_at_unix_ms: 100,
+        sessions_active: 0, bytes_up: 0, bytes_down: 0}],
+    }));
+    await expect(metricsClient.metricsSummary()).rejects.toThrow(
+      'Inconsistent runtime metrics timeline',
+    );
+
+    const eventClient = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', smithproxy_events_available: false, events: [{
+        id: 'event-2', source_revision: 2, occurred_at_unix_ms: 100,
+        category: 'control-plane', code: 'control-plane.ready', severity: 'info',
+        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+      }, {
+        id: 'event-1', source_revision: 1, occurred_at_unix_ms: 101,
+        category: 'control-plane', code: 'control-plane.unreachable', severity: 'error',
+        source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
+      }],
+    }));
+    await expect(eventClient.recentEvents()).rejects.toThrow('Invalid operational event entry');
+  });
+
   it('loads bounded structured operational alerts', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       source: 'gui-core', generated_at_unix_ms: 100,

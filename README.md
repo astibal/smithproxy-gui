@@ -158,7 +158,9 @@ Network neighborhood monitoring follows the same rule: only endpoint counts,
 activity windows, observations, and traffic totals reach the browser; hostnames,
 tags, labels, and individual timelines do not. Every aggregate surface combines
 collector state with interval-aware freshness; delayed values are marked stale
-and rendered as last-known data instead of appearing live. Structured active alerts are
+and rendered as last-known data instead of appearing live. Monitoring and
+operational timelines also reject excessive future clock skew and contradictory
+sample ordering. Structured active alerts are
 derived inside the GUI core from reachability, rolling availability, collector
 freshness, TLS cache capacity, and the latest terminal configuration-refresh
 result. They use a bounded fixed vocabulary and never forward arbitrary upstream

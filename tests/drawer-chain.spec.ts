@@ -77,7 +77,8 @@ type MockState = {
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
   const now = (): number => state.now ?? Date.now();
-  const collectorLastSuccess = (): number => now() - (state.collectorLastSuccessAgeMs ?? 5_000);
+  const collectorLastSuccess = (sampledAt: number): number =>
+    sampledAt - (state.collectorLastSuccessAgeMs ?? 5_000);
   const baseRevision = state.validationReady || state.commitReady ? `sha256:${'1'.repeat(64)}` : null;
   let draft = {
     id: 'workspace-draft',
@@ -111,6 +112,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       await route.fulfill({status: 401, json: {error: {code: 'auth.required'}}});
       return;
     }
+    const sampledAt = now();
     await route.fulfill({json: {
       service: 'smithproxy-gui',
       uptime_ms: 65000,
@@ -118,69 +120,84 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         configured: true,
         state: state.smithproxy,
         detail: state.smithproxy === 'ready' ? 'Connected' : 'Connection timed out',
-        checked_at_unix_ms: now(),
-        last_success_at_unix_ms: now() - 5000,
+        checked_at_unix_ms: sampledAt,
+        last_success_at_unix_ms: sampledAt - 5000,
         latency_ms: state.smithproxy === 'ready' ? 12 : 2500,
         total_probes: 3,
         consecutive_failures: state.smithproxy === 'ready' ? 0 : 1,
         availability_window: {samples: 2, successful: state.smithproxy === 'ready' ? 2 : 1},
         history: state.smithproxy === 'ready'
           ? [
-              {state: 'ready', checked_at_unix_ms: now() - 5000, latency_ms: 11},
-              {state: 'ready', checked_at_unix_ms: now(), latency_ms: 12},
+              {state: 'ready', checked_at_unix_ms: sampledAt - 5000, latency_ms: 11},
+              {state: 'ready', checked_at_unix_ms: sampledAt, latency_ms: 12},
             ]
           : [
-              {state: 'ready', checked_at_unix_ms: now() - 5000, latency_ms: 11},
-              {state: 'unreachable', checked_at_unix_ms: now(), latency_ms: 2500},
+              {state: 'ready', checked_at_unix_ms: sampledAt - 5000, latency_ms: 11},
+              {state: 'unreachable', checked_at_unix_ms: sampledAt, latency_ms: 2500},
             ],
       },
     }});
   });
-  await page.route('**/api/v1/metrics/summary', async route => route.fulfill({json: {
-    state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
-    detail: state.smithproxy === 'ready' ? 'Current listener metrics' : 'Metrics are stale',
-    checked_at_unix_ms: now(),
-    last_success_at_unix_ms: collectorLastSuccess(),
-    totals: {workers: 3, sessions_total: 19, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
-    history: [
-      {state: 'ready', checked_at_unix_ms: now() - 10000, sessions_active: 2,
-       bytes_up: 1000, bytes_down: 1400},
-      {state: 'ready', checked_at_unix_ms: now() - 5000, sessions_active: 3,
-       bytes_up: 1200, bytes_down: 1800},
-      {state: state.smithproxy === 'ready' ? 'ready' : 'unavailable', checked_at_unix_ms: now(),
-       sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
-    ],
-    listeners: [
-      {name: 'tcp', workers: 2, sessions_total: 12, sessions_active: 3, bytes_up: 1024, bytes_down: 2048},
-      {name: 'tls', workers: 1, sessions_total: 7, sessions_active: 1, bytes_up: 512, bytes_down: 256},
-    ],
-  }}));
-  await page.route('**/api/v1/sessions/activity', async route => route.fulfill({json: {
-    state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
-    detail: state.smithproxy === 'ready' ? 'Current session activity' : 'Session activity is stale',
-    checked_at_unix_ms: now(),
-    last_success_at_unix_ms: collectorLastSuccess(),
-    total: 4,
-    speed_up: 1536,
-    speed_down: 2304,
-    protocols: [
-      {protocol: 'tcp', sessions: 3, speed_up: 1024, speed_down: 2048, bytes_up: 4096, bytes_down: 8192},
-      {protocol: 'tls', sessions: 1, speed_up: 512, speed_down: 256, bytes_up: 2048, bytes_down: 1024},
-    ],
-  }}));
-  await page.route('**/api/v1/tls/cache/summary', async route => route.fulfill({json: {
-    state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
-    detail: state.smithproxy === 'ready' ? 'Current TLS cache metrics' : 'TLS cache metrics are stale',
-    checked_at_unix_ms: now(), last_success_at_unix_ms: collectorLastSuccess(),
-    size: 42, capacity: 1000,
-  }}));
-  await page.route('**/api/v1/network/neighbors/summary', async route => route.fulfill({json: {
-    state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
-    detail: state.smithproxy === 'ready' ? 'Current neighborhood aggregates' : 'Neighborhood is stale',
-    checked_at_unix_ms: now(), last_success_at_unix_ms: collectorLastSuccess(),
-    hosts_total: 8, active_today: 3, active_week: 6, tagged_hosts: 4,
-    observations: 20, bytes_up: 1000, bytes_down: 2000,
-  }}));
+  await page.route('**/api/v1/metrics/summary', async route => {
+    const sampledAt = now();
+    await route.fulfill({json: {
+      state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+      detail: state.smithproxy === 'ready' ? 'Current listener metrics' : 'Metrics are stale',
+      checked_at_unix_ms: sampledAt,
+      last_success_at_unix_ms: collectorLastSuccess(sampledAt),
+      totals: {workers: 3, sessions_total: 19, sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
+      history: [
+        {state: 'ready', checked_at_unix_ms: sampledAt - 10000, sessions_active: 2,
+         bytes_up: 1000, bytes_down: 1400},
+        {state: 'ready', checked_at_unix_ms: sampledAt - 5000, sessions_active: 3,
+         bytes_up: 1200, bytes_down: 1800},
+        {state: state.smithproxy === 'ready' ? 'ready' : 'unavailable', checked_at_unix_ms: sampledAt,
+         sessions_active: 4, bytes_up: 1536, bytes_down: 2304},
+      ],
+      listeners: [
+        {name: 'tcp', workers: 2, sessions_total: 12, sessions_active: 3, bytes_up: 1024, bytes_down: 2048},
+        {name: 'tls', workers: 1, sessions_total: 7, sessions_active: 1, bytes_up: 512, bytes_down: 256},
+      ],
+    }});
+  });
+  await page.route('**/api/v1/sessions/activity', async route => {
+    const sampledAt = now();
+    await route.fulfill({json: {
+      state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+      detail: state.smithproxy === 'ready' ? 'Current session activity' : 'Session activity is stale',
+      checked_at_unix_ms: sampledAt,
+      last_success_at_unix_ms: collectorLastSuccess(sampledAt),
+      total: 4,
+      speed_up: 1536,
+      speed_down: 2304,
+      protocols: [
+        {protocol: 'tcp', sessions: 3, speed_up: 1024, speed_down: 2048, bytes_up: 4096, bytes_down: 8192},
+        {protocol: 'tls', sessions: 1, speed_up: 512, speed_down: 256, bytes_up: 2048, bytes_down: 1024},
+      ],
+    }});
+  });
+  await page.route('**/api/v1/tls/cache/summary', async route => {
+    const sampledAt = now();
+    await route.fulfill({json: {
+      state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+      detail: state.smithproxy === 'ready' ? 'Current TLS cache metrics' : 'TLS cache metrics are stale',
+      checked_at_unix_ms: sampledAt,
+      last_success_at_unix_ms: collectorLastSuccess(sampledAt),
+      size: 42,
+      capacity: 1000,
+    }});
+  });
+  await page.route('**/api/v1/network/neighbors/summary', async route => {
+    const sampledAt = now();
+    await route.fulfill({json: {
+      state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+      detail: state.smithproxy === 'ready' ? 'Current neighborhood aggregates' : 'Neighborhood is stale',
+      checked_at_unix_ms: sampledAt,
+      last_success_at_unix_ms: collectorLastSuccess(sampledAt),
+      hosts_total: 8, active_today: 3, active_week: 6, tagged_hosts: 4,
+      observations: 20, bytes_up: 1000, bytes_down: 2000,
+    }});
+  });
   await page.route('**/api/v1/events/recent', async route => route.fulfill({json: {
     source: 'gui-core', smithproxy_events_available: false,
     events: [
@@ -1471,8 +1488,8 @@ test('surfaces active backend work in the status bar and System view', async ({p
   });
   await page.goto('/');
 
-  const jobsStatus = page.getByRole('button', {name: '● Jobs: 1 active'});
-  await expect(jobsStatus).toBeVisible();
+  const jobsStatus = page.locator('.statusbar button').filter({hasText: 'Jobs: 1 active'});
+  await expect(jobsStatus).toHaveCount(1);
   await jobsStatus.click();
   const jobsCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Backend jobs'}),

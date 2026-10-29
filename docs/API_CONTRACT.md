@@ -308,6 +308,13 @@ aging or stale values change the visual state and are explicitly labeled as the
 last known sample. A listener backed by stale data is never presented as
 currently `Running`.
 
+Browser validation permits at most five minutes of positive clock skew. It
+rejects health, collector, event, alert, audit, and job snapshots beyond that
+tolerance; `last_success` after `checked`; non-monotonic histories; and a history
+tail whose state or timestamp contradicts its enclosing snapshot. A remote
+timestamp can therefore never remain artificially fresh by being far in the
+future.
+
 `/events/recent` currently exposes at most 60 structured GUI-core control-plane
 and backend-job state transitions. Messages are generated from a fixed vocabulary and validated
 for length and control characters in the browser client. The capability response

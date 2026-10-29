@@ -255,6 +255,7 @@ export interface JobSnapshot {
 }
 
 type JsonObject = Record<string, unknown>;
+const MAXIMUM_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -277,6 +278,26 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isNullableNonNegativeInteger(value: unknown): value is number | null {
   return value === null || isNonNegativeInteger(value);
+}
+
+function isPlausibleTimestamp(value: unknown): value is number {
+  return isNonNegativeInteger(value) && value <= Date.now() + MAXIMUM_CLOCK_SKEW_MS;
+}
+
+function coherentSampleTimes(
+  state: SmithproxyState | RuntimeMetricsState,
+  checkedAtUnixMs: number | null,
+  lastSuccessAtUnixMs: number | null,
+): boolean {
+  if (!(checkedAtUnixMs === null || isPlausibleTimestamp(checkedAtUnixMs)) ||
+      !(lastSuccessAtUnixMs === null || isPlausibleTimestamp(lastSuccessAtUnixMs))) {
+    return false;
+  }
+  if (lastSuccessAtUnixMs !== null &&
+      (checkedAtUnixMs === null || lastSuccessAtUnixMs > checkedAtUnixMs)) {
+    return false;
+  }
+  return state !== 'ready' || (checkedAtUnixMs !== null && lastSuccessAtUnixMs !== null);
 }
 
 function isRuntimeMetricsState(value: unknown): value is RuntimeMetricsState {
@@ -305,7 +326,7 @@ function parseHealth(value: unknown): SystemHealth {
   }
   const {state, detail, checked_at_unix_ms: checkedAtUnixMs} = value.smithproxy;
   if (!isSmithproxyState(state) || typeof detail !== 'string' ||
-      !(checkedAtUnixMs === null || (typeof checkedAtUnixMs === 'number' && Number.isSafeInteger(checkedAtUnixMs)))) {
+      !(checkedAtUnixMs === null || isPlausibleTimestamp(checkedAtUnixMs))) {
     throw new Error('Invalid Smithproxy health response.');
   }
   return {status: 'ok', smithproxy: {state, detail, checkedAtUnixMs}};
@@ -380,6 +401,7 @@ function parseStatus(value: unknown): SystemSnapshot {
   if (typeof source.configured !== 'boolean' || !isSmithproxyState(source.state) ||
       typeof source.detail !== 'string' || !isNullableNonNegativeInteger(source.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(source.last_success_at_unix_ms) ||
+      !coherentSampleTimes(source.state, source.checked_at_unix_ms, source.last_success_at_unix_ms) ||
       !isNullableNonNegativeInteger(source.latency_ms) || !isNonNegativeInteger(source.total_probes) ||
       !isNonNegativeInteger(source.consecutive_failures) || !isObject(source.availability_window) ||
       !isNonNegativeInteger(source.availability_window.samples) ||
@@ -388,10 +410,13 @@ function parseStatus(value: unknown): SystemSnapshot {
       !Array.isArray(source.history) || source.history.length > 60) {
     throw new Error('Invalid Smithproxy status response.');
   }
+  const snapshotCheckedAt = source.checked_at_unix_ms;
   let previousTimestamp = -1;
   const history = source.history.map((item): ProbeSample => {
     if (!isObject(item) || !isSmithproxyState(item.state) ||
-        !isNonNegativeInteger(item.checked_at_unix_ms) || item.checked_at_unix_ms <= previousTimestamp ||
+        !isPlausibleTimestamp(item.checked_at_unix_ms) ||
+        item.checked_at_unix_ms <= previousTimestamp ||
+        (snapshotCheckedAt !== null && item.checked_at_unix_ms > snapshotCheckedAt) ||
         !isNullableNonNegativeInteger(item.latency_ms)) {
       throw new Error('Invalid Smithproxy probe history.');
     }
@@ -403,6 +428,11 @@ function parseStatus(value: unknown): SystemSnapshot {
       source.availability_window.successful !== successful || source.total_probes < history.length) {
     throw new Error('Inconsistent Smithproxy status counters.');
   }
+  if (history.length > 0 &&
+      (history.at(-1)?.checkedAtUnixMs !== snapshotCheckedAt ||
+       history.at(-1)?.state !== source.state)) {
+    throw new Error('Inconsistent Smithproxy status timeline.');
+  }
   return {
     service: 'smithproxy-gui',
     uptimeMs: value.uptime_ms,
@@ -410,7 +440,7 @@ function parseStatus(value: unknown): SystemSnapshot {
       configured: source.configured,
       state: source.state,
       detail: source.detail,
-      checkedAtUnixMs: source.checked_at_unix_ms,
+      checkedAtUnixMs: snapshotCheckedAt,
       lastSuccessAtUnixMs: source.last_success_at_unix_ms,
       latencyMs: source.latency_ms,
       totalProbes: source.total_probes,
@@ -443,10 +473,13 @@ function parseMetricsCounters(value: unknown): Omit<ListenerMetrics, 'name'> {
 function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
   if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
-      !isNullableNonNegativeInteger(value.last_success_at_unix_ms) || !Array.isArray(value.listeners) ||
+      !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
+      !Array.isArray(value.listeners) ||
       value.listeners.length > 32 || !Array.isArray(value.history) || value.history.length > 60) {
     throw new Error('Invalid runtime metrics response.');
   }
+  const snapshotCheckedAt = value.checked_at_unix_ms;
   const names = new Set<string>();
   const listeners = value.listeners.map((item): ListenerMetrics => {
     if (!isObject(item) || typeof item.name !== 'string' || item.name.length === 0 ||
@@ -459,8 +492,9 @@ function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
   let previousTimestamp = -1;
   const history = value.history.map((item): RuntimeMetricsSample => {
     if (!isObject(item) || !isRuntimeMetricsState(item.state) ||
-        !isNonNegativeInteger(item.checked_at_unix_ms) ||
+        !isPlausibleTimestamp(item.checked_at_unix_ms) ||
         item.checked_at_unix_ms <= previousTimestamp || !isNonNegativeInteger(item.sessions_active) ||
+        (snapshotCheckedAt !== null && item.checked_at_unix_ms > snapshotCheckedAt) ||
         !isNonNegativeInteger(item.bytes_up) || !isNonNegativeInteger(item.bytes_down)) {
       throw new Error('Invalid runtime metrics history.');
     }
@@ -473,10 +507,15 @@ function parseRuntimeMetrics(value: unknown): RuntimeMetricsSnapshot {
       bytesDown: item.bytes_down,
     };
   });
+  if (history.length > 0 &&
+      (history.at(-1)?.checkedAtUnixMs !== snapshotCheckedAt ||
+       history.at(-1)?.state !== value.state)) {
+    throw new Error('Inconsistent runtime metrics timeline.');
+  }
   return {
     state: value.state,
     detail: value.detail,
-    checkedAtUnixMs: value.checked_at_unix_ms,
+    checkedAtUnixMs: snapshotCheckedAt,
     lastSuccessAtUnixMs: value.last_success_at_unix_ms,
     totals: parseMetricsCounters(value.totals),
     listeners,
@@ -488,6 +527,7 @@ function parseSessionActivity(value: unknown): SessionActivitySnapshot {
   if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
       !isNonNegativeInteger(value.total) || !isNonNegativeInteger(value.speed_up) ||
       !isNonNegativeInteger(value.speed_down) || !Array.isArray(value.protocols) ||
       value.protocols.length > 32) {
@@ -535,6 +575,7 @@ function parseTlsCache(value: unknown): TlsCacheSnapshot {
   if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
       !isNonNegativeInteger(value.size) || !isNonNegativeInteger(value.capacity) ||
       value.size > value.capacity) {
     throw new Error('Invalid TLS cache response.');
@@ -553,6 +594,7 @@ function parseNeighbors(value: unknown): NeighborSnapshot {
   if (!isObject(value) || !isRuntimeMetricsState(value.state) || typeof value.detail !== 'string' ||
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
       !isNonNegativeInteger(value.hosts_total) || !isNonNegativeInteger(value.active_today) ||
       !isNonNegativeInteger(value.active_week) || !isNonNegativeInteger(value.tagged_hosts) ||
       !isNonNegativeInteger(value.observations) || !isNonNegativeInteger(value.bytes_up) ||
@@ -582,6 +624,8 @@ function parseEvents(value: unknown): EventSnapshot {
     throw new Error('Invalid operational event response.');
   }
   const ids = new Set<string>();
+  let previousRevision = -1;
+  let previousOccurredAt = -1;
   const events = value.events.map((item): OperationalEvent => {
     if (!isObject(item)) throw new Error('Invalid operational event entry.');
     const {id, source_revision: sourceRevision, occurred_at_unix_ms: occurredAtUnixMs,
@@ -589,7 +633,8 @@ function parseEvents(value: unknown): EventSnapshot {
     if (typeof code !== 'string') throw new Error('Invalid operational event entry.');
     const expected = operationalEventVocabulary[code as keyof typeof operationalEventVocabulary];
     if (typeof id !== 'string' || id.length === 0 || id.length > 96 || ids.has(id) ||
-        !isNonNegativeInteger(sourceRevision) || !isNonNegativeInteger(occurredAtUnixMs) ||
+        !isNonNegativeInteger(sourceRevision) || sourceRevision <= previousRevision ||
+        !isPlausibleTimestamp(occurredAtUnixMs) || occurredAtUnixMs < previousOccurredAt ||
         typeof category !== 'string' || typeof severity !== 'string' || typeof message !== 'string' ||
         !expected || category !== expected[0] || severity !== expected[1] || source !== 'gui-core' ||
         message !== expected[2] || message.length === 0 || message.length > 256 ||
@@ -597,6 +642,8 @@ function parseEvents(value: unknown): EventSnapshot {
       throw new Error('Invalid operational event entry.');
     }
     ids.add(id);
+    previousRevision = sourceRevision;
+    previousOccurredAt = occurredAtUnixMs;
     return {
       id,
       sourceRevision,
@@ -613,7 +660,7 @@ function parseEvents(value: unknown): EventSnapshot {
 
 function parseAlerts(value: unknown): AlertSnapshot {
   if (!isObject(value) || value.source !== 'gui-core' ||
-      !isNonNegativeInteger(value.generated_at_unix_ms) || !Array.isArray(value.alerts) ||
+      !isPlausibleTimestamp(value.generated_at_unix_ms) || !Array.isArray(value.alerts) ||
       value.alerts.length > 16) {
     throw new Error('Invalid operational alert response.');
   }
@@ -644,9 +691,11 @@ function parseAudit(value: unknown): AuditSnapshot {
     throw new Error('Invalid management audit response.');
   }
   const ids = new Set<string>();
+  let previousOccurredAt = -1;
   const entries = value.entries.map((item): AuditEntry => {
     if (!isObject(item) || typeof item.id !== 'string' || !/^audit-[1-9][0-9]{0,19}$/u.test(item.id) ||
-        ids.has(item.id) || !isNonNegativeInteger(item.occurred_at_unix_ms) ||
+        ids.has(item.id) || !isPlausibleTimestamp(item.occurred_at_unix_ms) ||
+        item.occurred_at_unix_ms < previousOccurredAt ||
         typeof item.request_id !== 'string' || !/^[0-9a-f]{1,32}-[1-9][0-9]{0,19}$/u.test(item.request_id) ||
         !['config.draft.upsert', 'config.draft.clear', 'config.draft.validate',
           'config.draft.commit', 'api.mutation']
@@ -661,6 +710,7 @@ function parseAudit(value: unknown): AuditSnapshot {
       throw new Error('Invalid management audit entry.');
     }
     ids.add(item.id);
+    previousOccurredAt = item.occurred_at_unix_ms;
     return {
       id: item.id,
       occurredAtUnixMs: item.occurred_at_unix_ms,
@@ -684,7 +734,7 @@ function parseJobRecord(value: unknown): JobRecord {
       typeof value.phase !== 'string' || value.phase.length < 1 || value.phase.length > 64 ||
       !/^[a-z][a-z0-9-]*$/u.test(value.phase) || !isNonNegativeInteger(value.progress_percent) ||
       value.progress_percent > 100 || typeof value.cancelable !== 'boolean' ||
-      !isNonNegativeInteger(value.created_at_unix_ms) || !isNonNegativeInteger(value.updated_at_unix_ms) ||
+      !isPlausibleTimestamp(value.created_at_unix_ms) || !isPlausibleTimestamp(value.updated_at_unix_ms) ||
       !isNonNegativeInteger(value.deadline_at_unix_ms) || value.updated_at_unix_ms < value.created_at_unix_ms ||
       value.deadline_at_unix_ms < value.created_at_unix_ms || value.owner !== null ||
       !(value.result === null || typeof value.result === 'string')) {
@@ -721,7 +771,7 @@ function parseJobRecord(value: unknown): JobRecord {
 
 function parseJobs(value: unknown): JobSnapshot {
   if (!isObject(value) || value.source !== 'gui-core' || value.owner_available !== false ||
-      !isNonNegativeInteger(value.generated_at_unix_ms) || !Array.isArray(value.jobs) ||
+      !isPlausibleTimestamp(value.generated_at_unix_ms) || !Array.isArray(value.jobs) ||
       value.jobs.length > 128) {
     throw new Error('Invalid backend job response.');
   }
