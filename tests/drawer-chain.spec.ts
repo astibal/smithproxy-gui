@@ -1698,6 +1698,105 @@ test('shows and reopens structural creates from primary policy and object lists'
   await expect(editor.getByLabel('Name')).toHaveValue('pending-routing');
 });
 
+test('shows and reopens pending security rules and flow creates in context', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true, structuralDraftsReady: true,
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'context-ca', client_id: 'context-ca',
+      collection: 'tls_ca', position: {last: true},
+      fields: {name: 'pending-ca', path: '[redacted:replace]'},
+    }, {
+      op: 'create', local_id: 'context-signature', client_id: 'context-signature',
+      collection: 'starttls_signatures', position: {last: true},
+      fields: {
+        cat: 'mail', name: 'pending-smtp', side: 'server', severity: 4,
+        group: 'mail', enables: 'tls', engine: 'builtin',
+      },
+    }, {
+      op: 'create', local_id: 'context-signature-first-flow', client_id: 'context-signature-first-flow',
+      collection: 'starttls_signatures.flow', parent_id: 'context-signature', position: {last: true},
+      fields: {
+        side: 'w', type: 'simple', bytes_start: 0, bytes_max: 128,
+        signature: '[redacted:replace]',
+      },
+    }, {
+      op: 'create', local_id: 'context-content-rule', client_id: 'context-content-rule',
+      collection: 'content_profiles.content_rules', parent_id: 'content-0', position: {last: true},
+      fields: {
+        match: '[redacted:replace]', replace: '[redacted:clear]',
+        fill_length: true, replace_each_nth: 3,
+      },
+    }, {
+      op: 'create', local_id: 'context-signature-flow', client_id: 'context-signature-flow',
+      collection: 'starttls_signatures.flow', parent_id: 'starttls-signature-0', position: {last: true},
+      fields: {
+        side: 'r', type: 'regex', bytes_start: 8, bytes_max: 256,
+        signature: '[redacted:replace]',
+      },
+    }],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await expect(page.getByRole('status').filter({hasText: 'Configuration cards include pending'})).toBeVisible();
+  const trust = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await expect(trust.locator('dt', {hasText: 'Certificate authorities'})
+    .locator('xpath=following-sibling::dd[1]')).toHaveText('2');
+  await expect(trust.locator('dt', {hasText: 'STARTTLS signatures'})
+    .locator('xpath=following-sibling::dd[1]')).toHaveText('2');
+  await expect(trust.locator('dt', {hasText: 'STARTTLS flow steps'})
+    .locator('xpath=following-sibling::dd[1]')).toHaveText('4');
+
+  const pendingAuthority = trust.getByRole('group', {name: 'Certificate authorities'})
+    .getByRole('button').filter({hasText: 'pending-ca'});
+  await expect(pendingAuthority).toContainText('Pending create');
+  await pendingAuthority.click();
+  let editor = page.getByRole('dialog', {name: 'Create certificate authority'});
+  await expect(editor.getByLabel('Name')).toHaveValue('pending-ca');
+  await expect(editor.getByLabel('New CA path')).toHaveValue('');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
+  const pendingSignature = trust.getByRole('group', {name: 'STARTTLS signatures'})
+    .getByRole('button').filter({hasText: 'pending-smtp'});
+  await expect(pendingSignature).toContainText('1 flow step');
+  await pendingSignature.click();
+  editor = page.getByRole('dialog', {name: 'Create signature'});
+  await expect(editor.getByLabel('Name')).toHaveValue('pending-smtp');
+  await expect(editor.getByLabel('New signature first flow expression')).toHaveValue('');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /capture content Typed details/u}).click();
+  const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  const pendingRule = contentEditor.getByRole('group', {name: 'Content rules'})
+    .getByRole('button').filter({hasText: 'Pending rule'});
+  await expect(pendingRule).toContainText('empty replacement');
+  await expect(pendingRule).toContainText('Pending create');
+  await pendingRule.click();
+  editor = page.getByRole('dialog', {name: 'Create content rule'});
+  await expect(editor.getByLabel('New content match expression')).toHaveValue('');
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await contentEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const refreshedTrust = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await refreshedTrust.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await refreshedTrust.getByRole('group', {name: 'STARTTLS signatures'})
+    .getByRole('button').filter({hasText: 'smtp/starttls'}).click();
+  const signatureEditor = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
+  const pendingFlow = signatureEditor.getByRole('group', {name: 'Signature flow steps'})
+    .getByRole('button').filter({hasText: 'Pending'});
+  await expect(pendingFlow).toContainText('bytes 8…256');
+  await pendingFlow.click();
+  editor = page.getByRole('dialog', {name: 'Create signature flow step'});
+  await expect(editor.getByLabel('New signature flow expression')).toHaveValue('');
+});
+
 test('requires bound validation and explicit confirmation before atomic commit', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',

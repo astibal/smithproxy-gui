@@ -158,8 +158,8 @@ unchanged until a validated atomic commit.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls. Pending structural
-policy, object, and profile creates appear in their primary configuration lists
-and reopen the same draft create drawer.
+policy, object, profile, trust-asset, content-rule, and signature-flow creates
+appear in their primary contextual lists and reopen the same draft create drawer.
 Policy and routing reference fields preview the value being typed. Known objects
 open directly in the next nested editor. Objects and profiles created earlier in
 the same workspace draft are marked as pending and reopen their structural create

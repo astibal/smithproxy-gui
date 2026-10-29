@@ -7089,6 +7089,14 @@ export class SmithproxyApp extends LitElement {
     const debug = this.snapshot?.debug;
     const captures = this.snapshot?.captures;
     const securityAssets = this.snapshot?.securityAssets;
+    const structuralCreates = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation => operation.op === 'create',
+    );
+    const pendingAuthorities = structuralCreates.filter(operation => operation.collection === 'tls_ca');
+    const pendingSignatures = structuralCreates.filter(operation =>
+      operation.collection === 'starttls_signatures' || operation.collection === 'detection_signatures');
+    const pendingSignatureFlows = structuralCreates.filter(operation =>
+      operation.collection === 'starttls_signatures.flow' || operation.collection === 'detection_signatures.flow');
     const workers = (value: number) => value === -1 ? 'Disabled' : String(value);
     const setting = <T extends ConfigScalar>(path: string, fallback: T): T =>
       this.presentedValue(`settings.${path}`, fallback);
@@ -7104,8 +7112,9 @@ export class SmithproxyApp extends LitElement {
     const enabledCapabilityCount = this.enabledCapabilityCount();
     const pendingConfiguration = this.draftObjects.has('settings:settings') ||
       this.draftObjects.has('captures:captures') ||
-      [...this.draftObjects].some(key => key.startsWith('authority:') || key.startsWith('signature:') ||
-        key.startsWith('signature-flow:'));
+      [...this.draftObjects].some(key => key.startsWith('authority:') || key.startsWith('authority-create:') ||
+        key.startsWith('signature:') || key.startsWith('signature-create:') ||
+        key.startsWith('signature-flow:') || key.startsWith('signature-flow-create:'));
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
@@ -7348,12 +7357,16 @@ export class SmithproxyApp extends LitElement {
             <article class="domain-card">
               <header><div><h3>Trust and signatures</h3><p>Paths and expressions use write-only controls</p></div></header>
               <dl>
-                <dt>Certificate authorities</dt><dd>${securityAssets.certificateAuthorityCount}</dd>
-                <dt>CA paths configured</dt><dd>${securityAssets.certificateAuthorityPathCount}</dd>
-                <dt>STARTTLS signatures</dt><dd>${securityAssets.starttlsSignatureCount}</dd>
-                <dt>STARTTLS flow steps</dt><dd>${securityAssets.starttlsFlowStepCount}</dd>
-                <dt>Detection signatures</dt><dd>${securityAssets.detectionSignatureCount}</dd>
-                <dt>Detection flow steps</dt><dd>${securityAssets.detectionFlowStepCount}</dd>
+                <dt>Certificate authorities</dt><dd>${securityAssets.certificateAuthorityCount + pendingAuthorities.length}</dd>
+                <dt>CA paths configured</dt><dd>${securityAssets.certificateAuthorityPathCount + pendingAuthorities.length}</dd>
+                <dt>STARTTLS signatures</dt><dd>${securityAssets.starttlsSignatureCount +
+                  pendingSignatures.filter(item => item.collection === 'starttls_signatures').length}</dd>
+                <dt>STARTTLS flow steps</dt><dd>${securityAssets.starttlsFlowStepCount +
+                  pendingSignatureFlows.filter(item => item.collection === 'starttls_signatures.flow').length}</dd>
+                <dt>Detection signatures</dt><dd>${securityAssets.detectionSignatureCount +
+                  pendingSignatures.filter(item => item.collection === 'detection_signatures').length}</dd>
+                <dt>Detection flow steps</dt><dd>${securityAssets.detectionFlowStepCount +
+                  pendingSignatureFlows.filter(item => item.collection === 'detection_signatures.flow').length}</dd>
               </dl>
               <div class="reference-stack section" role="group" aria-label="Certificate authorities">
                 <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
@@ -7363,7 +7376,7 @@ export class SmithproxyApp extends LitElement {
                   @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
                   New certificate authority
                 </button>
-                ${securityAssets.certificateAuthorities.length === 0
+                ${securityAssets.certificateAuthorities.length === 0 && pendingAuthorities.length === 0
                   ? html`<span>No certificate authorities configured.</span>`
                   : securityAssets.certificateAuthorities.map(authority => html`
                     <button class="reference" type="button"
@@ -7374,6 +7387,16 @@ export class SmithproxyApp extends LitElement {
                       <span aria-hidden="true">→</span>
                     </button>
                   `)}
+                ${pendingAuthorities.map(operation => html`
+                  <button class="reference" type="button"
+                    @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                      operation.localId, event.currentTarget as HTMLElement,
+                    )}>
+                    <span><strong>${String(operation.fields['name'] ?? 'New certificate authority')}</strong>
+                      · path configured · <small class="pending-badge">Pending create</small></span>
+                    <span aria-hidden="true">→</span>
+                  </button>
+                `)}
               </div>
               ${(['starttls', 'detection'] as const).map(kind => html`
                 <details class="section">
@@ -7389,7 +7412,8 @@ export class SmithproxyApp extends LitElement {
                       )}>
                       New ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signature
                     </button>
-                    ${securityAssets.signatures.filter(item => item.kind === kind).length === 0
+                    ${securityAssets.signatures.filter(item => item.kind === kind).length === 0 &&
+                        pendingSignatures.filter(item => item.collection === `${kind}_signatures`).length === 0
                       ? html`<span>No ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signatures configured.</span>`
                       : securityAssets.signatures.filter(item => item.kind === kind).map(signature => html`
                       <button class="reference" type="button"
@@ -7400,6 +7424,21 @@ export class SmithproxyApp extends LitElement {
                         <span aria-hidden="true">→</span>
                       </button>
                     `)}
+                    ${pendingSignatures.filter(item => item.collection === `${kind}_signatures`)
+                      .map(operation => {
+                        const flowCount = pendingSignatureFlows.filter(flow =>
+                          flow.parentId === operation.clientId &&
+                          flow.collection === `${kind}_signatures.flow`).length;
+                        return html`<button class="reference" type="button"
+                          @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                            operation.localId, event.currentTarget as HTMLElement,
+                          )}>
+                          <span><strong>${String(operation.fields['name'] ?? 'New signature')}</strong> ·
+                            ${flowCount} flow step${flowCount === 1 ? '' : 's'} ·
+                            <small class="pending-badge">Pending create</small></span>
+                          <span aria-hidden="true">→</span>
+                        </button>`;
+                      })}
                   </div>
                 </details>
               `)}
@@ -8280,6 +8319,10 @@ export class SmithproxyApp extends LitElement {
     const tls = profile.tls;
     const detection = profile.detection;
     const content = profile.content;
+    const pendingContentRules = content ? (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation => operation.op === 'create' &&
+        operation.collection === 'content_profiles.content_rules' && operation.parentId === profile.id,
+    ) : [];
     const ssh = profile.ssh;
     const dns = profile.dns;
     const script = profile.script;
@@ -8510,7 +8553,8 @@ export class SmithproxyApp extends LitElement {
               @click=${(event: MouseEvent) => this.openNewContentRule(
                 profile.id, event.currentTarget as HTMLElement,
               )}>New content rule</button>
-            ${content.rules.length === 0 ? html`<span>No content rules configured.</span>` :
+            ${content.rules.length === 0 && pendingContentRules.length === 0
+              ? html`<span>No content rules configured.</span>` :
               content.rules.map((rule, index) => html`
                 <button class="reference" type="button"
                   @click=${(event: MouseEvent) => this.openContentRule(
@@ -8524,6 +8568,24 @@ export class SmithproxyApp extends LitElement {
                   <span aria-hidden="true">→</span>
                 </button>
               `)}
+            ${pendingContentRules.map(operation => {
+              const fillLength = operation.fields['fill_length'] === true;
+              const replaceEach = typeof operation.fields['replace_each_nth'] === 'number'
+                ? operation.fields['replace_each_nth'] : 0;
+              const replacement = operation.fields['replace'];
+              const replacementLabel = replacement === undefined ? 'no replacement'
+                : replacement === '[redacted:clear]' ? 'empty replacement' : 'replacement configured';
+              return html`<button class="reference" type="button"
+                @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                  operation.localId, event.currentTarget as HTMLElement,
+                )}>
+                <span><strong>Pending rule</strong> · match configured · ${replacementLabel} ·
+                  ${fillLength ? 'length preserved' : 'length may change'} ·
+                  ${replaceEach <= 1 ? 'every match' : `every ${replaceEach}th match`} ·
+                  <small class="pending-badge">Pending create</small></span>
+                <span aria-hidden="true">→</span>
+              </button>`;
+            })}
           </div>
         ` : ssh ? html`
           <label for="ssh-write-host-key-${entry.id}-mode">Host key</label>
@@ -9135,6 +9197,10 @@ export class SmithproxyApp extends LitElement {
   private renderSignatureEditor(entry: DrawerEntry) {
     const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === entry.id);
     if (!signature) return nothing;
+    const pendingFlowSteps = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation => operation.op === 'create' &&
+        operation.collection === `${signature.kind}_signatures.flow` && operation.parentId === signature.id,
+    );
     const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
     const prefix = this.originPrefix(entry);
     const path = (field: string) => `${prefix ?? ''}${field}`;
@@ -9189,6 +9255,23 @@ export class SmithproxyApp extends LitElement {
               <span aria-hidden="true">→</span>
             </button>
           `)}
+          ${pendingFlowSteps.map(operation => {
+            const side = typeof operation.fields['side'] === 'string'
+              ? operation.fields['side'].toUpperCase() : '?';
+            const type = typeof operation.fields['type'] === 'string' ? operation.fields['type'] : 'unknown';
+            const start = typeof operation.fields['bytes_start'] === 'number'
+              ? operation.fields['bytes_start'] : 0;
+            const maximum = typeof operation.fields['bytes_max'] === 'number'
+              ? operation.fields['bytes_max'] : 0;
+            return html`<button class="reference" type="button"
+              @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                operation.localId, event.currentTarget as HTMLElement,
+              )}>
+              <span><strong>Pending · ${side} · ${type}</strong> · bytes ${start}…${maximum} ·
+                expression configured · <small class="pending-badge">Pending create</small></span>
+              <span aria-hidden="true">→</span>
+            </button>`;
+          })}
         </div>
       </div>
       <div class="privacy-note section">
