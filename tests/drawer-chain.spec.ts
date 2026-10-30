@@ -3678,16 +3678,16 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await expect(addressEditor).not.toHaveAttribute('inert', '');
 
   const firstFocusable = addressEditor.getByRole('button', {name: 'Enter focus mode'});
-  const lastFocusable = addressEditor.getByRole('button', {name: 'Save to draft'});
+  const lastFocusable = addressEditor.getByRole('button', {name: 'Cancel'});
   await firstFocusable.focus();
   await page.keyboard.press('Shift+Tab');
   await expect(lastFocusable).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(firstFocusable).toBeFocused();
 
-  await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(page.getByText('Draft: 1 changes')).toBeVisible();
-  await expect(addressEditor.getByRole('status')).toHaveText('Saved to draft');
+  await expect(addressEditor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
+  await expect(addressEditor.getByRole('status')).toHaveText('Read-only preview; draft API unavailable');
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
 
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toBeVisible();
@@ -3712,15 +3712,9 @@ test('walks reverse dependencies through nested editors', async ({page}) => {
   await expect(tlsEditor).toBeVisible();
   await expect(policyEditor).toHaveAttribute('inert', '');
   await expect(tlsEditor.getByLabel('Inspection')).toHaveValue('true');
-
-  await tlsEditor.getByLabel('Inspection').selectOption('false');
-  await tlsEditor.getByRole('button', {name: /office policy/}).click();
-  await expect(tlsEditor.getByRole('alert')).toHaveText('Discard unsaved changes in this editor?');
-  await tlsEditor.getByRole('button', {name: 'Keep editing'}).click();
-  await expect(tlsEditor.getByLabel('Inspection')).toHaveValue('false');
+  await expect(tlsEditor.getByLabel('Inspection')).toBeDisabled();
 
   await tlsEditor.getByRole('button', {name: /office policy/}).click();
-  await tlsEditor.getByRole('button', {name: 'Discard changes'}).click();
   await expect(tlsEditor).not.toBeVisible();
   await expect(policyEditor).not.toHaveAttribute('inert', '');
 
@@ -4052,13 +4046,13 @@ test('restores drawer routes and manages focus across the chain', async ({page})
 });
 
 test('requires an explicit decision before closing unsaved drawer changes', async ({page}) => {
-  await mockSystemApi(page, {smithproxy: 'ready'});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  const policyRow = page.getByRole('button', {name: /office office-net/i});
+  const policyRow = page.getByRole('button', {name: /Policy 1 office internet accept/i});
   await policyRow.click();
 
-  const editor = page.getByRole('dialog', {name: 'Edit office'});
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await editor.getByLabel('Name').fill('Unsaved policy');
   await expect(editor.getByRole('status')).toHaveText('Unsaved changes');
   await expect.poll(() => page.evaluate(() => {
@@ -4076,14 +4070,14 @@ test('requires an explicit decision before closing unsaved drawer changes', asyn
   await expect(editor.getByRole('status')).toHaveText('Unsaved changes');
 
   await page.goBack();
-  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-office');
+  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-0');
   await expect(editor.getByRole('alert')).toHaveText('Discard unsaved changes in this editor?');
   await editor.getByRole('button', {name: 'Discard changes'}).click();
   await expect(editor).not.toBeVisible();
   await expect(policyRow).toBeFocused();
 
   await policyRow.click();
-  const reopened = page.getByRole('dialog', {name: 'Edit office'});
+  const reopened = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await reopened.getByLabel('Name').fill('Saved policy');
   await reopened.getByRole('button', {name: 'Save to draft'}).click();
   await expect(reopened.getByRole('status')).toHaveText('Saved to draft');
@@ -4092,7 +4086,7 @@ test('requires an explicit decision before closing unsaved drawer changes', asyn
     window.dispatchEvent(event);
     return event.defaultPrevented;
   })).toBe(false);
-  await page.keyboard.press('Escape');
+  await reopened.getByRole('button', {name: 'Cancel'}).click();
   await expect(reopened).not.toBeVisible();
 });
 
@@ -4291,6 +4285,32 @@ test('ignores late configuration and draft snapshots after gateway revocation', 
   expect(failedRequests).toEqual(expect.arrayContaining([
     '/api/v1/config/snapshot', '/api/v1/config/draft',
   ]));
+});
+
+test('keeps preview configuration read-only without a draft API', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  await page.goto('/');
+
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Config: Preview');
+  await expect(statusbar).toContainText('Draft: 0 changes');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /office office-net internet accept/i}).click();
+
+  const policyEditor = page.getByRole('dialog', {name: 'Edit office'});
+  await expect(policyEditor.getByLabel('Name')).toHaveAttribute('readonly', '');
+  await expect(policyEditor.getByLabel('Action', {exact: true})).toBeDisabled();
+  await expect(policyEditor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
+  await expect(policyEditor.getByRole('status')).toHaveText('Read-only preview; draft API unavailable');
+
+  await policyEditor.getByRole('button', {name: 'office-net', exact: true}).click();
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});
+  await expect(addressEditor.getByLabel('Name')).toHaveAttribute('readonly', '');
+  await expect(addressEditor.getByLabel('Type')).toBeDisabled();
+  await expect(addressEditor.getByLabel('Address')).toHaveAttribute('readonly', '');
+  await expect(addressEditor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
+  await expect(addressEditor.getByRole('status')).toHaveText('Read-only preview; draft API unavailable');
+  await expect(statusbar).toContainText('Draft: 0 changes');
 });
 
 test('removes an open live editor when gateway configuration access is revoked', async ({page}) => {
@@ -4666,7 +4686,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await profiles.getByRole('button', {name: /legacy-auth authentication Typed details/i}).click();
   const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
   await expect(authenticationEditor.getByText('Deprecated compatibility profile')).toBeVisible();
-  await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeEnabled();
+  await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeDisabled();
   await expect(authenticationEditor.getByLabel('Authenticate')).toHaveValue('true');
   await page.keyboard.press('Escape');
 

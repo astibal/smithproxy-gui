@@ -125,6 +125,10 @@ Losing configuration access removes the live snapshot, shared draft state, and
 open editors from the browser; losing only the draft capability preserves the
 read-only live snapshot while clearing draft and editor state.
 
+The bundled preview snapshot is navigation-only. Its existing-item drawers and
+nested reference chain remain inspectable, but every field and draft action is
+read-only; the browser never emulates a configuration write without the draft API.
+
 Capability bootstrap accepts only API contract `v1`, a canonical base path that
 exactly matches the application mount, and a coherent feature dependency graph.
 Contradictory transaction, draft, or event flags fail closed before any protected

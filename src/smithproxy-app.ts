@@ -4445,12 +4445,6 @@ export class SmithproxyApp extends LitElement {
       await this.saveSignatureFlowCreate(entry);
       return;
     }
-    if (this.snapshot?.source !== 'live') {
-      this.draftObjects = new Set(this.draftObjects).add(`${entry.kind}:${entry.id}`);
-      this.draftChangeCount = this.draftObjects.size;
-      this.markDrawerSaved(entry);
-      return;
-    }
     if (!this.draftAvailable || !this.draftClient || this.draftCommitting) return;
     const proposedChanges = this.draftChanges(entry);
     if (!proposedChanges) return;
@@ -8033,7 +8027,7 @@ export class SmithproxyApp extends LitElement {
     if (!policy) return nothing;
     const policyIndex = this.snapshot?.policies.findIndex(item => item.id === entry.id) ?? -1;
     const policyBase = `policy.[${policyIndex}]`;
-    const liveReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const liveReadOnly = !this.draftAvailable;
     const protocolValue = this.persistentValue(`${policyBase}.proto`, policy.protocol);
     const sourceValues = this.persistentListValue(
       `${policyBase}.src`, policy.sources.map(item => item.name), 'string',
@@ -8274,7 +8268,7 @@ export class SmithproxyApp extends LitElement {
     if (!address) return nothing;
     const index = this.snapshot?.addresses.findIndex(item => item.id === entry.id) ?? -1;
     const base = `address_objects.[${index}]`;
-    const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const readOnly = !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="address-name-${entry.id}">Name</label>
@@ -8638,7 +8632,7 @@ export class SmithproxyApp extends LitElement {
     if (!port) return nothing;
     const index = this.snapshot?.ports.findIndex(item => item.id === entry.id) ?? -1;
     const base = `port_objects.[${index}]`;
-    const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const readOnly = !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="port-name-${entry.id}">Name</label>
@@ -8662,7 +8656,7 @@ export class SmithproxyApp extends LitElement {
     if (!protocol) return nothing;
     const index = this.snapshot?.protocols.findIndex(item => item.id === entry.id) ?? -1;
     const base = `proto_objects.[${index}]`;
-    const readOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const readOnly = !this.draftAvailable;
     return html`
       <div class="form-grid">
         <label for="protocol-name-${entry.id}">Name</label>
@@ -8828,7 +8822,7 @@ export class SmithproxyApp extends LitElement {
     const script = profile.script;
     const authentication = profile.authentication;
     const mapped = Boolean(routing || tls || detection || content || ssh || dns || script || authentication);
-    const mappedReadOnly = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const mappedReadOnly = !this.draftAvailable;
     const prefix = this.originPrefix(entry);
     const persistent = <T extends ConfigScalar>(field: string, fallback: T): T =>
       prefix ? this.persistentValue(`${prefix}${field}`, fallback) : fallback;
@@ -9195,7 +9189,7 @@ export class SmithproxyApp extends LitElement {
   private renderSystemSettingsEditor() {
     const settings = this.snapshot?.settings;
     if (!settings) return nothing;
-    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const disabled = !this.draftAvailable;
     const booleanPaths: ReadonlyMap<string, string> = new Map(
       systemBooleanFields.map(([path, id]) => [id, `settings.${path}`]),
     );
@@ -9447,7 +9441,7 @@ export class SmithproxyApp extends LitElement {
   private renderCaptureSettingsEditor() {
     const captures = this.snapshot?.captures;
     if (!captures) return nothing;
-    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const disabled = !this.draftAvailable;
     const booleanPaths: ReadonlyMap<string, string> = new Map(
       captureBooleanFields.map(([path, id]) => [id, `captures.${path}`]),
     );
@@ -9512,7 +9506,7 @@ export class SmithproxyApp extends LitElement {
   private renderCertificateAuthorityEditor(entry: DrawerEntry) {
     const authority = this.snapshot?.securityAssets?.certificateAuthorities.find(item => item.id === entry.id);
     if (!authority) return nothing;
-    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const disabled = !this.draftAvailable;
     const prefix = this.originPrefix(entry);
     const namePath = `${prefix ?? ''}name`;
     return html`
@@ -9560,7 +9554,7 @@ export class SmithproxyApp extends LitElement {
     const profile = this.snapshot?.profiles.find(item => item.content?.rules.some(rule => rule.id === entry.id));
     const rule = profile?.content?.rules.find(item => item.id === entry.id);
     if (!profile || !rule) return nothing;
-    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const disabled = !this.draftAvailable;
     const prefix = this.originPrefix(entry);
     const path = (field: string) => `${prefix ?? ''}${field}`;
     const pendingMove = this.pendingContentRuleMove(entry.id);
@@ -9732,7 +9726,7 @@ export class SmithproxyApp extends LitElement {
           (operation.op === 'move' && flowStepIds.has(operation.entityId))),
     );
     const flowRows = this.draftOrderedRows(signature.flow, flowOperations);
-    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const disabled = !this.draftAvailable;
     const prefix = this.originPrefix(entry);
     const path = (field: string) => `${prefix ?? ''}${field}`;
     const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
@@ -9819,7 +9813,7 @@ export class SmithproxyApp extends LitElement {
       .find(item => item.flow.some(step => step.id === entry.id));
     const step = signature?.flow.find(item => item.id === entry.id);
     if (!signature || !step) return nothing;
-    const disabled = this.snapshot?.source === 'live' && !this.draftAvailable;
+    const disabled = !this.draftAvailable;
     const prefix = this.originPrefix(entry);
     const path = (field: string) => `${prefix ?? ''}${field}`;
     const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
@@ -10305,8 +10299,7 @@ export class SmithproxyApp extends LitElement {
       'authority-create', 'auth-identities-create',
     ].includes(entry.kind)
       ? this.structuralDraftsAvailable
-      : this.snapshot?.source !== 'live' ||
-        (this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile));
+      : this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile);
     const readOnly = !draftable;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
     const drawerDraftPaths = this.draftPathsForDrawer(entry);
@@ -10359,7 +10352,10 @@ export class SmithproxyApp extends LitElement {
               @click=${() => this.discardDrawerChanges(closeFromIndex)}>Discard changes</button>
           ` : html`
             <span class="validation ${dirty ? 'warning' : ''}" role="status" aria-live="polite">
-              ${this.drawerError ?? this.draftError ?? (dirty ? 'Unsaved changes' : readOnly ? 'Read-only runtime view' : saved ? 'Saved to draft' : 'Validation ready')}
+              ${this.drawerError ?? this.draftError ?? (dirty ? 'Unsaved changes'
+                : readOnly ? this.snapshot?.source === 'live'
+                  ? 'Read-only runtime view' : 'Read-only preview; draft API unavailable'
+                : saved ? 'Saved to draft' : 'Validation ready')}
             </span>
             ${drawerDraftPaths.length > 0 ? html`
               <button class="secondary danger-button" type="button"
