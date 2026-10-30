@@ -2177,7 +2177,8 @@ export class SmithproxyApp extends LitElement {
                   : profile.detection ? 'detection_profiles'
                     : profile.dns ? 'alg_dns_profiles' : undefined;
       return collection
-        ? {collection, entityId: profile.id, label: `${profile.type} profile`, usageCount: profile.usedBy.length}
+        ? {collection, entityId: profile.id, label: `${profile.type} profile`,
+          usageCount: profile.usedBy.length + profile.privateReferenceCount}
         : undefined;
     }
     if (entry.kind === 'authority') {
@@ -6590,7 +6591,7 @@ export class SmithproxyApp extends LitElement {
                 <span class="row-meta"><span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh ||
                   profile.dns || profile.script || profile.authentication
                   ? 'Typed details' : 'Metadata only'}</span>${this.renderPendingBadge('profile', profile.id)}${this.renderOverlayBadge(prefix, overlayCounts)}</span>
-                <span>${profile.usedBy.length}</span>
+                <span>${profile.usedBy.length + profile.privateReferenceCount}</span>
               </button>`;
             })}
             ${pendingProfiles.map(operation => html`<button class="row object-row" type="button"
@@ -10110,10 +10111,18 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderObjectUsage(object: AddressObject | PortObject | ProtocolObject | ProfileObject) {
+    const privateReferenceCount = 'privateReferenceCount' in object ? object.privateReferenceCount : 0;
+    const usageCount = object.usedBy.length + privateReferenceCount;
     return html`
       <div class="section">
         <h3>Impact</h3>
-        <div class="impact">This shared object is used by ${object.usedBy.length} configuration entries.</div>
+        <div class="impact">This shared object is used by ${usageCount} configuration entries.</div>
+        ${privateReferenceCount > 0 ? html`
+          <div class="scope-note">
+            ${privateReferenceCount} ${privateReferenceCount === 1 ? 'reference is' : 'references are'}
+            inside redacted authentication identity mappings.
+          </div>
+        ` : nothing}
         <ul class="usage">
           ${object.usedBy.map(reference => html`<li>${this.usageTargetAvailable(reference) ? html`
             <button class="usage-link" type="button"

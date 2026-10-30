@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <charconv>
 #include <limits>
+#include <map>
+#include <set>
 
 namespace smithproxy::gui {
 namespace {
@@ -561,13 +563,57 @@ ConfigProfileParseResult parse_config_profiles(
             if (!authenticate || !resolve || !identity_count) {
                 return {std::nullopt, "Smithproxy returned an invalid authentication profile"};
             }
-            authentication = ConfigAuthProfile{*authenticate, *resolve, *identity_count};
+            std::set<std::pair<std::string, std::string>> unique_references;
+            const auto identities = profile.find("identities");
+            if (identities != profile.end()) {
+                constexpr std::array reference_fields{
+                    std::pair{"detection_profile", "detection"},
+                    std::pair{"content_profile", "content"},
+                    std::pair{"tls_profile", "tls"},
+                    std::pair{"alg_dns_profile", "dns"},
+                };
+                for (const auto& identity : *identities) {
+                    for (const auto& [field, reference_type] : reference_fields) {
+                        const auto reference = bounded_string(identity, field, maximum_name_length, true);
+                        if (!reference) {
+                            return {std::nullopt, "Smithproxy returned an invalid authentication identity"};
+                        }
+                        if (!reference->empty()) unique_references.emplace(reference_type, *reference);
+                    }
+                }
+            }
+            std::vector<ConfigPrivateProfileReference> references;
+            references.reserve(unique_references.size());
+            for (auto& [reference_type, reference_name] : unique_references) {
+                references.push_back({std::move(reference_type), std::move(reference_name)});
+            }
+            authentication = ConfigAuthProfile{
+                *authenticate, *resolve, *identity_count, std::move(references),
+            };
         }
         result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type),
                           std::move(routing), std::move(tls), std::move(detection), std::move(content),
-                          std::move(ssh), std::move(dns), std::move(script), std::move(authentication)});
+                          std::move(ssh), std::move(dns), std::move(script),
+                          std::move(authentication), 0U});
     }
     return {std::move(result), {}};
+}
+
+void finalize_private_profile_references(std::vector<ConfigProfile>& profiles) {
+    std::map<std::pair<std::string, std::string>, ConfigProfile*> targets;
+    for (auto& profile : profiles) {
+        profile.private_reference_count = 0U;
+        targets.emplace(std::pair{profile.type, profile.name}, &profile);
+    }
+    for (auto& source : profiles) {
+        if (!source.authentication) continue;
+        for (const auto& reference : source.authentication->profile_references) {
+            const auto target = targets.find({reference.type, reference.name});
+            if (target != targets.end()) ++target->second->private_reference_count;
+        }
+        source.authentication->profile_references.clear();
+        source.authentication->profile_references.shrink_to_fit();
+    }
 }
 
 ConfigSettingsParseResult parse_config_settings(const std::string_view payload) {

@@ -253,6 +253,9 @@ same draft can be selected as identity bindings. Accepted mappings are cleared l
 redacted from every draft response, and require complete re-entry before a pending
 authentication create can be updated. The GUI core retains their dependency metadata
 privately so a referenced pending profile cannot be removed through a direct API call.
+For the live snapshot it resolves binding names inside the trusted core, exposes only
+aggregate reverse-reference counts, and erases the private names before serialization;
+profiles used only by redacted identity mappings therefore remain protected from deletion.
 Content profiles expose nested creation, confirmed deletion, and first/before/last
 ordering for stable content rules. New write-only match and replacement expressions
 are cleared from the editor after the GUI core accepts them and must be re-entered

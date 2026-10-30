@@ -24,7 +24,7 @@ const liveSnapshot = {
   protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
   profiles: [
     {
-      id: 'tls-0', name: 'inspect', type: 'tls', routing: null,
+      id: 'tls-0', name: 'inspect', type: 'tls', private_reference_count: 0, routing: null,
       tls: {
         inspect: true, use_pfs: true, left_use_pfs: true, right_use_pfs: true,
         left_disable_reuse: false, right_disable_reuse: false,
@@ -48,7 +48,7 @@ const liveSnapshot = {
       authentication: null,
     },
     {
-      id: 'routing-0', name: 'main', type: 'routing',
+      id: 'routing-0', name: 'main', type: 'routing', private_reference_count: 0,
       routing: {
         destination_addresses: ['internet'], destination_ports: ['https'],
         load_balancing_method: 'sticky-l3', rewrite_sni: 'old.example', rewrite_sni_to: 'new.example',
@@ -62,12 +62,14 @@ const liveSnapshot = {
       authentication: null,
     },
     {
-      id: 'detection-0', name: 'default', type: 'detection', routing: null, tls: null,
+      id: 'detection-0', name: 'default', type: 'detection', private_reference_count: 2,
+      routing: null, tls: null,
       detection: {mode: 2, engines_enabled: true, knowledge_base_enabled: false}, content: null,
       ssh: null, dns: null, script: null, authentication: null,
     },
     {
-      id: 'content-0', name: 'capture', type: 'content', routing: null, tls: null, detection: null,
+      id: 'content-0', name: 'capture', type: 'content', private_reference_count: 0,
+      routing: null, tls: null, detection: null,
       content: {
         write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
         webhook_locks_traffic: true, ja4_tls_client_hello: true,
@@ -216,6 +218,7 @@ describe('ApiConfigClient', () => {
     expect(snapshot.addresses[1]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
     expect(snapshot.ports[0]?.usedBy).toContainEqual({id: 'routing-0', kind: 'routing-profile', name: 'main'});
     expect(snapshot.profiles[2]?.detection).toMatchObject({mode: 2, knowledgeBaseEnabled: false});
+    expect(snapshot.profiles[2]?.privateReferenceCount).toBe(2);
     expect(snapshot.profiles[3]?.content).toMatchObject({
       ruleCount: 2, sessionFilterConfigured: true,
       rules: [

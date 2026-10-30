@@ -93,7 +93,12 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         "ssh_profiles": {"default-ssh": {"host_key": "/redacted/test-key"}},
         "alg_dns_profiles": {},
         "script_profiles": {"audit-script": {}},
-        "auth_profiles": {},
+        "auth_profiles": {"private-auth": {
+            "authenticate": "true", "resolve": "true",
+            "identities": {"private-identity-name": {
+                "detection_profile": "default-detection",
+            }},
+        }},
         "routing": {"main": {}},
         "settings": {
             "accept_tproxy": "true", "accept_redirect": "true",
@@ -794,8 +799,13 @@ def main() -> int:
                 "module_overrides": [{"name": "proxy", "kind": "integer", "value": 7}],
             }
             assert {item["type"] for item in config_snapshot["profiles"]} == {
-                "detection", "content", "tls", "ssh", "script", "routing",
+                "detection", "content", "tls", "ssh", "script", "authentication", "routing",
             }
+            detection_profile = next(
+                item for item in config_snapshot["profiles"] if item["type"] == "detection")
+            assert detection_profile["private_reference_count"] == 1
+            assert all(item["private_reference_count"] == 0
+                       for item in config_snapshot["profiles"] if item["type"] != "detection")
             content_profile = next(
                 item for item in config_snapshot["profiles"] if item["type"] == "content")
             assert content_profile["content"]["rules"] == [{
@@ -815,6 +825,7 @@ def main() -> int:
             assert b"private-sift.example" not in config_body
             assert b"private-tenant" not in config_body
             assert b"private-instance" not in config_body
+            assert b"private-identity-name" not in config_body
             assert b"private-host-id" not in config_body
             assert b"private-webhook0" not in config_body
             assert b"ct-log-list" not in config_body

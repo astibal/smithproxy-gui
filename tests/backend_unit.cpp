@@ -1201,12 +1201,24 @@ int main() {
     assert(script_profiles.profiles->front().script->runtime == "python");
     assert(script_profiles.profiles->front().script->module_path_configured);
     const auto auth_profiles = parse_config_profiles(
-        R"({"success":{"auth_profiles":{"legacy":{"authenticate":"true","resolve":"false","identities":{"alice":{"tls_profile":"inspect"},"bob":{}}}}}})",
+        R"({"success":{"auth_profiles":{"legacy":{"authenticate":"true","resolve":"false","identities":{"alice":{"tls_profile":"strict","detection_profile":"default"},"bob":{"detection_profile":"default"}}}}}})",
         "auth_profiles", "authentication");
     assert(auth_profiles.profiles);
     assert(auth_profiles.profiles->front().authentication);
     assert(auth_profiles.profiles->front().authentication->identity_count == 2U);
     assert(!auth_profiles.profiles->front().authentication->resolve);
+    std::vector<ConfigProfile> profiles_with_private_references{
+        tls_profiles.profiles->front(), detection_profiles.profiles->front(),
+        auth_profiles.profiles->front(),
+    };
+    finalize_private_profile_references(profiles_with_private_references);
+    assert(profiles_with_private_references[0].private_reference_count == 1U);
+    assert(profiles_with_private_references[1].private_reference_count == 1U);
+    assert(profiles_with_private_references[2].private_reference_count == 0U);
+    assert(profiles_with_private_references[2].authentication->profile_references.empty());
+    assert(!parse_config_profiles(
+        R"({"success":{"auth_profiles":{"bad":{"identities":{"alice":{"tls_profile":7}}}}}})",
+        "auth_profiles", "authentication").profiles);
     assert(!parse_config_profiles(
         R"({"success":{"script_profiles":{"bad":{"type":"7"}}}})",
         "script_profiles", "script").profiles);

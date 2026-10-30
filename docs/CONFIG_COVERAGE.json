@@ -211,7 +211,7 @@
       "edit": "partial",
       "sensitivity": "identity-bearing",
       "tracked_fields": ["name", "authenticate", "resolve", "identity_count"],
-      "notes": "Authentication posture is typed and structurally creatable. Identity mappings for stable and pending-created profiles remain redacted, while complete replacements and clearing use a nested write-only editor with typed detection, content, TLS, and DNS profile bindings. Pending creates may reference compatible profiles created earlier in the same workspace draft. Accepted values are cleared from browser state, draft responses expose only the redacted operation and item count, and any later update requires complete re-entry. Stable unreferenced profiles support confirmed structural deletion."
+      "notes": "Authentication posture is typed and structurally creatable. Identity mappings for stable and pending-created profiles remain redacted, while complete replacements and clearing use a nested write-only editor with typed detection, content, TLS, and DNS profile bindings. Pending creates may reference compatible profiles created earlier in the same workspace draft. Accepted values are cleared from browser state, draft responses expose only the redacted operation and item count, and any later update requires complete re-entry. The GUI core privately resolves identity bindings into aggregate reverse-reference counts, then erases their names before the browser snapshot is serialized; stable profiles referenced only by redacted identities therefore remain protected from deletion. Stable unreferenced profiles support confirmed structural deletion."
     }
   ]
 }

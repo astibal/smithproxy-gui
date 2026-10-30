@@ -1311,7 +1311,9 @@ private:
             const auto& profile = snapshot.profiles[index];
             profiles += "{\"id\":" + json_string(profile.id) +
                         ",\"name\":" + json_string(profile.name) +
-                        ",\"type\":" + json_string(profile.type) + ",\"routing\":";
+                        ",\"type\":" + json_string(profile.type) +
+                        ",\"private_reference_count\":" +
+                        std::to_string(profile.private_reference_count) + ",\"routing\":";
             if (!profile.routing) {
                 profiles += "null";
             } else {

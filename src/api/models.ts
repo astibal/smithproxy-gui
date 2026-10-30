@@ -161,6 +161,7 @@ export interface ProfileObject {
   id: string;
   name: string;
   type: string;
+  privateReferenceCount: number;
   routing: RoutingProfileDetails | null;
   tls: TlsProfileDetails | null;
   detection: DetectionProfileDetails | null;

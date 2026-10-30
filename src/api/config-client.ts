@@ -538,6 +538,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       id: safeString(item.id, 'profile ID', 128),
       name: safeString(item.name, 'profile name', 128),
       type,
+      privateReferenceCount: safeInteger(
+        item.private_reference_count, 'private profile reference count', MAX_OBJECTS,
+      ),
       routing,
       tls,
       detection,

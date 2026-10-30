@@ -105,6 +105,7 @@ type MockState = {
   structuralDraftsReady?: boolean;
   secondPolicy?: boolean;
   unusedProfile?: boolean;
+  privateProfileReferences?: number;
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   commitRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   validationOperationDelta?: number;
@@ -726,7 +727,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
       profiles: [
         {
-          id: 'tls-0', name: 'inspect', type: 'tls', routing: null,
+          id: 'tls-0', name: 'inspect', type: 'tls', private_reference_count: 0, routing: null,
           tls: {
             inspect: true, use_pfs: true, left_use_pfs: true, right_use_pfs: true,
             left_disable_reuse: false, right_disable_reuse: false,
@@ -750,7 +751,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           authentication: null,
         },
         {
-          id: 'routing-0', name: 'main', type: 'routing',
+          id: 'routing-0', name: 'main', type: 'routing', private_reference_count: 0,
           routing: {
             destination_addresses: ['internet'], destination_ports: ['https'],
             load_balancing_method: 'round-robin', rewrite_sni: '', rewrite_sni_to: '',
@@ -764,18 +765,21 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           authentication: null,
         },
         {
-          id: 'detection-0', name: 'detect', type: 'detection', routing: null, tls: null,
+          id: 'detection-0', name: 'detect', type: 'detection', private_reference_count: 0,
+          routing: null, tls: null,
           detection: {mode: 1, engines_enabled: true, knowledge_base_enabled: false},
           content: null, ssh: null, dns: null, script: null, authentication: null,
         },
         {
-          id: 'dns-0', name: 'resolver', type: 'dns', routing: null, tls: null,
+          id: 'dns-0', name: 'resolver', type: 'dns', private_reference_count: 0,
+          routing: null, tls: null,
           detection: null, content: null, ssh: null,
           dns: {match_request_id: true, randomize_id: true, cached_responses: false},
           script: null, authentication: null,
         },
         {
-          id: 'content-0', name: 'capture', type: 'content', routing: null, tls: null,
+          id: 'content-0', name: 'capture', type: 'content', private_reference_count: 0,
+          routing: null, tls: null,
           detection: null,
           content: {
             write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
@@ -792,7 +796,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           ssh: null, dns: null, script: null, authentication: null,
         },
         {
-          id: 'ssh-0', name: 'default-ssh', type: 'ssh', routing: null, tls: null,
+          id: 'ssh-0', name: 'default-ssh', type: 'ssh', private_reference_count: 0,
+          routing: null, tls: null,
           detection: null, content: null,
           ssh: {
             host_key_configured: true, host_key_policy: 'strict', shell: true,
@@ -802,16 +807,19 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           dns: null, script: null, authentication: null,
         },
         {
-          id: 'script-0', name: 'audit', type: 'script', routing: null, tls: null,
+          id: 'script-0', name: 'audit', type: 'script', private_reference_count: 0,
+          routing: null, tls: null,
           detection: null, content: null, ssh: null, dns: null,
           script: {runtime: 'python', module_path_configured: true}, authentication: null,
         },
         {
-          id: 'authentication-0', name: 'legacy-auth', type: 'authentication', routing: null, tls: null,
+          id: 'authentication-0', name: 'legacy-auth', type: 'authentication',
+          private_reference_count: 0, routing: null, tls: null,
           detection: null, content: null, ssh: null, dns: null, script: null,
           authentication: {authenticate: true, resolve: true, identity_count: 2, deprecated: true},
         }, ...(state.unusedProfile ? [{
-          id: 'detection-1', name: 'unused-detection', type: 'detection', routing: null, tls: null,
+          id: 'detection-1', name: 'unused-detection', type: 'detection',
+          private_reference_count: state.privateProfileReferences ?? 0, routing: null, tls: null,
           detection: {mode: 0, engines_enabled: false, knowledge_base_enabled: false},
           content: null, ssh: null, dns: null, script: null, authentication: null,
         }] : []),
@@ -2914,6 +2922,31 @@ test('deletes an unused stable profile and blocks referenced profiles', async ({
   const deleteButton = referencedEditor.getByRole('button', {name: 'Delete detection profile'});
   await expect(deleteButton).toBeDisabled();
   await expect(deleteButton).toHaveAttribute('title', 'This object is referenced by 1 configuration entry.');
+});
+
+test('blocks profile deletion for redacted authentication identity references', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, unusedProfile: true, privateProfileReferences: 1,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  const profileRow = profiles.getByRole('button', {name: /unused-detection detection/i});
+  await expect(profileRow).toContainText('1');
+  await profileRow.click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit unused-detection'});
+  await expect(editor.getByText(
+    '1 reference is inside redacted authentication identity mappings.',
+  )).toBeVisible();
+  const deleteButton = editor.getByRole('button', {name: 'Delete detection profile'});
+  await expect(deleteButton).toBeDisabled();
+  await expect(deleteButton).toHaveAttribute(
+    'title', 'This object is referenced by 1 configuration entry.',
+  );
+  await expectNoWcagViolations(page);
 });
 
 test('blocks deletion when a new policy references the object in the same draft', async ({page}) => {

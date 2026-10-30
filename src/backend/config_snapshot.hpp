@@ -124,10 +124,16 @@ struct ConfigScriptProfile {
     bool module_path_configured{};
 };
 
+struct ConfigPrivateProfileReference {
+    std::string type;
+    std::string name;
+};
+
 struct ConfigAuthProfile {
     bool authenticate{};
     bool resolve{};
     std::uint64_t identity_count{};
+    std::vector<ConfigPrivateProfileReference> profile_references;
 };
 
 struct ConfigProfile {
@@ -142,6 +148,7 @@ struct ConfigProfile {
     std::optional<ConfigDnsProfile> dns;
     std::optional<ConfigScriptProfile> script;
     std::optional<ConfigAuthProfile> authentication;
+    std::uint64_t private_reference_count{};
 };
 
 struct ConfigPolicy {
@@ -381,6 +388,8 @@ ConfigProfileParseResult parse_config_profiles(
     std::string_view payload,
     std::string_view section,
     std::string_view type);
+
+void finalize_private_profile_references(std::vector<ConfigProfile>& profiles);
 
 struct ConfigSettingsParseResult {
     std::optional<ConfigSystemSettings> settings;

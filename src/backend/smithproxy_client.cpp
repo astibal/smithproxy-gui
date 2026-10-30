@@ -1012,6 +1012,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
             std::make_move_iterator(profiles.profiles->begin()),
             std::make_move_iterator(profiles.profiles->end()));
     }
+    finalize_private_profile_references(parsed.snapshot->profiles);
     parsed.snapshot->checked_at = snapshot.checked_at;
     parsed.snapshot->observation_started_at = snapshot.observation_started_at;
     parsed.snapshot->revision = initial_revision.revision;

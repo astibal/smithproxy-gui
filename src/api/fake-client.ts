@@ -93,7 +93,7 @@ const snapshot: ConfigSnapshot = {
   }],
   profiles: [
     {
-      id: 'tls-0', name: 'inspect', type: 'tls',
+      id: 'tls-0', name: 'inspect', type: 'tls', privateReferenceCount: 0,
       routing: null,
       tls: {
         inspect: true, usePfs: true, leftUsePfs: true, rightUsePfs: true,
@@ -119,7 +119,7 @@ const snapshot: ConfigSnapshot = {
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
-      id: 'routing-0', name: 'main', type: 'routing',
+      id: 'routing-0', name: 'main', type: 'routing', privateReferenceCount: 0,
       routing: {
         destinationAddresses: ['internet'], destinationPorts: ['https'],
         loadBalancingMethod: 'round-robin', rewriteSni: '', rewriteSniTo: '',
@@ -134,7 +134,8 @@ const snapshot: ConfigSnapshot = {
       usedBy: [],
     },
     {
-      id: 'detection-0', name: 'default', type: 'detection', routing: null, tls: null,
+      id: 'detection-0', name: 'default', type: 'detection', privateReferenceCount: 0,
+      routing: null, tls: null,
       detection: {mode: 1, enginesEnabled: true, knowledgeBaseEnabled: true},
       content: null,
       ssh: null,
@@ -144,7 +145,8 @@ const snapshot: ConfigSnapshot = {
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
-      id: 'content-0', name: 'capture', type: 'content', routing: null, tls: null,
+      id: 'content-0', name: 'capture', type: 'content', privateReferenceCount: 0,
+      routing: null, tls: null,
       detection: null,
       content: {
         writePayload: false, writeFormat: 'pcap_single', webhookEnabled: false,
@@ -164,7 +166,8 @@ const snapshot: ConfigSnapshot = {
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
-      id: 'ssh-0', name: 'default-ssh', type: 'ssh', routing: null, tls: null,
+      id: 'ssh-0', name: 'default-ssh', type: 'ssh', privateReferenceCount: 0,
+      routing: null, tls: null,
       detection: null, content: null,
       ssh: {
         hostKeyConfigured: true, hostKeyPolicy: 'strict', shell: true, exec: true,
@@ -177,7 +180,8 @@ const snapshot: ConfigSnapshot = {
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
-      id: 'dns-0', name: 'safe-dns', type: 'dns', routing: null, tls: null,
+      id: 'dns-0', name: 'safe-dns', type: 'dns', privateReferenceCount: 0,
+      routing: null, tls: null,
       detection: null, content: null, ssh: null,
       dns: {matchRequestId: true, randomizeId: true, cachedResponses: false},
       script: null,
@@ -185,13 +189,15 @@ const snapshot: ConfigSnapshot = {
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
-      id: 'script-0', name: 'audit', type: 'script', routing: null, tls: null,
+      id: 'script-0', name: 'audit', type: 'script', privateReferenceCount: 0,
+      routing: null, tls: null,
       detection: null, content: null, ssh: null, dns: null,
       script: {runtime: 'python', modulePathConfigured: true}, authentication: null,
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
     {
-      id: 'authentication-0', name: 'legacy-auth', type: 'authentication', routing: null, tls: null,
+      id: 'authentication-0', name: 'legacy-auth', type: 'authentication', privateReferenceCount: 0,
+      routing: null, tls: null,
       detection: null, content: null, ssh: null, dns: null, script: null,
       authentication: {authenticate: true, resolve: true, identityCount: 2, deprecated: true},
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
