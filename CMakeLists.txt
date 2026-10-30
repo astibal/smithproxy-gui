@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(smithproxy_gui VERSION 0.1.0 LANGUAGES CXX)
 
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -125,11 +127,20 @@ target_include_directories(smithproxy-gui PRIVATE
 )
 target_compile_definitions(smithproxy-gui PRIVATE
     SMITHPROXY_GUI_DEFAULT_ASSET_ROOT="${SMITHPROXY_GUI_FRONTEND_DIR}"
+    SMITHPROXY_GUI_INSTALL_ASSET_RELATIVE="../${CMAKE_INSTALL_DATADIR}/smithproxy-gui"
 )
 target_link_libraries(smithproxy-gui PRIVATE smithproxy_gui_core PkgConfig::MICROHTTPD)
 target_compile_options(smithproxy-gui PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
 if(TARGET smithproxy-gui-frontend)
     add_dependencies(smithproxy-gui smithproxy-gui-frontend)
+endif()
+
+install(TARGETS smithproxy-gui RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(FILES "${SMITHPROXY_GUI_BACKEND_SBOM}"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/smithproxy-gui")
+if(SMITHPROXY_GUI_BUILD_FRONTEND)
+    install(DIRECTORY "${SMITHPROXY_GUI_FRONTEND_DIR}/"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/smithproxy-gui")
 endif()
 
 include(CTest)
@@ -168,4 +179,13 @@ if(BUILD_TESTING)
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/api_surface.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/docs/API_SURFACE.json"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/backend/http_server.cpp")
+    if(SMITHPROXY_GUI_BUILD_FRONTEND)
+        add_test(NAME installed_bundle_tests
+            COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_bundle.py"
+                    "${CMAKE_COMMAND}"
+                    "${CMAKE_CURRENT_BINARY_DIR}"
+                    "${CMAKE_INSTALL_BINDIR}/smithproxy-gui"
+                    "${CMAKE_INSTALL_DATADIR}/smithproxy-gui")
+        set_tests_properties(installed_bundle_tests PROPERTIES TIMEOUT 20)
+    endif()
 endif()

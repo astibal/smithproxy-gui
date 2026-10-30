@@ -15,8 +15,15 @@ void handle_signal(int) { stop_requested.store(true); }
 }
 
 int main(int argc, char** argv) {
+    std::error_code executable_error;
+    auto executable = std::filesystem::read_symlink("/proc/self/exe", executable_error);
+    if (executable_error || executable.empty()) executable = argv[0];
+    const auto default_asset_root = smithproxy::gui::resolve_default_asset_root(
+        executable,
+        std::filesystem::path(SMITHPROXY_GUI_DEFAULT_ASSET_ROOT),
+        std::filesystem::path(SMITHPROXY_GUI_INSTALL_ASSET_RELATIVE));
     const auto parsed = smithproxy::gui::parse_config(
-        argc, argv, std::filesystem::path(SMITHPROXY_GUI_DEFAULT_ASSET_ROOT));
+        argc, argv, default_asset_root);
     if (parsed.show_help) {
         std::cout << smithproxy::gui::usage();
         return 0;

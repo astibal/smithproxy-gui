@@ -74,6 +74,15 @@ ctest --test-dir build --output-on-failure
 ./build/smithproxy-gui --help
 ```
 
+A relocatable production bundle can be staged with standard CMake install
+semantics. The installed executable resolves its fingerprinted frontend next to
+the installation automatically; `--assets` remains an explicit override.
+
+```sh
+cmake --install build --prefix ./package
+./package/bin/smithproxy-gui --base-path /ws001/smithproxy-gui/
+```
+
 The backend reads Smithproxy access exclusively from its process environment:
 
 ```text

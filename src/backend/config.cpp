@@ -68,6 +68,24 @@ std::optional<std::uint16_t> parse_port(const std::string_view value) {
 
 } // namespace
 
+std::filesystem::path resolve_default_asset_root(
+    const std::filesystem::path& executable,
+    const std::filesystem::path& build_asset_root,
+    const std::filesystem::path& install_asset_relative) {
+    std::error_code error;
+    const auto absolute_executable = executable.is_absolute()
+        ? executable
+        : std::filesystem::absolute(executable, error);
+    if (!error && !absolute_executable.empty()) {
+        const auto installed =
+            (absolute_executable.parent_path() / install_asset_relative).lexically_normal();
+        if (std::filesystem::is_regular_file(installed / "index.html", error) && !error) {
+            return installed;
+        }
+    }
+    return build_asset_root;
+}
+
 ParseResult parse_config(const int argc, char** argv, const std::filesystem::path& default_asset_root) {
     AppConfig config;
     config.asset_root = default_asset_root;

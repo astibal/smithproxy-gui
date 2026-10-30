@@ -26,6 +26,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <string>
 #include <utility>
@@ -817,6 +818,24 @@ int main() {
     assert(!safe_asset_path(root, "/%2e%2e/secret"));
     assert(!safe_asset_path(root, "/assets%2fsecret"));
     assert(!safe_asset_path(root, "/assets\\secret"));
+
+    const auto bundle_root = std::filesystem::temp_directory_path() / "smithproxy-gui-bundle-test";
+    const auto bundle_bin = bundle_root / "bin";
+    const auto bundle_assets = bundle_root / "share" / "smithproxy-gui";
+    std::filesystem::create_directories(bundle_bin);
+    std::filesystem::create_directories(bundle_assets);
+    {
+        std::ofstream entrypoint(bundle_assets / "index.html");
+        entrypoint << "<!doctype html>";
+    }
+    assert(resolve_default_asset_root(
+        bundle_bin / "smithproxy-gui", "/build/frontend", "../share/smithproxy-gui") ==
+        bundle_assets);
+    std::filesystem::remove(bundle_assets / "index.html");
+    assert(resolve_default_asset_root(
+        bundle_bin / "smithproxy-gui", "/build/frontend", "../share/smithproxy-gui") ==
+        std::filesystem::path("/build/frontend"));
+    std::filesystem::remove_all(bundle_root);
 
     assert(json_string("line\n\"quoted\"") == "\"line\\n\\\"quoted\\\"\"");
 
