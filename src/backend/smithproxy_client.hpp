@@ -49,7 +49,10 @@ struct SmithproxyStatus {
 
 class SmithproxyMonitor {
 public:
-    explicit SmithproxyMonitor(std::optional<SmithproxyConfig> config, bool config_enabled = false);
+    explicit SmithproxyMonitor(
+        std::optional<SmithproxyConfig> config,
+        bool config_enabled = false,
+        ReviewedTransactionSchemas reviewed_schemas = reviewed_transaction_schemas());
     ~SmithproxyMonitor();
 
     SmithproxyMonitor(const SmithproxyMonitor&) = delete;
@@ -81,6 +84,7 @@ private:
 
     std::optional<SmithproxyConfig> config_;
     bool config_enabled_{};
+    ReviewedTransactionSchemas reviewed_transaction_schemas_;
     mutable std::mutex mutex_;
     SmithproxyStatus status_;
     std::atomic_bool config_refresh_requested_{};

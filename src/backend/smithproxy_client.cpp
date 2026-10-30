@@ -91,8 +91,12 @@ TransactionResponse transaction_failure(std::string state) {
 
 } // namespace
 
-SmithproxyMonitor::SmithproxyMonitor(std::optional<SmithproxyConfig> config, const bool config_enabled)
-    : config_(std::move(config)), config_enabled_(config_enabled) {
+SmithproxyMonitor::SmithproxyMonitor(
+    std::optional<SmithproxyConfig> config,
+    const bool config_enabled,
+    ReviewedTransactionSchemas reviewed_schemas)
+    : config_(std::move(config)), config_enabled_(config_enabled),
+      reviewed_transaction_schemas_(std::move(reviewed_schemas)) {
     if (config_) {
         status_.state = "starting";
         status_.detail = "Waiting for the first Smithproxy probe";
@@ -809,7 +813,7 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
     }
     if (status_code != 200L) return capabilities;
 
-    return parse_transaction_capabilities(response.body, reviewed_transaction_schemas());
+    return parse_transaction_capabilities(response.body, reviewed_transaction_schemas_);
 }
 
 ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {

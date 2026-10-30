@@ -853,6 +853,7 @@ int main() {
         ]}})";
     const auto unreviewed_capabilities = parse_transaction_capabilities(capability_payload, {});
     assert(unreviewed_capabilities.state == "review-required");
+    assert(reviewed_transaction_schemas().empty());
     assert(unreviewed_capabilities.maximum_operations == 4096U);
     assert(unreviewed_capabilities.maximum_request_bytes == 1024U * 1024U);
     assert(unreviewed_capabilities.collections.size() == 2U);

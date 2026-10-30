@@ -163,6 +163,26 @@ if(BUILD_TESTING)
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/backend_integration.py"
                 "$<TARGET_FILE:smithproxy-gui>" "${SMITHPROXY_GUI_TEST_ASSET_DIR}")
     set_tests_properties(backend_integration_tests PROPERTIES TIMEOUT 20)
+    add_executable(backend_transaction_test_server
+        tests/backend_transaction_server.cpp
+        src/backend/http_server.cpp
+    )
+    target_include_directories(backend_transaction_test_server PRIVATE
+        src/backend
+        external/lmhpp/include
+    )
+    target_link_libraries(backend_transaction_test_server PRIVATE
+        smithproxy_gui_core
+        PkgConfig::MICROHTTPD
+    )
+    target_compile_options(backend_transaction_test_server PRIVATE
+        -Wall -Wextra -Wpedantic -Wconversion)
+    add_test(NAME backend_transaction_integration_tests
+        COMMAND Python3::Interpreter
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/backend_transaction_integration.py"
+                "$<TARGET_FILE:backend_transaction_test_server>"
+                "${SMITHPROXY_GUI_TEST_ASSET_DIR}")
+    set_tests_properties(backend_transaction_integration_tests PROPERTIES TIMEOUT 25)
     add_test(NAME config_coverage_tests
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/config_coverage.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/docs/CONFIG_COVERAGE.json")

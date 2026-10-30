@@ -205,6 +205,11 @@ verifies the draft version, clears changes, and advances the canonical base
 revision only after a bound success response. A local monotonic observation
 barrier prevents a configuration fetch started before that success from later restoring the stale
 base revision. It also requests an immediate monitored configuration refresh.
+The backend integration suite exercises that complete path against a test-only
+reviewed schema: validation, an interrupted first commit, an idempotent retry,
+atomic draft finalization, and refresh-job convergence. Production builds still
+contain no reviewed upstream schema until the corresponding Smithproxy contract
+has completed the external review process.
 Draft preflight reports fixed blocker categories instead of collapsing missing
 advertisement, schema review, compatibility, revision, and transport readiness
 into one generic error.

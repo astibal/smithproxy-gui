@@ -88,6 +88,13 @@ terminální stav `invalid`, absenci jeho textu v DOM a úspěšné obnovení a�
 explicitním retry. Live cesta kontroluje čas posledního validovaného payloadu a
 allowlisted transportní údaje v diagnostickém exportu.
 
+Samostatný test-only server vkládá přes konstruktor jediný reviewovaný schema
+hash, který produkční binárka neobsahuje. Přes skutečný HTTP adaptér ověřuje
+Smithproxy validaci, ztracenou odpověď prvního commitu, opakování se stejným
+idempotency key, atomické uzavření draftu až po autoritativním úspěchu a doběhnutí
+config-refresh jobu nad novou revision. Citlivá změna je viditelná pouze fake
+Smithproxy endpointu; GUI odpovědi, audit a procesní výstup zůstávají redigované.
+
 Unit coverage gate měří importovanou API, config, monitoring a state logiku přes
 V8. Aktuální nepodkročitelné globální prahy jsou 83 % statements, 82 % branches,
 94 % functions a 88 % lines. Prahy jsou baseline proti regresi, nikoliv tvrzení,
