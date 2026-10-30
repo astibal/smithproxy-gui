@@ -390,10 +390,10 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
     if (one_of(field, booleans)) return valid(boolean(value));
     struct IntegerRule { std::string_view path; std::int64_t minimum; std::int64_t maximum; };
     constexpr std::array integer_rules{
-        IntegerRule{"plaintext_workers", -1, 4096}, IntegerRule{"ssl_workers", -1, 4096},
-        IntegerRule{"udp_workers", -1, 4096}, IntegerRule{"dtls_workers", -1, 4096},
-        IntegerRule{"quic_workers", -1, 4096}, IntegerRule{"socks_workers", -1, 4096},
-        IntegerRule{"http_connect_workers", -1, 4096}, IntegerRule{"plaintext_port", 1024, 65535},
+        IntegerRule{"plaintext_workers", 0, 4096}, IntegerRule{"ssl_workers", 0, 4096},
+        IntegerRule{"udp_workers", 0, 4096}, IntegerRule{"dtls_workers", 0, 4096},
+        IntegerRule{"quic_workers", -1, 1}, IntegerRule{"socks_workers", 0, 4096},
+        IntegerRule{"http_connect_workers", 0, 4096}, IntegerRule{"plaintext_port", 1024, 65535},
         IntegerRule{"ssl_port", 1024, 65535}, IntegerRule{"udp_port", 1024, 65535},
         IntegerRule{"dtls_port", 1024, 65535}, IntegerRule{"quic_port", 1, 65535},
         IntegerRule{"socks_port", 1024, 65535}, IntegerRule{"http_connect_port", 1024, 65535},

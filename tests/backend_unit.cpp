@@ -601,6 +601,16 @@ int main() {
            DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({"settings.quic_port", std::int64_t{1}}) ==
            DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.plaintext_workers", std::int64_t{-1}}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({"settings.plaintext_workers", std::int64_t{0}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.quic_workers", std::int64_t{-1}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.quic_workers", std::int64_t{1}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.quic_workers", std::int64_t{2}}) ==
+           DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({"settings.ssl_ocsp_status_ttl", std::int64_t{1800}}) ==
            DraftSchemaResult::UnknownPath);
     assert(validate_draft_schema({"settings.ssl_crl_status_ttl", std::int64_t{86400}}) ==

@@ -33,7 +33,7 @@
         "cli", "web_rating", "tpool_log", "socks",
         "ssl_autodetect_harder", "ssl_use_ktls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "All active writable settings emitted by the current Smithproxy saver are typed and editable with ranges aligned to the pinned upstream schema. OCSP and CRL status TTLs remain visible but read-only because upstream marks them VALUE_NONE. Integer quotas accept the full lossless JSON range. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys use write-only replace/clear controls. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."
+      "notes": "All active writable settings emitted by the current Smithproxy saver are typed and editable with ranges aligned to the pinned upstream schema. Non-QUIC worker pools accept non-negative counts and defer the target-specific hardware ceiling to authoritative Smithproxy validation; QUIC accepts -1, 0, or 1. Non-canonical legacy live worker values remain readable without being resubmitted when unrelated settings change. OCSP and CRL status TTLs remain visible but read-only because upstream marks them VALUE_NONE. Integer quotas accept the full lossless JSON range. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys use write-only replace/clear controls. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."
     },
     {
       "name": "debug",

@@ -107,9 +107,10 @@ const systemBooleanFields = [
 ] as const;
 
 const systemWorkerFields = [
-  ['plaintext_workers', 'plaintext'], ['ssl_workers', 'tls'], ['udp_workers', 'udp'],
-  ['dtls_workers', 'dtls'], ['quic_workers', 'quic'], ['socks_workers', 'socks'],
-  ['http_connect_workers', 'http-connect'],
+  ['plaintext_workers', 'plaintext', 0, 4096], ['ssl_workers', 'tls', 0, 4096],
+  ['udp_workers', 'udp', 0, 4096], ['dtls_workers', 'dtls', 0, 4096],
+  ['quic_workers', 'quic', -1, 1], ['socks_workers', 'socks', 0, 4096],
+  ['http_connect_workers', 'http-connect', 0, 4096],
 ] as const;
 
 const systemNumericFields = [
@@ -5356,16 +5357,26 @@ export class SmithproxyApp extends LitElement {
 
   private systemSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
     const changes: DraftChange[] = [];
+    const settings = this.snapshot?.settings;
+    if (!settings) return undefined;
     for (const [path, id] of systemBooleanFields) {
       const select = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-${id}`);
       if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
       changes.push({path: `settings.${path}`, value: select.value === 'true'});
     }
-    for (const [path, id] of systemWorkerFields) {
+    const liveWorkerValues: ReadonlyMap<string, number> = new Map([
+      ['plaintext', settings.workers.plaintext], ['tls', settings.workers.tls],
+      ['udp', settings.workers.udp], ['dtls', settings.workers.dtls],
+      ['quic', settings.workers.quic], ['socks', settings.workers.socks],
+      ['http-connect', settings.workers.httpConnect],
+    ]);
+    for (const [path, id, minimum, maximum] of systemWorkerFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-worker-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
-      if (!input || !Number.isInteger(value) || value < -1 || value > 4096) {
-        this.draftError = 'Worker counts must be integers from -1 to 4096.';
+      const current = this.persistentValue(`settings.${path}`, liveWorkerValues.get(id)!);
+      const canonical = Number.isInteger(value) && value >= minimum && value <= maximum;
+      if (!input || (!canonical && value !== current)) {
+        this.draftError = 'Worker counts must use 0 or more; QUIC accepts -1, 0, or 1.';
         return undefined;
       }
       changes.push({path: `settings.${path}`, value});
@@ -9187,6 +9198,9 @@ export class SmithproxyApp extends LitElement {
     const workerPaths: ReadonlyMap<string, string> = new Map(
       systemWorkerFields.map(([path, id]) => [id, `settings.${path}`]),
     );
+    const workerLimits: ReadonlyMap<string, readonly [number, number]> = new Map(
+      systemWorkerFields.map(([, id, minimum, maximum]) => [id, [minimum, maximum] as const]),
+    );
     const numericPaths: ReadonlyMap<string, string> = new Map([
       ...systemNumericFields.map(([path, id]) => [id, `settings.${path}`] as const),
       ['api-key-timeout', 'settings.http_api.key_timeout'],
@@ -9205,11 +9219,12 @@ export class SmithproxyApp extends LitElement {
         `settings-${id}`, scalar(booleanPaths.get(id)!, value), locked(booleanPaths.get(id)!),
       )}
     `;
-    const workerField = (id: string, label: string, value: number) => html`
-      <label for="settings-worker-${id}">${label}</label>
-      <input id="settings-worker-${id}" type="number" min="-1" max="4096"
-        .value=${String(scalar(workerPaths.get(id)!, value))} .readOnly=${locked(workerPaths.get(id)!)} />
-    `;
+    const workerField = (id: string, label: string, value: number) => {
+      const [minimum, maximum] = workerLimits.get(id)!;
+      return html`<label for="settings-worker-${id}">${label}</label>
+        <input id="settings-worker-${id}" type="number" min=${String(minimum)} max=${String(maximum)}
+          .value=${String(scalar(workerPaths.get(id)!, value))} .readOnly=${locked(workerPaths.get(id)!)} />`;
+    };
     const numericField = (
       id: string, label: string, value: number, minimum: number, maximum: number,
     ) => html`
@@ -9253,7 +9268,10 @@ export class SmithproxyApp extends LitElement {
         ${workerField('quic', 'QUIC workers', settings.workers.quic)}
         ${workerField('socks', 'SOCKS workers', settings.workers.socks)}
         ${workerField('http-connect', 'HTTP CONNECT workers', settings.workers.httpConnect)}
-        <span class="form-span privacy-note">Use -1 to disable a listener; 0 lets Smithproxy choose its default worker count.</span>
+        <span class="form-span privacy-note">
+          Zero lets Smithproxy choose its default worker count. QUIC alone uses -1 to disable its listener and
+          accepts at most one event loop. Smithproxy validation applies the target host CPU ceiling to other pools.
+        </span>
         <h3 class="form-span">Listener endpoints</h3>
         ${numericField('port-plaintext', 'Plaintext port', settings.ports.plaintext, 1024, 65535)}
         ${numericField('port-tls', 'TLS port', settings.ports.tls, 1024, 65535)}

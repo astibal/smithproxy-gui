@@ -132,6 +132,10 @@ type MockState = {
     }>;
     editable: boolean;
   }>;
+  workerOverrides?: Partial<{
+    plaintext: number; tls: number; udp: number; dtls: number;
+    quic: number; socks: number; http_connect: number;
+  }>;
 };
 
 async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
@@ -837,7 +841,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         accept_http_connect: true, accept_api: true,
         policy_fail_open: false,
         access_request_fail_open: false,
-        workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 0, http_connect: 1},
+        workers: {
+          plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: 0, socks: 0, http_connect: 1,
+          ...state.workerOverrides,
+        },
         ports: {plaintext: 50080, tls: 50443, udp: 50080, dtls: 50443, quic: 443, socks: 1080, http_connect: 3128},
         ocsp_status_ttl: 1800, crl_status_ttl: 86400,
         logging: {
@@ -4760,6 +4767,55 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
   await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
   await expect(authorityEditor.getByText(/current certificate-authority path stays inside/i)).toBeVisible();
+});
+
+test('preserves legacy worker values while enforcing pinned worker semantics', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', workerOverrides: {socks: -1}, draftMutationBatches: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trafficCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Traffic admission'}),
+  });
+  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+
+  await expect(editor.getByLabel('Plaintext workers')).toHaveAttribute('min', '0');
+  await expect(editor.getByLabel('SOCKS workers')).toHaveAttribute('min', '0');
+  await expect(editor.getByLabel('SOCKS workers')).toHaveValue('-1');
+  await expect(editor.getByLabel('QUIC workers')).toHaveAttribute('min', '-1');
+  await expect(editor.getByLabel('QUIC workers')).toHaveAttribute('max', '1');
+  await expect(editor.getByText(/QUIC alone uses -1 to disable/i)).toBeVisible();
+
+  await editor.getByLabel('Policy failure').selectOption('true');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches).toEqual([[
+    {path: 'settings.policy_fail_open', value: true},
+  ]]);
+
+  await editor.getByLabel('Plaintext workers').fill('-1');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(/Worker counts must use 0 or more/i)).toBeVisible();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
+
+  await editor.getByLabel('Plaintext workers').fill('2');
+  await editor.getByLabel('QUIC workers').fill('2');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(/QUIC accepts -1, 0, or 1/i)).toBeVisible();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
+
+  await editor.getByLabel('QUIC workers').fill('1');
+  await editor.getByLabel('TLS workers', {exact: true}).fill('8');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches).toEqual([
+    [{path: 'settings.policy_fail_open', value: true}],
+    [
+      {path: 'settings.ssl_workers', value: 8},
+      {path: 'settings.quic_workers', value: 1},
+    ],
+  ]);
 });
 
 test('saves typed system and capture settings without exposing redacted values', async ({page}) => {
