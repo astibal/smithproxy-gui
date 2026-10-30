@@ -15,7 +15,6 @@ import {
   type DraftSnapshot,
   type DraftValidation,
 } from './api/draft-client';
-import {FakeConfigClient} from './api/fake-client';
 import type {
   AddressObject,
   CaptureSettings,
@@ -330,7 +329,6 @@ export class SmithproxyApp extends LitElement {
   @state() private searchQuery = '';
   @state() private authIdentityEditors = new Map<string, AuthIdentityEditorState>();
 
-  private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
   private runtime: RuntimeConfig | undefined;
   private systemClient: SystemClient | undefined;
@@ -767,7 +765,6 @@ export class SmithproxyApp extends LitElement {
     window.addEventListener('online', this.handleOnline);
     window.addEventListener('beforeunload', this.handleBeforeUnload);
     window.addEventListener('popstate', this.handlePopState);
-    void this.loadConfiguration();
   }
 
   disconnectedCallback(): void {
@@ -1541,19 +1538,6 @@ export class SmithproxyApp extends LitElement {
     anchor.click();
     anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
-
-  private async loadConfiguration(): Promise<void> {
-    try {
-      const preview = await this.previewClient.loadSnapshot();
-      if (!this.configReadAvailable && this.snapshot?.source !== 'live') {
-        this.snapshot = preview;
-        this.restoreDrawerRoute();
-      }
-      await this.loadCapabilities();
-    } catch (error) {
-      this.loadingError = error instanceof Error ? error.message : 'Unable to load configuration.';
-    }
   }
 
   private applyDraft(snapshot: DraftSnapshot): void {
@@ -7868,6 +7852,15 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderContent() {
+    if (!this.snapshot && ['Search', 'Draft', 'Policy', 'Objects'].includes(this.activeSection)) {
+      return html`
+        <div class="empty-state" role="status">
+          <h2>Configuration unavailable</h2>
+          <p>The authenticated API has not granted configuration read access. No local or cached
+            configuration is displayed.</p>
+        </div>
+      `;
+    }
     if (this.activeSection === 'Search') return this.renderSearchResults();
     if (this.activeSection === 'Draft') {
       return this.renderDraftReview();
@@ -10206,7 +10199,8 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="section">
         <h3>Impact</h3>
-        <div class="impact">This shared object is used by ${usageCount} configuration entries.</div>
+        <div class="impact">This shared object is used by ${usageCount} configuration
+          ${usageCount === 1 ? 'entry' : 'entries'}.</div>
         ${privateReferenceCount > 0 ? html`
           <div class="scope-note">
             ${privateReferenceCount} ${privateReferenceCount === 1 ? 'reference is' : 'references are'}
@@ -10353,8 +10347,7 @@ export class SmithproxyApp extends LitElement {
           ` : html`
             <span class="validation ${dirty ? 'warning' : ''}" role="status" aria-live="polite">
               ${this.drawerError ?? this.draftError ?? (dirty ? 'Unsaved changes'
-                : readOnly ? this.snapshot?.source === 'live'
-                  ? 'Read-only runtime view' : 'Read-only preview; draft API unavailable'
+                : readOnly ? 'Read-only runtime view'
                 : saved ? 'Saved to draft' : 'Validation ready')}
             </span>
             ${drawerDraftPaths.length > 0 ? html`
@@ -10464,11 +10457,9 @@ export class SmithproxyApp extends LitElement {
           </button>
           <span class="status-secondary ${this.draftChangeCount ? 'draft' : ''}">Draft: ${this.draftChangeCount} changes</span>
           <span class="status-secondary" title=${this.configError ?? this.snapshot?.detail ?? ''}>
-            Config: ${this.snapshot?.source === 'live'
+            Config: ${this.snapshot
               ? `${displayState(this.snapshot.state)}${this.configError ? ' · refresh failed' : ''}`
-              : this.snapshot
-                ? this.configError ? 'Preview · live unavailable' : 'Preview'
-                : this.configReadAvailable ? 'Loading' : 'Unavailable'}
+              : this.configReadAvailable ? 'Loading' : 'Unavailable'}
             ${this.configRefreshDeferred ? ' · refresh paused' : ''}
           </span>
           <span class="status-secondary system-state ${this.gatewayStatus().tone}"

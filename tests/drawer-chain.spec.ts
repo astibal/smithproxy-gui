@@ -3642,11 +3642,26 @@ test('recovers from a concurrent draft writer without losing either change set',
 });
 
 test('opens a policy and its referenced address object', async ({page}) => {
-  await mockSystemApi(page, {smithproxy: 'ready'});
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    valueOrigins: [{
+      path: 'policy.[0].action', persistent_value: 'reject', effective_value: 'accept',
+      layers: [
+        {id: 'temporary-office-access', priority: 100, value: 'reject', active: false},
+        {id: 'incident-response', priority: 200, value: 'accept', active: true},
+      ],
+      editable: false,
+    }, {
+      path: 'address_objects.[0].value', persistent_value: '10.0.0.0/24',
+      effective_value: '10.0.32.0/20',
+      layers: [{id: 'maintenance-segment', priority: 50, value: '10.0.32.0/20', active: true}],
+      editable: false,
+    }],
+  }, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  await page.getByRole('button', {name: /office office-net/i}).click();
-  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+  await page.getByRole('button', {name: /Policy 1 office/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
   const overlay = page.getByRole('region', {name: 'Effective value overlays'});
   const policyChain = overlay.getByRole('list', {name: 'action overlay chain'});
   await expect(policyChain).toContainText('Persistent');
@@ -3659,51 +3674,51 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await expect(policyChain).toContainText('Effective');
   await expect(policyChain).toContainText('accept');
   await expect(overlay).toContainText('Owned by active layer');
-  await expect(page.locator('#action-policy-office')).toBeDisabled();
+  await expect(page.locator('#action-policy-0')).toBeDisabled();
 
-  await page.getByRole('button', {name: 'office-net', exact: true}).click();
-  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net', exact: true, includeHidden: true});
+  await page.getByRole('button', {name: 'office', exact: true}).click();
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true});
   await expect(addressEditor).toBeVisible();
-  await expect(addressEditor.locator('#address-value-address-office-net')).toHaveValue('10.20.0.0/16');
-  await expect(addressEditor.locator('#address-value-address-office-net')).toHaveAttribute('readonly', '');
+  await expect(addressEditor.locator('#address-value-address-0')).toHaveValue('10.0.0.0/24');
+  await expect(addressEditor.locator('#address-value-address-0')).toHaveAttribute('readonly', '');
   const addressOverlay = addressEditor.getByRole('region', {name: 'Effective value overlays'});
   const addressChain = addressOverlay.getByRole('list', {name: 'value overlay chain'});
   await expect(addressChain).toContainText('maintenance-segment');
   await expect(addressChain).toContainText('Priority 50');
-  await expect(addressChain).toContainText('10.20.32.0/20');
-  await expect(page.getByText('This shared object is used by 4 configuration entries.')).toBeVisible();
+  await expect(addressChain).toContainText('10.0.32.0/20');
+  await expect(page.getByText('This shared object is used by 1 configuration entry.')).toBeVisible();
 
-  const policyEditor = page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true});
+  const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1', exact: true, includeHidden: true});
   await expect(policyEditor).toHaveAttribute('inert', '');
   await expect(addressEditor).not.toHaveAttribute('inert', '');
 
   const firstFocusable = addressEditor.getByRole('button', {name: 'Enter focus mode'});
-  const lastFocusable = addressEditor.getByRole('button', {name: 'Cancel'});
+  const lastFocusable = addressEditor.getByRole('button', {name: 'Save to draft'});
   await firstFocusable.focus();
   await page.keyboard.press('Shift+Tab');
   await expect(lastFocusable).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(firstFocusable).toBeFocused();
 
-  await expect(addressEditor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
-  await expect(addressEditor.getByRole('status')).toHaveText('Read-only preview; draft API unavailable');
+  await expect(addressEditor.getByRole('button', {name: 'Save to draft'})).toBeEnabled();
+  await expect(addressEditor.getByRole('status')).toHaveText('Validation ready');
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
 
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toBeVisible();
-  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
 });
 
 test('walks reverse dependencies through nested editors', async ({page}) => {
-  await mockSystemApi(page, {smithproxy: 'ready'});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('group', {name: 'Address objects'})
-    .getByRole('button', {name: /office-net cidr/i}).click();
+    .getByRole('button', {name: /office cidr/i}).click();
 
-  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net', includeHidden: true});
-  await addressEditor.getByRole('button', {name: /office policy/}).click();
-  const policyEditor = page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true});
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office', includeHidden: true});
+  await addressEditor.getByRole('button', {name: /Policy 1 policy/}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1', exact: true, includeHidden: true});
   await expect(policyEditor).toBeVisible();
   await expect(addressEditor).toHaveAttribute('inert', '');
 
@@ -3712,9 +3727,9 @@ test('walks reverse dependencies through nested editors', async ({page}) => {
   await expect(tlsEditor).toBeVisible();
   await expect(policyEditor).toHaveAttribute('inert', '');
   await expect(tlsEditor.getByLabel('Inspection')).toHaveValue('true');
-  await expect(tlsEditor.getByLabel('Inspection')).toBeDisabled();
+  await expect(tlsEditor.getByLabel('Inspection')).toBeEnabled();
 
-  await tlsEditor.getByRole('button', {name: /office policy/}).click();
+  await tlsEditor.getByRole('button', {name: /Policy 1 policy/}).click();
   await expect(tlsEditor).not.toBeVisible();
   await expect(policyEditor).not.toHaveAttribute('inert', '');
 
@@ -4001,12 +4016,12 @@ test('binds system, capture, and nested security editors to persistent values', 
 });
 
 test('restores drawer routes and manages focus across the chain', async ({page}) => {
-  await mockSystemApi(page, {smithproxy: 'ready'});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  await page.getByRole('button', {name: /office office-net/i}).click();
-  await expect(page.locator('#policy-name-policy-office')).toBeFocused();
-  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-office');
+  await page.getByRole('button', {name: /Policy 1 office/i}).click();
+  await expect(page.locator('#policy-name-policy-0')).toBeFocused();
+  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-0');
   const workspaceBox = await page.locator('.workspace').boundingBox();
   const policyBox = await page.locator('.drawer').first().boundingBox();
   expect(workspaceBox).not.toBeNull();
@@ -4014,11 +4029,11 @@ test('restores drawer routes and manages focus across the chain', async ({page})
   expect(policyBox!.width / workspaceBox!.width).toBeGreaterThanOrEqual(.79);
   expect(policyBox!.width / workspaceBox!.width).toBeLessThanOrEqual(.81);
 
-  const reference = page.getByRole('button', {name: 'office-net', exact: true});
+  const reference = page.getByRole('button', {name: 'office', exact: true});
   await reference.click();
-  await expect(page.locator('#address-name-address-office-net')).toBeFocused();
+  await expect(page.locator('#address-name-address-0')).toBeFocused();
   await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe(
-    'policy:policy-office,address:address-office-net',
+    'policy:policy-0,address:address-0',
   );
   const addressBox = await page.locator('.drawer').nth(1).boundingBox();
   expect(addressBox).not.toBeNull();
@@ -4027,22 +4042,22 @@ test('restores drawer routes and manages focus across the chain', async ({page})
   expect(drawerLeft[1] - drawerLeft[0]).toBeGreaterThanOrEqual(51);
   expect(drawerLeft[1] - drawerLeft[0]).toBeLessThanOrEqual(53);
 
-  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office'});
   await addressEditor.getByRole('button', {name: 'Enter focus mode'}).click();
   await expect(addressEditor).toHaveCSS('left', '0px');
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toBeVisible();
   await expect(reference).toBeFocused();
-  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-office');
+  await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-0');
 
   await reference.click();
   await page.reload();
-  await expect(page.getByRole('dialog', {name: 'Edit office', exact: true, includeHidden: true})).toBeVisible();
-  await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toBeVisible();
-  await expect(page.locator('#address-name-address-office-net')).toBeFocused();
-  await page.goBack();
-  await expect(page.getByRole('dialog', {name: 'Edit office-net'})).not.toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Edit Policy 1', exact: true, includeHidden: true})).toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
+  await expect(page.locator('#address-name-address-0')).toBeFocused();
+  await page.goBack();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).not.toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
 });
 
 test('requires an explicit decision before closing unsaved drawer changes', async ({page}) => {
@@ -4279,38 +4294,33 @@ test('ignores late configuration and draft snapshots after gateway revocation', 
   await page.waitForTimeout(900);
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  await expect(statusbar).toContainText('Config: Preview');
+  await expect(statusbar).toContainText('Config: Unavailable');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('heading', {name: 'Configuration unavailable'})).toBeVisible();
   await expect(statusbar).toContainText('Draft: 0 changes');
   expect(failedRequests).toEqual(expect.arrayContaining([
     '/api/v1/config/snapshot', '/api/v1/config/draft',
   ]));
 });
 
-test('keeps preview configuration read-only without a draft API', async ({page}) => {
-  await mockSystemApi(page, {smithproxy: 'ready'});
+test('does not fabricate configuration without configuration API access', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready'};
+  const protectedRequests: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path.includes('/api/v1/config/')) protectedRequests.push(path);
+  });
+  await mockSystemApi(page, state);
   await page.goto('/');
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
-  await expect(statusbar).toContainText('Config: Preview');
+  await expect(statusbar).toContainText('Config: Unavailable');
   await expect(statusbar).toContainText('Draft: 0 changes');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  await page.getByRole('button', {name: /office office-net internet accept/i}).click();
-
-  const policyEditor = page.getByRole('dialog', {name: 'Edit office'});
-  await expect(policyEditor.getByLabel('Name')).toHaveAttribute('readonly', '');
-  await expect(policyEditor.getByLabel('Action', {exact: true})).toBeDisabled();
-  await expect(policyEditor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
-  await expect(policyEditor.getByRole('status')).toHaveText('Read-only preview; draft API unavailable');
-
-  await policyEditor.getByRole('button', {name: 'office-net', exact: true}).click();
-  const addressEditor = page.getByRole('dialog', {name: 'Edit office-net'});
-  await expect(addressEditor.getByLabel('Name')).toHaveAttribute('readonly', '');
-  await expect(addressEditor.getByLabel('Type')).toBeDisabled();
-  await expect(addressEditor.getByLabel('Address')).toHaveAttribute('readonly', '');
-  await expect(addressEditor.getByRole('button', {name: 'Save to draft'})).toBeDisabled();
-  await expect(addressEditor.getByRole('status')).toHaveText('Read-only preview; draft API unavailable');
-  await expect(statusbar).toContainText('Draft: 0 changes');
+  await expect(page.getByRole('heading', {name: 'Configuration unavailable'})).toBeVisible();
+  await expect(page.getByText('office-net')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(protectedRequests).toEqual([]);
 });
 
 test('removes an open live editor when gateway configuration access is revoked', async ({page}) => {
@@ -4409,7 +4419,7 @@ test('rejects an incoherent privileged capability graph before protected request
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Core: Offline');
-  await expect(statusbar).toContainText('Config: Preview');
+  await expect(statusbar).toContainText('Config: Unavailable');
   await expect(statusbar).toContainText('Events: Unavailable');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   const capabilityCard = page.getByRole('article').filter({
@@ -4631,7 +4641,7 @@ test('filters structured job failures without exposing job identifiers', async (
 });
 
 test('exposes network, object, and system vertical slices', async ({page}) => {
-  await mockSystemApi(page, {smithproxy: 'ready'});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
@@ -4651,8 +4661,8 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Protocol objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Profiles and routing'})).toBeVisible();
-  await page.getByRole('button', {name: /office-net cidr/i}).click();
-  await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toBeVisible();
+  await page.getByRole('button', {name: /office cidr/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
   await page.keyboard.press('Escape');
   await page.getByRole('group', {name: 'Port objects'}).getByRole('button', {name: /https Port range 443/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit https'})).toBeVisible();
@@ -4661,8 +4671,8 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('dialog', {name: 'Edit tcp'})).toBeVisible();
   await page.keyboard.press('Escape');
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
-  await profiles.getByRole('button', {name: /default detection Typed details/i}).click();
-  await expect(page.getByRole('dialog', {name: 'Edit default'}).getByLabel('Detection phase')).toHaveValue('1');
+  await profiles.getByRole('button', {name: /detect detection Typed details/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit detect'}).getByLabel('Detection phase')).toHaveValue('1');
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /capture content Typed details/i}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
@@ -4675,8 +4685,8 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(sshEditor.getByLabel('Host key', {exact: true})).toHaveValue('unchanged');
   await expect(sshEditor.getByLabel('Upstream host-key policy')).toHaveValue('strict');
   await page.keyboard.press('Escape');
-  await profiles.getByRole('button', {name: /safe-dns dns Typed details/i}).click();
-  await expect(page.getByRole('dialog', {name: 'Edit safe-dns'}).getByText('Randomize upstream ID')).toBeVisible();
+  await profiles.getByRole('button', {name: /resolver dns Typed details/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit resolver'}).getByText('Randomize upstream ID')).toBeVisible();
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /audit script Typed details/i}).click();
   const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
@@ -4686,7 +4696,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await profiles.getByRole('button', {name: /legacy-auth authentication Typed details/i}).click();
   const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
   await expect(authenticationEditor.getByText('Deprecated compatibility profile')).toBeVisible();
-  await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeDisabled();
+  await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeEnabled();
   await expect(authenticationEditor.getByLabel('Authenticate')).toHaveValue('true');
   await page.keyboard.press('Escape');
 
@@ -4714,7 +4724,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   });
   await expect(capabilityCard).toContainText('Ready');
   await expect(capabilityCard).toContainText('API contractv1');
-  await expect(capabilityCard).toContainText('Enabled surfaces9 / 13');
+  await expect(capabilityCard).toContainText('Enabled surfaces12 / 13');
   await expect(capabilityCard).toContainText('30 seconds · connectivity-triggered');
   const jobsCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Backend jobs'}),
@@ -4736,12 +4746,12 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
     application: {apiVersion: 'v1'},
     controlPlane: {core: 'online', smithproxy: 'ready'},
     runtime: {listenerCount: 2, sessionsActive: 4},
-    capabilities: {bootstrapState: 'ready', enabledFeatureCount: 9, jobs: true},
+    capabilities: {bootstrapState: 'ready', enabledFeatureCount: 12, jobs: true},
     operations: {
       eventCount: 1, activeAlertCount: 0, auditEntryCount: 1,
       jobCount: 0, activeJobCount: 0, failedJobCount: 0,
     },
-    configuration: {source: 'preview', state: 'ready', draftChangeCount: 0},
+    configuration: {source: 'live', state: 'ready', draftChangeCount: 0},
   });
   const diagnosticOperations = diagnostics.operations as Record<string, unknown>;
   expect(diagnosticOperations.eventStreamReconnectCount).toEqual(expect.any(Number));
@@ -4753,10 +4763,12 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
   });
-  await expect(gatewayCard).toContainText('Fail-closed disabled');
-  await expect(gatewayCard).toContainText('Configuration readBlocked');
+  await expect(gatewayCard).toContainText('Gateway configured');
+  await expect(gatewayCard).toContainText('Current requestVerified');
+  await expect(gatewayCard).toContainText('Configuration readAvailable');
+  await expect(gatewayCard).toContainText('Shared draftAvailable');
   await expect(gatewayCard).toContainText('Atomic commitBlocked');
-  await expect(gatewayCard).toContainText(/configuration APIs remain fail-closed/i);
+  await expect(gatewayCard).toContainText('Upstream transactionSchema review required');
   await expect(page.getByText('Smithproxy key')).toBeVisible();
   await expect(page.getByText('Never exposed')).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Traffic admission'})).toBeVisible();
@@ -5303,7 +5315,7 @@ test('finds pending structural creates without indexing write-only values', asyn
 });
 
 test('declares the Saslik appearance contract and remains usable on mobile', async ({page}) => {
-  await mockSystemApi(page, {smithproxy: 'ready'});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.setViewportSize({width: 390, height: 844});
   await page.goto('/');
 
@@ -5311,7 +5323,7 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
   await expect(page.locator('script[data-app="smithproxy-gui"]')).toHaveAttribute('src', '/saslik-theme.js');
   const search = page.getByRole('searchbox', {name: 'Search'});
   await expect(search).toBeVisible();
-  await search.fill('office-net');
+  await search.fill('office');
   await expect(page.getByRole('heading', {name: 'Search results'})).toBeVisible();
   await page.keyboard.press('Escape');
 
@@ -5324,13 +5336,13 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
     document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  await page.getByRole('button', {name: /office office-net/i}).click();
-  const editor = page.getByRole('dialog', {name: 'Edit office'});
+  await page.getByRole('button', {name: /Policy 1 office/i}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await expect(editor).toBeVisible();
   await expect(editor).toHaveCSS('left', '0px');
   await expect.poll(() => editor.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await editor.getByRole('button', {name: 'office-net', exact: true}).click();
-  await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toHaveCSS('left', '0px');
+  await editor.getByRole('button', {name: 'office', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit office'})).toHaveCSS('left', '0px');
 });
 
 test('confines an embedded application to its explicit workspace mount', async ({page}) => {

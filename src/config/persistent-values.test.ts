@@ -1,10 +1,10 @@
 import {describe, expect, it} from 'vitest';
-import {FakeConfigClient} from '../api/fake-client';
+import {ConfigFixtureClient} from './persistent-values.fixture';
 import {persistentConfigurationValues} from './persistent-values';
 
 describe('persistent configuration values', () => {
   it('indexes every readable typed editor section without indexing redacted values', async () => {
-    const snapshot = await new FakeConfigClient().loadSnapshot();
+    const snapshot = await new ConfigFixtureClient().loadSnapshot();
     const values = persistentConfigurationValues(snapshot);
 
     expect(values.size).toBe(250);

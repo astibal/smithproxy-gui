@@ -359,7 +359,7 @@ export interface ValueOrigin {
 }
 
 export interface ConfigSnapshot {
-  source: 'preview' | 'live';
+  source: 'live';
   state: 'ready' | 'starting' | 'unavailable' | 'unconfigured';
   detail: string;
   checkedAtUnixMs: number | null;

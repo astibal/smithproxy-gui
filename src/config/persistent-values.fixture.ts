@@ -1,12 +1,12 @@
-import type {ConfigClient, ConfigSnapshot} from './models';
+import type {ConfigClient, ConfigSnapshot} from '../api/models';
 
 const snapshot: ConfigSnapshot = {
-  source: 'preview',
+  source: 'live',
   state: 'ready',
-  detail: 'Preview configuration data',
+  detail: 'Persistent configuration value fixture',
   checkedAtUnixMs: null,
   lastSuccessAtUnixMs: null,
-  revision: 'preview-1',
+  revision: 'fixture-1',
   policies: [
     {
       id: 'policy-office',
@@ -321,7 +321,7 @@ const snapshot: ConfigSnapshot = {
   ],
 };
 
-export class FakeConfigClient implements ConfigClient {
+export class ConfigFixtureClient implements ConfigClient {
   async loadSnapshot(): Promise<ConfigSnapshot> {
     return structuredClone(snapshot);
   }

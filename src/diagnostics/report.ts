@@ -82,7 +82,7 @@ export interface DiagnosticsReportInput {
     activeJobCount: number;
     failedJobCount: number;
   };
-  configuration: {source: 'live' | 'preview' | 'unavailable'; state: RuntimeDiagnosticState | 'unknown'; draftChangeCount: number};
+  configuration: {source: 'live' | 'unavailable'; state: RuntimeDiagnosticState | 'unknown'; draftChangeCount: number};
 }
 
 export interface DiagnosticsReport extends DiagnosticsReportInput {
