@@ -649,6 +649,15 @@ int main() {
         {"detection_signatures.[0].flow.[0].signature", std::string("^TLS")},
     }) == DraftMutationResult::Applied);
     assert(validate_draft_schema({
+        "policy.[0].src", std::vector<std::string>{},
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "policy.[0].dst", std::vector<std::string>{},
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "proto_objects.[0].id", std::int64_t{0},
+    }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
         "address_objects.[0].type", std::string("fqdn"),
     }) == DraftSchemaResult::Valid);
     assert(validate_draft_schema({
@@ -1102,6 +1111,12 @@ int main() {
     assert(configuration.snapshot->addresses.size() == 2U);
     assert(configuration.snapshot->ports.front().start == 443U);
     assert(configuration.snapshot->protocols.front().number == 6U);
+    const auto invalid_protocol_zero = parse_config_snapshot(
+        R"({"success":{"policy":[]}})",
+        R"({"success":{"address_objects":{}}})",
+        R"({"success":{"port_objects":{}}})",
+        R"({"success":{"proto_objects":{"reserved":{"id":"0"}}}})");
+    assert(!invalid_protocol_zero.snapshot);
 
     const auto legacy_address = parse_config_snapshot(
         R"({"success":{"policy":[]}})",

@@ -36,6 +36,9 @@ používají `linux-noble` baseline; tím baseline nezávisí na průběžných 
 fontů a rendereru GitHub runneru. Lokální vývojový příkaz používá pro rychlost
 Chromium; shodný tříbrowserový matrix se zapíná proměnnou
 `PLAYWRIGHT_ALL_BROWSERS=1`.
+Před pushem změny UI se spouští `pnpm test:visual:pinned`. Příkaz používá
+stejný digest image, baseline selector a Playwright filtr jako CI, takže změna UI a
+odpovídající baseline musí projít a být commitnuté společně.
 CI záměrně nepoužívá retry a zapisuje detail každého browserového pádu přímo do
 GitHub check annotations, aby platformní rozdíl nemohl zůstat skrytý za obecným
 exit kódem. Při pádu navíc na sedm dní uloží Playwright trace a případné

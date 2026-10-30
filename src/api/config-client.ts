@@ -319,7 +319,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     return {
       id: safeString(item.id, 'protocol ID', 128),
       name: safeString(item.name, 'protocol name', 128),
-      number: safeInteger(item.number, 'protocol number', 255),
+      number: rangedInteger(item.number, 'protocol number', 1, 255),
       usedBy: [],
     };
   });

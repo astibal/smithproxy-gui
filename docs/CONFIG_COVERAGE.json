@@ -72,7 +72,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "id"],
-      "notes": "Protocol identifiers are represented by typed edit and structural create drawers. Creation validates unique protocol numbers; confirmed deletion is limited to objects without live or pending policy references and without pending field edits. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "Protocol identifiers are represented by typed edit and structural create drawers. Creation validates unique protocol numbers in the Smithproxy-supported range 1-255; confirmed deletion is limited to objects without live or pending policy references and without pending field edits. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "detection_profiles",
@@ -175,7 +175,7 @@
         "ssh_profile", "detection_profile", "content_profile", "alg_dns_profile",
         "script_profile", "auth_profile", "nat", "routing", "features", "disabled"
       ],
-      "notes": "All fields currently returned by the policy snapshot contract are represented by typed edit and ordered structural create drawers. References resolve live entities by their current draft-visible names and named objects or profiles created earlier in the same workspace draft; pending creates reopen their structural drawer and pending renames retain the stable live entity ID. Ordered creates and moves may target earlier pending policies through transaction-scoped client identifiers while use-before-create choices remain unavailable. Existing policies support optimistic first, before, and last move operations; restoring the original position removes the pending move. Confirmed structural deletion rejects conflicting pending field edits. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "All fields currently returned by the policy snapshot contract are represented by typed edit and ordered structural create drawers. Empty source, source-port, destination, and destination-port selectors preserve Smithproxy wildcard semantics. References resolve live entities by their current draft-visible names and named objects or profiles created earlier in the same workspace draft; pending creates reopen their structural drawer and pending renames retain the stable live entity ID. Ordered creates and moves may target earlier pending policies through transaction-scoped client identifiers while use-before-create choices remain unavailable. Existing policies support optimistic first, before, and last move operations; restoring the original position removes the pending move. Confirmed structural deletion rejects conflicting pending field edits. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "starttls_signatures",

@@ -304,6 +304,9 @@ describe('ApiConfigClient', () => {
     expect(() => parseConfigSnapshot({...liveSnapshot, ports: [
       {id: 'bad', name: 'bad', start: 10, end: 1},
     ]})).toThrow('Invalid port range');
+    expect(() => parseConfigSnapshot({...liveSnapshot, protocols: [
+      {id: 'reserved', name: 'reserved', number: 0},
+    ]})).toThrow('Invalid protocol number');
     expect(() => parseConfigSnapshot({...liveSnapshot, state: {toString: () => 'ready'}}))
       .toThrow('Invalid configuration snapshot');
     expect(() => parseConfigSnapshot({...liveSnapshot, revision: 'revision-7'}))

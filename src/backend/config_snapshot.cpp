@@ -244,7 +244,7 @@ bool parse_protocols(const Json& section, ConfigSnapshot& snapshot, std::string&
     std::size_t index{};
     for (const auto& [name, value] : section.items()) {
         const auto number = value.is_object() ? decimal(value, "id") : std::nullopt;
-        if (!valid_name(name) || !number || *number > 255U) {
+        if (!valid_name(name) || !number || *number == 0U || *number > 255U) {
             error = "Smithproxy returned an invalid protocol object";
             return false;
         }

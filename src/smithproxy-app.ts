@@ -3402,8 +3402,8 @@ export class SmithproxyApp extends LitElement {
       values.every(value => printable(value, 128)) && new Set(values).size === values.length;
     const referenceValues = new Map([...references].map(([field, value]) => [field, value!.value.trim()]));
     if (!printable(normalizedName, 128) || !printable(normalizedAction, 32) ||
-        !printable(normalizedProtocol, 128) || !validList(sourceValues, false) ||
-        !validList(destinationValues, false) ||
+        !printable(normalizedProtocol, 128) || !validList(sourceValues) ||
+        !validList(destinationValues) ||
         ![sourcePortValues, destinationPortValues, featureValues].every(values => validList(values)) ||
         !printable(nat.value.trim(), 128, true) ||
         [...referenceValues.values()].some(value => !printable(value, 128, true))) {
@@ -3903,11 +3903,11 @@ export class SmithproxyApp extends LitElement {
     const end = endInput?.valueAsNumber;
     const maximum = port ? 65535 : 255;
     if (name.length === 0 || name.length > 128 || /[\u0000-\u001f\u007f]/u.test(name) ||
-        !Number.isInteger(first) || first < 0 || first > maximum ||
+        !Number.isInteger(first) || first < (port ? 0 : 1) || first > maximum ||
         (port && (!Number.isInteger(end) || end! < first || end! > maximum))) {
       this.drawerError = port
         ? 'A unique name and a valid ascending port range from 0 to 65535 are required.'
-        : 'A unique name and a protocol number from 0 to 255 are required.';
+        : 'A unique name and a protocol number from 1 to 255 are required.';
       return;
     }
     const collection = port ? 'port_objects' : 'proto_objects';
@@ -4882,7 +4882,6 @@ export class SmithproxyApp extends LitElement {
       if (normalizedName.length === 0 || normalizedName.length > 128 ||
           action.value.trim().length === 0 || action.value.trim().length > 32 ||
           protocol.value.trim().length === 0 || protocol.value.trim().length > 128 ||
-          sourceValues.length === 0 || destinations.length === 0 ||
           ![sourceValues, sourcePortValues, destinations, destinationPortValues, featureValues].every(validList) ||
           [nat, ...references.values()].some(value => value!.value.trim().length > 128)) {
         this.draftError = 'Policy fields and unique bounded references are required.';
@@ -4973,8 +4972,8 @@ export class SmithproxyApp extends LitElement {
       const normalizedName = name.value.trim();
       const currentName = this.persistentValue(`proto_objects.[${index}].name`, this.snapshot.protocols[index]!.name);
       if (normalizedName.length === 0 || normalizedName.length > 128 || !Number.isInteger(numberValue) ||
-          numberValue < 0 || numberValue > 255) {
-        this.draftError = 'Name and a valid IP protocol number from 0 to 255 are required.';
+          numberValue < 1 || numberValue > 255) {
+        this.draftError = 'Name and a valid IP protocol number from 1 to 255 are required.';
         return undefined;
       }
       if (this.duplicateConfigurationName('protocol', entry.id, normalizedName)) {
@@ -8295,7 +8294,7 @@ export class SmithproxyApp extends LitElement {
         <input id="protocol-create-name-${entry.id}" .value=${name} maxlength="128" required
           autocomplete="off" .readOnly=${readOnly} />
         <label for="protocol-create-number-${entry.id}">IP protocol number</label>
-        <input id="protocol-create-number-${entry.id}" type="number" min="0" max="255" step="1"
+        <input id="protocol-create-number-${entry.id}" type="number" min="1" max="255" step="1"
           .value=${String(number)} required .readOnly=${readOnly} />
       </div>
       <div class="impact">
@@ -8603,7 +8602,7 @@ export class SmithproxyApp extends LitElement {
         <input id="protocol-name-${entry.id}" .value=${this.persistentValue(`${base}.name`, protocol.name)}
           .readOnly=${this.originReadOnly(`${base}.name`, readOnly)} />
         <label for="protocol-number-${entry.id}">IP protocol number</label>
-        <input id="protocol-number-${entry.id}" type="number" min="0" max="255"
+        <input id="protocol-number-${entry.id}" type="number" min="1" max="255"
           .value=${String(this.persistentValue(`${base}.id`, protocol.number))}
           .readOnly=${this.originReadOnly(`${base}.id`, readOnly)} />
       </div>

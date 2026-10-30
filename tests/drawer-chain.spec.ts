@@ -2266,6 +2266,10 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
   await page.getByRole('button', {name: 'New protocol'}).click();
   editor = page.getByRole('dialog', {name: 'Create protocol object'});
   await editor.getByLabel('Name').fill('branch-tcp');
+  await editor.getByLabel('IP protocol number').fill('0');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(/protocol number from 1 to 255/u)).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(1);
   await editor.getByLabel('IP protocol number').fill('6');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText('Protocol object names and numbers must be unique.')).toBeVisible();
@@ -2706,6 +2710,8 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
 
   await editor.getByLabel('Name').fill('branch-policy');
   await editor.getByLabel('Placement').selectOption({label: 'Before Policy 1'});
+  await editor.getByLabel('Sources').fill('');
+  await editor.getByLabel('Destinations').fill('');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText('Saved to draft')).toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
@@ -2715,7 +2721,7 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   expect(request.operation).toMatchObject({
     op: 'create', collection: 'policy', position: {before: 'policy-0'},
     fields: {
-      name: 'branch-policy', disabled: false, proto: 'tcp', src: ['office'], dst: ['internet'],
+      name: 'branch-policy', disabled: false, proto: 'tcp', src: [], dst: [],
       action: 'accept', sport: [], dport: [], features: [],
     },
   });

@@ -184,7 +184,7 @@ Result validate_policy(const std::string_view field, const DraftScalar& value) {
     if (field == "name") return valid(bounded_text(value, 128U));
     if (field == "disabled") return valid(boolean(value));
     if (field == "proto") return valid(bounded_text(value, 128U));
-    if (field == "src" || field == "dst") return valid(string_list(value, 128U, false));
+    if (field == "src" || field == "dst") return valid(string_list(value));
     if (field == "sport" || field == "dport" || field == "features") {
         return valid(string_list(value));
     }
@@ -293,7 +293,7 @@ Result validate_indexed(const std::string_view path, const DraftScalar& value) {
     }
     if (const auto field = indexed_suffix(path, "proto_objects")) {
         if (*field == "name") return valid(bounded_text(value, 128U));
-        if (*field == "id") return valid(bounded_integer(value, 0, 255));
+        if (*field == "id") return valid(bounded_integer(value, 1, 255));
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "routing")) {

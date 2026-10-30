@@ -16,7 +16,8 @@
     "test": "pnpm test:unit",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "pnpm build && playwright test"
+    "test:e2e": "pnpm build && playwright test",
+    "test:visual:pinned": "bash scripts/run-pinned-visual-regression.sh"
   },
   "dependencies": {
     "lit": "3.3.3"
