@@ -2200,6 +2200,7 @@ test('creates and reopens an address object through a structural drawer', async 
   await create.click();
 
   let editor = page.getByRole('dialog', {name: 'Create address object'});
+  await expect(editor.getByLabel('Type').locator('option')).toHaveText(['CIDR', 'FQDN']);
   await editor.getByLabel('Name').fill('office');
   await editor.getByLabel('Address', {exact: true}).fill('192.0.2.0/24');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
@@ -3648,7 +3649,7 @@ test('walks reverse dependencies through nested editors', async ({page}) => {
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('group', {name: 'Address objects'})
-    .getByRole('button', {name: /office-net subnet/i}).click();
+    .getByRole('button', {name: /office-net cidr/i}).click();
 
   const addressEditor = page.getByRole('dialog', {name: 'Edit office-net', includeHidden: true});
   await addressEditor.getByRole('button', {name: /office policy/}).click();
@@ -4580,7 +4581,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Protocol objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Profiles and routing'})).toBeVisible();
-  await page.getByRole('button', {name: /office-net subnet/i}).click();
+  await page.getByRole('button', {name: /office-net cidr/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toBeVisible();
   await page.keyboard.press('Escape');
   await page.getByRole('group', {name: 'Port objects'}).getByRole('button', {name: /https Port range 443/i}).click();

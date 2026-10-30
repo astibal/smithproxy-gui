@@ -3807,7 +3807,7 @@ export class SmithproxyApp extends LitElement {
     const name = nameInput?.value.trim() ?? '';
     const type = typeInput?.value ?? '';
     const value = valueInput?.value.trim() ?? '';
-    const addressTypes = new Set(['cidr', 'fqdn', 'host', 'subnet', 'range']);
+    const addressTypes = new Set(['cidr', 'fqdn']);
     if (name.length === 0 || name.length > 128 || value.length === 0 || value.length > 1024 ||
         !addressTypes.has(type)) {
       this.drawerError = 'Name, type, and address are required and must fit the configuration limits.';
@@ -4922,7 +4922,7 @@ export class SmithproxyApp extends LitElement {
       const normalizedName = name.value.trim();
       const currentName = this.persistentValue(`address_objects.[${index}].name`, this.snapshot.addresses[index]!.name);
       if (normalizedName.length === 0 || normalizedName.length > 128 || value.value.trim().length === 0 ||
-          !['cidr', 'fqdn', 'host', 'subnet', 'range'].includes(type.value)) {
+          !['cidr', 'fqdn'].includes(type.value)) {
         this.draftError = 'Name and address value are required.';
         return undefined;
       }
@@ -8217,7 +8217,7 @@ export class SmithproxyApp extends LitElement {
         <label for="address-type-${entry.id}">Type</label>
         <select id="address-type-${entry.id}" .value=${this.persistentValue(`${base}.type`, address.type)}
           ?disabled=${this.originReadOnly(`${base}.type`, readOnly)}>
-          <option value="cidr">CIDR</option><option value="fqdn">FQDN</option><option value="host">Host</option><option value="subnet">Subnet</option><option value="range">Range</option>
+          <option value="cidr">CIDR</option><option value="fqdn">FQDN</option>
         </select>
         <label for="address-value-${entry.id}">Address</label>
         <input id="address-value-${entry.id}" .value=${this.persistentValue(`${base}.value`, address.value)}
@@ -8249,8 +8249,6 @@ export class SmithproxyApp extends LitElement {
         <label for="address-create-type-${entry.id}">Type</label>
         <select id="address-create-type-${entry.id}" .value=${type} ?disabled=${readOnly}>
           <option value="cidr">CIDR</option><option value="fqdn">FQDN</option>
-          <option value="host">Host</option><option value="subnet">Subnet</option>
-          <option value="range">Range</option>
         </select>
         <label for="address-create-value-${entry.id}">Address</label>
         <input id="address-create-value-${entry.id}" .value=${value} maxlength="1024" required

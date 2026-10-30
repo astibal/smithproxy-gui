@@ -298,6 +298,9 @@ describe('ApiConfigClient', () => {
     expect(() => parseConfigSnapshot({...liveSnapshot, addresses: [
       liveSnapshot.addresses[0], {...liveSnapshot.addresses[0], id: 'address-2'},
     ]})).toThrow('Duplicate address object');
+    expect(() => parseConfigSnapshot({...liveSnapshot, addresses: [
+      {...liveSnapshot.addresses[0], type: 'subnet'},
+    ]})).toThrow('Invalid address type');
     expect(() => parseConfigSnapshot({...liveSnapshot, ports: [
       {id: 'bad', name: 'bad', start: 10, end: 1},
     ]})).toThrow('Invalid port range');

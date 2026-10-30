@@ -54,7 +54,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "type", "value"],
-      "notes": "CIDR and FQDN address objects are represented by typed edit and structural create drawers. Confirmed structural deletion is available only for objects without live or pending policy/routing references and without pending field edits. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "The pinned Smithproxy schema supports CIDR and FQDN address objects only; both are represented by typed edit and structural create drawers. Confirmed structural deletion is available only for objects without live or pending policy/routing references and without pending field edits. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "port_objects",

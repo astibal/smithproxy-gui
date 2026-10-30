@@ -649,6 +649,12 @@ int main() {
         {"detection_signatures.[0].flow.[0].signature", std::string("^TLS")},
     }) == DraftMutationResult::Applied);
     assert(validate_draft_schema({
+        "address_objects.[0].type", std::string("fqdn"),
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "address_objects.[0].type", std::string("subnet"),
+    }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
         "auth_profiles.[0].identities", DraftAuthIdentities{{
             .name = "empty",
             .detection_profile = {},

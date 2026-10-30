@@ -34,7 +34,7 @@ export interface ConfigUsage {
 export interface AddressObject {
   id: string;
   name: string;
-  type: 'cidr' | 'fqdn' | 'host' | 'subnet' | 'range';
+  type: 'cidr' | 'fqdn';
   value: string;
   usedBy: ReadonlyArray<ConfigUsage>;
 }

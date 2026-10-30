@@ -282,7 +282,7 @@ Result validate_indexed(const std::string_view path, const DraftScalar& value) {
     if (const auto field = indexed_suffix(path, "policy")) return validate_policy(*field, value);
     if (const auto field = indexed_suffix(path, "address_objects")) {
         if (*field == "name") return valid(bounded_text(value, 128U));
-        if (*field == "type") return valid(enumerated(value, {"cidr", "fqdn", "host", "subnet", "range"}));
+        if (*field == "type") return valid(enumerated(value, {"cidr", "fqdn"}));
         if (*field == "value") return valid(bounded_text(value, 1024U));
         return Result::UnknownPath;
     }

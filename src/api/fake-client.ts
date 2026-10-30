@@ -55,7 +55,7 @@ const snapshot: ConfigSnapshot = {
     {
       id: 'address-office-net',
       name: 'office-net',
-      type: 'subnet',
+      type: 'cidr',
       value: '10.20.0.0/16',
       usedBy: [
         {id: 'policy-office', kind: 'policy', name: 'office'},
@@ -67,14 +67,14 @@ const snapshot: ConfigSnapshot = {
     {
       id: 'address-guest-net',
       name: 'guest-net',
-      type: 'subnet',
+      type: 'cidr',
       value: '10.80.0.0/16',
       usedBy: [{id: 'policy-guest', kind: 'policy', name: 'guest'}],
     },
     {
       id: 'address-quarantine',
       name: 'quarantine-net',
-      type: 'subnet',
+      type: 'cidr',
       value: '10.99.0.0/16',
       usedBy: [{id: 'policy-quarantine', kind: 'policy', name: 'quarantine'}],
     },
