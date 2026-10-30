@@ -381,18 +381,17 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
         IntegerRule{"plaintext_workers", -1, 4096}, IntegerRule{"ssl_workers", -1, 4096},
         IntegerRule{"udp_workers", -1, 4096}, IntegerRule{"dtls_workers", -1, 4096},
         IntegerRule{"quic_workers", -1, 4096}, IntegerRule{"socks_workers", -1, 4096},
-        IntegerRule{"http_connect_workers", -1, 4096}, IntegerRule{"plaintext_port", 0, 65535},
-        IntegerRule{"ssl_port", 0, 65535}, IntegerRule{"udp_port", 0, 65535},
-        IntegerRule{"dtls_port", 0, 65535}, IntegerRule{"quic_port", 0, 65535},
-        IntegerRule{"socks_port", 0, 65535}, IntegerRule{"http_connect_port", 0, 65535},
-        IntegerRule{"ssl_ocsp_status_ttl", 0, 31536000}, IntegerRule{"ssl_crl_status_ttl", 0, 31536000},
-        IntegerRule{"write_pcap_single_quota", 0, 1048576}, IntegerRule{"log_level", 0, 10},
-        IntegerRule{"syslog_port", 0, 65535}, IntegerRule{"syslog_facility", 0, 23},
-        IntegerRule{"syslog_level", 0, 10}, IntegerRule{"syslog_family", 4, 6},
-        IntegerRule{"cli.port", 0, 65535}, IntegerRule{"webhook.ping_interval", 0, 2147483647},
+        IntegerRule{"http_connect_workers", -1, 4096}, IntegerRule{"plaintext_port", 1024, 65535},
+        IntegerRule{"ssl_port", 1024, 65535}, IntegerRule{"udp_port", 1024, 65535},
+        IntegerRule{"dtls_port", 1024, 65535}, IntegerRule{"quic_port", 1, 65535},
+        IntegerRule{"socks_port", 1024, 65535}, IntegerRule{"http_connect_port", 1024, 65535},
+        IntegerRule{"write_pcap_single_quota", 0, 9007199254740991LL}, IntegerRule{"log_level", 0, 8},
+        IntegerRule{"syslog_port", 0, 65535}, IntegerRule{"syslog_facility", 0, 32},
+        IntegerRule{"syslog_level", 0, 8}, IntegerRule{"syslog_family", 4, 6},
+        IntegerRule{"cli.port", 1024, 65535}, IntegerRule{"webhook.ping_interval", 0, 2147483647},
         IntegerRule{"webhook.nbr_update_interval", 0, 2147483647},
         IntegerRule{"webhook.nbr_tag_refresh_age", 0, 2147483647},
-        IntegerRule{"http_api.key_timeout", 1, 4294967295LL}, IntegerRule{"http_api.port", 1025, 65534},
+        IntegerRule{"http_api.key_timeout", 1, 4294967295LL}, IntegerRule{"http_api.port", 1024, 65535},
         IntegerRule{"tuning.host_bufsz_min", 1500, 10000000},
         IntegerRule{"tuning.host_bufsz_max_multiplier", 1, 1024000000},
         IntegerRule{"tuning.host_write_full", 1024, 1024000000},
@@ -454,7 +453,7 @@ Result validate_capture(const std::string_view field, const DraftScalar& value) 
     if (field == "local.format") return valid(enumerated(value, {"pcap_single", "pcap", "smcap"}));
     if (field == "remote.tun_type") return valid(enumerated(value, {"gre"}));
     if (field == "remote.gre_format") return valid(enumerated(value, {"traffic", "pcapng"}));
-    if (field == "local.pcap_quota") return valid(bounded_integer(value, 0, 1048576));
+    if (field == "local.pcap_quota") return valid(bounded_integer(value, 0, 9007199254740991LL));
     if (field == "remote.tun_ttl") return valid(bounded_integer(value, 0, 255));
     constexpr std::array write_only{
         std::string_view{"local.dir"}, std::string_view{"local.file_prefix"},

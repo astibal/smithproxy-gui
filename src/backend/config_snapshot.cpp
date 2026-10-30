@@ -646,21 +646,23 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto quic_port = optional_decimal(*value, "quic_port", 443U, 65535U);
     const auto socks_port = optional_decimal(*value, "socks_port", 1080U, 65535U);
     const auto http_connect_port = optional_decimal(*value, "http_connect_port", 3128U, 65535U);
-    constexpr std::uint64_t maximum_status_ttl = 31536000U;
-    const auto ocsp_status_ttl = optional_decimal(*value, "ssl_ocsp_status_ttl", 1800U, maximum_status_ttl);
-    const auto crl_status_ttl = optional_decimal(*value, "ssl_crl_status_ttl", 86400U, maximum_status_ttl);
+    constexpr std::uint64_t maximum_json_safe_integer = 9007199254740991ULL;
+    const auto ocsp_status_ttl = optional_decimal(
+        *value, "ssl_ocsp_status_ttl", 1800U, maximum_json_safe_integer);
+    const auto crl_status_ttl = optional_decimal(
+        *value, "ssl_crl_status_ttl", 86400U, maximum_json_safe_integer);
     const auto default_write_payload = boolean_scalar(*value, "default_write_payload", false);
     const auto payload_directory = bounded_string(*value, "write_payload_dir", maximum_value_length, true);
     const auto write_pcap_single_quota = optional_decimal(
-        *value, "write_pcap_single_quota", 100U, 1024U * 1024U);
-    const auto log_level = optional_decimal(*value, "log_level", 6U, 10U);
+        *value, "write_pcap_single_quota", 100U, maximum_json_safe_integer);
+    const auto log_level = optional_decimal(*value, "log_level", 6U, 8U);
     const auto log_file = bounded_string(*value, "log_file", maximum_value_length, true);
     const auto log_console = boolean_scalar(*value, "log_console", true);
     const auto ssl_key_log_file = bounded_string(*value, "sslkeylog_file", maximum_value_length, true);
     const auto syslog_server = bounded_string(*value, "syslog_server", maximum_name_length, true);
     const auto syslog_port = optional_decimal(*value, "syslog_port", 514U, 65535U);
-    const auto syslog_facility = optional_decimal(*value, "syslog_facility", 23U, 23U);
-    const auto syslog_level = optional_decimal(*value, "syslog_level", 6U, 10U);
+    const auto syslog_facility = optional_decimal(*value, "syslog_facility", 23U, 32U);
+    const auto syslog_level = optional_decimal(*value, "syslog_level", 6U, 8U);
     const auto syslog_family = optional_decimal(*value, "syslog_family", 4U, 6U);
     const auto udp_quick_ports = string_array(*value, "udp_quick_ports", true);
     const auto certificates_path = bounded_string(*value, "certs_path", maximum_value_length, true);
@@ -736,7 +738,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto api_keys = optional_string_array_size(http_api, "keys");
     const auto allowed_ips = string_array(http_api, "allowed_ips", true);
     const auto api_key_timeout = optional_decimal(http_api, "key_timeout", 3600U, 4294967295U);
-    const auto api_port = optional_decimal(http_api, "port", 55555U, 65534U);
+    const auto api_port = optional_decimal(http_api, "port", 55555U, 65535U);
     const auto key_extend = boolean_scalar(http_api, "key_extend_on_access", true);
     const auto loopback_only = boolean_scalar(http_api, "loopback_only", true);
     const auto pam_login = boolean_scalar(http_api, "pam_login", false);
@@ -772,7 +774,10 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     if (!accept_tproxy || !accept_redirect || !accept_socks || !accept_http_connect || !accept_api ||
         !policy_fail_open || !access_fail_open || !plaintext_workers || !tls_workers || !udp_workers ||
         !dtls_workers || !quic_workers || !socks_workers || !http_connect_workers || !plaintext_port ||
-        !tls_port || !udp_port || !dtls_port || !quic_port || !socks_port || !http_connect_port || !ocsp_status_ttl ||
+        !tls_port || !udp_port || !dtls_port || !quic_port || !socks_port || !http_connect_port ||
+        *plaintext_port < 1024U || *tls_port < 1024U || *udp_port < 1024U ||
+        *dtls_port < 1024U || *quic_port < 1U || *socks_port < 1024U ||
+        *http_connect_port < 1024U || !ocsp_status_ttl ||
         !crl_status_ttl || !default_write_payload || !payload_directory ||
         !write_pcap_single_quota || !log_level || !log_file || !log_console ||
         !ssl_key_log_file || !syslog_server || !syslog_port || !syslog_facility ||
@@ -780,6 +785,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !udp_quick_ports || !certificates_path || !certificate_password || !certificate_transparency_log ||
         !ca_bundle_path || !ca_bundle_file ||
         !messages_directory || !payload_file_prefix || !payload_file_suffix || !cli_port ||
+        *cli_port < 1024U ||
         !cli_password || !rating_key || !admin_group || !tuning_host_buffer_min ||
         *tuning_host_buffer_min < 1500U || !tuning_host_buffer_max_multiplier ||
         *tuning_host_buffer_max_multiplier == 0U || !tuning_host_write_full ||
@@ -790,7 +796,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !socks_ip_version_mixing || !socks_prefer_ipv6 ||
         !tls_autodetect ||
         !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips ||
-        !api_key_timeout || *api_key_timeout == 0U || !api_port || *api_port < 1025U || !key_extend ||
+        !api_key_timeout || *api_key_timeout == 0U || !api_port || *api_port < 1024U || !key_extend ||
         !loopback_only || !pam_login || !api_header || !bind_address || !bind_interface ||
         !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
         !webhook_sift_url || !webhook_sift_tenant || !webhook_sift_instance ||
@@ -944,7 +950,9 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
     const auto local_prefix = bounded_string(*local_value, "file_prefix", maximum_name_length, true);
     const auto local_suffix = bounded_string(*local_value, "file_suffix", maximum_name_length, true);
     const auto local_format = bounded_string(*local_value, "format", 16U);
-    const auto local_quota = optional_decimal(*local_value, "pcap_quota", 0U, 1024U * 1024U);
+    constexpr std::uint64_t maximum_json_safe_integer = 9007199254740991ULL;
+    const auto local_quota = optional_decimal(
+        *local_value, "pcap_quota", 0U, maximum_json_safe_integer);
     const auto remote_enabled = required_boolean_scalar(*remote_value, "enabled");
     const auto tunnel_type = bounded_string(*remote_value, "tun_type", 16U);
     const auto gre_format = bounded_string(*remote_value, "gre_format", 16U);

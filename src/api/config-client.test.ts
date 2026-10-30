@@ -292,6 +292,106 @@ describe('ApiConfigClient', () => {
     );
   });
 
+  it('accepts exact Smithproxy system boundaries and rejects values outside them', () => {
+    const boundary = parseConfigSnapshot({
+      ...liveSnapshot,
+      settings: {
+        ...liveSnapshot.settings,
+        ocsp_status_ttl: Number.MAX_SAFE_INTEGER,
+        crl_status_ttl: Number.MAX_SAFE_INTEGER,
+        ports: {
+          plaintext: 1024, tls: 65535, udp: 1024, dtls: 65535,
+          quic: 1, socks: 1024, http_connect: 65535,
+        },
+        logging: {
+          ...liveSnapshot.settings.logging,
+          pcap_single_quota: Number.MAX_SAFE_INTEGER,
+          level: 8,
+          syslog_facility: 32,
+          syslog_level: 8,
+        },
+        auxiliary: {...liveSnapshot.settings.auxiliary, cli_port: 1024},
+        http_api: {...liveSnapshot.settings.http_api, port: 65535},
+      },
+      captures: {
+        ...liveSnapshot.captures,
+        local: {...liveSnapshot.captures.local, quota_mib: Number.MAX_SAFE_INTEGER},
+      },
+    });
+    expect(boundary.settings).toMatchObject({
+      ports: {plaintext: 1024, tls: 65535, quic: 1},
+      ocspStatusTtl: Number.MAX_SAFE_INTEGER,
+      crlStatusTtl: Number.MAX_SAFE_INTEGER,
+      logging: {pcapSingleQuota: Number.MAX_SAFE_INTEGER, level: 8, syslogFacility: 32},
+      auxiliary: {cliPort: 1024},
+      httpApi: {port: 65535},
+    });
+    expect(boundary.captures?.local.quotaMiB).toBe(Number.MAX_SAFE_INTEGER);
+
+    const invalidSettings = [
+      {
+        label: 'plaintext port',
+        settings: {...liveSnapshot.settings, ports: {...liveSnapshot.settings.ports, plaintext: 1023}},
+      },
+      {
+        label: 'QUIC port',
+        settings: {...liveSnapshot.settings, ports: {...liveSnapshot.settings.ports, quic: 0}},
+      },
+      {
+        label: 'log level',
+        settings: {
+          ...liveSnapshot.settings,
+          logging: {...liveSnapshot.settings.logging, level: 9},
+        },
+      },
+      {
+        label: 'syslog facility',
+        settings: {
+          ...liveSnapshot.settings,
+          logging: {...liveSnapshot.settings.logging, syslog_facility: 33},
+        },
+      },
+      {
+        label: 'syslog level',
+        settings: {
+          ...liveSnapshot.settings,
+          logging: {...liveSnapshot.settings.logging, syslog_level: 9},
+        },
+      },
+      {
+        label: 'CLI port',
+        settings: {
+          ...liveSnapshot.settings,
+          auxiliary: {...liveSnapshot.settings.auxiliary, cli_port: 1023},
+        },
+      },
+      {
+        label: 'API port',
+        settings: {
+          ...liveSnapshot.settings,
+          http_api: {...liveSnapshot.settings.http_api, port: 1023},
+        },
+      },
+    ];
+    for (const {label, settings} of invalidSettings) {
+      expect(() => parseConfigSnapshot({...liveSnapshot, settings})).toThrow(`Invalid ${label}`);
+    }
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      settings: {
+        ...liveSnapshot.settings,
+        logging: {...liveSnapshot.settings.logging, pcap_single_quota: Number.MAX_SAFE_INTEGER + 1},
+      },
+    })).toThrow('Invalid single PCAP quota');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      captures: {
+        ...liveSnapshot.captures,
+        local: {...liveSnapshot.captures.local, quota_mib: Number.MAX_SAFE_INTEGER + 1},
+      },
+    })).toThrow('Invalid local capture quota');
+  });
+
   it('preserves non-canonical legacy policy values for explicit migration', () => {
     const legacy = parseConfigSnapshot({
       ...liveSnapshot,
@@ -465,7 +565,7 @@ describe('ApiConfigClient', () => {
       ...liveSnapshot,
       settings: {
         ...liveSnapshot.settings,
-        http_api: {...liveSnapshot.settings.http_api, port: 1024},
+        http_api: {...liveSnapshot.settings.http_api, port: 1023},
       },
     })).toThrow('Invalid API port');
     expect(() => parseConfigSnapshot({

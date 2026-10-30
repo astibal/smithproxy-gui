@@ -630,16 +630,20 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         httpConnect: rangedInteger(value.settings.workers.http_connect, 'HTTP CONNECT workers', -1, 4096),
       },
       ports: {
-        plaintext: safeInteger(value.settings.ports.plaintext, 'plaintext port', 65535),
-        tls: safeInteger(value.settings.ports.tls, 'TLS port', 65535),
-        udp: safeInteger(value.settings.ports.udp, 'UDP port', 65535),
-        dtls: safeInteger(value.settings.ports.dtls, 'DTLS port', 65535),
-        quic: safeInteger(value.settings.ports.quic, 'QUIC port', 65535),
-        socks: safeInteger(value.settings.ports.socks, 'SOCKS port', 65535),
-        httpConnect: safeInteger(value.settings.ports.http_connect, 'HTTP CONNECT port', 65535),
+        plaintext: rangedInteger(value.settings.ports.plaintext, 'plaintext port', 1024, 65535),
+        tls: rangedInteger(value.settings.ports.tls, 'TLS port', 1024, 65535),
+        udp: rangedInteger(value.settings.ports.udp, 'UDP port', 1024, 65535),
+        dtls: rangedInteger(value.settings.ports.dtls, 'DTLS port', 1024, 65535),
+        quic: rangedInteger(value.settings.ports.quic, 'QUIC port', 1, 65535),
+        socks: rangedInteger(value.settings.ports.socks, 'SOCKS port', 1024, 65535),
+        httpConnect: rangedInteger(value.settings.ports.http_connect, 'HTTP CONNECT port', 1024, 65535),
       },
-      ocspStatusTtl: safeInteger(value.settings.ocsp_status_ttl, 'OCSP status TTL', 31536000),
-      crlStatusTtl: safeInteger(value.settings.crl_status_ttl, 'CRL status TTL', 31536000),
+      ocspStatusTtl: safeInteger(
+        value.settings.ocsp_status_ttl, 'OCSP status TTL', Number.MAX_SAFE_INTEGER,
+      ),
+      crlStatusTtl: safeInteger(
+        value.settings.crl_status_ttl, 'CRL status TTL', Number.MAX_SAFE_INTEGER,
+      ),
       logging: {
         defaultWritePayload: safeBoolean(
           value.settings.logging.default_write_payload, 'default payload capture state',
@@ -648,9 +652,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
           value.settings.logging.payload_directory_configured, 'payload directory state',
         ),
         pcapSingleQuota: safeInteger(
-          value.settings.logging.pcap_single_quota, 'single PCAP quota', 1024 * 1024,
+          value.settings.logging.pcap_single_quota, 'single PCAP quota', Number.MAX_SAFE_INTEGER,
         ),
-        level: safeInteger(value.settings.logging.level, 'log level', 10),
+        level: safeInteger(value.settings.logging.level, 'log level', 8),
         fileConfigured: safeBoolean(value.settings.logging.file_configured, 'log file state'),
         console: safeBoolean(value.settings.logging.console, 'console logging state'),
         sslKeyFileConfigured: safeBoolean(
@@ -660,8 +664,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
           value.settings.logging.syslog_server_configured, 'syslog server state',
         ),
         syslogPort: safeInteger(value.settings.logging.syslog_port, 'syslog port', 65535),
-        syslogFacility: safeInteger(value.settings.logging.syslog_facility, 'syslog facility', 23),
-        syslogLevel: safeInteger(value.settings.logging.syslog_level, 'syslog level', 10),
+        syslogFacility: safeInteger(value.settings.logging.syslog_facility, 'syslog facility', 32),
+        syslogLevel: safeInteger(value.settings.logging.syslog_level, 'syslog level', 8),
         syslogFamily: allowedInteger(value.settings.logging.syslog_family, 'syslog family', [4, 6]) as 4 | 6,
       },
       auxiliary: {
@@ -694,7 +698,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         payloadFileSuffixConfigured: safeBoolean(
           value.settings.auxiliary.payload_file_suffix_configured, 'payload suffix state',
         ),
-        cliPort: safeInteger(value.settings.auxiliary.cli_port, 'CLI port', 65535),
+        cliPort: rangedInteger(value.settings.auxiliary.cli_port, 'CLI port', 1024, 65535),
         cliPasswordConfigured: safeBoolean(
           value.settings.auxiliary.cli_password_configured, 'CLI password state',
         ),
@@ -753,7 +757,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         allowedIpCount: safeInteger(value.settings.http_api.allowed_ip_count, 'API allowed-IP count', MAX_REFERENCES),
         allowedIps,
         keyTimeout: rangedInteger(value.settings.http_api.key_timeout, 'API key timeout', 1, 4294967295),
-        port: rangedInteger(value.settings.http_api.port, 'API port', 1025, 65534),
+        port: rangedInteger(value.settings.http_api.port, 'API port', 1024, 65535),
         keyExtendOnAccess: safeBoolean(
           value.settings.http_api.key_extend_on_access, 'API key extension state',
         ),
@@ -875,7 +879,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
           value.captures.local.file_suffix_configured, 'local capture filename suffix state',
         ),
         format: localFormat as 'pcap_single' | 'pcap' | 'smcap',
-        quotaMiB: safeInteger(value.captures.local.quota_mib, 'local capture quota', 1024 * 1024),
+        quotaMiB: safeInteger(
+          value.captures.local.quota_mib, 'local capture quota', Number.MAX_SAFE_INTEGER,
+        ),
       },
       remote: {
         enabled: safeBoolean(value.captures.remote.enabled, 'remote capture state'),

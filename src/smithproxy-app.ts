@@ -112,20 +112,18 @@ const systemWorkerFields = [
 ] as const;
 
 const systemNumericFields = [
-  ['plaintext_port', 'port-plaintext', 65535], ['ssl_port', 'port-tls', 65535],
-  ['udp_port', 'port-udp', 65535], ['quic_port', 'port-quic', 65535],
-  ['dtls_port', 'port-dtls', 65535], ['socks_port', 'port-socks', 65535],
-  ['http_connect_port', 'port-http-connect', 65535],
-  ['ssl_ocsp_status_ttl', 'ocsp-status-ttl', 31536000],
-  ['ssl_crl_status_ttl', 'crl-status-ttl', 31536000],
-  ['write_pcap_single_quota', 'logging-pcap-quota', 1048576],
-  ['log_level', 'logging-level', 10], ['syslog_port', 'logging-syslog-port', 65535],
-  ['syslog_facility', 'logging-syslog-facility', 23],
-  ['syslog_level', 'logging-syslog-level', 10],
-  ['cli.port', 'aux-cli-port', 65535],
-  ['webhook.ping_interval', 'webhook-ping-interval', 2147483647],
-  ['webhook.nbr_update_interval', 'webhook-neighbor-update-interval', 2147483647],
-  ['webhook.nbr_tag_refresh_age', 'webhook-neighbor-tag-refresh-age', 2147483647],
+  ['plaintext_port', 'port-plaintext', 1024, 65535], ['ssl_port', 'port-tls', 1024, 65535],
+  ['udp_port', 'port-udp', 1024, 65535], ['quic_port', 'port-quic', 1, 65535],
+  ['dtls_port', 'port-dtls', 1024, 65535], ['socks_port', 'port-socks', 1024, 65535],
+  ['http_connect_port', 'port-http-connect', 1024, 65535],
+  ['write_pcap_single_quota', 'logging-pcap-quota', 0, Number.MAX_SAFE_INTEGER],
+  ['log_level', 'logging-level', 0, 8], ['syslog_port', 'logging-syslog-port', 0, 65535],
+  ['syslog_facility', 'logging-syslog-facility', 0, 32],
+  ['syslog_level', 'logging-syslog-level', 0, 8],
+  ['cli.port', 'aux-cli-port', 1024, 65535],
+  ['webhook.ping_interval', 'webhook-ping-interval', 0, 2147483647],
+  ['webhook.nbr_update_interval', 'webhook-neighbor-update-interval', 0, 2147483647],
+  ['webhook.nbr_tag_refresh_age', 'webhook-neighbor-tag-refresh-age', 0, 2147483647],
 ] as const;
 
 const systemTuningFields = [
@@ -5356,11 +5354,11 @@ export class SmithproxyApp extends LitElement {
       }
       changes.push({path: `settings.${path}`, value});
     }
-    for (const [path, id, maximum] of systemNumericFields) {
+    for (const [path, id, minimum, maximum] of systemNumericFields) {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
-      if (!input || !Number.isInteger(value) || value < 0 || value > maximum) {
-        this.draftError = 'Ports and status TTLs must be integers within their documented ranges.';
+      if (!input || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
+        this.draftError = 'System numeric values must be integers within their documented ranges.';
         return undefined;
       }
       changes.push({path: `settings.${path}`, value});
@@ -5394,7 +5392,7 @@ export class SmithproxyApp extends LitElement {
     const apiPortValue = apiPort?.valueAsNumber ?? Number.NaN;
     if (!apiKeyTimeout || !apiPort || !Number.isInteger(apiKeyTimeoutValue) ||
         apiKeyTimeoutValue < 1 || apiKeyTimeoutValue > 4294967295 ||
-        !Number.isInteger(apiPortValue) || apiPortValue < 1025 || apiPortValue > 65534) {
+        !Number.isInteger(apiPortValue) || apiPortValue < 1024 || apiPortValue > 65535) {
       this.draftError = 'API token TTL and listener port are outside their supported ranges.';
       return undefined;
     }
@@ -5547,7 +5545,7 @@ export class SmithproxyApp extends LitElement {
         !['pcap_single', 'pcap', 'smcap'].includes(format.value) ||
         tunnelType.value !== 'gre' ||
         !['traffic', 'pcapng'].includes(greFormat.value) ||
-        !Number.isInteger(quotaValue) || quotaValue < 0 || quotaValue > 1048576 ||
+        !Number.isSafeInteger(quotaValue) || quotaValue < 0 || quotaValue > Number.MAX_SAFE_INTEGER ||
         !Number.isInteger(ttlValue) || ttlValue < 0 || ttlValue > 255) {
       this.draftError = 'Capture format, quota, or tunnel TTL is invalid.';
       return undefined;
@@ -9185,9 +9183,11 @@ export class SmithproxyApp extends LitElement {
       <input id="settings-worker-${id}" type="number" min="-1" max="4096"
         .value=${String(scalar(workerPaths.get(id)!, value))} .readOnly=${locked(workerPaths.get(id)!)} />
     `;
-    const numericField = (id: string, label: string, value: number, maximum: number) => html`
+    const numericField = (
+      id: string, label: string, value: number, minimum: number, maximum: number,
+    ) => html`
       <label for="settings-${id}">${label}</label>
-      <input id="settings-${id}" type="number" min="0" max=${String(maximum)}
+      <input id="settings-${id}" type="number" min=${String(minimum)} max=${String(maximum)}
         .value=${String(scalar(numericPaths.get(id)!, value))} .readOnly=${locked(numericPaths.get(id)!)} />
     `;
     const tuningField = (id: string, label: string, value: number, minimum: number, maximum: number) => html`
@@ -9228,23 +9228,28 @@ export class SmithproxyApp extends LitElement {
         ${workerField('http-connect', 'HTTP CONNECT workers', settings.workers.httpConnect)}
         <span class="form-span privacy-note">Use -1 to disable a listener; 0 lets Smithproxy choose its default worker count.</span>
         <h3 class="form-span">Listener endpoints</h3>
-        ${numericField('port-plaintext', 'Plaintext port', settings.ports.plaintext, 65535)}
-        ${numericField('port-tls', 'TLS port', settings.ports.tls, 65535)}
-        ${numericField('port-udp', 'UDP port', settings.ports.udp, 65535)}
-        ${numericField('port-dtls', 'DTLS port', settings.ports.dtls, 65535)}
-        ${numericField('port-quic', 'QUIC port', settings.ports.quic, 65535)}
-        ${numericField('port-socks', 'SOCKS port', settings.ports.socks, 65535)}
-        ${numericField('port-http-connect', 'HTTP CONNECT port', settings.ports.httpConnect, 65535)}
-        ${numericField('ocsp-status-ttl', 'OCSP status TTL (seconds)', settings.ocspStatusTtl, 31536000)}
-        ${numericField('crl-status-ttl', 'CRL status TTL (seconds)', settings.crlStatusTtl, 31536000)}
+        ${numericField('port-plaintext', 'Plaintext port', settings.ports.plaintext, 1024, 65535)}
+        ${numericField('port-tls', 'TLS port', settings.ports.tls, 1024, 65535)}
+        ${numericField('port-udp', 'UDP port', settings.ports.udp, 1024, 65535)}
+        ${numericField('port-dtls', 'DTLS port', settings.ports.dtls, 1024, 65535)}
+        ${numericField('port-quic', 'QUIC port', settings.ports.quic, 1, 65535)}
+        ${numericField('port-socks', 'SOCKS port', settings.ports.socks, 1024, 65535)}
+        ${numericField('port-http-connect', 'HTTP CONNECT port', settings.ports.httpConnect, 1024, 65535)}
+        <label for="settings-ocsp-status-ttl">OCSP status TTL (seconds)</label>
+        <input id="settings-ocsp-status-ttl" type="number" .value=${String(settings.ocspStatusTtl)} readonly />
+        <label for="settings-crl-status-ttl">CRL status TTL (seconds)</label>
+        <input id="settings-crl-status-ttl" type="number" .value=${String(settings.crlStatusTtl)} readonly />
+        <span class="form-span privacy-note">
+          Status-cache TTLs are reported by Smithproxy but its configuration schema marks them read-only.
+        </span>
         <h3 class="form-span">Logging and payloads</h3>
         ${booleanField('logging-default-payload', 'Default payload capture', settings.logging.defaultWritePayload)}
-        ${numericField('logging-pcap-quota', 'Single PCAP quota', settings.logging.pcapSingleQuota, 1048576)}
-        ${numericField('logging-level', 'Log level', settings.logging.level, 10)}
+        ${numericField('logging-pcap-quota', 'Single PCAP quota', settings.logging.pcapSingleQuota, 0, Number.MAX_SAFE_INTEGER)}
+        ${numericField('logging-level', 'Log level', settings.logging.level, 0, 8)}
         ${booleanField('logging-console', 'Console logging', settings.logging.console)}
-        ${numericField('logging-syslog-port', 'Syslog port', settings.logging.syslogPort, 65535)}
-        ${numericField('logging-syslog-facility', 'Syslog facility', settings.logging.syslogFacility, 23)}
-        ${numericField('logging-syslog-level', 'Syslog level', settings.logging.syslogLevel, 10)}
+        ${numericField('logging-syslog-port', 'Syslog port', settings.logging.syslogPort, 0, 65535)}
+        ${numericField('logging-syslog-facility', 'Syslog facility', settings.logging.syslogFacility, 0, 32)}
+        ${numericField('logging-syslog-level', 'Syslog level', settings.logging.syslogLevel, 0, 8)}
         <label for="settings-logging-syslog-family">Syslog address family</label>
         <select id="settings-logging-syslog-family"
           .value=${String(scalar('settings.syslog_family', settings.logging.syslogFamily))}
@@ -9256,7 +9261,7 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('tls-key-log-file', 'TLS key log file', settings.logging.sslKeyFileConfigured)}
         ${writeOnlyField('syslog-server', 'Syslog server', settings.logging.syslogServerConfigured)}
         <h3 class="form-span">Auxiliary services</h3>
-        ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 65535)}
+        ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 1024, 65535)}
         ${booleanField('aux-thread-pool-log', 'Thread-pool task logging', settings.auxiliary.threadPoolLogging)}
         ${booleanField('aux-socks-async-dns', 'SOCKS asynchronous DNS', settings.auxiliary.socksAsyncDns)}
         ${booleanField('aux-socks-ipver-mixing', 'SOCKS IP-version mixing', settings.auxiliary.socksIpVersionMixing)}
@@ -9289,9 +9294,9 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}
         <h3 class="form-span">Smithproxy HTTP API</h3>
-        ${numericField('api-key-timeout', 'API token TTL (seconds)', settings.httpApi.keyTimeout, 4294967295)}
+        ${numericField('api-key-timeout', 'API token TTL (seconds)', settings.httpApi.keyTimeout, 1, 4294967295)}
         <label for="settings-api-port">API port</label>
-        <input id="settings-api-port" type="number" min="1025" max="65534"
+        <input id="settings-api-port" type="number" min="1024" max="65535"
           .value=${String(scalar('settings.http_api.port', settings.httpApi.port))}
           .readOnly=${locked('settings.http_api.port')} />
         ${booleanField('api-key-extend', 'Refresh tokens on access', settings.httpApi.keyExtendOnAccess)}
@@ -9305,10 +9310,10 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
         ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
         ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
-        ${numericField('webhook-sift-payload-limit', 'Sift payload limit per direction', settings.webhook.siftPayloadLimitPerDirection, 1073741824)}
-        ${numericField('webhook-ping-interval', 'Webhook ping interval (seconds)', settings.webhook.pingInterval, 2147483647)}
-        ${numericField('webhook-neighbor-update-interval', 'Neighbor update interval (seconds)', settings.webhook.neighborUpdateInterval, 2147483647)}
-        ${numericField('webhook-neighbor-tag-refresh-age', 'Neighbor tag refresh age (seconds)', settings.webhook.neighborTagRefreshAge, 2147483647)}
+        ${numericField('webhook-sift-payload-limit', 'Sift payload limit per direction', settings.webhook.siftPayloadLimitPerDirection, 1, 1073741824)}
+        ${numericField('webhook-ping-interval', 'Webhook ping interval (seconds)', settings.webhook.pingInterval, 0, 2147483647)}
+        ${numericField('webhook-neighbor-update-interval', 'Neighbor update interval (seconds)', settings.webhook.neighborUpdateInterval, 0, 2147483647)}
+        ${numericField('webhook-neighbor-tag-refresh-age', 'Neighbor tag refresh age (seconds)', settings.webhook.neighborTagRefreshAge, 0, 2147483647)}
         ${booleanField('webhook-task-debug', 'Webhook task diagnostics', settings.webhook.taskDebug)}
         ${booleanField('webhook-task-debug-dump', 'Webhook task dump diagnostics', settings.webhook.taskDebugDump)}
         <label for="settings-nameservers">Nameservers</label>
@@ -9424,7 +9429,7 @@ export class SmithproxyApp extends LitElement {
           <option value="pcap_single">PCAP single</option><option value="pcap">PCAP</option><option value="smcap">SMCAP</option>
         </select>
         <label for="captures-local-quota">Local quota (MiB)</label>
-        <input id="captures-local-quota" type="number" min="0" max="1048576"
+        <input id="captures-local-quota" type="number" min="0" max=${String(Number.MAX_SAFE_INTEGER)}
           .value=${String(scalar('captures.local.pcap_quota', captures.local.quotaMiB))}
           .readOnly=${locked('captures.local.pcap_quota')} />
         ${writeOnlyField('local-directory', 'Local directory', captures.local.directoryConfigured)}

@@ -4750,6 +4750,21 @@ test('saves typed system and capture settings without exposing redacted values',
   });
   await trafficCard.getByRole('button', {name: 'Edit'}).click();
   const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await expect(settingsEditor.getByLabel('Plaintext port')).toHaveAttribute('min', '1024');
+  await expect(settingsEditor.getByLabel('QUIC port')).toHaveAttribute('min', '1');
+  await expect(settingsEditor.getByLabel('Log level', {exact: true})).toHaveAttribute('max', '8');
+  await expect(settingsEditor.getByLabel('Syslog facility')).toHaveAttribute('max', '32');
+  await expect(settingsEditor.getByLabel('Syslog level')).toHaveAttribute('max', '8');
+  await expect(settingsEditor.getByLabel('CLI port', {exact: true})).toHaveAttribute('min', '1024');
+  await expect(settingsEditor.getByLabel('API port')).toHaveAttribute('min', '1024');
+  await expect(settingsEditor.getByLabel('API port')).toHaveAttribute('max', '65535');
+  await expect(settingsEditor.getByLabel('OCSP status TTL (seconds)')).toHaveAttribute('readonly', '');
+  await expect(settingsEditor.getByLabel('CRL status TTL (seconds)')).toHaveAttribute('readonly', '');
+  await expect(settingsEditor.getByText(/configuration schema marks them read-only/i)).toBeVisible();
+  await settingsEditor.getByLabel('TLS port', {exact: true}).fill('1023');
+  await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(settingsEditor.getByText(/numeric values must be integers within their documented ranges/i))
+    .toBeVisible();
   await settingsEditor.getByLabel('Policy failure').selectOption('true');
   await settingsEditor.getByLabel('TLS workers', {exact: true}).fill('8');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('5443');
@@ -4838,6 +4853,8 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureCard.getByRole('button', {name: 'Edit'}).click();
   const captureEditor = page.getByRole('dialog', {name: 'Edit Capture settings'});
   await expect(captureEditor.getByLabel('Tunnel type')).toHaveValue('gre');
+  await expect(captureEditor.getByLabel('Local quota (MiB)'))
+    .toHaveAttribute('max', String(Number.MAX_SAFE_INTEGER));
   await captureEditor.getByLabel('Local capture').selectOption('true');
   await captureEditor.getByLabel('Local format').selectOption('smcap');
   await captureEditor.getByLabel('Tunnel TTL').fill('32');

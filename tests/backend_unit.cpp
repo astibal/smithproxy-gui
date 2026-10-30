@@ -593,6 +593,46 @@ int main() {
            DraftMutationResult::InvalidValue);
     assert(schema_draft.upsert(0U, {"settings.syslog_family", std::int64_t{5}}) ==
            DraftMutationResult::InvalidValue);
+    assert(validate_draft_schema({"settings.plaintext_port", std::int64_t{1023}}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({"settings.plaintext_port", std::int64_t{1024}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.quic_port", std::int64_t{0}}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({"settings.quic_port", std::int64_t{1}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.ssl_ocsp_status_ttl", std::int64_t{1800}}) ==
+           DraftSchemaResult::UnknownPath);
+    assert(validate_draft_schema({"settings.ssl_crl_status_ttl", std::int64_t{86400}}) ==
+           DraftSchemaResult::UnknownPath);
+    assert(validate_draft_schema({"settings.log_level", std::int64_t{8}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.log_level", std::int64_t{9}}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({"settings.syslog_facility", std::int64_t{32}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.syslog_facility", std::int64_t{33}}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({"settings.syslog_level", std::int64_t{9}}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({"settings.cli.port", std::int64_t{1023}}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({"settings.http_api.port", std::int64_t{1024}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.http_api.port", std::int64_t{65535}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "settings.write_pcap_single_quota", std::int64_t{9007199254740991LL},
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "settings.write_pcap_single_quota", std::int64_t{9007199254740992LL},
+    }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
+        "captures.local.pcap_quota", std::int64_t{9007199254740991LL},
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "captures.local.pcap_quota", std::int64_t{9007199254740992LL},
+    }) == DraftSchemaResult::InvalidValue);
     assert(schema_draft.upsert(0U, {"captures.remote.tun_type", std::string("vxlan")}) ==
            DraftMutationResult::InvalidValue);
     assert(schema_draft.upsert_many(1U, {
@@ -1323,8 +1363,32 @@ int main() {
         R"({"success":{"settings":{"http_api":{"keys":"secret"}}}})").settings);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"quic_workers":"-2"}}})").settings);
+    const auto boundary_settings = parse_config_settings(
+        R"({"success":{"settings":{"plaintext_port":"1024","ssl_port":"1024","udp_port":"1024","dtls_port":"1024","quic_port":"1","socks_port":"1024","http_connect_port":"1024","ssl_ocsp_status_ttl":"9007199254740991","ssl_crl_status_ttl":"9007199254740991","write_pcap_single_quota":"9007199254740991","log_level":"8","syslog_facility":"32","syslog_level":"8","cli":{"port":"1024"},"http_api":{"port":"65535"}}}})");
+    assert(boundary_settings.settings);
+    assert(boundary_settings.settings->plaintext_port == 1024U);
+    assert(boundary_settings.settings->quic_port == 1U);
+    assert(boundary_settings.settings->ocsp_status_ttl == 9007199254740991ULL);
+    assert(boundary_settings.settings->crl_status_ttl == 9007199254740991ULL);
+    assert(boundary_settings.settings->write_pcap_single_quota == 9007199254740991ULL);
+    assert(boundary_settings.settings->syslog_facility == 32U);
+    assert(boundary_settings.settings->api_port == 65535U);
     assert(!parse_config_settings(
-        R"({"success":{"settings":{"default_write_payload":"false","http_api":{"port":"1024"}}}})").settings);
+        R"({"success":{"settings":{"plaintext_port":"1023"}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"quic_port":"0"}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"log_level":"9"}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"syslog_facility":"33"}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"cli":{"port":"1023"}}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"http_api":{"port":"1023"}}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"write_pcap_single_quota":"9007199254740992"}}})").settings);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"ssl_ocsp_status_ttl":"9007199254740992"}}})").settings);
     const auto debug = parse_config_debug(
         R"({"success":{"debug":{"log_data_crc":"true","log_sockets":"false","log_online_cx_name":"true","log_srclines":"false","log_srclines_always":"true","log":{"proxy":"7","tls":"8"}}}})");
     assert(debug.debug);
@@ -1346,6 +1410,12 @@ int main() {
     assert(!captures.captures->local_file_suffix_configured);
     assert(captures.captures->local_quota_mib == 512U);
     assert(captures.captures->remote_destination_configured);
+    const auto boundary_captures = parse_config_captures(
+        R"({"success":{"captures":{"local":{"enabled":"true","dir":"/tmp","format":"pcap_single","pcap_quota":"9007199254740991"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"","tun_ttl":"1"}}}})");
+    assert(boundary_captures.captures);
+    assert(boundary_captures.captures->local_quota_mib == 9007199254740991ULL);
+    assert(!parse_config_captures(
+        R"({"success":{"captures":{"local":{"enabled":"true","dir":"/tmp","format":"pcap_single","pcap_quota":"9007199254740992"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"","tun_ttl":"1"}}}})").captures);
     assert(!parse_config_captures(
         R"({"success":{"captures":{"local":{"enabled":"true","dir":"/tmp","format":"raw"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"","tun_ttl":"1"}}}})").captures);
     const auto security_assets = parse_config_security_assets(
