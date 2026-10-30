@@ -301,7 +301,9 @@ clear or replace intent and a bounded collection count; the review UI never
 renders the submitted path, credential, endpoint, or key value.
 
 The policy editor atomically persists the name, enabled state, protocol, source
-and destination address and port collections, features, action, NAT mode, and
+and destination address and port collections, the pinned Smithproxy feature
+set (`sink-left`, `sink-right`, `sink-all`, `statistics`, and `access-request`),
+action, NAT mode, and
 all routing and profile references through this endpoint. Nested editors use the
 same draft and version to persist the mapped
 name, type, value, range, and numeric identifier fields of address, port, and

@@ -149,6 +149,15 @@ bool string_list(const DraftScalar& value, const std::size_t maximum_length = 12
     return true;
 }
 
+bool enumerated_string_list(
+    const DraftScalar& value, const std::initializer_list<std::string_view> choices) {
+    if (!string_list(value)) return false;
+    const auto& items = *strings(value);
+    return std::all_of(items.begin(), items.end(), [&](const auto& item) {
+        return std::find(choices.begin(), choices.end(), item) != choices.end();
+    });
+}
+
 bool opaque_string_list(const DraftScalar& value, const std::size_t maximum_length) {
     const auto* items = strings(value);
     if (items == nullptr || items->size() > 256U) return false;
@@ -185,8 +194,11 @@ Result validate_policy(const std::string_view field, const DraftScalar& value) {
     if (field == "disabled") return valid(boolean(value));
     if (field == "proto") return valid(bounded_text(value, 128U));
     if (field == "src" || field == "dst") return valid(string_list(value));
-    if (field == "sport" || field == "dport" || field == "features") {
-        return valid(string_list(value));
+    if (field == "sport" || field == "dport") return valid(string_list(value));
+    if (field == "features") {
+        return valid(enumerated_string_list(value, {
+            "sink-left", "sink-right", "sink-all", "statistics", "access-request",
+        }));
     }
     if (field == "action") return valid(enumerated(value, {"accept", "deny", "reject"}));
     if (field == "nat") return valid(enumerated(value, {"auto", "none"}));

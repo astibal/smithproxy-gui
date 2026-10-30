@@ -953,7 +953,10 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await editor.locator('#policy-enabled-policy-0').uncheck();
   await editor.getByLabel('Destinations').fill('internet, backup');
   await editor.getByLabel('Source ports').fill('any, https');
-  await editor.getByLabel('Features').fill('sinkhole, audit');
+  const features = editor.getByRole('group', {name: 'Features'});
+  await features.getByLabel('sink-all').check();
+  await features.getByLabel('statistics').check();
+  await features.getByLabel('Legacy: sinkhole').uncheck();
   await editor.getByLabel('NAT', {exact: true}).selectOption('auto');
   const action = editor.getByLabel('Action');
   await action.selectOption('reject');
@@ -1231,8 +1234,10 @@ test('saves only fields changed since the editor opened', async ({page}) => {
 
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   const nat = editor.getByLabel('NAT', {exact: true});
+  const features = editor.getByRole('group', {name: 'Features'});
   await expect(nat).toHaveValue('');
   await expect(nat.locator('option:checked')).toHaveText('Legacy value: (empty)');
+  await expect(features.getByLabel('Legacy: sinkhole')).toBeChecked();
   await editor.getByLabel('Name').fill('Office minimal draft');
   await editor.getByLabel('Action', {exact: true}).selectOption('reject');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
@@ -2725,6 +2730,20 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   await expect(editor.getByText('Policy fields and unique bounded references are required.')).toBeVisible();
   expect(state.structuralMutationRequests).toEqual([]);
   await action.selectOption('accept');
+  const features = editor.getByRole('group', {name: 'Features'});
+  await features.evaluate(control => {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = 'injected';
+    input.checked = true;
+    control.append(input);
+  });
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Policy fields and unique bounded references are required.')).toBeVisible();
+  expect(state.structuralMutationRequests).toEqual([]);
+  await features.locator('input[value="injected"]').evaluate(input => input.remove());
+  await features.getByLabel('statistics').check();
+  await features.getByLabel('access-request').check();
   await editor.getByLabel('Placement').selectOption({label: 'Before Policy 1'});
   await editor.getByLabel('Sources').fill('');
   await editor.getByLabel('Destinations').fill('');
@@ -2738,7 +2757,7 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
     op: 'create', collection: 'policy', position: {before: 'policy-0'},
     fields: {
       name: 'branch-policy', disabled: false, proto: 'tcp', src: [], dst: [],
-      action: 'accept', nat: 'auto', sport: [], dport: [], features: [],
+      action: 'accept', nat: 'auto', sport: [], dport: [], features: ['statistics', 'access-request'],
     },
   });
   expect(request.operation.local_id).toMatch(/^create-policy-[0-9a-f-]{36}$/u);
@@ -2753,6 +2772,8 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   editor = page.getByRole('dialog', {name: 'Create policy'});
   await expect(editor.getByLabel('Name')).toHaveValue('branch-policy');
   await expect(editor.getByLabel('Placement')).toHaveValue('before:policy-0');
+  await expect(editor.getByRole('group', {name: 'Features'}).getByLabel('statistics')).toBeChecked();
+  await expect(editor.getByRole('group', {name: 'Features'}).getByLabel('access-request')).toBeChecked();
 });
 
 test('links policy references to objects created earlier in the same draft', async ({page}) => {

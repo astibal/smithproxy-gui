@@ -69,6 +69,7 @@ import {
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
 const policyActions = ['accept', 'deny', 'reject'] as const;
 const policyNatModes = ['auto', 'none'] as const;
+const policyFeatures = ['sink-left', 'sink-right', 'sink-all', 'statistics', 'access-request'] as const;
 type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavailable';
 type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
@@ -627,6 +628,10 @@ export class SmithproxyApp extends LitElement {
     .form-span { grid-column: 1 / -1; margin: var(--sp-space-3, 1rem) 0 0; }
     .form-grid label { align-self: center; color: var(--app-muted); }
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
+    .choice-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 7px 12px; padding: 10px; border: 1px solid var(--app-border); background: var(--app-input); }
+    .choice-group label { display: flex; gap: 7px; align-items: center; color: var(--app-text); }
+    .choice-group input { width: auto; margin: 0; padding: 0; }
+    .choice-group:has(input:disabled) { border-style: dashed; opacity: .8; }
     .write-only-control { display: grid; grid-template-columns: minmax(150px, .35fr) minmax(180px, 1fr); gap: 8px; }
     .identity-editor { display: grid; gap: 16px; }
     .identity-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; justify-content: space-between; }
@@ -3379,7 +3384,7 @@ export class SmithproxyApp extends LitElement {
     const protocol = input('protocol');
     const sourcePorts = input('source-ports');
     const destinationPorts = input('destination-ports');
-    const features = input('features');
+    const features = this.renderRoot.querySelector<HTMLElement>(`#policy-create-features-${entry.id}`);
     const nat = select('nat');
     const referenceNames = ['routing', 'tls', 'ssh', 'detection', 'content', 'auth', 'dns', 'script'] as const;
     const references = new Map(referenceNames.map(field => [field, input(field)]));
@@ -3394,7 +3399,8 @@ export class SmithproxyApp extends LitElement {
     const destinationValues = list(destinations);
     const sourcePortValues = list(sourcePorts);
     const destinationPortValues = list(destinationPorts);
-    const featureValues = list(features);
+    const featureValues = [...features.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')]
+      .map(item => item.value);
     const normalizedName = name.value.trim();
     const normalizedAction = action.value.trim();
     const normalizedProtocol = protocol.value.trim();
@@ -3407,7 +3413,8 @@ export class SmithproxyApp extends LitElement {
     if (!printable(normalizedName, 128) || !policyActions.some(value => value === normalizedAction) ||
         !printable(normalizedProtocol, 128) || !validList(sourceValues) ||
         !validList(destinationValues) ||
-        ![sourcePortValues, destinationPortValues, featureValues].every(values => validList(values)) ||
+        ![sourcePortValues, destinationPortValues].every(values => validList(values)) ||
+        !featureValues.every(value => policyFeatures.some(feature => feature === value)) ||
         !policyNatModes.some(value => value === nat.value) ||
         [...referenceValues.values()].some(value => !printable(value, 128, true))) {
       this.drawerError = 'Policy fields and unique bounded references are required.';
@@ -4866,7 +4873,7 @@ export class SmithproxyApp extends LitElement {
       const sources = field('sources');
       const sourcePorts = field('source-ports');
       const destinationPorts = field('destination-ports');
-      const features = field('features');
+      const features = this.renderRoot.querySelector<HTMLElement>(`#policy-features-${entry.id}`);
       const nat = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-nat-${entry.id}`);
       const referenceIds = ['routing', 'tls', 'ssh', 'detection', 'content', 'auth', 'dns', 'script'] as const;
       const references = new Map(referenceIds.map(id => [id, field(id)]));
@@ -4878,7 +4885,8 @@ export class SmithproxyApp extends LitElement {
       const sourcePortValues = list(sourcePorts);
       const destinations = list(destination);
       const destinationPortValues = list(destinationPorts);
-      const featureValues = list(features);
+      const featureValues = [...features.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')]
+        .map(item => item.value);
       const normalizedName = name.value.trim();
       const currentAction = this.persistentValue(
         `policy.[${index}].action`, this.snapshot.policies[index]!.action,
@@ -4888,12 +4896,20 @@ export class SmithproxyApp extends LitElement {
       );
       const validAction = policyActions.some(value => value === action.value) || action.value === currentAction;
       const validNat = policyNatModes.some(value => value === nat.value) || nat.value === currentNat;
+      const currentFeatures = this.persistentListValue(
+        `policy.[${index}].features`, this.snapshot.policies[index]!.features, 'string',
+      );
+      const unchangedFeatures = featureValues.length === currentFeatures.length &&
+        featureValues.every(value => currentFeatures.includes(value));
+      const validFeatures = unchangedFeatures ||
+        featureValues.every(value => policyFeatures.some(feature => feature === value));
       const validList = (values: ReadonlyArray<string>) => values.length <= 256 &&
         values.every(value => value.length <= 128) && new Set(values).size === values.length;
       if (normalizedName.length === 0 || normalizedName.length > 128 ||
           !validAction || !validNat ||
           protocol.value.trim().length === 0 || protocol.value.trim().length > 128 ||
-          ![sourceValues, sourcePortValues, destinations, destinationPortValues, featureValues].every(validList) ||
+          ![sourceValues, sourcePortValues, destinations, destinationPortValues].every(validList) ||
+          !validFeatures ||
           [...references.values()].some(value => value!.value.trim().length > 128)) {
         this.draftError = 'Policy fields and unique bounded references are required.';
         return undefined;
@@ -7980,9 +7996,11 @@ export class SmithproxyApp extends LitElement {
         ${referenceField('auth', 'Authentication profile', 'authentication', 'auth_profile')}
         ${referenceField('dns', 'DNS ALG profile', 'dns', 'alg_dns_profile')}
         ${referenceField('script', 'Script profile', 'script', 'script_profile')}
-        <label for="policy-create-features-${entry.id}">Features</label>
-        <input id="policy-create-features-${entry.id}" .value=${list('features').join(', ')}
-          .readOnly=${readOnly} />
+        <label>Features</label>
+        <div id="policy-create-features-${entry.id}" class="choice-group" role="group" aria-label="Features">
+          ${policyFeatures.map(feature => html`<label><input type="checkbox" value=${feature}
+            .checked=${list('features').includes(feature)} ?disabled=${readOnly} />${feature}</label>`)}
+        </div>
         <label for="policy-create-nat-${entry.id}">NAT</label>
         <select id="policy-create-nat-${entry.id}" .value=${text('nat', 'auto')} ?disabled=${readOnly}>
           <option value="auto">Automatic</option><option value="none">None</option>
@@ -8011,6 +8029,9 @@ export class SmithproxyApp extends LitElement {
     const sourcePortValues = this.persistentListValue(`${policyBase}.sport`, policy.sourcePorts, 'string');
     const destinationPortValues = this.persistentListValue(`${policyBase}.dport`, policy.destinationPorts, 'string');
     const featureValues = this.persistentListValue(`${policyBase}.features`, policy.features, 'string');
+    const legacyFeatures = featureValues.filter(
+      feature => !policyFeatures.some(canonical => canonical === feature),
+    );
     const actionValue = this.persistentValue(`${policyBase}.action`, policy.action);
     const natValue = this.persistentValue(`${policyBase}.nat`, policy.nat);
     const legacyAction = !policyActions.some(value => value === actionValue);
@@ -8110,9 +8131,15 @@ export class SmithproxyApp extends LitElement {
           ${this.renderPolicyProfileField(entry, 'auth', 'Authentication profile', 'authentication', policy.authProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'dns', 'DNS ALG profile', 'dns', policy.dnsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'script', 'Script profile', 'script', policy.scriptProfile, liveReadOnly)}
-          <label for="policy-features-${entry.id}">Features</label>
-          <input id="policy-features-${entry.id}" .value=${featureValues.join(', ')}
-            .readOnly=${this.originReadOnly(`${policyBase}.features`, liveReadOnly)} />
+          <label>Features</label>
+          <div id="policy-features-${entry.id}" class="choice-group" role="group" aria-label="Features">
+            ${policyFeatures.map(feature => html`<label><input type="checkbox" value=${feature}
+              .checked=${featureValues.includes(feature)}
+              ?disabled=${this.originReadOnly(`${policyBase}.features`, liveReadOnly)} />${feature}</label>`)}
+            ${legacyFeatures.map(feature => html`<label><input type="checkbox" value=${feature} checked
+              ?disabled=${this.originReadOnly(`${policyBase}.features`, liveReadOnly)} />
+              Legacy: ${feature}</label>`)}
+          </div>
           <label for="policy-nat-${entry.id}">NAT</label>
           <select id="policy-nat-${entry.id}" .value=${natValue}
             ?disabled=${this.originReadOnly(`${policyBase}.nat`, liveReadOnly)}>
