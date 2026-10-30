@@ -1,5 +1,6 @@
 import {httpStatusError} from './http-error';
 import {boundedJson} from './bounded-json';
+import {normalizeSameOriginPath} from '../security/deployment-path';
 
 const MAX_SYSTEM_RESPONSE_BYTES = 8 * 1024 * 1024;
 
@@ -348,17 +349,6 @@ function isInterfaceMonitorState(value: unknown): value is InterfaceMonitorState
     ['starting', 'ready', 'degraded', 'unavailable', 'unconfigured', 'not-advertised'].includes(value);
 }
 
-function normalizedPath(value: string, label: string): string {
-  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\') || /[?#]/u.test(value)) {
-    throw new Error(`${label} must be a same-origin absolute path.`);
-  }
-  const segments = value.split('/').filter(Boolean);
-  if (segments.some(segment => segment === '.' || segment === '..')) {
-    throw new Error(`${label} cannot contain relative path segments.`);
-  }
-  return segments.length === 0 ? '/' : `/${segments.join('/')}`;
-}
-
 function joinedPath(base: string, suffix: string): string {
   return base === '/' ? suffix : `${base}${suffix}`;
 }
@@ -381,7 +371,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       !isObject(value.features)) {
     throw new Error('Invalid capabilities response.');
   }
-  const basePath = normalizedPath(value.base_path, 'Capability base path');
+  const basePath = normalizeSameOriginPath(value.base_path, 'Capability base path');
   if (basePath !== value.base_path) throw new Error('Capability base path must be canonical.');
   const features = value.features;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
@@ -916,8 +906,8 @@ export class SystemClient {
     timeoutMs = 3000,
     eventSourceFactory: EventSourceFactory = url => new EventSource(url, {withCredentials: true}),
   ) {
-    this.#apiBase = normalizedPath(apiBase, 'API base');
-    this.#basePath = normalizedPath(basePath, 'Base path');
+    this.#apiBase = normalizeSameOriginPath(apiBase, 'API base');
+    this.#basePath = normalizeSameOriginPath(basePath, 'Base path');
     this.#fetch = fetchImplementation;
     this.#timeoutMs = timeoutMs;
     this.#eventSourceFactory = eventSourceFactory;

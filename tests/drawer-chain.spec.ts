@@ -5313,23 +5313,64 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
   await expect(page.getByRole('dialog', {name: 'Edit office-net'})).toHaveCSS('left', '0px');
 });
 
-test('derives the system API from a workspace mount', async ({page}) => {
+test('confines an embedded application to its explicit workspace mount', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 1100});
   const requests: string[] = [];
   page.on('request', request => {
-    if (request.url().endsWith('/api/v1/status')) requests.push(new URL(request.url()).pathname);
+    const path = new URL(request.url()).pathname;
+    if (path.includes('/api/v1/') || path.endsWith('/healthz')) requests.push(path);
   });
-  await mockSystemApi(page, {smithproxy: 'ready'});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.locator('smithproxy-gui').evaluate(element => element.remove());
+  requests.length = 0;
   await page.evaluate(() => {
-    history.replaceState({}, '', '/ws001/smithproxy-gui/');
+    history.replaceState({}, '', '/saslik/tools/');
     const application = document.createElement('smithproxy-gui');
-    application.setAttribute('mode', 'standalone');
+    application.setAttribute('mode', 'embedded');
+    application.setAttribute('base-path', '/ws001/smithproxy-gui/');
+    application.setAttribute('api-base', '/ws001/smithproxy-gui/api/v1/');
     document.body.append(application);
   });
 
   await expect(page.getByText('Core: Online')).toBeVisible();
-  await expect.poll(() => requests).toContain('/ws001/smithproxy-gui/api/v1/status');
+  await expect.poll(() => requests).toEqual(expect.arrayContaining([
+    '/ws001/smithproxy-gui/api/v1/capabilities',
+    '/ws001/smithproxy-gui/api/v1/auth/session',
+    '/ws001/smithproxy-gui/api/v1/status',
+    '/ws001/smithproxy-gui/api/v1/config/snapshot',
+    '/ws001/smithproxy-gui/api/v1/config/draft',
+  ]));
+  expect(requests.every(path => path.startsWith('/ws001/smithproxy-gui/api/v1/'))).toBe(true);
+  await expect(page.locator('smithproxy-gui')).toHaveAttribute('mode', 'embedded');
+  await expect.poll(() => page.locator('smithproxy-gui').evaluate(element => {
+    const shell = element.shadowRoot?.querySelector<HTMLElement>('.shell');
+    return shell ? Math.round(shell.getBoundingClientRect().height) : 0;
+  })).toBe(860);
+});
+
+test('fails closed before requesting an unsafe embedded mount', async ({page}) => {
+  const requests: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path.includes('/api/v1/')) requests.push(path);
+  });
+  await page.goto('/');
+  await page.locator('smithproxy-gui').evaluate(element => element.remove());
+  requests.length = 0;
+  await page.evaluate(() => {
+    const application = document.createElement('smithproxy-gui');
+    application.setAttribute('mode', 'embedded');
+    application.setAttribute('base-path', '/ws001/%2e%2e/admin');
+    application.setAttribute('api-base', '/ws001/%2e%2e/admin/api/v1');
+    document.body.append(application);
+  });
+
+  await expect(page.getByText('Core: Offline')).toBeVisible();
+  await expect(page.getByText(/Smithproxy: Unknown/i)).toHaveAttribute(
+    'title', /unsafe path characters/i,
+  );
+  expect(requests).toEqual([]);
 });
 
 test.describe('Saslik visual regression', () => {

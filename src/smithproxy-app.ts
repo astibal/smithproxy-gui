@@ -332,10 +332,10 @@ export class SmithproxyApp extends LitElement {
 
   private readonly previewClient = new FakeConfigClient();
   private readonly drawerStore = new DrawerStore();
-  private runtime?: RuntimeConfig;
-  private systemClient?: SystemClient;
-  private configClient?: ApiConfigClient;
-  private draftClient?: DraftClient;
+  private runtime: RuntimeConfig | undefined;
+  private systemClient: SystemClient | undefined;
+  private configClient: ApiConfigClient | undefined;
+  private draftClient: DraftClient | undefined;
   private systemProbeTimer: number | undefined;
   private systemProbeInFlight = false;
   private systemProbePending = false;
@@ -749,14 +749,18 @@ export class SmithproxyApp extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    this.runtime = readRuntimeConfig(this);
-    this.mode = this.runtime.mode;
     try {
+      this.runtime = readRuntimeConfig(this);
+      this.mode = this.runtime.mode;
       this.systemClient = new SystemClient(this.runtime.apiBase, this.runtime.basePath);
       this.configClient = new ApiConfigClient(this.runtime.apiBase);
       this.draftClient = new DraftClient(this.runtime.apiBase);
       void this.refreshConnection();
     } catch (error) {
+      this.runtime = undefined;
+      this.systemClient = undefined;
+      this.configClient = undefined;
+      this.draftClient = undefined;
       this.systemStatus = statusFromFailure(error);
     }
     document.addEventListener('visibilitychange', this.handleVisibilityChange);

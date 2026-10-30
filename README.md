@@ -343,6 +343,11 @@ The root web component supports integration into Saslik Tools:
 </smithproxy-gui>
 ```
 
+Both deployment attributes must be canonical same-origin paths. The API path
+must remain below the application mount; encoded separators, encoded traversal,
+queries, fragments, and unsafe path characters are rejected before any API
+client is created.
+
 Configuration coverage and the remaining monitoring surfaces are delivered as
 independently tested vertical slices.
 

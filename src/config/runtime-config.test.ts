@@ -53,7 +53,7 @@ describe('runtime deployment paths', () => {
 
     expect(readRuntimeConfig(host({mode: 'embedded'}))).toEqual({
       mode: 'embedded',
-      basePath: '/ws001/smithproxy-gui/',
+      basePath: '/ws001/smithproxy-gui',
       apiBase: '/ws001/smithproxy-gui/internal/api/v1',
     });
   });
@@ -70,7 +70,7 @@ describe('runtime deployment paths', () => {
       'api-base': '/tools/smithproxy/control/v1',
     }))).toEqual({
       mode: 'embedded',
-      basePath: '/tools/smithproxy/',
+      basePath: '/tools/smithproxy',
       apiBase: '/tools/smithproxy/control/v1',
     });
   });
@@ -80,8 +80,28 @@ describe('runtime deployment paths', () => {
 
     expect(readRuntimeConfig(host({'base-path': '/ws002/smithproxy-gui/'}))).toEqual({
       mode: 'standalone',
-      basePath: '/ws002/smithproxy-gui/',
+      basePath: '/ws002/smithproxy-gui',
       apiBase: '/ws002/smithproxy-gui/api/v1',
     });
+  });
+
+  it('rejects an API override outside the application mount', () => {
+    stubDocument('https://saslik.example/fallback/');
+
+    expect(() => readRuntimeConfig(host({
+      'base-path': '/ws001/smithproxy-gui',
+      'api-base': '/api/v1',
+    }))).toThrow('below the application mount');
+  });
+
+  it.each([
+    '/ws001/%2e%2e/admin',
+    '/ws001/%2Fadmin',
+    '/ws001/%252e%252e/admin',
+    '/ws001/unsafe path',
+  ])('rejects an unsafe deployment path: %s', basePath => {
+    stubDocument('https://saslik.example/fallback/');
+
+    expect(() => readRuntimeConfig(host({'base-path': basePath}))).toThrow('unsafe path characters');
   });
 });

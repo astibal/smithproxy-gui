@@ -1,6 +1,7 @@
 import {httpStatusError} from './http-error';
 import {isCanonicalRevisionOrNull} from './revision';
 import {boundedJson} from './bounded-json';
+import {normalizeSameOriginPath} from '../security/deployment-path';
 
 export interface DraftAuthIdentity {
   name: string;
@@ -133,17 +134,6 @@ const MAX_DRAFT_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function normalizedPath(value: string): string {
-  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\') || /[?#]/u.test(value)) {
-    throw new Error('API base must be a same-origin absolute path.');
-  }
-  const segments = value.split('/').filter(Boolean);
-  if (segments.some(segment => segment === '.' || segment === '..')) {
-    throw new Error('API base cannot contain relative path segments.');
-  }
-  return segments.length === 0 ? '/' : `/${segments.join('/')}`;
 }
 
 function scalar(value: unknown): DraftScalar {
@@ -551,7 +541,7 @@ export class DraftClient {
   readonly #pendingRequests = new Set<AbortController>();
 
   constructor(apiBase: string, fetchImplementation: typeof fetch = (input, init) => fetch(input, init), timeoutMs = 5000) {
-    const base = normalizedPath(apiBase);
+    const base = normalizeSameOriginPath(apiBase, 'API base');
     this.#endpoint = `${base === '/' ? '' : base}/config/draft`;
     this.#fetch = fetchImplementation;
     this.#timeoutMs = timeoutMs;

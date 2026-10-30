@@ -18,6 +18,7 @@ import type {
 import {httpStatusError} from './http-error';
 import {isCanonicalRevisionOrNull} from './revision';
 import {boundedJson} from './bounded-json';
+import {normalizeSameOriginPath} from '../security/deployment-path';
 
 type JsonObject = Record<string, unknown>;
 type Usage = ConfigUsage;
@@ -212,17 +213,6 @@ function boundedArray(value: unknown, label: string, maximum: number): unknown[]
 
 function stringArray(value: unknown, label: string): string[] {
   return boundedArray(value, label, MAX_REFERENCES).map(item => safeString(item, label, 128));
-}
-
-function normalizedPath(value: string): string {
-  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\') || /[?#]/u.test(value)) {
-    throw new Error('API base must be a same-origin absolute path.');
-  }
-  const segments = value.split('/').filter(Boolean);
-  if (segments.some(segment => segment === '.' || segment === '..')) {
-    throw new Error('API base cannot contain relative path segments.');
-  }
-  return segments.length === 0 ? '/' : `/${segments.join('/')}`;
 }
 
 function parseAddress(value: unknown): MutableAddress {
@@ -1093,7 +1083,7 @@ export class ApiConfigClient implements ConfigClient {
   readonly #pendingRequests = new Set<AbortController>();
 
   constructor(apiBase: string, fetchImplementation: typeof fetch = (input, init) => fetch(input, init), timeoutMs = 5000) {
-    const base = normalizedPath(apiBase);
+    const base = normalizeSameOriginPath(apiBase, 'API base');
     this.#endpoint = base === '/' ? '/config/snapshot' : `${base}/config/snapshot`;
     this.#fetch = fetchImplementation;
     this.#timeoutMs = timeoutMs;
