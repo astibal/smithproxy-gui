@@ -1672,6 +1672,7 @@ test('shows pending policy and object values in their configuration lists', asyn
     ],
   }, true);
   await page.goto('/');
+  await expect(page.getByRole('button', {name: 'Review draft · 13'})).toBeVisible();
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   const policies = page.getByRole('group', {name: 'Policies'});
   await expect(policies.getByRole('button', {name: /Pending policy office office reject Disabled Pending/i}))
