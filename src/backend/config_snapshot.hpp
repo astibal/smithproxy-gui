@@ -134,6 +134,7 @@ struct ConfigAuthProfile {
     bool resolve{};
     std::uint64_t identity_count{};
     std::vector<ConfigPrivateProfileReference> profile_references;
+    std::vector<std::string> private_profile_ids;
 };
 
 struct ConfigProfile {

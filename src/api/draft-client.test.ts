@@ -10,6 +10,7 @@ describe('DraftClient', () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(response({
         id: 'workspace-draft', base_revision: null, version: 0, changes: [], structural_operations: [],
+        private_profile_references_complete: true,
         private_profile_references: [{profile_id: 'detection-0', count: 1}],
       }))
       .mockResolvedValueOnce(response({
@@ -20,6 +21,7 @@ describe('DraftClient', () => {
 
     await expect(client.load()).resolves.toMatchObject({
       version: 0, changes: [],
+      privateProfileReferencesComplete: true,
       privateProfileReferences: [{profileId: 'detection-0', count: 1}],
     });
     await expect(client.upsert(0, 'policy.[0].action', 'accept')).resolves.toMatchObject({
@@ -564,6 +566,15 @@ describe('DraftClient', () => {
     }));
     await expect(malformedPrivateReferences.load()).rejects.toThrow(
       'Invalid private draft profile reference',
+    );
+
+    const malformedPrivateReferenceCompleteness = new DraftClient('/api/v1', async () => response({
+      id: 'workspace-draft', base_revision: null, version: 0,
+      changes: [], structural_operations: [], private_profile_references_complete: 'yes',
+      private_profile_references: [],
+    }));
+    await expect(malformedPrivateReferenceCompleteness.load()).rejects.toThrow(
+      'Invalid private draft profile reference completeness',
     );
 
     const conflict = new DraftClient('/api/v1', async () => response({}, 409));

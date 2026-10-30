@@ -1216,6 +1216,8 @@ int main() {
     assert(profiles_with_private_references[1].private_reference_count == 1U);
     assert(profiles_with_private_references[2].private_reference_count == 0U);
     assert(profiles_with_private_references[2].authentication->profile_references.empty());
+    assert(profiles_with_private_references[2].authentication->private_profile_ids ==
+           std::vector<std::string>({"detection-0", "tls-0"}));
     assert(!parse_config_profiles(
         R"({"success":{"auth_profiles":{"bad":{"identities":{"alice":{"tls_profile":7}}}}}})",
         "auth_profiles", "authentication").profiles);

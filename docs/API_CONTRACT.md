@@ -227,10 +227,16 @@ bounded `[redacted:clear]`, `[redacted:replace]`, or
 entire response if raw sensitive material or an invalid sentinel is present.
 For redacted authentication identity replacements, the same response carries a
 bounded `private_profile_references` array containing only opaque live profile
-IDs and aggregate source counts. It never carries identity names or binding
-values. The browser uses this value-free reverse index to keep deletion guards
-correct after reload; malformed, duplicate, or unbounded entries reject the
-complete draft response.
+IDs and effective aggregate source counts. It never carries identity names or
+binding values. `private_profile_references_complete` is true only when the
+trusted core computed the entire effective index against the draft's exact base
+revision. Pending replacements, clears, authentication-profile deletes, and
+creates replace or extend their live sources. When completeness is false, the
+browser ignores the array and conservatively uses the live snapshot counts.
+Malformed, duplicate, or unbounded entries and a non-boolean completeness flag
+reject the complete draft response. Effective nonzero counts block both profile
+deletion and rename, because a hidden name binding cannot be safely cascaded in
+the browser.
 This store cannot mutate Smithproxy configuration by itself;
 mutation is possible only through the separate capability-gated atomic commit
 endpoint.

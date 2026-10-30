@@ -256,8 +256,12 @@ privately so a referenced pending profile cannot be removed through a direct API
 For the live snapshot it resolves binding names inside the trusted core, exposes only
 aggregate reverse-reference counts, and erases the private names before serialization;
 profiles used only by redacted identity mappings therefore remain protected from deletion.
-Workspace drafts expose the same protection as a bounded opaque-ID/count summary,
-so a pending write-only replacement cannot create a hidden deletion conflict after reload.
+Workspace drafts expose a complete effective reverse index as a bounded opaque-ID/count
+summary. Pending identity replacements and authentication-profile deletes replace their
+live sources in that index, so valid atomic cleanup is not blocked while hidden deletion
+conflicts remain protected after reload. If the live revision cannot be aligned, the GUI
+falls back to the conservative live counts. A target profile cannot be renamed while an
+effective redacted mapping still references it; replace or clear the complete mapping first.
 Content profiles expose nested creation, confirmed deletion, and first/before/last
 ordering for stable content rules. New write-only match and replacement expressions
 are cleared from the editor after the GUI core accepts them and must be re-entered

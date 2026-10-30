@@ -2178,10 +2178,7 @@ export class SmithproxyApp extends LitElement {
                     : profile.dns ? 'alg_dns_profiles' : undefined;
       return collection
         ? {collection, entityId: profile.id, label: `${profile.type} profile`,
-          usageCount: profile.usedBy.length + profile.privateReferenceCount +
-            (this.workspaceDraft?.privateProfileReferences.find(
-              reference => reference.profileId === profile.id,
-            )?.count ?? 0)}
+          usageCount: profile.usedBy.length + this.effectivePrivateProfileReferences(profile)}
         : undefined;
     }
     if (entry.kind === 'authority') {
@@ -5005,6 +5002,11 @@ export class SmithproxyApp extends LitElement {
         this.draftError = 'Profile names must be unique within their configuration section.';
         return undefined;
       }
+      if (normalizedName !== currentName && this.effectivePrivateProfileReferences(profile) > 0) {
+        this.draftError =
+          'Replace or clear the redacted authentication mappings before renaming this profile.';
+        return undefined;
+      }
       const renameChanges = this.renamedReferenceChanges(
         'profile', entry.id, currentName, normalizedName,
       );
@@ -6594,7 +6596,7 @@ export class SmithproxyApp extends LitElement {
                 <span class="row-meta"><span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh ||
                   profile.dns || profile.script || profile.authentication
                   ? 'Typed details' : 'Metadata only'}</span>${this.renderPendingBadge('profile', profile.id)}${this.renderOverlayBadge(prefix, overlayCounts)}</span>
-                <span>${profile.usedBy.length + profile.privateReferenceCount}</span>
+                <span>${profile.usedBy.length + this.effectivePrivateProfileReferences(profile)}</span>
               </button>`;
             })}
             ${pendingProfiles.map(operation => html`<button class="row object-row" type="button"
@@ -10113,14 +10115,22 @@ export class SmithproxyApp extends LitElement {
       </section>`;
   }
 
+  private effectivePrivateProfileReferences(profile: ProfileObject): number {
+    if (!this.workspaceDraft?.privateProfileReferencesComplete) return profile.privateReferenceCount;
+    return this.workspaceDraft.privateProfileReferences.find(
+      reference => reference.profileId === profile.id,
+    )?.count ?? 0;
+  }
+
   private renderObjectUsage(object: AddressObject | PortObject | ProtocolObject | ProfileObject) {
-    const privateReferenceCount = 'privateReferenceCount' in object ? object.privateReferenceCount : 0;
-    const draftPrivateReferenceCount = 'privateReferenceCount' in object
-      ? this.workspaceDraft?.privateProfileReferences.find(
-          reference => reference.profileId === object.id,
-        )?.count ?? 0
+    const livePrivateReferenceCount = 'privateReferenceCount' in object ? object.privateReferenceCount : 0;
+    const privateReferenceCount = 'privateReferenceCount' in object
+      ? this.effectivePrivateProfileReferences(object)
       : 0;
-    const usageCount = object.usedBy.length + privateReferenceCount + draftPrivateReferenceCount;
+    const privateReferencesChanged = 'privateReferenceCount' in object &&
+      this.workspaceDraft?.privateProfileReferencesComplete === true &&
+      privateReferenceCount !== livePrivateReferenceCount;
+    const usageCount = object.usedBy.length + privateReferenceCount;
     return html`
       <div class="section">
         <h3>Impact</h3>
@@ -10128,13 +10138,17 @@ export class SmithproxyApp extends LitElement {
         ${privateReferenceCount > 0 ? html`
           <div class="scope-note">
             ${privateReferenceCount} ${privateReferenceCount === 1 ? 'reference is' : 'references are'}
-            inside redacted authentication identity mappings.
+            inside ${privateReferencesChanged
+              ? 'effective redacted authentication identity mappings after pending changes'
+              : 'redacted authentication identity mappings'}.
+          </div>
+          <div class="scope-note">
+            Replace or clear those redacted mappings before renaming this profile.
           </div>
         ` : nothing}
-        ${draftPrivateReferenceCount > 0 ? html`
+        ${privateReferencesChanged && privateReferenceCount === 0 ? html`
           <div class="scope-note">
-            ${draftPrivateReferenceCount} pending redacted authentication
-            ${draftPrivateReferenceCount === 1 ? 'mapping references' : 'mappings reference'} this profile.
+            Pending identity changes remove all redacted authentication references to this profile.
           </div>
         ` : nothing}
         <ul class="usage">

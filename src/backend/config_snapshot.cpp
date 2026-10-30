@@ -588,7 +588,7 @@ ConfigProfileParseResult parse_config_profiles(
                 references.push_back({std::move(reference_type), std::move(reference_name)});
             }
             authentication = ConfigAuthProfile{
-                *authenticate, *resolve, *identity_count, std::move(references),
+                *authenticate, *resolve, *identity_count, std::move(references), {},
             };
         }
         result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type),
@@ -607,9 +607,13 @@ void finalize_private_profile_references(std::vector<ConfigProfile>& profiles) {
     }
     for (auto& source : profiles) {
         if (!source.authentication) continue;
+        source.authentication->private_profile_ids.clear();
         for (const auto& reference : source.authentication->profile_references) {
             const auto target = targets.find({reference.type, reference.name});
-            if (target != targets.end()) ++target->second->private_reference_count;
+            if (target != targets.end()) {
+                ++target->second->private_reference_count;
+                source.authentication->private_profile_ids.push_back(target->second->id);
+            }
         }
         source.authentication->profile_references.clear();
         source.authentication->profile_references.shrink_to_fit();

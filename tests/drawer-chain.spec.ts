@@ -106,6 +106,7 @@ type MockState = {
   secondPolicy?: boolean;
   unusedProfile?: boolean;
   privateProfileReferences?: number;
+  privateDraftProfileReferencesComplete?: boolean;
   privateDraftProfileReferences?: Array<{profile_id: string; count: number}>;
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   commitRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
@@ -175,6 +176,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     version: state.initialDraftChanges?.length || state.initialStructuralOperations?.length ? 1 : 0,
     changes: state.initialDraftChanges?.map(redactDraftChange) ?? [] as Array<{path: string; value: unknown}>,
     structural_operations: state.initialStructuralOperations ?? [],
+    private_profile_references_complete: state.privateDraftProfileReferencesComplete ?? false,
     private_profile_references: state.privateDraftProfileReferences ?? [],
   };
   await page.route('**/api/v1/capabilities', async route => {
@@ -483,7 +485,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     const committedOperations = draft.changes.length + draft.structural_operations.length;
     draft = {
       ...draft, base_revision: revision, version: committedVersion + 1,
-      changes: [], structural_operations: [], private_profile_references: [],
+      changes: [], structural_operations: [], private_profile_references_complete: false,
+      private_profile_references: [],
     };
     await route.fulfill({json: {
       source: 'gui-core', draft_id: 'workspace-draft',
@@ -508,7 +511,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     }
     draft = {
       ...draft, version: draft.version + 1, changes: [], structural_operations: [],
-      private_profile_references: [],
+      private_profile_references_complete: false, private_profile_references: [],
     };
     await route.fulfill({json: draft});
   });
@@ -2933,6 +2936,7 @@ test('blocks profile deletion for redacted authentication identity references', 
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
     structuralDraftsReady: true, unusedProfile: true, privateProfileReferences: 1,
+    draftMutationBatches: [],
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
@@ -2951,6 +2955,12 @@ test('blocks profile deletion for redacted authentication identity references', 
   await expect(deleteButton).toHaveAttribute(
     'title', 'This object is referenced by 1 configuration entry.',
   );
+  await editor.getByLabel('Name').fill('renamed-detection');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText(
+    'Replace or clear the redacted authentication mappings before renaming this profile.',
+  )).toBeVisible();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
   await expectNoWcagViolations(page);
 });
 
@@ -2963,6 +2973,7 @@ test('blocks profile deletion for redacted identity references in the workspace 
       value: [{name: 'private_user', detection_profile: 'unused-detection'}],
     }],
     privateDraftProfileReferences: [{profile_id: 'detection-1', count: 1}],
+    privateDraftProfileReferencesComplete: true,
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
@@ -2973,11 +2984,44 @@ test('blocks profile deletion for redacted identity references in the workspace 
 
   const editor = page.getByRole('dialog', {name: 'Edit unused-detection'});
   await expect(editor.getByText(
-    '1 pending redacted authentication mapping references this profile.',
+    '1 reference is inside effective redacted authentication identity mappings after pending changes.',
   )).toBeVisible();
   await expect(editor.getByRole('button', {name: 'Delete detection profile'})).toHaveAttribute(
     'title', 'This object is referenced by 1 configuration entry.',
   );
+  await expectNoWcagViolations(page);
+});
+
+test('uses effective redacted identity references for pending profile deletion', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, unusedProfile: true, privateProfileReferences: 1,
+    draftMutationBatches: [],
+    initialDraftChanges: [{
+      path: 'auth_profiles.[0].identities',
+      value: [{name: 'private_user', content_profile: 'capture'}],
+    }],
+    privateDraftProfileReferencesComplete: true,
+    privateDraftProfileReferences: [{profile_id: 'content-0', count: 1}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  const profileRow = profiles.getByRole('button', {name: /unused-detection detection/i});
+  await expect(profileRow.locator('span').last()).toHaveText('0');
+  await profileRow.click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit unused-detection'});
+  await expect(editor.getByText(
+    'Pending identity changes remove all redacted authentication references to this profile.',
+  )).toBeVisible();
+  await expect(editor.getByRole('button', {name: 'Delete detection profile'})).toBeEnabled();
+  await editor.getByLabel('Name').fill('renamed-detection');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches?.[0]).toContainEqual({
+    path: 'detection_profiles.[1].name', value: 'renamed-detection',
+  });
   await expectNoWcagViolations(page);
 });
 

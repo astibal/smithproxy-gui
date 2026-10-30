@@ -62,42 +62,118 @@ struct Response {
 
 constexpr std::size_t maximum_request_body = 128U * 1024U;
 
-std::map<std::string, std::uint64_t> private_draft_profile_references(
-    const DraftSnapshot& draft, const ConfigSnapshot& config) {
-    std::map<std::pair<std::string, std::string>, std::string> profile_ids;
-    for (const auto& profile : config.profiles) {
-        profile_ids.emplace(std::pair{profile.type, profile.name}, profile.id);
+std::optional<std::size_t> indexed_draft_path(
+    const std::string_view path, const std::string_view collection, const std::string_view field) {
+    const auto prefix = std::string(collection) + ".[";
+    const auto suffix = "]." + std::string(field);
+    if (!path.starts_with(prefix) || !path.ends_with(suffix) ||
+        path.size() <= prefix.size() + suffix.size()) {
+        return std::nullopt;
     }
-    std::map<std::string, std::uint64_t> counts;
-    const auto accumulate = [&](const DraftAuthIdentities& identities) {
-        std::set<std::string> source_targets;
+    const auto index_text = path.substr(prefix.size(), path.size() - prefix.size() - suffix.size());
+    if (index_text.empty() || (index_text.size() > 1U && index_text.front() == '0')) {
+        return std::nullopt;
+    }
+    std::size_t index{};
+    const auto [end, error] = std::from_chars(
+        index_text.data(), index_text.data() + index_text.size(), index);
+    if (error != std::errc{} || end != index_text.data() + index_text.size() || index >= 4096U) {
+        return std::nullopt;
+    }
+    return index;
+}
+
+std::optional<std::map<std::string, std::uint64_t>> effective_private_profile_references(
+    const DraftSnapshot& draft, const ConfigSnapshot& config) {
+    using ProfileEntry = std::pair<std::string, std::string>;
+    std::map<std::string, std::vector<ProfileEntry>, std::less<>> target_profiles;
+    const auto collection_for_type = [](const std::string_view type) -> std::optional<std::string_view> {
+        if (type == "detection") return "detection_profiles";
+        if (type == "content") return "content_profiles";
+        if (type == "tls") return "tls_profiles";
+        if (type == "dns") return "alg_dns_profiles";
+        return std::nullopt;
+    };
+    for (const auto& profile : config.profiles) {
+        const auto collection = collection_for_type(profile.type);
+        if (collection) target_profiles[std::string(*collection)].emplace_back(profile.id, profile.name);
+    }
+    for (const auto& change : draft.changes) {
+        const auto* name = std::get_if<std::string>(&change.value);
+        if (name == nullptr) continue;
+        for (auto& [collection, profiles] : target_profiles) {
+            const auto index = indexed_draft_path(change.path, collection, "name");
+            if (index && *index < profiles.size()) {
+                profiles[*index].second = *name;
+            } else if (change.path.starts_with(collection + ".[") &&
+                       change.path.ends_with("].name")) {
+                return std::nullopt;
+            }
+        }
+    }
+    std::map<std::pair<std::string, std::string>, std::string> target_ids;
+    constexpr std::string_view profile_collection_suffix{"_profiles"};
+    for (const auto& [collection, profiles] : target_profiles) {
+        const auto type = collection == "alg_dns_profiles"
+            ? std::string{"dns"}
+            : collection.substr(0U, collection.size() - profile_collection_suffix.size());
+        for (const auto& [id, name] : profiles) {
+            if (!target_ids.emplace(std::pair{type, name}, id).second) return std::nullopt;
+        }
+    }
+    const auto resolve = [&](const DraftScalar& value) {
+        std::set<std::string> targets;
+        const auto* identities = std::get_if<DraftAuthIdentities>(&value);
+        if (identities == nullptr) return targets;
         const auto add = [&](const std::string_view type, const std::string& name) {
             if (name.empty()) return;
-            const auto target = profile_ids.find({std::string(type), name});
-            if (target != profile_ids.end()) source_targets.insert(target->second);
+            const auto target = target_ids.find({std::string(type), name});
+            if (target != target_ids.end()) targets.insert(target->second);
         };
-        for (const auto& identity : identities) {
+        for (const auto& identity : *identities) {
             add("detection", identity.detection_profile);
             add("content", identity.content_profile);
             add("tls", identity.tls_profile);
             add("dns", identity.alg_dns_profile);
         }
-        for (const auto& profile_id : source_targets) ++counts[profile_id];
+        return targets;
     };
+    std::vector<std::pair<std::string, std::set<std::string>>> sources;
+    for (const auto& profile : config.profiles) {
+        if (!profile.authentication) continue;
+        sources.emplace_back(profile.id, std::set<std::string>{
+            profile.authentication->private_profile_ids.begin(),
+            profile.authentication->private_profile_ids.end(),
+        });
+    }
     for (const auto& change : draft.changes) {
-        if (!change.path.starts_with("auth_profiles.[") || !change.path.ends_with("].identities")) {
-            continue;
-        }
-        if (const auto* identities = std::get_if<DraftAuthIdentities>(&change.value)) {
-            accumulate(*identities);
+        const auto index = indexed_draft_path(change.path, "auth_profiles", "identities");
+        if (index && *index < sources.size()) {
+            sources[*index].second = resolve(change.value);
+        } else if (change.path.starts_with("auth_profiles.[") &&
+                   change.path.ends_with("].identities")) {
+            return std::nullopt;
         }
     }
     for (const auto& operation : draft.structural_operations) {
+        if (const auto* remove = std::get_if<DraftDeleteOperation>(&operation);
+            remove != nullptr && remove->collection == "auth_profiles") {
+            const auto source = std::find_if(sources.begin(), sources.end(), [&](const auto& item) {
+                return item.first == remove->entity_id;
+            });
+            if (source == sources.end()) return std::nullopt;
+            source->second.clear();
+            continue;
+        }
         const auto* create = std::get_if<DraftCreateOperation>(&operation);
         if (create == nullptr || create->collection != "auth_profiles") continue;
         const auto identities = create->fields.find("identities");
         if (identities == create->fields.end()) continue;
-        if (const auto* value = std::get_if<DraftAuthIdentities>(&identities->second)) accumulate(*value);
+        sources.emplace_back("client:" + create->client_id, resolve(identities->second));
+    }
+    std::map<std::string, std::uint64_t> counts;
+    for (const auto& source : sources) {
+        for (const auto& profile_id : source.second) ++counts[profile_id];
     }
     return counts;
 }
@@ -1153,13 +1229,18 @@ private:
             {"version", draft.version},
             {"changes", nlohmann::json::array()},
             {"structural_operations", nlohmann::json::array()},
+            {"private_profile_references_complete", false},
             {"private_profile_references", nlohmann::json::array()},
         };
         if (config.state == "ready" && config.revision == draft.base_revision) {
-            for (const auto& [profile_id, count] : private_draft_profile_references(draft, config)) {
-                document["private_profile_references"].push_back({
-                    {"profile_id", profile_id}, {"count", count},
-                });
+            const auto references = effective_private_profile_references(draft, config);
+            if (references) {
+                document["private_profile_references_complete"] = true;
+                for (const auto& [profile_id, count] : *references) {
+                    document["private_profile_references"].push_back({
+                        {"profile_id", profile_id}, {"count", count},
+                    });
+                }
             }
         }
         for (const auto& change : draft.changes) {

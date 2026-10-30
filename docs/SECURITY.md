@@ -110,6 +110,16 @@ diagnostics, search, audit details, errors, logs, and operational events contain
 only a clear/replace marker and bounded entry count. An operator must re-enter
 the entire map to update a pending replacement.
 
+Reference guards use a separate value-free reverse index. The trusted core resolves
+bindings to already-public opaque profile IDs, erases the private names, and then
+applies pending replacements, clears, creates, deletes, and profile renames over
+the exact draft base revision. The browser receives only aggregate source counts
+plus an explicit completeness bit. Revision drift, an invalid index, or an
+ambiguous effective name clears completeness and forces the browser back to the
+conservative live counts; it never guesses that a hidden reference disappeared.
+An effective hidden reference blocks target deletion and rename because the browser
+cannot safely cascade a name it never receives.
+
 Browser validation is never authoritative. The core accepts only pinned schema
 paths emitted by the typed editors and independently checks canonical indexes,
 types, enums, ranges, bounded unique collections, and opaque secret limits.

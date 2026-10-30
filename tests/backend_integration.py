@@ -941,7 +941,10 @@ def main() -> int:
             assert json.loads(body) == {
                 "id": "workspace-draft", "base_revision": FakeSmithproxy.config_revision,
                 "version": 1, "changes": [], "structural_operations": [],
-                "private_profile_references": [],
+                "private_profile_references_complete": True,
+                "private_profile_references": [
+                    {"profile_id": "detection-0", "count": 1},
+                ],
             }
             assert request(configured_port, "/api/v1/config/draft/preflight")[0] == 401
             status, _, body = request(
@@ -1177,6 +1180,7 @@ def main() -> int:
             assert status == 200
             batch_snapshot = json.loads(body)
             assert batch_snapshot["version"] == 3
+            assert batch_snapshot["private_profile_references_complete"] is True
             assert batch_snapshot["private_profile_references"] == [
                 {"profile_id": "content-0", "count": 1},
                 {"profile_id": "tls-0", "count": 1},

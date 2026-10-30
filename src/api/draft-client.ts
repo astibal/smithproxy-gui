@@ -62,6 +62,7 @@ export interface DraftSnapshot {
   version: number;
   changes: ReadonlyArray<DraftChange>;
   structuralOperations: ReadonlyArray<DraftStructuralOperation>;
+  privateProfileReferencesComplete: boolean;
   privateProfileReferences: ReadonlyArray<{profileId: string; count: number}>;
 }
 
@@ -344,6 +345,10 @@ function parseDraft(value: unknown): DraftSnapshot {
     throw new Error('Invalid draft response.');
   }
   const privateReferencesValue = value.private_profile_references ?? [];
+  const privateProfileReferencesComplete = value.private_profile_references_complete ?? false;
+  if (typeof privateProfileReferencesComplete !== 'boolean') {
+    throw new Error('Invalid private draft profile reference completeness.');
+  }
   if (!Array.isArray(privateReferencesValue) || privateReferencesValue.length > 4096) {
     throw new Error('Invalid private draft profile references.');
   }
@@ -391,7 +396,7 @@ function parseDraft(value: unknown): DraftSnapshot {
   });
   return {
     id: value.id, baseRevision: value.base_revision, version: value.version,
-    changes, structuralOperations, privateProfileReferences,
+    changes, structuralOperations, privateProfileReferencesComplete, privateProfileReferences,
   };
 }
 
