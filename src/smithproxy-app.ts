@@ -67,6 +67,8 @@ import {
 } from './state/system-status';
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
+const policyActions = ['accept', 'deny', 'reject'] as const;
+const policyNatModes = ['auto', 'none'] as const;
 type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavailable';
 type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
@@ -3368,16 +3370,19 @@ export class SmithproxyApp extends LitElement {
     const input = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
       `#policy-create-${field}-${entry.id}`,
     );
+    const select = (field: string) => this.renderRoot.querySelector<HTMLSelectElement>(
+      `#policy-create-${field}-${entry.id}`,
+    );
     const name = input('name');
     const enabled = input('enabled');
     const sources = input('sources');
     const destinations = input('destinations');
-    const action = input('action');
+    const action = select('action');
     const protocol = input('protocol');
     const sourcePorts = input('source-ports');
     const destinationPorts = input('destination-ports');
     const features = input('features');
-    const nat = input('nat');
+    const nat = select('nat');
     const referenceNames = ['routing', 'tls', 'ssh', 'detection', 'content', 'auth', 'dns', 'script'] as const;
     const references = new Map(referenceNames.map(field => [field, input(field)]));
     const placement = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-create-placement-${entry.id}`);
@@ -3401,11 +3406,11 @@ export class SmithproxyApp extends LitElement {
       (empty || values.length > 0) && values.length <= 256 &&
       values.every(value => printable(value, 128)) && new Set(values).size === values.length;
     const referenceValues = new Map([...references].map(([field, value]) => [field, value!.value.trim()]));
-    if (!printable(normalizedName, 128) || !printable(normalizedAction, 32) ||
+    if (!printable(normalizedName, 128) || !policyActions.some(value => value === normalizedAction) ||
         !printable(normalizedProtocol, 128) || !validList(sourceValues) ||
         !validList(destinationValues) ||
         ![sourcePortValues, destinationPortValues, featureValues].every(values => validList(values)) ||
-        !printable(nat.value.trim(), 128, true) ||
+        !policyNatModes.some(value => value === nat.value) ||
         [...referenceValues.values()].some(value => !printable(value, 128, true))) {
       this.drawerError = 'Policy fields and unique bounded references are required.';
       return;
@@ -4857,14 +4862,14 @@ export class SmithproxyApp extends LitElement {
       const name = this.renderRoot.querySelector<HTMLInputElement>(`#policy-name-${entry.id}`);
       const enabled = this.renderRoot.querySelector<HTMLInputElement>(`#policy-enabled-${entry.id}`);
       const destination = this.renderRoot.querySelector<HTMLInputElement>(`#destination-${entry.id}`);
-      const action = this.renderRoot.querySelector<HTMLInputElement>(`#action-${entry.id}`);
+      const action = this.renderRoot.querySelector<HTMLSelectElement>(`#action-${entry.id}`);
       const field = (id: string) => this.renderRoot.querySelector<HTMLInputElement>(`#policy-${id}-${entry.id}`);
       const protocol = field('protocol');
       const sources = field('sources');
       const sourcePorts = field('source-ports');
       const destinationPorts = field('destination-ports');
       const features = field('features');
-      const nat = field('nat');
+      const nat = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-nat-${entry.id}`);
       const referenceIds = ['routing', 'tls', 'ssh', 'detection', 'content', 'auth', 'dns', 'script'] as const;
       const references = new Map(referenceIds.map(id => [id, field(id)]));
       if (index < 0 || !name || !enabled || !destination || !action || !protocol || !sources ||
@@ -4877,13 +4882,21 @@ export class SmithproxyApp extends LitElement {
       const destinationPortValues = list(destinationPorts);
       const featureValues = list(features);
       const normalizedName = name.value.trim();
+      const currentAction = this.persistentValue(
+        `policy.[${index}].action`, this.snapshot.policies[index]!.action,
+      );
+      const currentNat = this.persistentValue(
+        `policy.[${index}].nat`, this.snapshot.policies[index]!.nat,
+      );
+      const validAction = policyActions.some(value => value === action.value) || action.value === currentAction;
+      const validNat = policyNatModes.some(value => value === nat.value) || nat.value === currentNat;
       const validList = (values: ReadonlyArray<string>) => values.length <= 256 &&
         values.every(value => value.length <= 128) && new Set(values).size === values.length;
       if (normalizedName.length === 0 || normalizedName.length > 128 ||
-          action.value.trim().length === 0 || action.value.trim().length > 32 ||
+          !validAction || !validNat ||
           protocol.value.trim().length === 0 || protocol.value.trim().length > 128 ||
           ![sourceValues, sourcePortValues, destinations, destinationPortValues, featureValues].every(validList) ||
-          [nat, ...references.values()].some(value => value!.value.trim().length > 128)) {
+          [...references.values()].some(value => value!.value.trim().length > 128)) {
         this.draftError = 'Policy fields and unique bounded references are required.';
         return undefined;
       }
@@ -4900,8 +4913,8 @@ export class SmithproxyApp extends LitElement {
         {path: `policy.[${index}].dst`, value: destinations},
         {path: `policy.[${index}].dport`, value: destinationPortValues},
         {path: `policy.[${index}].features`, value: featureValues},
-        {path: `policy.[${index}].action`, value: action.value.trim()},
-        {path: `policy.[${index}].nat`, value: nat.value.trim()},
+        {path: `policy.[${index}].action`, value: action.value},
+        {path: `policy.[${index}].nat`, value: nat.value},
         {path: `policy.[${index}].routing`, value: references.get('routing')!.value.trim()},
         {path: `policy.[${index}].tls_profile`, value: references.get('tls')!.value.trim()},
         {path: `policy.[${index}].ssh_profile`, value: references.get('ssh')!.value.trim()},
@@ -7939,8 +7952,10 @@ export class SmithproxyApp extends LitElement {
           ${this.renderAddressReferences(entry, `policy-create-destinations-${entry.id}`, destinations)}
         </div>
         <label for="policy-create-action-${entry.id}">Action</label>
-        <input id="policy-create-action-${entry.id}" .value=${text('action', 'accept')}
-          maxlength="32" required .readOnly=${readOnly} />
+        <select id="policy-create-action-${entry.id}" .value=${text('action', 'accept')} ?disabled=${readOnly}>
+          <option value="accept">Accept</option><option value="deny">Deny</option>
+          <option value="reject">Reject (legacy)</option>
+        </select>
         <label for="policy-create-protocol-${entry.id}">Protocol</label>
         <div class="reference-edit">
           <input id="policy-create-protocol-${entry.id}" .value=${text('proto', 'tcp')}
@@ -7971,8 +7986,9 @@ export class SmithproxyApp extends LitElement {
         <input id="policy-create-features-${entry.id}" .value=${list('features').join(', ')}
           .readOnly=${readOnly} />
         <label for="policy-create-nat-${entry.id}">NAT</label>
-        <input id="policy-create-nat-${entry.id}" .value=${text('nat')} maxlength="128"
-          .readOnly=${readOnly} />
+        <select id="policy-create-nat-${entry.id}" .value=${text('nat', 'auto')} ?disabled=${readOnly}>
+          <option value="auto">Automatic</option><option value="none">None</option>
+        </select>
       </div>
       <div class="impact">
         Policy order affects traffic decisions. This operation remains in the workspace draft until Smithproxy
@@ -7997,6 +8013,10 @@ export class SmithproxyApp extends LitElement {
     const sourcePortValues = this.persistentListValue(`${policyBase}.sport`, policy.sourcePorts, 'string');
     const destinationPortValues = this.persistentListValue(`${policyBase}.dport`, policy.destinationPorts, 'string');
     const featureValues = this.persistentListValue(`${policyBase}.features`, policy.features, 'string');
+    const actionValue = this.persistentValue(`${policyBase}.action`, policy.action);
+    const natValue = this.persistentValue(`${policyBase}.nat`, policy.nat);
+    const legacyAction = !policyActions.some(value => value === actionValue);
+    const legacyNat = !policyNatModes.some(value => value === natValue);
     const protocol = this.snapshot?.protocols.find(item => item.name === protocolValue);
     const pendingMove = this.pendingPolicyMove(policy.id);
     const precedingPolicies = this.precedingDraftCreates(pendingMove?.localId ?? '', 'policy', null);
@@ -8059,8 +8079,12 @@ export class SmithproxyApp extends LitElement {
           ${this.renderAddressReferences(entry, `destination-${entry.id}`, destinationValues)}
         </div>
         <label for="action-${entry.id}">Action</label>
-        <input id="action-${entry.id}" .value=${this.persistentValue(`${policyBase}.action`, policy.action)}
-          .readOnly=${this.originReadOnly(`${policyBase}.action`, liveReadOnly)} />
+        <select id="action-${entry.id}" .value=${actionValue}
+          ?disabled=${this.originReadOnly(`${policyBase}.action`, liveReadOnly)}>
+          ${legacyAction ? html`<option value=${actionValue}>Legacy value: ${actionValue || '(empty)'}</option>` : nothing}
+          <option value="accept">Accept</option><option value="deny">Deny</option>
+          <option value="reject">Reject (legacy)</option>
+        </select>
       </div>
       <div class="section">
         <h3>Advanced</h3>
@@ -8092,8 +8116,11 @@ export class SmithproxyApp extends LitElement {
           <input id="policy-features-${entry.id}" .value=${featureValues.join(', ')}
             .readOnly=${this.originReadOnly(`${policyBase}.features`, liveReadOnly)} />
           <label for="policy-nat-${entry.id}">NAT</label>
-          <input id="policy-nat-${entry.id}" .value=${this.persistentValue(`${policyBase}.nat`, policy.nat)}
-            .readOnly=${this.originReadOnly(`${policyBase}.nat`, liveReadOnly)} />
+          <select id="policy-nat-${entry.id}" .value=${natValue}
+            ?disabled=${this.originReadOnly(`${policyBase}.nat`, liveReadOnly)}>
+            ${legacyNat ? html`<option value=${natValue}>Legacy value: ${natValue || '(empty)'}</option>` : nothing}
+            <option value="auto">Automatic</option><option value="none">None</option>
+          </select>
         </div>
       </div>
     `;

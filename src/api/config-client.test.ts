@@ -292,6 +292,15 @@ describe('ApiConfigClient', () => {
     );
   });
 
+  it('preserves non-canonical legacy policy values for explicit migration', () => {
+    const legacy = parseConfigSnapshot({
+      ...liveSnapshot,
+      policies: [{...liveSnapshot.policies[0], action: 'bypass', nat: 'masquerade'}],
+    });
+
+    expect(legacy.policies[0]).toMatchObject({action: 'bypass', nat: 'masquerade'});
+  });
+
   it('rejects malformed collections, unsafe paths, and non-success responses', async () => {
     expect(() => new ApiConfigClient('https://other.example/api')).toThrow('same-origin');
     expect(() => new ApiConfigClient('/api/../secret')).toThrow('relative path');

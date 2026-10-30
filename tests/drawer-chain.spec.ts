@@ -954,9 +954,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await editor.getByLabel('Destinations').fill('internet, backup');
   await editor.getByLabel('Source ports').fill('any, https');
   await editor.getByLabel('Features').fill('sinkhole, audit');
-  await editor.getByLabel('NAT', {exact: true}).fill('masquerade');
+  await editor.getByLabel('NAT', {exact: true}).selectOption('auto');
   const action = editor.getByLabel('Action');
-  await action.fill('reject');
+  await action.selectOption('reject');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText('Saved to draft')).toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
@@ -1230,8 +1230,11 @@ test('saves only fields changed since the editor opened', async ({page}) => {
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
 
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const nat = editor.getByLabel('NAT', {exact: true});
+  await expect(nat).toHaveValue('');
+  await expect(nat.locator('option:checked')).toHaveText('Legacy value: (empty)');
   await editor.getByLabel('Name').fill('Office minimal draft');
-  await editor.getByLabel('Action', {exact: true}).fill('reject');
+  await editor.getByLabel('Action', {exact: true}).selectOption('reject');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect.poll(() => state.draftMutationBatches).toEqual([[
     {path: 'policy.[0].name', value: 'Office minimal draft'},
@@ -1239,9 +1242,8 @@ test('saves only fields changed since the editor opened', async ({page}) => {
   ]]);
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
 
-  const nat = editor.getByLabel('NAT', {exact: true});
-  await nat.fill('masquerade');
-  await nat.fill('');
+  await nat.selectOption('auto');
+  await nat.selectOption('');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
@@ -1374,7 +1376,7 @@ test('removes ordinary pending values when editors restore the live configuratio
   await page.getByRole('button', {name: 'Review draft · 2'}).click();
   await page.getByRole('button', {name: 'Edit policy.[0].action'}).click();
   const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
-  await policyEditor.getByLabel('Action', {exact: true}).fill('accept');
+  await policyEditor.getByLabel('Action', {exact: true}).selectOption('accept');
   await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect.poll(() => state.draftReconcileRequests?.[0]).toEqual({
     expectedVersion: 1,
@@ -2709,6 +2711,19 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   expect(state.structuralMutationRequests).toEqual([]);
 
   await editor.getByLabel('Name').fill('branch-policy');
+  const action = editor.getByLabel('Action', {exact: true});
+  await action.evaluate(control => {
+    const option = document.createElement('option');
+    option.value = 'drop';
+    option.textContent = 'Injected';
+    control.append(option);
+    control.value = 'drop';
+    control.dispatchEvent(new Event('change', {bubbles: true}));
+  });
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Policy fields and unique bounded references are required.')).toBeVisible();
+  expect(state.structuralMutationRequests).toEqual([]);
+  await action.selectOption('accept');
   await editor.getByLabel('Placement').selectOption({label: 'Before Policy 1'});
   await editor.getByLabel('Sources').fill('');
   await editor.getByLabel('Destinations').fill('');
@@ -2722,7 +2737,7 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
     op: 'create', collection: 'policy', position: {before: 'policy-0'},
     fields: {
       name: 'branch-policy', disabled: false, proto: 'tcp', src: [], dst: [],
-      action: 'accept', sport: [], dport: [], features: [],
+      action: 'accept', nat: 'auto', sport: [], dport: [], features: [],
     },
   });
   expect(request.operation.local_id).toMatch(/^create-policy-[0-9a-f-]{36}$/u);
@@ -2808,7 +2823,7 @@ test('confirms policy deletion and blocks removal of referenced objects', async 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('group', {name: 'Policies'}).getByRole('button', {name: /Policy 1/i}).click();
   editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
-  await editor.getByLabel('Action', {exact: true}).fill('drop');
+  await editor.getByLabel('Action', {exact: true}).selectOption('deny');
   await expect(editor.getByRole('button', {name: 'Delete policy'})).toBeDisabled();
   await expect(editor.getByRole('button', {name: 'Delete policy'}))
     .toHaveAttribute('title', 'Discard or save unsaved editor changes first.');
@@ -3615,7 +3630,7 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await expect(policyChain).toContainText('Effective');
   await expect(policyChain).toContainText('accept');
   await expect(overlay).toContainText('Owned by active layer');
-  await expect(page.locator('#action-policy-office')).toHaveAttribute('readonly', '');
+  await expect(page.locator('#action-policy-office')).toBeDisabled();
 
   await page.getByRole('button', {name: 'office-net', exact: true}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit office-net', exact: true, includeHidden: true});
@@ -3709,11 +3724,11 @@ test('rejects tampering with augment-owned persistent values', async ({page}) =>
     .toHaveText(['temporary-office-access', 'incident-response']);
   const action = editor.locator('#action-policy-0');
   await expect(action).toHaveValue('reject');
-  await expect(action).toHaveAttribute('readonly', '');
-  await action.evaluate(input => {
-    input.removeAttribute('readonly');
-    input.value = 'bypass';
-    input.dispatchEvent(new Event('input', {bubbles: true}));
+  await expect(action).toBeDisabled();
+  await action.evaluate(select => {
+    select.removeAttribute('disabled');
+    select.value = 'deny';
+    select.dispatchEvent(new Event('change', {bubbles: true}));
   });
   await editor.getByRole('button', {name: 'Save to draft'}).click();
 
@@ -3782,7 +3797,7 @@ test('keeps persistent, effective, and pending values distinct in overlay chains
   await page.getByRole('button', {name: /Policy 1 office internet drop .* Pending .* overridden/i}).click();
 
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
-  await expect(editor.getByRole('textbox', {name: 'Action', exact: true})).toHaveValue('drop');
+  await expect(editor.getByRole('combobox', {name: 'Action', exact: true})).toHaveValue('drop');
   const chain = editor.getByRole('list', {name: 'action overlay chain'});
   await expect(chain).toContainText('Persistent');
   await expect(chain).toContainText('accept');
@@ -3794,14 +3809,14 @@ test('keeps persistent, effective, and pending values distinct in overlay chains
   await expect(chain).toContainText('drop');
   await expect(chain).toContainText('Not active');
 
-  await editor.getByRole('textbox', {name: 'Action', exact: true}).fill('accept');
+  await editor.getByRole('combobox', {name: 'Action', exact: true}).selectOption('accept');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect.poll(() => state.draftReconcileRequests).toEqual([{
     expectedVersion: 1,
     changes: [],
     removePaths: ['policy.[0].action'],
   }]);
-  await expect(editor.getByRole('textbox', {name: 'Action', exact: true})).toHaveValue('accept');
+  await expect(editor.getByRole('combobox', {name: 'Action', exact: true})).toHaveValue('accept');
   await expect(editor.getByRole('button', {name: /Remove \d+ draft change/u})).toHaveCount(0);
 });
 

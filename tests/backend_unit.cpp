@@ -581,13 +581,21 @@ int main() {
            DraftMutationResult::InvalidPath);
     assert(schema_draft.upsert(0U, {"policy.[0].action", true}) ==
            DraftMutationResult::InvalidValue);
+    assert(schema_draft.upsert(0U, {"policy.[0].action", std::string("drop")}) ==
+           DraftMutationResult::InvalidValue);
+    assert(schema_draft.upsert(0U, {"policy.[0].nat", std::string("masquerade")}) ==
+           DraftMutationResult::InvalidValue);
+    assert(schema_draft.upsert_many(0U, {
+        {"policy.[0].action", std::string("reject")},
+        {"policy.[0].nat", std::string("none")},
+    }) == DraftMutationResult::Applied);
     assert(schema_draft.upsert(0U, {"port_objects.[0].start", std::int64_t{65536}}) ==
            DraftMutationResult::InvalidValue);
     assert(schema_draft.upsert(0U, {"settings.syslog_family", std::int64_t{5}}) ==
            DraftMutationResult::InvalidValue);
     assert(schema_draft.upsert(0U, {"captures.remote.tun_type", std::string("vxlan")}) ==
            DraftMutationResult::InvalidValue);
-    assert(schema_draft.upsert_many(0U, {
+    assert(schema_draft.upsert_many(1U, {
         {"settings.accept_api", true},
         {"captures.remote.tun_type", std::string("gre")},
         {"captures.remote.tun_ttl", std::int64_t{64}},
@@ -595,7 +603,7 @@ int main() {
         {"detection_signatures.[0].flow.[0].type", std::string("regex")},
         {"debug.log.tls", std::string("trace")},
     }) == DraftMutationResult::Applied);
-    assert(schema_draft.upsert(1U, {"policy.[4096].name", std::string("outside")}) ==
+    assert(schema_draft.upsert(2U, {"policy.[4096].name", std::string("outside")}) ==
            DraftMutationResult::InvalidPath);
 
     DraftStore reconciled_draft{"reconciled"};

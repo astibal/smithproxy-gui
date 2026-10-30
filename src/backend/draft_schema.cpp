@@ -188,9 +188,10 @@ Result validate_policy(const std::string_view field, const DraftScalar& value) {
     if (field == "sport" || field == "dport" || field == "features") {
         return valid(string_list(value));
     }
-    if (field == "action") return valid(bounded_text(value, 32U));
+    if (field == "action") return valid(enumerated(value, {"accept", "deny", "reject"}));
+    if (field == "nat") return valid(enumerated(value, {"auto", "none"}));
     constexpr std::array references{
-        std::string_view{"nat"}, std::string_view{"routing"}, std::string_view{"tls_profile"},
+        std::string_view{"routing"}, std::string_view{"tls_profile"},
         std::string_view{"ssh_profile"}, std::string_view{"detection_profile"},
         std::string_view{"content_profile"}, std::string_view{"auth_profile"},
         std::string_view{"alg_dns_profile"}, std::string_view{"script_profile"},
