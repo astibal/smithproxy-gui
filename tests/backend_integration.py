@@ -940,7 +940,9 @@ def main() -> int:
             assert status == 200
             assert json.loads(body) == {
                 "id": "workspace-draft", "base_revision": FakeSmithproxy.config_revision,
-                "version": 1, "changes": [], "structural_operations": []}
+                "version": 1, "changes": [], "structural_operations": [],
+                "private_profile_references": [],
+            }
             assert request(configured_port, "/api/v1/config/draft/preflight")[0] == 401
             status, _, body = request(
                 configured_port, "/api/v1/config/draft/preflight", headers=gateway_headers)
@@ -1163,7 +1165,7 @@ def main() -> int:
                     {"path": "content_profiles.[0].content_rules.[0].replace", "value": "secret content replacement"},
                     {"path": "auth_profiles.[0].identities", "value": [
                         {"name": "private-user", "tls_profile": "inspect"},
-                        {"name": "private-auditor", "content_profile": "capture"},
+                        {"name": "private-auditor", "content_profile": "safe-content"},
                     ]},
                     {"path": "tls_ca.[0].path", "value": "/new/private/ca/default"},
                     {"path": "detection_signatures.[0].flow.[0].signature", "value": "secret replacement regex"},
@@ -1175,6 +1177,10 @@ def main() -> int:
             assert status == 200
             batch_snapshot = json.loads(body)
             assert batch_snapshot["version"] == 3
+            assert batch_snapshot["private_profile_references"] == [
+                {"profile_id": "content-0", "count": 1},
+                {"profile_id": "tls-0", "count": 1},
+            ]
             changes_by_path = {item["path"]: item["value"] for item in batch_snapshot["changes"]}
             assert changes_by_path["policy.[0].dst"] == ["internet", "backup"]
             assert changes_by_path["tls_profiles.[0].redirect_warning_ports"] == [443, 44443]

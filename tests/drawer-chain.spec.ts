@@ -106,6 +106,7 @@ type MockState = {
   secondPolicy?: boolean;
   unusedProfile?: boolean;
   privateProfileReferences?: number;
+  privateDraftProfileReferences?: Array<{profile_id: string; count: number}>;
   validationRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   commitRequests?: Array<{expectedVersion: number; keys: string[]; csrf: string | null}>;
   validationOperationDelta?: number;
@@ -174,6 +175,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     version: state.initialDraftChanges?.length || state.initialStructuralOperations?.length ? 1 : 0,
     changes: state.initialDraftChanges?.map(redactDraftChange) ?? [] as Array<{path: string; value: unknown}>,
     structural_operations: state.initialStructuralOperations ?? [],
+    private_profile_references: state.privateDraftProfileReferences ?? [],
   };
   await page.route('**/api/v1/capabilities', async route => {
     const capabilityPath = new URL(route.request().url()).pathname;
@@ -481,7 +483,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
     const committedOperations = draft.changes.length + draft.structural_operations.length;
     draft = {
       ...draft, base_revision: revision, version: committedVersion + 1,
-      changes: [], structural_operations: [],
+      changes: [], structural_operations: [], private_profile_references: [],
     };
     await route.fulfill({json: {
       source: 'gui-core', draft_id: 'workspace-draft',
@@ -504,7 +506,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
       return;
     }
-    draft = {...draft, version: draft.version + 1, changes: [], structural_operations: []};
+    draft = {
+      ...draft, version: draft.version + 1, changes: [], structural_operations: [],
+      private_profile_references: [],
+    };
     await route.fulfill({json: draft});
   });
   await page.route('**/api/v1/config/draft/operations/batch', async route => {
@@ -2949,6 +2954,33 @@ test('blocks profile deletion for redacted authentication identity references', 
   await expectNoWcagViolations(page);
 });
 
+test('blocks profile deletion for redacted identity references in the workspace draft', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, unusedProfile: true,
+    initialDraftChanges: [{
+      path: 'auth_profiles.[0].identities',
+      value: [{name: 'private_user', detection_profile: 'unused-detection'}],
+    }],
+    privateDraftProfileReferences: [{profile_id: 'detection-1', count: 1}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  const profileRow = profiles.getByRole('button', {name: /unused-detection detection/i});
+  await profileRow.click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit unused-detection'});
+  await expect(editor.getByText(
+    '1 pending redacted authentication mapping references this profile.',
+  )).toBeVisible();
+  await expect(editor.getByRole('button', {name: 'Delete detection profile'})).toHaveAttribute(
+    'title', 'This object is referenced by 1 configuration entry.',
+  );
+  await expectNoWcagViolations(page);
+});
+
 test('blocks deletion when a new policy references the object in the same draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
@@ -5140,6 +5172,15 @@ test('derives the system API from a workspace mount', async ({page}) => {
 });
 
 test.describe('Saslik visual regression', () => {
+  test.skip(
+    process.env.PLAYWRIGHT_SKIP_VISUAL_REGRESSION === '1',
+    'Pixel baselines run separately in the pinned visual-test container.',
+  );
+  test.beforeEach(({}, testInfo) => {
+    const baseline = process.env.PLAYWRIGHT_VISUAL_BASELINE;
+    if (baseline) testInfo.snapshotSuffix = baseline;
+  });
+
   for (const theme of Object.keys(saslikVisualThemes) as SaslikVisualTheme[]) {
     test(`${theme} preserves dashboard and nested editor geometry`, async ({page, browserName}) => {
       test.skip(browserName !== 'chromium', 'Canonical pixel baselines use Chromium; behavior runs in every browser.');

@@ -225,6 +225,12 @@ bounded raw draft. Sensitive change paths and structural fields must contain a
 bounded `[redacted:clear]`, `[redacted:replace]`, or
 `[redacted:replace:N]` sentinel in every draft response. The browser rejects the
 entire response if raw sensitive material or an invalid sentinel is present.
+For redacted authentication identity replacements, the same response carries a
+bounded `private_profile_references` array containing only opaque live profile
+IDs and aggregate source counts. It never carries identity names or binding
+values. The browser uses this value-free reverse index to keep deletion guards
+correct after reload; malformed, duplicate, or unbounded entries reject the
+complete draft response.
 This store cannot mutate Smithproxy configuration by itself;
 mutation is possible only through the separate capability-gated atomic commit
 endpoint.

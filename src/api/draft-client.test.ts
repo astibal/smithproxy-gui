@@ -10,6 +10,7 @@ describe('DraftClient', () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(response({
         id: 'workspace-draft', base_revision: null, version: 0, changes: [], structural_operations: [],
+        private_profile_references: [{profile_id: 'detection-0', count: 1}],
       }))
       .mockResolvedValueOnce(response({
         id: 'workspace-draft', base_revision: null, version: 1,
@@ -17,7 +18,10 @@ describe('DraftClient', () => {
       }));
     const client = new DraftClient('/ws001/smithproxy-gui/api/v1/', fetcher);
 
-    await expect(client.load()).resolves.toMatchObject({version: 0, changes: []});
+    await expect(client.load()).resolves.toMatchObject({
+      version: 0, changes: [],
+      privateProfileReferences: [{profileId: 'detection-0', count: 1}],
+    });
     await expect(client.upsert(0, 'policy.[0].action', 'accept')).resolves.toMatchObject({
       version: 1, changes: [{path: 'policy.[0].action', value: 'accept'}],
     });
@@ -552,6 +556,15 @@ describe('DraftClient', () => {
       changes: [], structural_operations: [],
     }));
     await expect(malformedRevision.load()).rejects.toThrow('Invalid draft response');
+
+    const malformedPrivateReferences = new DraftClient('/api/v1', async () => response({
+      id: 'workspace-draft', base_revision: null, version: 0,
+      changes: [], structural_operations: [],
+      private_profile_references: [{profile_id: '../unsafe', count: 1}],
+    }));
+    await expect(malformedPrivateReferences.load()).rejects.toThrow(
+      'Invalid private draft profile reference',
+    );
 
     const conflict = new DraftClient('/api/v1', async () => response({}, 409));
     await expect(conflict.upsert(2, 'settings.enabled', true)).rejects.toThrow('HTTP 409');

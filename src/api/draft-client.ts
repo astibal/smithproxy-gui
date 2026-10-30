@@ -62,6 +62,7 @@ export interface DraftSnapshot {
   version: number;
   changes: ReadonlyArray<DraftChange>;
   structuralOperations: ReadonlyArray<DraftStructuralOperation>;
+  privateProfileReferences: ReadonlyArray<{profileId: string; count: number}>;
 }
 
 export type DraftSectionName =
@@ -342,6 +343,23 @@ function parseDraft(value: unknown): DraftSnapshot {
       value.changes.length + value.structural_operations.length > 4096) {
     throw new Error('Invalid draft response.');
   }
+  const privateReferencesValue = value.private_profile_references ?? [];
+  if (!Array.isArray(privateReferencesValue) || privateReferencesValue.length > 4096) {
+    throw new Error('Invalid private draft profile references.');
+  }
+  const privateProfileIds = new Set<string>();
+  const privateProfileReferences = privateReferencesValue.map(item => {
+    if (!isObject(item)) throw new Error('Invalid private draft profile reference.');
+    const profileId = typeof item.profile_id === 'string' ? item.profile_id : '';
+    if (profileId.length === 0 || profileId.length > 128 ||
+        !/^[A-Za-z0-9:._-]+$/u.test(profileId) || privateProfileIds.has(profileId) ||
+        typeof item.count !== 'number' || !Number.isSafeInteger(item.count) ||
+        item.count < 1 || item.count > 4096) {
+      throw new Error('Invalid private draft profile reference.');
+    }
+    privateProfileIds.add(profileId);
+    return {profileId, count: item.count};
+  });
   const paths = new Set<string>();
   const changes = value.changes.map((item): DraftChange => {
     if (!isObject(item) || typeof item.path !== 'string' || item.path.length === 0 ||
@@ -373,7 +391,7 @@ function parseDraft(value: unknown): DraftSnapshot {
   });
   return {
     id: value.id, baseRevision: value.base_revision, version: value.version,
-    changes, structuralOperations,
+    changes, structuralOperations, privateProfileReferences,
   };
 }
 

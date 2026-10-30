@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string_view>
 #include <type_traits>
@@ -60,6 +61,46 @@ struct Response {
 };
 
 constexpr std::size_t maximum_request_body = 128U * 1024U;
+
+std::map<std::string, std::uint64_t> private_draft_profile_references(
+    const DraftSnapshot& draft, const ConfigSnapshot& config) {
+    std::map<std::pair<std::string, std::string>, std::string> profile_ids;
+    for (const auto& profile : config.profiles) {
+        profile_ids.emplace(std::pair{profile.type, profile.name}, profile.id);
+    }
+    std::map<std::string, std::uint64_t> counts;
+    const auto accumulate = [&](const DraftAuthIdentities& identities) {
+        std::set<std::string> source_targets;
+        const auto add = [&](const std::string_view type, const std::string& name) {
+            if (name.empty()) return;
+            const auto target = profile_ids.find({std::string(type), name});
+            if (target != profile_ids.end()) source_targets.insert(target->second);
+        };
+        for (const auto& identity : identities) {
+            add("detection", identity.detection_profile);
+            add("content", identity.content_profile);
+            add("tls", identity.tls_profile);
+            add("dns", identity.alg_dns_profile);
+        }
+        for (const auto& profile_id : source_targets) ++counts[profile_id];
+    };
+    for (const auto& change : draft.changes) {
+        if (!change.path.starts_with("auth_profiles.[") || !change.path.ends_with("].identities")) {
+            continue;
+        }
+        if (const auto* identities = std::get_if<DraftAuthIdentities>(&change.value)) {
+            accumulate(*identities);
+        }
+    }
+    for (const auto& operation : draft.structural_operations) {
+        const auto* create = std::get_if<DraftCreateOperation>(&operation);
+        if (create == nullptr || create->collection != "auth_profiles") continue;
+        const auto identities = create->fields.find("identities");
+        if (identities == create->fields.end()) continue;
+        if (const auto* value = std::get_if<DraftAuthIdentities>(&identities->second)) accumulate(*value);
+    }
+    return counts;
+}
 
 std::string request_id_prefix() {
     std::random_device source;
@@ -1105,13 +1146,22 @@ private:
     Response draft_snapshot() {
         bind_empty_draft_revision();
         const auto draft = draft_.snapshot();
+        const auto config = monitor_.status().config_snapshot;
         nlohmann::json document{
             {"id", draft.id},
             {"base_revision", draft.base_revision ? nlohmann::json(*draft.base_revision) : nlohmann::json(nullptr)},
             {"version", draft.version},
             {"changes", nlohmann::json::array()},
             {"structural_operations", nlohmann::json::array()},
+            {"private_profile_references", nlohmann::json::array()},
         };
+        if (config.state == "ready" && config.revision == draft.base_revision) {
+            for (const auto& [profile_id, count] : private_draft_profile_references(draft, config)) {
+                document["private_profile_references"].push_back({
+                    {"profile_id", profile_id}, {"count", count},
+                });
+            }
+        }
         for (const auto& change : draft.changes) {
             document["changes"].push_back({
                 {"path", change.path}, {"value", draft_value_json(change.path, change.value)},

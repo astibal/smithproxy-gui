@@ -30,9 +30,12 @@ schema, rolí, browserů a chybových stavů. Samotné procento line coverage ne
 - visual regression pro Grill/Petroleum, dark/light a klíčové stavy;
 - testy SSE snapshot/replay/reset, konfliktů revision a obnovy draftu.
 
-CI spouští celý Playwright scénář nad Chromium, Firefox a WebKit. Lokální
-vývojový příkaz používá pro rychlost Chromium; shodný tříbrowserový matrix se
-zapíná proměnnou `PLAYWRIGHT_ALL_BROWSERS=1`.
+CI spouští celý behaviorální Playwright scénář nad Chromium, Firefox a WebKit.
+Pixelové testy běží samostatně v digestem připnutém Playwright Noble image a
+používají `linux-noble` baseline; tím baseline nezávisí na průběžných změnách
+fontů a rendereru GitHub runneru. Lokální vývojový příkaz používá pro rychlost
+Chromium; shodný tříbrowserový matrix se zapíná proměnnou
+`PLAYWRIGHT_ALL_BROWSERS=1`.
 CI záměrně nepoužívá retry a zapisuje detail každého browserového pádu přímo do
 GitHub check annotations, aby platformní rozdíl nemohl zůstat skrytý za obecným
 exit kódem. Při pádu navíc na sedm dní uloží Playwright trace a případné
@@ -43,7 +46,7 @@ address editor pro Grill/Petroleum v dark/light režimu a mobilní policy layout
 pro oba Petroleum režimy. Fixture používá tokeny canonical Saslik appearance
 contractu v1, fixní UTC locale, device scale, reduced motion a deterministický
 čas. Firefox a WebKit zůstávají behaviorální a WCAG gate; pixelové baseline jsou
-záměrně vázané na jediný renderer a Linux runner.
+záměrně vázané na jediný renderer a připnutý Linux image.
 
 Axe automaticky kontroluje WCAG A/AA pravidla na dashboardu, policy listu,
 prvním i vnořeném editoru a mobilním layoutu. Nález se opravuje v UI; test

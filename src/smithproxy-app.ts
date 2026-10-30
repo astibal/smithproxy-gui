@@ -2178,7 +2178,10 @@ export class SmithproxyApp extends LitElement {
                     : profile.dns ? 'alg_dns_profiles' : undefined;
       return collection
         ? {collection, entityId: profile.id, label: `${profile.type} profile`,
-          usageCount: profile.usedBy.length + profile.privateReferenceCount}
+          usageCount: profile.usedBy.length + profile.privateReferenceCount +
+            (this.workspaceDraft?.privateProfileReferences.find(
+              reference => reference.profileId === profile.id,
+            )?.count ?? 0)}
         : undefined;
     }
     if (entry.kind === 'authority') {
@@ -10112,7 +10115,12 @@ export class SmithproxyApp extends LitElement {
 
   private renderObjectUsage(object: AddressObject | PortObject | ProtocolObject | ProfileObject) {
     const privateReferenceCount = 'privateReferenceCount' in object ? object.privateReferenceCount : 0;
-    const usageCount = object.usedBy.length + privateReferenceCount;
+    const draftPrivateReferenceCount = 'privateReferenceCount' in object
+      ? this.workspaceDraft?.privateProfileReferences.find(
+          reference => reference.profileId === object.id,
+        )?.count ?? 0
+      : 0;
+    const usageCount = object.usedBy.length + privateReferenceCount + draftPrivateReferenceCount;
     return html`
       <div class="section">
         <h3>Impact</h3>
@@ -10121,6 +10129,12 @@ export class SmithproxyApp extends LitElement {
           <div class="scope-note">
             ${privateReferenceCount} ${privateReferenceCount === 1 ? 'reference is' : 'references are'}
             inside redacted authentication identity mappings.
+          </div>
+        ` : nothing}
+        ${draftPrivateReferenceCount > 0 ? html`
+          <div class="scope-note">
+            ${draftPrivateReferenceCount} pending redacted authentication
+            ${draftPrivateReferenceCount === 1 ? 'mapping references' : 'mappings reference'} this profile.
           </div>
         ` : nothing}
         <ul class="usage">
