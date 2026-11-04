@@ -580,6 +580,7 @@ export class SmithproxyApp extends LitElement {
     .job-progress progress { width: 100%; accent-color: var(--app-brand); }
 
     .table { overflow: hidden; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
+    .network-config-table { margin-top: 12px; overflow-x: auto; }
     .row { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px; gap: 16px; align-items: center; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--app-border); background: transparent; text-align: left; cursor: pointer; }
     .row:last-child { border-bottom: 0; }
     .row:not(.heading):hover { background: var(--app-raised); }
@@ -6862,6 +6863,92 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderNetworkConfiguration() {
+    const settings = this.snapshot?.state === 'ready' ? this.snapshot.settings : null;
+    if (!settings) {
+      return html`
+        <section class="monitor-panel" aria-label="Configured network listeners">
+          <div class="runtime-heading">
+            <div><h3>Configured listeners</h3><p>Ports, workers, and ingress acceptance</p></div>
+            <span class="runtime-state warning">● Unavailable</span>
+          </div>
+          <div class="metrics-message" role="status">
+            Listener configuration requires authenticated configuration API access.
+          </div>
+        </section>`;
+    }
+    const scalar = <T extends ConfigScalar>(path: string, fallback: T): T =>
+      this.presentedValue(`settings.${path}`, fallback);
+    const listeners = [
+      {name: 'Plaintext', port: scalar('plaintext_port', settings.ports.plaintext),
+        workers: scalar('plaintext_workers', settings.workers.plaintext)},
+      {name: 'TLS', port: scalar('ssl_port', settings.ports.tls),
+        workers: scalar('ssl_workers', settings.workers.tls)},
+      {name: 'UDP', port: scalar('udp_port', settings.ports.udp),
+        workers: scalar('udp_workers', settings.workers.udp)},
+      {name: 'DTLS', port: scalar('dtls_port', settings.ports.dtls),
+        workers: scalar('dtls_workers', settings.workers.dtls)},
+      {name: 'QUIC', port: scalar('quic_port', settings.ports.quic),
+        workers: scalar('quic_workers', settings.workers.quic)},
+      {name: 'SOCKS', port: scalar('socks_port', settings.ports.socks),
+        workers: scalar('socks_workers', settings.workers.socks)},
+      {name: 'HTTP CONNECT', port: scalar('http_connect_port', settings.ports.httpConnect),
+        workers: scalar('http_connect_workers', settings.workers.httpConnect)},
+    ];
+    const workerLabel = (workers: number) => workers === -1 ? 'Disabled' :
+      workers === 0 ? 'Default' : workers.toLocaleString();
+    const modes = [
+      {name: 'TPROXY', enabled: scalar('accept_tproxy', settings.acceptTproxy),
+        security: scalar(
+          'extended_local_destination_protection', settings.extendedLocalDestinationProtection,
+        ) ? 'Local destinations protected' : 'Local destinations allowed'},
+      {name: 'REDIRECT', enabled: scalar('accept_redirect', settings.acceptRedirect),
+        security: 'Transparent interception'},
+      {name: 'SOCKS', enabled: scalar('accept_socks', settings.acceptSocks),
+        security: scalar('socks.proxy_authorization', settings.auxiliary.socksProxyAuthorization)
+          ? 'Authentication required' : 'Anonymous access'},
+      {name: 'HTTP CONNECT', enabled: scalar('accept_http_connect', settings.acceptHttpConnect),
+        security: scalar(
+          'http_connect.proxy_authorization', settings.auxiliary.httpConnectProxyAuthorization,
+        ) ? 'Authentication required' : 'Anonymous access'},
+      {name: 'Smithproxy API', enabled: scalar('accept_api', settings.acceptApi),
+        security: scalar('http_api.loopback_only', settings.httpApi.loopbackOnly)
+          ? 'Loopback only' : 'Remote access allowed'},
+    ];
+    return html`
+      <section class="monitor-panel" aria-label="Configured network listeners">
+        <div class="runtime-heading">
+          <div><h3>Configured listeners</h3><p>Effective workspace values from the Smithproxy configuration API</p></div>
+          <div class="preflight-actions">
+            ${this.renderPendingBadge('settings', 'settings')}
+            <button class="secondary" type="button"
+              @click=${(event: MouseEvent) => this.openSystemDrawer(
+                'settings', event.currentTarget as HTMLElement,
+              )}>Edit listener configuration</button>
+          </div>
+        </div>
+        <div class="table network-config-table" tabindex="0">
+          <table class="listener-table" aria-label="Configured listener ports and workers">
+            <thead><tr><th>Listener</th><th>Port</th><th>Workers</th></tr></thead>
+            <tbody>${listeners.map(listener => html`<tr>
+              <td class="listener-name">${listener.name}</td>
+              <td>${listener.port.toLocaleString()}</td><td>${workerLabel(listener.workers)}</td>
+            </tr>`)}</tbody>
+          </table>
+        </div>
+        <div class="table network-config-table" tabindex="0">
+          <table class="listener-table" aria-label="Configured ingress modes">
+            <thead><tr><th>Ingress mode</th><th>State</th><th>Security posture</th></tr></thead>
+            <tbody>${modes.map(mode => html`<tr>
+              <td class="listener-name">${mode.name}</td>
+              <td><span class="status ${mode.enabled ? '' : 'disabled'}">${mode.enabled ? 'Enabled' : 'Disabled'}</span></td>
+              <td>${mode.security}</td>
+            </tr>`)}</tbody>
+          </table>
+        </div>
+      </section>`;
+  }
+
   private renderNetwork() {
     const metrics = this.runtimeMetrics;
     const presentation = this.collectorPresentation(
@@ -6872,6 +6959,7 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Listener workload</h2><p>Runtime view of Smithproxy network entry points</p></div>
         </div>
+        ${this.renderNetworkConfiguration()}
         ${this.renderInterfaceSummary()}
         ${this.renderNeighborSummary()}
         ${this.renderCollectorNotice(presentation, metrics.detail, metrics.lastSuccessAtUnixMs)}

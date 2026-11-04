@@ -4729,6 +4729,16 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Listener workload'})).toBeVisible();
+  const configuredListeners = page.getByRole('region', {name: 'Configured network listeners'});
+  const listenerConfig = configuredListeners.getByRole('table', {
+    name: 'Configured listener ports and workers',
+  });
+  const liveTls = listenerConfig.getByRole('row', {name: /^TLS /u});
+  await expect(liveTls.getByRole('cell').nth(1)).toHaveText('50,443');
+  await expect(liveTls.getByRole('cell').nth(2)).toHaveText('4');
+  const ingressConfig = configuredListeners.getByRole('table', {name: 'Configured ingress modes'});
+  await expect(ingressConfig.getByRole('row').filter({hasText: 'SOCKS'})).toContainText('Disabled');
+  await expect(ingressConfig.getByRole('row').filter({hasText: 'SOCKS'})).toContainText('Anonymous access');
   const neighborhood = page.getByRole('region', {name: 'Neighborhood activity'});
   await expect(neighborhood.getByText('8', {exact: true})).toBeVisible();
   await expect(neighborhood.getByText(/hostnames, tags, labels, and per-endpoint timelines remain/i)).toBeVisible();
@@ -4882,6 +4892,38 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
   await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
   await expect(authorityEditor.getByText(/current certificate-authority path stays inside/i)).toBeVisible();
+});
+
+test('projects pending listener settings into Network and opens their real editor', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    initialDraftChanges: [
+      {path: 'settings.ssl_port', value: 5443},
+      {path: 'settings.ssl_workers', value: 8},
+      {path: 'settings.accept_socks', value: true},
+      {path: 'settings.socks.proxy_authorization', value: true},
+    ],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+
+  const configured = page.getByRole('region', {name: 'Configured network listeners'});
+  const tls = configured.getByRole('table', {name: 'Configured listener ports and workers'})
+    .getByRole('row', {name: /^TLS /u});
+  await expect(tls.getByRole('cell').nth(1)).toHaveText('5,443');
+  await expect(tls.getByRole('cell').nth(2)).toHaveText('8');
+  const socks = configured.getByRole('table', {name: 'Configured ingress modes'})
+    .getByRole('row').filter({hasText: 'SOCKS'});
+  await expect(socks).toContainText('Enabled');
+  await expect(socks).toContainText('Authentication required');
+  await expect(configured.getByText('Pending', {exact: true})).toBeVisible();
+
+  await configured.getByRole('button', {name: 'Edit listener configuration'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await expect(editor.getByLabel('TLS port', {exact: true})).toHaveValue('5443');
+  await expect(editor.getByLabel('TLS workers', {exact: true})).toHaveValue('8');
+  await expect(editor.getByLabel('SOCKS listener')).toHaveValue('true');
+  await expect(editor.getByLabel('Require SOCKS authentication')).toHaveValue('true');
 });
 
 test('preserves legacy worker values while enforcing pinned worker semantics', async ({page}) => {
