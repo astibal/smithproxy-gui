@@ -202,8 +202,9 @@ and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls. Pending structural
 policy, object, profile, trust-asset, content-rule, and signature-flow creates
 appear in their primary contextual lists and reopen the same draft create drawer.
-The filtered Objects inventory can mark every visible unused address, port, and
-protocol object for deletion in one confirmed atomic batch. Used objects,
+The filtered Objects inventory can mark every visible unused address, port,
+protocol, routing, and typed profile object for deletion in one confirmed
+atomic batch. Used objects, redacted authentication identity references,
 pending references, field edits, and existing structural operations remain
 excluded by the same dependency guards as individual deletion.
 Live address, port, and protocol objects can be duplicated into explicit

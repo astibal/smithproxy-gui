@@ -4896,7 +4896,7 @@ test('marks visible unused primitive objects for deletion in one confirmed atomi
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
   const cleanup = page.getByRole('group', {name: 'Object cleanup actions'});
-  await expect(cleanup.getByText('3 visible unused primitive objects deletable')).toBeVisible();
+  await expect(cleanup.getByText('3 visible unused configuration objects deletable')).toBeVisible();
   await cleanup.getByRole('button', {name: 'Delete visible unused'}).click();
 
   expect(state.structuralBatchMutationRequests).toEqual([]);
@@ -4936,11 +4936,53 @@ test('requires fresh object cleanup confirmation after the visible scope changes
   await expect(cleanup.getByRole('button', {name: 'Confirm delete 3'})).toBeVisible();
   await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('address');
 
-  await expect(cleanup.getByText('1 visible unused primitive object deletable')).toBeVisible();
+  await expect(cleanup.getByText('1 visible unused configuration object deletable')).toBeVisible();
   await expect(cleanup.getByRole('button', {name: 'Delete visible unused'})).toBeVisible();
   expect(state.structuralBatchMutationRequests).toEqual([]);
   await cleanup.getByRole('button', {name: 'Delete visible unused'}).click();
   await expect(cleanup.getByRole('button', {name: 'Confirm delete 1'})).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toEqual([]);
+});
+
+test('includes an unused typed profile in atomic object cleanup', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', unusedProfile: true, commitReady: true, structuralDraftsReady: true,
+    structuralBatchMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  const cleanup = page.getByRole('group', {name: 'Object cleanup actions'});
+  await expect(cleanup.getByText('1 visible unused configuration object deletable')).toBeVisible();
+  await cleanup.getByRole('button', {name: 'Delete visible unused'}).click();
+  await cleanup.getByRole('button', {name: 'Confirm delete 1'}).click();
+
+  await expect(cleanup.getByText('1 object marked for deletion in the workspace draft.')).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toHaveLength(1);
+  expect(state.structuralBatchMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operations: [{op: 'delete', collection: 'detection_profiles', entity_id: 'detection-1'}],
+    csrf: '1',
+  });
+});
+
+test('excludes profiles with redacted authentication references from object cleanup', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', unusedProfile: true, privateProfileReferences: 1,
+    commitReady: true, structuralDraftsReady: true, structuralBatchMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  const cleanup = page.getByRole('group', {name: 'Object cleanup actions'});
+  await expect(cleanup.getByText('0 visible unused configuration objects deletable')).toBeVisible();
+  const remove = cleanup.getByRole('button', {name: 'Delete visible unused'});
+  await expect(remove).toBeDisabled();
+  await expect(remove).toHaveAttribute(
+    'title', 'No visible unused configuration object is available for deletion.',
+  );
   expect(state.structuralBatchMutationRequests).toEqual([]);
 });
 

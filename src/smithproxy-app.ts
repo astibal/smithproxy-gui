@@ -2504,11 +2504,11 @@ export class SmithproxyApp extends LitElement {
   private async deleteObjectEntries(entries: ReadonlyArray<DrawerEntry>): Promise<void> {
     if (!this.draftClient || this.draftSaving || this.draftCommitting) return;
     const unique = entries.filter((entry, index) =>
-      ['address', 'port', 'protocol'].includes(entry.kind) &&
+      ['address', 'port', 'protocol', 'profile'].includes(entry.kind) &&
       entries.findIndex(candidate => this.drawerKey(candidate) === this.drawerKey(entry)) === index);
     if (unique.length === 0) {
       this.objectBulkDeleteConfirmation = undefined;
-      this.objectBulkMessage = 'No visible unused primitive object is available for deletion.';
+      this.objectBulkMessage = 'No visible unused configuration object is available for deletion.';
       return;
     }
     if (unique.length > 256) {
@@ -7492,15 +7492,17 @@ export class SmithproxyApp extends LitElement {
     const visibleCount = addressRows.length + pendingAddressRows.length + portRows.length +
       pendingPortRows.length + protocolRows.length + pendingProtocolRows.length +
       profileRows.length + pendingProfileRows.length;
-    const visibleUnusedPrimitiveEntries: DrawerEntry[] = [
+    const visibleUnusedObjectEntries: DrawerEntry[] = [
       ...addressRows.filter(row => !row.usage.used)
         .map(row => ({kind: 'address' as const, id: row.item.id, title: row.name})),
       ...portRows.filter(row => !row.usage.used)
         .map(row => ({kind: 'port' as const, id: row.item.id, title: row.name})),
       ...protocolRows.filter(row => !row.usage.used)
         .map(row => ({kind: 'protocol' as const, id: row.item.id, title: row.name})),
+      ...profileRows.filter(row => !row.usage.used)
+        .map(row => ({kind: 'profile' as const, id: row.item.id, title: row.name})),
     ];
-    const bulkDeleteEntries = visibleUnusedPrimitiveEntries.filter(entry => {
+    const bulkDeleteEntries = visibleUnusedObjectEntries.filter(entry => {
       const target = this.structuralDeleteTarget(entry);
       return target !== undefined && this.structuralDeleteBlocker(entry, target) === undefined;
     });
@@ -7512,7 +7514,7 @@ export class SmithproxyApp extends LitElement {
       : bulkDeleteEntries.length > 256
         ? 'At most 256 objects can be deleted in one atomic batch.'
       : bulkDeleteEntries.length === 0
-        ? 'No visible unused primitive object is available for deletion.' : undefined;
+        ? 'No visible unused configuration object is available for deletion.' : undefined;
     const filtersActive = query.length > 0 || this.objectKindFilter !== 'all' || this.objectUsageFilter !== 'all';
     return html`
       <div class="content" tabindex="0">
@@ -7583,7 +7585,7 @@ export class SmithproxyApp extends LitElement {
           </span>
         </div>
         <div class="policy-bulk-actions" role="group" aria-label="Object cleanup actions">
-          <strong>${bulkDeleteEntries.length.toLocaleString()} visible unused primitive ${
+          <strong>${bulkDeleteEntries.length.toLocaleString()} visible unused configuration ${
             bulkDeleteEntries.length === 1 ? 'object' : 'objects'} deletable</strong>
           <button class="secondary danger-button" type="button"
             title=${bulkDeleteBlocker ?? 'Add one atomic deletion batch to the workspace draft'}
@@ -7591,9 +7593,9 @@ export class SmithproxyApp extends LitElement {
             @click=${() => { void this.deleteObjectEntries(bulkDeleteEntries); }}>
             ${bulkDeleteArmed ? `Confirm delete ${bulkDeleteEntries.length}` : 'Delete visible unused'}
           </button>
-          ${visibleUnusedPrimitiveEntries.length > bulkDeleteEntries.length ? html`
-            <span class="metric-note">${visibleUnusedPrimitiveEntries.length - bulkDeleteEntries.length}
-              visible unused ${visibleUnusedPrimitiveEntries.length - bulkDeleteEntries.length === 1
+          ${visibleUnusedObjectEntries.length > bulkDeleteEntries.length ? html`
+            <span class="metric-note">${visibleUnusedObjectEntries.length - bulkDeleteEntries.length}
+              visible unused ${visibleUnusedObjectEntries.length - bulkDeleteEntries.length === 1
                 ? 'object is' : 'objects are'} blocked by pending work.</span>
           ` : nothing}
           ${this.objectBulkMessage ? html`<span class="validation" role="status">${this.objectBulkMessage}</span>` : nothing}
