@@ -146,6 +146,11 @@ The reader cancels a chunked body immediately after the boundary is crossed.
 Browser-visible system diagnostics are additionally limited to short,
 control-character-free text.
 
+The five-second control-plane probe measures only the reachability of
+`/api/status/ping`; that endpoint may be public and therefore does not prove
+that the bootstrap API key was accepted. Protected configuration and collector
+surfaces report their authorization state independently.
+
 Without gateway mode, every management API request must carry a canonical
 loopback `Host` authority. This keeps local standalone monitoring inaccessible
 through DNS rebinding while leaving the bounded orchestration health probe
@@ -215,6 +220,9 @@ All typed routing and profile objects support the same explicit copy workflow.
 Write-only SNI filters, session filters, host-key and module paths,
 authentication identities, and nested content rules are intentionally excluded
 and called out in the prefilled create drawer before any draft mutation occurs.
+Certificate authorities and protocol signatures can also be copied safely.
+Authority paths and signature matcher expressions remain write-only; signature
+copies prefill the first flow step metadata and call out additional omitted steps.
 Policy and routing reference fields preview the value being typed. Known objects
 open directly in the next nested editor. Objects and profiles created earlier in
 the same workspace draft are marked as pending and reopen their structural create

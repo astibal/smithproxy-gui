@@ -591,10 +591,16 @@ SmithproxyStatus SmithproxyMonitor::ping() const {
     long status_code{};
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
     if (status_code == 200L) {
-        return probe_result("ready", "Smithproxy API accepted the bootstrap credential", started_at);
+        return probe_result(
+            "ready",
+            "Smithproxy control-plane ping is reachable; protected configuration access is reported separately",
+            started_at);
     }
     if (status_code == 401L || status_code == 403L) {
-        return probe_result("unauthorized", "Smithproxy API rejected the bootstrap credential", started_at);
+        return probe_result(
+            "unauthorized",
+            "Smithproxy control-plane ping returned HTTP " + std::to_string(status_code),
+            started_at);
     }
     return probe_result("error", "Smithproxy API returned HTTP " + std::to_string(status_code), started_at);
 }

@@ -249,7 +249,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       smithproxy: {
         configured: true,
         state: state.smithproxy,
-        detail: state.smithproxy === 'ready' ? 'Connected' : 'Connection timed out',
+        detail: state.smithproxy === 'ready'
+          ? 'Smithproxy control-plane ping is reachable; protected configuration access is reported separately'
+          : 'Connection timed out',
         checked_at_unix_ms: sampledAt,
         last_success_at_unix_ms: sampledAt - 5000,
         latency_ms: state.smithproxy === 'ready' ? 12 : 2500,
@@ -2725,6 +2727,136 @@ test('creates and deletes certificate authorities without exposing filesystem pa
   await expectNoWcagViolations(page);
 });
 
+test('duplicates a certificate authority without exposing or copying its private path', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
+    structuralMutationRequests: [],
+    initialDraftChanges: [{path: 'tls_ca.[0].name', value: 'default revised'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const authorities = page.getByRole('group', {name: 'Certificate authorities'});
+  await authorities.getByRole('button', {name: /default revised · path configured/i}).click();
+
+  const liveEditor = page.getByRole('dialog', {name: 'Edit default revised'});
+  await liveEditor.getByRole('button', {name: 'Duplicate authority'}).click();
+  const createEditor = page.getByRole('dialog', {name: 'Create certificate authority'});
+  await expect(createEditor.getByLabel('Name')).toHaveValue('default revised copy');
+  await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'Persistent and pending values are copied; temporary augment overlays are not.',
+  );
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'The write-only CA path is not copied',
+  );
+  expect(state.structuralMutationRequests).toEqual([]);
+
+  await createEditor.getByLabel('New CA path').fill('/private/pki/default-copy.pem');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 1, csrf: '1', operation: {
+      op: 'create', collection: 'tls_ca',
+      fields: {name: 'default revised copy', path: '/private/pki/default-copy.pem'},
+    },
+  });
+  await expect(page.getByText('/private/pki/default-copy.pem')).toHaveCount(0);
+});
+
+test('duplicates signature metadata but requires a new private matcher expression', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
+    structuralBatchMutationRequests: [],
+    initialDraftChanges: [
+      {path: 'starttls_signatures.[0].name', value: 'smtp/starttls revised'},
+      {path: 'starttls_signatures.[0].flow.[0].bytes_max', value: 64},
+    ],
+    valueOrigins: [
+      {
+        path: 'starttls_signatures.[0].severity', persistent_value: 2, effective_value: 9,
+        layers: [{id: 'temporary-severity', priority: 100, value: 9, active: true}], editable: false,
+      },
+      {
+        path: 'starttls_signatures.[0].flow.[0].type', persistent_value: 'simple', effective_value: 'regex',
+        layers: [{id: 'temporary-matcher', priority: 100, value: 'regex', active: true}], editable: false,
+      },
+    ],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trust = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await trust.getByRole('button', {name: /smtp\/starttls revised · 2 flow steps/i}).click();
+
+  const liveEditor = page.getByRole('dialog', {name: 'Edit smtp/starttls revised'});
+  await liveEditor.getByRole('button', {name: 'Duplicate signature'}).click();
+  const createEditor = page.getByRole('dialog', {name: 'Create signature'});
+  await expect(createEditor.getByLabel('Name')).toHaveValue('smtp/starttls revised copy');
+  await expect(createEditor.getByLabel('Severity')).toHaveValue('2');
+  await expect(createEditor.getByLabel('Matcher')).toHaveValue('simple');
+  await expect(createEditor.getByLabel('Byte window')).toHaveValue('64');
+  await expect(createEditor.getByLabel('New signature first flow expression')).toHaveValue('');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'temporary augment overlays are not',
+  );
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'The write-only first matcher expression is not copied. 1 additional flow step is not copied.',
+  );
+  expect(state.structuralBatchMutationRequests).toEqual([]);
+
+  await createEditor.getByLabel('New signature first flow expression').fill('PRIVATE-COPY-MATCHER');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor.getByLabel('New signature first flow expression')).toHaveValue('');
+  expect(state.structuralBatchMutationRequests).toHaveLength(1);
+  expect(state.structuralBatchMutationRequests![0]).toMatchObject({
+    expectedVersion: 1,
+    operations: [{
+      op: 'create', collection: 'starttls_signatures',
+      fields: {
+        cat: 'mail', name: 'smtp/starttls revised copy', side: 'client', severity: 2,
+        group: '', enables: '', engine: '',
+      },
+    }, {
+      op: 'create', collection: 'starttls_signatures.flow',
+      fields: {side: 'r', type: 'simple', bytes_start: 0, bytes_max: 64, signature: 'PRIVATE-COPY-MATCHER'},
+    }],
+    csrf: '1',
+  });
+  await expect(page.getByText('PRIVATE-COPY-MATCHER')).toHaveCount(0);
+});
+
+test('blocks signature duplication while its ordered flow has pending structural work', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
+    initialStructuralOperations: [{
+      op: 'move', local_id: 'move-signature-flow-pending',
+      collection: 'starttls_signatures.flow', entity_id: 'starttls-signature-0-flow-0',
+      position: {last: true},
+    }],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trust = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Trust and signatures'}),
+  });
+  await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
+  await trust.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+
+  const duplicate = page.getByRole('dialog', {name: 'Edit smtp/starttls'})
+    .getByRole('button', {name: 'Duplicate signature'});
+  await expect(duplicate).toBeDisabled();
+  await expect(duplicate).toHaveAttribute(
+    'title', 'Resolve pending signature flow structure before duplicating the signature.',
+  );
+});
+
 test('creates an ordered policy and opens referenced objects from its drawer', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
@@ -4472,6 +4604,8 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).toContainText('Freshness: Fresh');
   await expect(statusbar).toContainText('Events: Live');
   await expect(statusbar).toContainText('Events: Connecting', {timeout: 4_000});
+  const pingMetric = page.getByText('Control-plane ping').locator('..');
+  await expect(pingMetric).toContainText('protected configuration access is reported separately');
   await expect(page.getByText('Probe latency').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
   const incidentTimeline = page.getByRole('region', {name: 'Control-plane incident timeline'});

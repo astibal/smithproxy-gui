@@ -18,6 +18,7 @@ import {
 import type {
   AddressObject,
   CaptureSettings,
+  CertificateAuthoritySummary,
   ConfigScalar,
   ConfigSnapshot,
   ConfigValue,
@@ -27,6 +28,7 @@ import type {
   PortObject,
   ProfileObject,
   ProtocolObject,
+  SignatureDefinition,
   SystemSettings,
 } from './api/models';
 import {
@@ -295,6 +297,17 @@ interface ProfileCreatePrefill extends PrimitiveCreatePrefill {
   omitted: string;
 }
 
+interface AuthorityCreatePrefill extends PrimitiveCreatePrefill {
+  pathConfigured: boolean;
+}
+
+interface SignatureCreatePrefill {
+  fields: DraftCreateOperation['fields'];
+  flowFields: DraftCreateOperation['fields'];
+  sourceName: string;
+  omittedFlowCount: number;
+}
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -410,6 +423,8 @@ export class SmithproxyApp extends LitElement {
   private readonly policyCreatePrefills = new Map<string, PolicyCreatePrefill>();
   private readonly primitiveCreatePrefills = new Map<string, PrimitiveCreatePrefill>();
   private readonly profileCreatePrefills = new Map<string, ProfileCreatePrefill>();
+  private readonly authorityCreatePrefills = new Map<string, AuthorityCreatePrefill>();
+  private readonly signatureCreatePrefills = new Map<string, SignatureCreatePrefill>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -1240,6 +1255,8 @@ export class SmithproxyApp extends LitElement {
     this.policyCreatePrefills.clear();
     this.primitiveCreatePrefills.clear();
     this.profileCreatePrefills.clear();
+    this.authorityCreatePrefills.clear();
+    this.signatureCreatePrefills.clear();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -3454,6 +3471,50 @@ export class SmithproxyApp extends LitElement {
     }, origin);
   }
 
+  private authorityCloneBlocker(authority: CertificateAuthoritySummary): string | undefined {
+    if (!this.structuralDraftsAvailable || !this.workspaceDraft ||
+        !this.originPrefix({kind: 'authority', id: authority.id, title: authority.name})) {
+      return 'Certificate-authority duplication requires reviewed structural transactions.';
+    }
+    const target = this.structuralDeleteTarget({kind: 'authority', id: authority.id, title: authority.name});
+    if (target && this.pendingStructuralDelete(target)) {
+      return 'Remove the pending certificate-authority deletion before duplicating it.';
+    }
+    return undefined;
+  }
+
+  private uniqueAuthorityCopyName(sourceName: string): string {
+    const names = new Set<string>();
+    this.snapshot?.securityAssets?.certificateAuthorities.forEach((authority, index) => {
+      names.add(authority.name);
+      names.add(this.persistentValue(`tls_ca.[${index}].name`, authority.name));
+    });
+    this.workspaceDraft?.structuralOperations.forEach(operation => {
+      if (operation.op === 'create' && operation.collection === 'tls_ca' &&
+          typeof operation.fields['name'] === 'string') names.add(operation.fields['name']);
+    });
+    for (let copy = 1; copy <= names.size + 2; copy += 1) {
+      const suffix = copy === 1 ? ' copy' : ` copy ${copy}`;
+      const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
+      if (!names.has(candidate)) return candidate;
+    }
+    return `Authority copy ${crypto.randomUUID().slice(0, 8)}`;
+  }
+
+  private duplicateAuthority(authority: CertificateAuthoritySummary, origin?: HTMLElement): void {
+    const prefix = this.originPrefix({kind: 'authority', id: authority.id, title: authority.name});
+    if (this.authorityCloneBlocker(authority) !== undefined || !prefix) return;
+    const sourceName = this.persistentValue(`${prefix}name`, authority.name);
+    const fields = {name: this.uniqueAuthorityCopyName(sourceName)};
+    const localId = `create-authority-${crypto.randomUUID()}`;
+    this.authorityCreatePrefills.set(localId, {
+      fields, sourceName, pathConfigured: authority.pathConfigured,
+    });
+    this.openObjectDrawer({
+      kind: 'authority-create', id: localId, title: String(fields.name),
+    }, origin);
+  }
+
   private openSignature(id: string, origin?: HTMLElement): void {
     const signature = this.snapshot?.securityAssets?.signatures.find(item => item.id === id);
     if (!signature) return;
@@ -3470,6 +3531,80 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({
       kind: 'signature-create', id: localId,
       title: `New ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signature`,
+    }, origin);
+  }
+
+  private signatureCloneBlocker(signature: SignatureDefinition): string | undefined {
+    const prefix = this.originPrefix({kind: 'signature', id: signature.id, title: signature.name});
+    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !prefix || signature.flow.length === 0) {
+      return 'Signature duplication requires a typed signature with at least one stable flow step.';
+    }
+    const target = this.structuralDeleteTarget({kind: 'signature', id: signature.id, title: signature.name});
+    if (target && this.pendingStructuralDelete(target)) {
+      return 'Remove the pending signature deletion before duplicating it.';
+    }
+    const flowIds = new Set(signature.flow.map(step => step.id));
+    if (this.workspaceDraft.structuralOperations.some(operation =>
+      operation.collection === `${signature.kind}_signatures.flow` &&
+      ((operation.op === 'create' && operation.parentId === signature.id) ||
+        (operation.op !== 'create' && flowIds.has(operation.entityId))))) {
+      return 'Resolve pending signature flow structure before duplicating the signature.';
+    }
+    return undefined;
+  }
+
+  private uniqueSignatureCopyName(kind: SignatureDefinition['kind'], sourceName: string): string {
+    const names = new Set<string>();
+    this.snapshot?.securityAssets?.signatures.filter(item => item.kind === kind).forEach(signature => {
+      names.add(signature.name);
+      const prefix = this.originPrefix({kind: 'signature', id: signature.id, title: signature.name});
+      if (prefix) names.add(this.persistentValue(`${prefix}name`, signature.name));
+    });
+    const collection = `${kind}_signatures`;
+    this.workspaceDraft?.structuralOperations.forEach(operation => {
+      if (operation.op === 'create' && operation.collection === collection &&
+          typeof operation.fields['name'] === 'string') names.add(operation.fields['name']);
+    });
+    for (let copy = 1; copy <= names.size + 2; copy += 1) {
+      const suffix = copy === 1 ? ' copy' : ` copy ${copy}`;
+      const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
+      if (!names.has(candidate)) return candidate;
+    }
+    return `Signature copy ${crypto.randomUUID().slice(0, 8)}`;
+  }
+
+  private duplicateSignature(signature: SignatureDefinition, origin?: HTMLElement): void {
+    const entry: DrawerEntry = {kind: 'signature', id: signature.id, title: signature.name};
+    const prefix = this.originPrefix(entry);
+    const firstFlow = signature.flow[0];
+    const flowPrefix = firstFlow
+      ? this.originPrefix({kind: 'signature-flow', id: firstFlow.id, title: 'First flow'}) : undefined;
+    if (this.signatureCloneBlocker(signature) !== undefined || !prefix || !firstFlow || !flowPrefix) return;
+    const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
+      this.persistentValue(`${prefix}${field}`, fallback);
+    const flowScalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
+      this.persistentValue(`${flowPrefix}${field}`, fallback);
+    const sourceName = scalar('name', signature.name);
+    const fields: DraftCreateOperation['fields'] = {
+      cat: scalar('cat', signature.category),
+      name: this.uniqueSignatureCopyName(signature.kind, sourceName),
+      side: scalar('side', signature.side), severity: scalar('severity', signature.severity),
+      group: scalar('group', signature.group), enables: scalar('enables', signature.enables),
+      engine: scalar('engine', signature.engine),
+    };
+    const flowFields: DraftCreateOperation['fields'] = {
+      side: flowScalar('side', firstFlow.side), type: flowScalar('type', firstFlow.type),
+      bytes_start: flowScalar('bytes_start', firstFlow.bytesStart),
+      bytes_max: flowScalar('bytes_max', firstFlow.bytesMax),
+    };
+    const localId = `create-signature-${crypto.randomUUID()}`;
+    this.signatureCreateKinds.set(localId, signature.kind);
+    this.signatureCreateFlowIds.set(localId, `create-sigflow-${crypto.randomUUID()}`);
+    this.signatureCreatePrefills.set(localId, {
+      fields, flowFields, sourceName, omittedFlowCount: Math.max(0, signature.flow.length - 1),
+    });
+    this.openObjectDrawer({
+      kind: 'signature-create', id: localId, title: String(fields['name']),
     }, origin);
   }
 
@@ -3634,6 +3769,7 @@ export class SmithproxyApp extends LitElement {
       if (entry.kind === 'signature-create') {
         this.signatureCreateKinds.delete(entry.id);
         this.signatureCreateFlowIds.delete(entry.id);
+        this.signatureCreatePrefills.delete(entry.id);
       }
       if (entry.kind === 'profile-create') {
         this.profileCreateTypes.delete(entry.id);
@@ -3642,6 +3778,7 @@ export class SmithproxyApp extends LitElement {
         identityEditors.delete(entry.id);
         this.authIdentityEditors = identityEditors;
       }
+      if (entry.kind === 'authority-create') this.authorityCreatePrefills.delete(entry.id);
     }
     this.dirtyDrawerKeys = remainingDirty;
     this.pendingCloseIndex = undefined;
@@ -4213,6 +4350,7 @@ export class SmithproxyApp extends LitElement {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.signatureCreateKinds.set(entry.id, kind);
       this.signatureCreateFlowIds.set(entry.id, flowLocalId);
+      this.signatureCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
       expression.value = '';
       this.markDrawerSaved(entry);
@@ -4799,6 +4937,7 @@ export class SmithproxyApp extends LitElement {
         parentId: null, position: {kind: 'last', reference: null}, fields: {name, path},
       });
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.authorityCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
       pathInput.value = '';
       this.markDrawerSaved(entry);
@@ -8535,12 +8674,12 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
-          <div><h2>Control plane</h2><p>Live reachability of the Smithproxy API</p></div>
+          <div><h2>Control plane</h2><p>Ping reachability; protected configuration access is reported separately</p></div>
         </div>
         ${this.renderConfigurationInventory()}
         <div class="metric-grid">
           <article class="metric">
-            <span class="metric-label">Smithproxy API</span>
+            <span class="metric-label">Control-plane ping</span>
             <strong class="metric-value ${statusTone(this.systemStatus)}">${displayState(this.systemStatus.smithproxy)}</strong>
             <span class="metric-note">${this.systemStatus.detail}</span>
           </article>
@@ -11001,17 +11140,24 @@ export class SmithproxyApp extends LitElement {
 
   private renderCertificateAuthorityCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingAuthorityCreate(entry);
+    const prefill = operation ? undefined : this.authorityCreatePrefills.get(entry.id);
     const readOnly = !this.structuralDraftsAvailable;
     return html`
       <div class="form-grid">
         <label for="authority-create-name-${entry.id}">Name</label>
         <input id="authority-create-name-${entry.id}" maxlength="128" required autocomplete="off"
-          .value=${String(operation?.fields['name'] ?? '')} .readOnly=${readOnly} />
+          .value=${String(operation?.fields['name'] ?? prefill?.fields['name'] ?? '')} .readOnly=${readOnly} />
         <label for="authority-create-path-${entry.id}">CA path</label>
         <input id="authority-create-path-${entry.id}" maxlength="1024" required autocomplete="off"
           aria-label="New CA path" placeholder=${operation ? 'Re-enter path (write-only)' : 'Absolute path (write-only)'}
           .readOnly=${readOnly} />
       </div>
+      ${prefill ? html`<div class="scope-note section">
+        Prefilled from ${prefill.sourceName}. Persistent and pending values are copied; temporary augment overlays are not.
+        ${prefill.pathConfigured
+          ? 'The write-only CA path is not copied and must be entered before saving.'
+          : 'Enter a CA path before saving.'}
+      </div>` : nothing}
       <div class="privacy-note section">
         The path is accepted by the GUI core, redacted from draft responses, and cleared from this editor.
         Reopening a pending authority requires explicit path re-entry before it can be updated.
@@ -11365,19 +11511,24 @@ export class SmithproxyApp extends LitElement {
   private renderSignatureCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingSignatureCreate(entry);
     const flow = this.pendingSignatureCreateFlow(entry);
+    const prefill = operation ? undefined : this.signatureCreatePrefills.get(entry.id);
     const kind = operation
       ? operation.collection === 'starttls_signatures' ? 'starttls' : 'detection'
       : this.signatureCreateKinds.get(entry.id);
     if (!kind) return nothing;
     const readOnly = !this.structuralDraftsAvailable;
-    const text = (field: string) => typeof operation?.fields[field] === 'string'
-      ? String(operation.fields[field]) : '';
-    const severity = operation?.fields['severity'];
-    const connectionSide = operation?.fields['side'];
-    const flowSide = flow?.fields['side'];
-    const flowType = flow?.fields['type'];
-    const start = flow?.fields['bytes_start'];
-    const maximum = flow?.fields['bytes_max'];
+    const parentField = (field: string): DraftScalar | undefined =>
+      operation?.fields[field] ?? prefill?.fields[field];
+    const flowField = (field: string): DraftScalar | undefined =>
+      flow?.fields[field] ?? prefill?.flowFields[field];
+    const text = (field: string) => typeof parentField(field) === 'string'
+      ? String(parentField(field)) : '';
+    const severity = parentField('severity');
+    const connectionSide = parentField('side');
+    const flowSide = flowField('side');
+    const flowType = flowField('type');
+    const start = flowField('bytes_start');
+    const maximum = flowField('bytes_max');
     return html`
       <div class="privacy-note">
         The signature and its required first flow step are saved as one atomic draft operation group.
@@ -11438,6 +11589,13 @@ export class SmithproxyApp extends LitElement {
         The matcher expression stays inside the GUI core and is redacted in draft review.
         Reopening this pending signature requires re-entering it before another update.
       </div>
+      ${prefill ? html`<div class="scope-note section">
+        Prefilled from ${prefill.sourceName}. Persistent and pending metadata for the signature and its first flow step
+        are copied; temporary augment overlays are not. The write-only first matcher expression is not copied.
+        ${prefill.omittedFlowCount > 0
+          ? `${prefill.omittedFlowCount} additional flow step${prefill.omittedFlowCount === 1 ? ' is' : 's are'} not copied.`
+          : nothing}
+      </div>` : nothing}
     `;
   }
 
@@ -11762,8 +11920,16 @@ export class SmithproxyApp extends LitElement {
     const policy = entry.kind === 'policy'
       ? this.snapshot?.policies.find(item => item.id === entry.id)
       : undefined;
+    const authority = entry.kind === 'authority'
+      ? this.snapshot?.securityAssets?.certificateAuthorities.find(item => item.id === entry.id)
+      : undefined;
+    const signature = entry.kind === 'signature'
+      ? this.snapshot?.securityAssets?.signatures.find(item => item.id === entry.id)
+      : undefined;
     const cloneBlocker = policy ? this.policyCloneBlocker(policy) : undefined;
     const profileCloneBlocker = profile ? this.profileCloneBlocker(profile) : undefined;
+    const authorityCloneBlocker = authority ? this.authorityCloneBlocker(authority) : undefined;
+    const signatureCloneBlocker = signature ? this.signatureCloneBlocker(signature) : undefined;
     const primitive = entry.kind === 'address' || entry.kind === 'port' || entry.kind === 'protocol';
     const primitiveCloneBlocker = primitive ? this.primitiveCloneBlocker(entry) : undefined;
     const mappedProfile = Boolean(
@@ -11878,6 +12044,25 @@ export class SmithproxyApp extends LitElement {
                 @click=${(event: MouseEvent) =>
                   this.duplicateProfile(profile, event.currentTarget as HTMLElement)}>
                 Duplicate profile
+              </button>
+            ` : nothing}
+            ${authority ? html`
+              <button class="secondary" type="button"
+                title=${authorityCloneBlocker ?? 'Open a prefilled authority copy; the private path remains excluded'}
+                ?disabled=${authorityCloneBlocker !== undefined || dirty || this.draftSaving || this.draftCommitting}
+                @click=${(event: MouseEvent) =>
+                  this.duplicateAuthority(authority, event.currentTarget as HTMLElement)}>
+                Duplicate authority
+              </button>
+            ` : nothing}
+            ${signature ? html`
+              <button class="secondary" type="button"
+                title=${signatureCloneBlocker ??
+                  'Open a prefilled signature copy; private matcher expressions remain excluded'}
+                ?disabled=${signatureCloneBlocker !== undefined || dirty || this.draftSaving || this.draftCommitting}
+                @click=${(event: MouseEvent) =>
+                  this.duplicateSignature(signature, event.currentTarget as HTMLElement)}>
+                Duplicate signature
               </button>
             ` : nothing}
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>

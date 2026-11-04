@@ -113,7 +113,7 @@
       "edit": "partial",
       "sensitivity": "secret-bearing",
       "tracked_fields": ["name", "path_configured"],
-      "notes": "Authority names and path posture are exposed. Authorities support structural creation and confirmed deletion, with pending deletion labeled in the trust-asset list. Filesystem paths use write-only controls, are cleared after acceptance, remain redacted in draft responses, and must be re-entered before a pending create can be updated."
+      "notes": "Authority names and path posture are exposed. Authorities support structural creation, safe name duplication from persistent and pending values without augment overlays, and confirmed deletion, with pending deletion labeled in the trust-asset list. Filesystem paths use write-only controls, are excluded from copies, are cleared after acceptance, remain redacted in draft responses, and must be re-entered before a pending create can be updated."
     },
     {
       "name": "tls_profiles",
@@ -184,7 +184,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata and ordered flow controls are typed. Parent metadata and the required first flow step support atomic structural creation and linked removal with one draft version increment. Existing signatures support confirmed structural deletion and label that state in the trust-asset list. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order, labels pending moves and deletes, and permits create or move references to earlier same-parent pending creates. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
+      "notes": "All active signature metadata and ordered flow controls are typed. Parent metadata and the required first flow step support atomic structural creation, safe duplication of persistent and pending non-sensitive values without augment overlays, and linked removal with one draft version increment. Copies require a new first matcher expression and explicitly omit additional flow steps. Existing signatures support confirmed structural deletion and label that state in the trust-asset list. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order, labels pending moves and deletes, and permits create or move references to earlier same-parent pending creates. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
     },
     {
       "name": "detection_signatures",
@@ -193,7 +193,7 @@
       "edit": "partial",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata and ordered flow controls are typed. Parent metadata and the required first flow step support atomic structural creation and linked removal with one draft version increment. Existing signatures support confirmed structural deletion and label that state in the trust-asset list. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order, labels pending moves and deletes, and permits create or move references to earlier same-parent pending creates. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
+      "notes": "All active signature metadata and ordered flow controls are typed. Parent metadata and the required first flow step support atomic structural creation, safe duplication of persistent and pending non-sensitive values without augment overlays, and linked removal with one draft version increment. Copies require a new first matcher expression and explicitly omit additional flow steps. Existing signatures support confirmed structural deletion and label that state in the trust-asset list. Matcher expressions remain server-side and support write-only replacement. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order, labels pending moves and deletes, and permits create or move references to earlier same-parent pending creates. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
     },
     {
       "name": "script_profiles",
