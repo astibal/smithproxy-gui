@@ -1756,15 +1756,16 @@ test('shows and reopens structural creates from primary policy and object lists'
   await editor.getByRole('button', {name: 'Cancel'}).click();
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
-  for (const [groupName, itemName] of [
-    ['Address objects', 'pending-address'],
-    ['Port objects', 'pending-port'],
-    ['Protocol objects', 'pending-protocol'],
-    ['Profiles and routing', 'pending-routing'],
+  for (const [groupName, itemName, usageCount] of [
+    ['Address objects', 'pending-address', 2],
+    ['Port objects', 'pending-port', 2],
+    ['Protocol objects', 'pending-protocol', 1],
+    ['Profiles and routing', 'pending-routing', 1],
   ] as const) {
     const row = page.getByRole('group', {name: groupName})
       .getByRole('button').filter({hasText: itemName});
     await expect(row).toContainText('Pending create');
+    await expect(row.getByText(String(usageCount), {exact: true})).toBeVisible();
   }
   await page.getByRole('group', {name: 'Address objects'})
     .getByRole('button').filter({hasText: 'pending-address'}).click();
@@ -4380,6 +4381,31 @@ test('filters real and pending policies by text, status, and action', async ({pa
   await expect(page.getByText('Showing 1 of 2', {exact: true})).toBeVisible();
 });
 
+test('filters real configuration objects by value, kind, and effective usage', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready', unusedProfile: true}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await expect(page.getByText('Showing 13 of 13', {exact: true})).toBeVisible();
+  const query = page.getByRole('searchbox', {name: 'Filter object list'});
+  await query.fill('example.test');
+  await expect(page.getByRole('group', {name: 'Address objects'}).getByRole('button')).toHaveCount(1);
+  await expect(page.getByRole('group', {name: 'Address objects'})).toContainText('internet');
+
+  await query.clear();
+  await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('profile');
+  await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('unused');
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await expect(profiles.getByRole('button')).toHaveCount(1);
+  await expect(profiles).toContainText('unused-detection');
+  await expect(page.getByText('Showing 1 of 13', {exact: true})).toBeVisible();
+
+  await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('port');
+  await expect(page.getByText('No configuration objects match the current filters.')).toBeVisible();
+  await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('used');
+  await expect(page.getByRole('group', {name: 'Port objects'})).toContainText('https');
+});
+
 test('removes an open live editor when gateway configuration access is revoked', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: true,
@@ -5405,6 +5431,11 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
   await expect(interfaceSummary).toBeVisible();
   await expect.poll(() => interfaceSummary.evaluate(element =>
     element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await expect(page.getByRole('searchbox', {name: 'Filter object list'})).toBeVisible();
   await expect.poll(() => page.evaluate(() =>
     document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 

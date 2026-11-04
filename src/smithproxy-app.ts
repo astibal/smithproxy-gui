@@ -73,6 +73,8 @@ type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavaila
 type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 type PolicyStatusFilter = 'all' | 'enabled' | 'disabled';
+type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile';
+type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
 
 interface CollectorPresentation {
@@ -300,6 +302,9 @@ export class SmithproxyApp extends LitElement {
   @state() private policyListQuery = '';
   @state() private policyStatusFilter: PolicyStatusFilter = 'all';
   @state() private policyActionFilter = 'all';
+  @state() private objectListQuery = '';
+  @state() private objectKindFilter: ObjectKindFilter = 'all';
+  @state() private objectUsageFilter: ObjectUsageFilter = 'all';
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
   @state() private auditError: string | undefined;
@@ -2251,24 +2256,32 @@ export class SmithproxyApp extends LitElement {
     return field ? [{collection: 'policy', fields: [field]}] : [];
   }
 
+  private draftReferenceCount(
+    name: string,
+    specifications: ReturnType<SmithproxyApp['referenceSpecifications']>,
+    excludedLocalId?: string,
+  ): number {
+    if (!this.workspaceDraft) return 0;
+    const references = (value: DraftScalar | undefined) =>
+      value === name || (Array.isArray(value) && value.includes(name));
+    const structuralReferences = this.workspaceDraft.structuralOperations.filter(operation =>
+      operation.op === 'create' && operation.localId !== excludedLocalId &&
+      specifications.some(specification =>
+        operation.collection === specification.collection &&
+        specification.fields.some(field => references(operation.fields[field])))).length;
+    const changedReferences = this.workspaceDraft.changes.filter(change => specifications.some(specification =>
+      change.path.startsWith(`${specification.collection}.[`) &&
+      specification.fields.some(field => change.path.endsWith(`].${field}`)) &&
+      references(change.value))).length;
+    return structuralReferences + changedReferences;
+  }
+
   private draftReferencesName(
     name: string,
     specifications: ReturnType<SmithproxyApp['referenceSpecifications']>,
     excludedLocalId?: string,
   ): boolean {
-    if (!this.workspaceDraft) return false;
-    const references = (value: DraftScalar | undefined) =>
-      value === name || (Array.isArray(value) && value.includes(name));
-    const structuralReference = this.workspaceDraft.structuralOperations.some(operation =>
-      operation.op === 'create' && operation.localId !== excludedLocalId &&
-      specifications.some(specification =>
-        operation.collection === specification.collection &&
-        specification.fields.some(field => references(operation.fields[field]))));
-    if (structuralReference) return true;
-    return this.workspaceDraft.changes.some(change => specifications.some(specification =>
-      change.path.startsWith(`${specification.collection}.[`) &&
-      specification.fields.some(field => change.path.endsWith(`].${field}`)) &&
-      references(change.value)));
+    return this.draftReferenceCount(name, specifications, excludedLocalId) > 0;
   }
 
   private pendingCreateRemovalBlocker(localId: string): string | undefined {
@@ -6579,6 +6592,91 @@ export class SmithproxyApp extends LitElement {
     );
     const openPending = (operation: DraftCreateOperation, origin: HTMLElement) =>
       this.openDraftStructuralOperation(operation.localId, origin);
+    const query = this.objectListQuery.trim().toLocaleLowerCase();
+    const kindMatches = (kind: Exclude<ObjectKindFilter, 'all'>) =>
+      this.objectKindFilter === 'all' || this.objectKindFilter === kind;
+    const usageMatches = (used: boolean) => this.objectUsageFilter === 'all' ||
+      (this.objectUsageFilter === 'used') === used;
+    const queryMatches = (values: ReadonlyArray<string | number>) =>
+      !query || this.searchMatches(values, query);
+    const liveUsage = (
+      name: string, liveCount: number, collection: DraftCreateOperation['collection'],
+    ) => {
+      const pendingCount = this.draftReferenceCount(name, this.referenceSpecifications(collection));
+      return {
+        used: liveCount > 0 || pendingCount > 0,
+        label: pendingCount > 0
+          ? liveCount > 0 ? `${liveCount}+` : String(pendingCount)
+          : String(liveCount),
+        pendingCount,
+      };
+    };
+    const pendingUsage = (operation: DraftCreateOperation) => {
+      const name = fieldText(operation, 'name');
+      return name ? this.draftReferenceCount(
+        name, this.referenceSpecifications(operation.collection), operation.localId,
+      ) : 0;
+    };
+    const addressRows = (this.snapshot?.addresses ?? []).map((item, index) => {
+      const base = `address_objects.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const type = this.presentedValue(`${base}.type`, item.type);
+      const value = this.presentedValue(`${base}.value`, item.value);
+      return {item, index, name, type, value, usage: liveUsage(name, item.usedBy.length, 'address_objects')};
+    }).filter(row => kindMatches('address') && usageMatches(row.usage.used) &&
+      queryMatches([row.name, row.type, row.value, 'address']));
+    const pendingAddressRows = pendingAddresses.map(operation => ({operation, usage: pendingUsage(operation)}))
+      .filter(row => kindMatches('address') && usageMatches(row.usage > 0) && queryMatches([
+        fieldText(row.operation, 'name'), fieldText(row.operation, 'type'),
+        fieldText(row.operation, 'value'), 'address', 'pending',
+      ]));
+    const portRows = (this.snapshot?.ports ?? []).map((item, index) => {
+      const base = `port_objects.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const start = this.presentedValue(`${base}.start`, item.start);
+      const end = this.presentedValue(`${base}.end`, item.end);
+      return {item, index, name, start, end, usage: liveUsage(name, item.usedBy.length, 'port_objects')};
+    }).filter(row => kindMatches('port') && usageMatches(row.usage.used) &&
+      queryMatches([row.name, row.start, row.end, 'port']));
+    const pendingPortRows = pendingPorts.map(operation => ({operation, usage: pendingUsage(operation)}))
+      .filter(row => kindMatches('port') && usageMatches(row.usage > 0) && queryMatches([
+        fieldText(row.operation, 'name'), fieldNumber(row.operation, 'start') ?? '',
+        fieldNumber(row.operation, 'end') ?? '', 'port', 'pending',
+      ]));
+    const protocolRows = (this.snapshot?.protocols ?? []).map((item, index) => {
+      const base = `proto_objects.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const number = this.presentedValue(`${base}.id`, item.number);
+      return {item, index, name, number, usage: liveUsage(name, item.usedBy.length, 'proto_objects')};
+    }).filter(row => kindMatches('protocol') && usageMatches(row.usage.used) &&
+      queryMatches([row.name, row.number, 'protocol']));
+    const pendingProtocolRows = pendingProtocols
+      .map(operation => ({operation, usage: pendingUsage(operation)}))
+      .filter(row => kindMatches('protocol') && usageMatches(row.usage > 0) && queryMatches([
+        fieldText(row.operation, 'name'), fieldNumber(row.operation, 'id') ?? '', 'protocol', 'pending',
+      ]));
+    const profileRows = (this.snapshot?.profiles ?? []).map(item => {
+      const prefix = profilePrefixes.get(item.id);
+      const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
+      const liveCount = item.usedBy.length + this.effectivePrivateProfileReferences(item);
+      const collection = profileCreateCollections[item.type as ProfileCreateType];
+      const usage = collection ? liveUsage(name, liveCount, collection) :
+        {used: liveCount > 0, label: String(liveCount), pendingCount: 0};
+      return {item, prefix, name, usage};
+    }).filter(row => kindMatches('profile') && usageMatches(row.usage.used) &&
+      queryMatches([row.name, row.item.type, 'profile', 'routing']));
+    const pendingProfileRows = pendingProfiles.map(operation => ({operation, usage: pendingUsage(operation)}))
+      .filter(row => kindMatches('profile') && usageMatches(row.usage > 0) && queryMatches([
+        fieldText(row.operation, 'name'), profileTypes.get(row.operation.collection) ?? 'profile',
+        'profile', 'pending',
+      ]));
+    const totalCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
+      (this.snapshot?.protocols.length ?? 0) + (this.snapshot?.profiles.length ?? 0) +
+      pendingAddresses.length + pendingPorts.length + pendingProtocols.length + pendingProfiles.length;
+    const visibleCount = addressRows.length + pendingAddressRows.length + portRows.length +
+      pendingPortRows.length + protocolRows.length + pendingProtocolRows.length +
+      profileRows.length + pendingProfileRows.length;
+    const filtersActive = query.length > 0 || this.objectKindFilter !== 'all' || this.objectUsageFilter !== 'all';
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -6611,50 +6709,87 @@ export class SmithproxyApp extends LitElement {
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
         </div>
-        <section class="object-section">
+        <div class="list-filters" role="search" aria-label="Filter configuration objects">
+          <label class="list-filter">Name, value, or type
+            <input type="search" aria-label="Filter object list" .value=${this.objectListQuery}
+              @input=${(event: Event) => {
+                this.objectListQuery = (event.currentTarget as HTMLInputElement).value.slice(0, 128);
+              }} />
+          </label>
+          <label class="list-filter">Kind
+            <select aria-label="Filter objects by kind" .value=${this.objectKindFilter}
+              @change=${(event: Event) => {
+                this.objectKindFilter = (event.currentTarget as HTMLSelectElement).value as ObjectKindFilter;
+              }}>
+              <option value="all">All kinds</option><option value="address">Addresses</option>
+              <option value="port">Ports</option><option value="protocol">Protocols</option>
+              <option value="profile">Profiles</option>
+            </select>
+          </label>
+          <label class="list-filter">Usage
+            <select aria-label="Filter objects by usage" .value=${this.objectUsageFilter}
+              @change=${(event: Event) => {
+                this.objectUsageFilter = (event.currentTarget as HTMLSelectElement).value as ObjectUsageFilter;
+              }}>
+              <option value="all">All usage</option><option value="used">Used</option>
+              <option value="unused">Unused</option>
+            </select>
+          </label>
+          <span class="list-filter-summary" role="status">
+            Showing ${visibleCount.toLocaleString()} of ${totalCount.toLocaleString()}
+          </span>
+        </div>
+        ${visibleCount === 0 ? html`
+          <div class="metrics-message" role="status">No configuration objects match the current filters.</div>
+        ` : nothing}
+        <section class="object-section"
+          ?hidden=${!kindMatches('address') || (filtersActive && addressRows.length + pendingAddressRows.length === 0)}>
           <h3>Address objects</h3>
           <div class="table" role="group" aria-label="Address objects">
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.addresses.map((address, index) => {
+            ${addressRows.map(({item: address, index, name, type, value, usage}) => {
               const base = `address_objects.[${index}]`;
               return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
-                <strong>${this.presentedValue(`${base}.name`, address.name)}</strong>
-                <span class="action">${this.presentedValue(`${base}.type`, address.type)}</span>
-                <span class="object-value">${this.presentedValue(`${base}.value`, address.value)}</span>
-                <span class="row-meta"><span>${address.usedBy.length}</span>${this.renderPendingBadge('address', address.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
+                <strong>${name}</strong><span class="action">${type}</span><span class="object-value">${value}</span>
+                <span class="row-meta">
+                  <span title=${usage.pendingCount > 0 ? 'Includes pending draft references' : nothing}>${usage.label}</span>
+                  ${this.renderPendingBadge('address', address.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}
+                </span>
               </button>`;
             })}
-            ${pendingAddresses.map(operation => html`<button class="row object-row" type="button"
+            ${pendingAddressRows.map(({operation, usage}) => html`<button class="row object-row" type="button"
               @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
               <strong>${fieldText(operation, 'name', 'New address object')}</strong>
               <span class="action">${fieldText(operation, 'type', 'address')}</span>
               <span class="object-value">${fieldText(operation, 'value')}</span>
-              <span class="row-meta"><span>0</span><span class="pending-badge"
+              <span class="row-meta"><span>${usage}</span><span class="pending-badge"
                 title="This address object is a pending structural create">Pending create</span></span>
             </button>`)}
           </div>
         </section>
-        <section class="object-section">
+        <section class="object-section"
+          ?hidden=${!kindMatches('port') || (filtersActive && portRows.length + pendingPortRows.length === 0)}>
           <h3>Port objects</h3>
           <div class="table" role="group" aria-label="Port objects">
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.ports.map((port, index) => {
+            ${portRows.map(({item: port, index, name, start, end, usage}) => {
               const base = `port_objects.[${index}]`;
-              const start = this.presentedValue(`${base}.start`, port.start);
-              const end = this.presentedValue(`${base}.end`, port.end);
               return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openPort(port.id, event.currentTarget as HTMLElement)}>
-                <strong>${this.presentedValue(`${base}.name`, port.name)}</strong><span>Port range</span>
+                <strong>${name}</strong><span>Port range</span>
                 <span class="object-value">${start === end ? start : `${start}–${end}`}</span>
-                <span class="row-meta"><span>${port.usedBy.length}</span>${this.renderPendingBadge('port', port.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
+                <span class="row-meta">
+                  <span title=${usage.pendingCount > 0 ? 'Includes pending draft references' : nothing}>${usage.label}</span>
+                  ${this.renderPendingBadge('port', port.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}
+                </span>
               </button>`;
             })}
-            ${pendingPorts.map(operation => {
+            ${pendingPortRows.map(({operation, usage}) => {
               const start = fieldNumber(operation, 'start');
               const end = fieldNumber(operation, 'end');
               const range = start === undefined || end === undefined ? 'Unknown'
@@ -6663,61 +6798,63 @@ export class SmithproxyApp extends LitElement {
                 @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
                 <strong>${fieldText(operation, 'name', 'New port object')}</strong><span>Port range</span>
                 <span class="object-value">${range}</span>
-                <span class="row-meta"><span>0</span><span class="pending-badge"
+                <span class="row-meta"><span>${usage}</span><span class="pending-badge"
                   title="This port object is a pending structural create">Pending create</span></span>
               </button>`;
             })}
           </div>
         </section>
-        <section class="object-section">
+        <section class="object-section"
+          ?hidden=${!kindMatches('protocol') || (filtersActive && protocolRows.length + pendingProtocolRows.length === 0)}>
           <h3>Protocol objects</h3>
           <div class="table" role="group" aria-label="Protocol objects">
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
             </div>
-            ${this.snapshot?.protocols.map((protocol, index) => {
+            ${protocolRows.map(({item: protocol, index, name, number, usage}) => {
               const base = `proto_objects.[${index}]`;
               return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProtocol(protocol.id, event.currentTarget as HTMLElement)}>
-                <strong>${this.presentedValue(`${base}.name`, protocol.name)}</strong><span>IP protocol</span>
-                <span class="object-value">${this.presentedValue(`${base}.id`, protocol.number)}</span>
-                <span class="row-meta"><span>${protocol.usedBy.length}</span>${this.renderPendingBadge('protocol', protocol.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}</span>
+                <strong>${name}</strong><span>IP protocol</span><span class="object-value">${number}</span>
+                <span class="row-meta">
+                  <span title=${usage.pendingCount > 0 ? 'Includes pending draft references' : nothing}>${usage.label}</span>
+                  ${this.renderPendingBadge('protocol', protocol.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}
+                </span>
               </button>`;
             })}
-            ${pendingProtocols.map(operation => html`<button class="row object-row" type="button"
+            ${pendingProtocolRows.map(({operation, usage}) => html`<button class="row object-row" type="button"
               @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
               <strong>${fieldText(operation, 'name', 'New protocol object')}</strong><span>IP protocol</span>
               <span class="object-value">${fieldNumber(operation, 'id') ?? 'Unknown'}</span>
-              <span class="row-meta"><span>0</span><span class="pending-badge"
+              <span class="row-meta"><span>${usage}</span><span class="pending-badge"
                 title="This protocol object is a pending structural create">Pending create</span></span>
             </button>`)}
           </div>
         </section>
-        <section class="object-section">
+        <section class="object-section"
+          ?hidden=${!kindMatches('profile') || (filtersActive && profileRows.length + pendingProfileRows.length === 0)}>
           <h3>Profiles and routing</h3>
           <div class="table" role="group" aria-label="Profiles and routing">
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value exposure</span><span>Uses</span>
             </div>
-            ${this.snapshot?.profiles.map(profile => {
-              const prefix = profilePrefixes.get(profile.id);
-              const name = prefix ? this.presentedValue(`${prefix}name`, profile.name) : profile.name;
+            ${profileRows.map(({item: profile, prefix, name, usage}) => {
               return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
                 <strong>${name}</strong><span class="action">${profile.type}</span>
                 <span class="row-meta"><span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh ||
                   profile.dns || profile.script || profile.authentication
                   ? 'Typed details' : 'Metadata only'}</span>${this.renderPendingBadge('profile', profile.id)}${this.renderOverlayBadge(prefix, overlayCounts)}</span>
-                <span>${profile.usedBy.length + this.effectivePrivateProfileReferences(profile)}</span>
+                <span title=${usage.pendingCount > 0 ? 'Includes pending draft references' : nothing}>${usage.label}</span>
               </button>`;
             })}
-            ${pendingProfiles.map(operation => html`<button class="row object-row" type="button"
+            ${pendingProfileRows.map(({operation, usage}) => html`<button class="row object-row" type="button"
               @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
               <strong>${fieldText(operation, 'name', 'New profile')}</strong>
               <span class="action">${profileTypes.get(operation.collection) ?? 'profile'}</span>
               <span class="row-meta"><span>Typed details</span><span class="pending-badge"
                 title="This profile is a pending structural create">Pending create</span></span>
-              <span>0</span>
+              <span>${usage}</span>
             </button>`)}
           </div>
         </section>
