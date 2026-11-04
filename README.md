@@ -176,6 +176,13 @@ target a compatible live profile or a profile created in the same draft, and
 state removes the corresponding overrides instead of retaining no-op changes.
 Each bulk operation independently excludes fields owned by active augment layers
 while leaving the policy available for its other editable fields.
+An existing policy can be duplicated into a prefilled structural-create drawer.
+The copy uses persistent values plus pending workspace changes, deliberately does
+not bake temporary augment overlays into the new object, and does not mutate the
+draft until the operator explicitly saves it. It is placed immediately after its
+source in the effective draft order and receives a bounded unique name. Legacy
+action, NAT, and feature values remain visible and must be consciously migrated
+to the reviewed create schema before the copy can be saved.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls. Pending structural

@@ -2787,6 +2787,66 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   await expect(editor.getByRole('group', {name: 'Features'}).getByLabel('access-request')).toBeChecked();
 });
 
+test('duplicates a real policy into an explicit draft create without baking augment overlays', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true, secondPolicy: true,
+    structuralMutationRequests: [],
+    initialDraftChanges: [
+      {path: 'policy.[0].name', value: 'Policy 1 revised'},
+      {path: 'policy.[0].action', value: 'deny'},
+    ],
+    valueOrigins: [{
+      path: 'policy.[0].tls_profile', persistent_value: 'inspect', effective_value: 'temporary-inspect',
+      layers: [{id: 'temporary-tls', priority: 100, value: 'temporary-inspect', active: true}],
+      editable: false,
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('group', {name: 'Policies'})
+    .getByRole('button', {name: /Policy 1 revised/i}).click();
+
+  const liveEditor = page.getByRole('dialog', {name: 'Edit Policy 1 revised'});
+  await liveEditor.getByRole('button', {name: 'Duplicate policy'}).click();
+  const createEditor = page.getByRole('dialog', {name: 'Create policy'});
+  await expect(createEditor.getByLabel('Name')).toHaveValue('Policy 1 revised copy');
+  await expect(createEditor.getByLabel('Placement')).toHaveValue('before:policy-1');
+  await expect(createEditor.getByLabel('Action', {exact: true})).toHaveValue('deny');
+  await expect(createEditor.getByLabel('TLS profile')).toHaveValue('inspect');
+  await expect(createEditor.locator('.scope-note').filter({hasText: 'Prefilled from'}))
+    .toContainText(/temporary augment\s+overlays are not baked/u);
+  await expect(createEditor.getByRole('group', {name: 'Features'}).getByLabel('Legacy: sinkhole')).toBeChecked();
+  await expect(createEditor.getByLabel('NAT', {exact: true}).locator('option:checked'))
+    .toHaveText('Legacy value: (empty)');
+  expect(state.structuralMutationRequests).toEqual([]);
+
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Policy fields and unique bounded references are required.')).toBeVisible();
+  expect(state.structuralMutationRequests).toEqual([]);
+  await createEditor.getByRole('group', {name: 'Features'}).getByLabel('Legacy: sinkhole').uncheck();
+  await createEditor.getByLabel('NAT', {exact: true}).selectOption('auto');
+  await expectNoWcagViolations(page);
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 1,
+    operation: {
+      op: 'create', collection: 'policy', position: {before: 'policy-1'},
+      fields: {
+        name: 'Policy 1 revised copy', disabled: false, proto: 'tcp',
+        src: ['office'], sport: ['any'], dst: ['internet'], dport: ['https'],
+        features: [], action: 'deny', nat: 'auto', routing: 'main', tls_profile: 'inspect',
+        ssh_profile: 'default-ssh', detection_profile: 'detect', content_profile: 'capture',
+        auth_profile: 'legacy-auth', alg_dns_profile: 'resolver', script_profile: 'audit',
+      },
+    },
+    csrf: '1',
+  });
+});
+
 test('links policy references to objects created earlier in the same draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,

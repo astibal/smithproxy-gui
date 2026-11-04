@@ -280,6 +280,12 @@ interface AuthIdentityEditorState {
   rows: ReadonlyArray<DraftAuthIdentity>;
 }
 
+interface PolicyCreatePrefill {
+  fields: DraftCreateOperation['fields'];
+  position: DraftCreateOperation['position'];
+  sourceName: string;
+}
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -387,6 +393,7 @@ export class SmithproxyApp extends LitElement {
   private readonly signatureCreateKinds = new Map<string, 'starttls' | 'detection'>();
   private readonly signatureCreateFlowIds = new Map<string, string>();
   private readonly profileCreateTypes = new Map<string, ProfileCreateType>();
+  private readonly policyCreatePrefills = new Map<string, PolicyCreatePrefill>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -667,8 +674,8 @@ export class SmithproxyApp extends LitElement {
     .drawer-title h2 { overflow: hidden; margin: 1px 0 0; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
     .icon-button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--app-border); border-radius: 3px; background: transparent; cursor: pointer; }
     .drawer-body { overflow: auto; padding: 22px 24px 32px; }
-    .drawer-foot { display: flex; gap: 10px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--app-border); background: var(--app-raised); }
-    .drawer-foot .validation { flex: 1; color: var(--app-success); }
+    .drawer-foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--app-border); background: var(--app-raised); }
+    .drawer-foot .validation { flex: 1 1 150px; color: var(--app-success); }
     .drawer-foot .validation.warning { color: var(--app-warning); }
     .secondary { padding: 8px 13px; border: 1px solid var(--app-border-strong); border-radius: 3px; background: transparent; cursor: pointer; }
     .form-grid { display: grid; grid-template-columns: minmax(120px, 0.35fr) minmax(240px, 1fr); gap: 18px 24px; max-width: 920px; }
@@ -1208,6 +1215,7 @@ export class SmithproxyApp extends LitElement {
     this.signatureCreateKinds.clear();
     this.signatureCreateFlowIds.clear();
     this.profileCreateTypes.clear();
+    this.policyCreatePrefills.clear();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -2924,6 +2932,77 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({kind: 'policy-create', id: localId, title: 'New policy'}, origin);
   }
 
+  private policyCloneBlocker(policy: PolicySummary): string | undefined {
+    const index = this.snapshot?.policies.findIndex(item => item.id === policy.id) ?? -1;
+    if (!this.structuralDraftsAvailable || !this.workspaceDraft || index < 0) {
+      return 'Policy duplication requires reviewed structural transactions and stable entity IDs.';
+    }
+    if (this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.op === 'delete' && operation.collection === 'policy' && operation.entityId === policy.id)) {
+      return 'Remove the pending policy deletion before duplicating it.';
+    }
+    return undefined;
+  }
+
+  private uniquePolicyCopyName(sourceName: string): string {
+    const names = new Set<string>();
+    this.snapshot?.policies.forEach((policy, index) => {
+      names.add(policy.name);
+      names.add(this.persistentValue(`policy.[${index}].name`, policy.name));
+    });
+    this.workspaceDraft?.structuralOperations.forEach(operation => {
+      if (operation.op === 'create' && operation.collection === 'policy' &&
+          typeof operation.fields['name'] === 'string') names.add(operation.fields['name']);
+    });
+    for (let copy = 1; copy <= names.size + 2; copy += 1) {
+      const suffix = copy === 1 ? ' copy' : ` copy ${copy}`;
+      const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
+      if (!names.has(candidate)) return candidate;
+    }
+    return `Policy copy ${crypto.randomUUID().slice(0, 8)}`;
+  }
+
+  private duplicatePolicy(policy: PolicySummary, origin?: HTMLElement): void {
+    if (this.policyCloneBlocker(policy) !== undefined || !this.snapshot) return;
+    const index = this.snapshot.policies.findIndex(item => item.id === policy.id);
+    if (index < 0) return;
+    const base = `policy.[${index}]`;
+    const operations = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation | DraftMoveOperation =>
+        (operation.op === 'create' || operation.op === 'move') && operation.collection === 'policy',
+    );
+    const rows = this.draftOrderedRows(this.snapshot.policies, operations);
+    const sourceIndex = rows.findIndex(row => row.id === policy.id);
+    const next = sourceIndex >= 0 ? rows[sourceIndex + 1] : undefined;
+    const position: DraftCreateOperation['position'] = next
+      ? {kind: 'before', reference: next.id}
+      : {kind: 'last', reference: null};
+    const sourceName = this.persistentValue(`${base}.name`, policy.name);
+    const fields: DraftCreateOperation['fields'] = {
+      name: this.uniquePolicyCopyName(sourceName),
+      disabled: this.persistentValue(`${base}.disabled`, !policy.enabled),
+      proto: this.persistentValue(`${base}.proto`, policy.protocol),
+      src: [...this.persistentListValue(`${base}.src`, policy.sources.map(item => item.name), 'string')],
+      sport: [...this.persistentListValue(`${base}.sport`, policy.sourcePorts, 'string')],
+      dst: [...this.persistentListValue(`${base}.dst`, policy.destinations.map(item => item.name), 'string')],
+      dport: [...this.persistentListValue(`${base}.dport`, policy.destinationPorts, 'string')],
+      features: [...this.persistentListValue(`${base}.features`, policy.features, 'string')],
+      action: this.persistentValue(`${base}.action`, policy.action),
+      nat: this.persistentValue(`${base}.nat`, policy.nat),
+      routing: this.persistentValue(`${base}.routing`, policy.routing),
+      tls_profile: this.persistentValue(`${base}.tls_profile`, policy.tlsProfile),
+      ssh_profile: this.persistentValue(`${base}.ssh_profile`, policy.sshProfile),
+      detection_profile: this.persistentValue(`${base}.detection_profile`, policy.detectionProfile),
+      content_profile: this.persistentValue(`${base}.content_profile`, policy.contentProfile),
+      auth_profile: this.persistentValue(`${base}.auth_profile`, policy.authProfile),
+      alg_dns_profile: this.persistentValue(`${base}.alg_dns_profile`, policy.dnsProfile),
+      script_profile: this.persistentValue(`${base}.script_profile`, policy.scriptProfile),
+    };
+    const localId = `create-policy-${crypto.randomUUID()}`;
+    this.policyCreatePrefills.set(localId, {fields, position, sourceName});
+    this.openObjectDrawer({kind: 'policy-create', id: localId, title: String(fields['name'])}, origin);
+  }
+
   private openNewContentRule(profileId: string, origin?: HTMLElement): void {
     if (!this.structuralDraftsAvailable ||
         !this.snapshot?.profiles.some(item => item.id === profileId && item.content !== null)) return;
@@ -3187,6 +3266,7 @@ export class SmithproxyApp extends LitElement {
       this.drawerInitialChanges.delete(this.drawerKey(entry));
       this.clearReferencePreviews(entry);
       if (entry.kind === 'content-rule-create') this.contentRuleCreateParents.delete(entry.id);
+      if (entry.kind === 'policy-create') this.policyCreatePrefills.delete(entry.id);
       if (entry.kind === 'signature-flow-create') this.signatureFlowCreateParents.delete(entry.id);
       if (entry.kind === 'signature-create') {
         this.signatureCreateKinds.delete(entry.id);
@@ -3540,6 +3620,7 @@ export class SmithproxyApp extends LitElement {
         parentId: null, position, fields,
       });
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.policyCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
       this.markDrawerSaved(entry);
       await this.loadDraftPreflight();
@@ -8548,8 +8629,10 @@ export class SmithproxyApp extends LitElement {
 
   private renderPolicyCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingPolicyCreate(entry);
+    const prefill = operation ? undefined : this.policyCreatePrefills.get(entry.id);
     const precedingPolicies = this.precedingDraftCreates(entry.id, 'policy', null);
-    const scalar = (name: string, fallback: DraftScalar): DraftScalar => operation?.fields[name] ?? fallback;
+    const scalar = (name: string, fallback: DraftScalar): DraftScalar =>
+      operation?.fields[name] ?? prefill?.fields[name] ?? fallback;
     const text = (name: string, fallback = '') => String(scalar(name, fallback));
     const list = (name: string, fallback: ReadonlyArray<string> = []) => {
       const value = scalar(name, [...fallback]);
@@ -8557,9 +8640,10 @@ export class SmithproxyApp extends LitElement {
         ? value as ReadonlyArray<string> : fallback;
     };
     const readOnly = !this.structuralDraftsAvailable;
-    const placement = operation?.position.kind === 'before'
-      ? `before:${operation.position.reference ?? ''}`
-      : operation?.position.kind ?? 'last';
+    const initialPosition = operation?.position ?? prefill?.position;
+    const placement = initialPosition?.kind === 'before'
+      ? `before:${initialPosition.reference ?? ''}`
+      : initialPosition?.kind ?? 'last';
     const referenceField = (id: string, label: string, type: string, field: string) => {
       const inputId = `policy-create-${id}-${entry.id}`;
       const value = text(field);
@@ -8572,6 +8656,14 @@ export class SmithproxyApp extends LitElement {
     const destinations = list('dst', ['any']);
     const sourcePorts = list('sport');
     const destinationPorts = list('dport');
+    const actionValue = text('action', 'accept');
+    const natValue = text('nat', 'auto');
+    const featureValues = list('features');
+    const legacyAction = !policyActions.some(value => value === actionValue);
+    const legacyNat = !policyNatModes.some(value => value === natValue);
+    const legacyFeatures = featureValues.filter(
+      feature => !policyFeatures.some(canonical => canonical === feature),
+    );
     return html`
       <div class="form-grid wide-form-grid">
         <label for="policy-create-name-${entry.id}">Name</label>
@@ -8613,7 +8705,10 @@ export class SmithproxyApp extends LitElement {
           ${this.renderAddressReferences(entry, `policy-create-destinations-${entry.id}`, destinations)}
         </div>
         <label for="policy-create-action-${entry.id}">Action</label>
-        <select id="policy-create-action-${entry.id}" .value=${text('action', 'accept')} ?disabled=${readOnly}>
+        <select id="policy-create-action-${entry.id}" .value=${actionValue} ?disabled=${readOnly}>
+          ${legacyAction ? html`
+            <option value=${actionValue}>Legacy value: ${actionValue || '(empty)'}</option>
+          ` : nothing}
           <option value="accept">Accept</option><option value="deny">Deny</option>
           <option value="reject">Reject (legacy)</option>
         </select>
@@ -8646,10 +8741,13 @@ export class SmithproxyApp extends LitElement {
         <label>Features</label>
         <div id="policy-create-features-${entry.id}" class="choice-group" role="group" aria-label="Features">
           ${policyFeatures.map(feature => html`<label><input type="checkbox" value=${feature}
-            .checked=${list('features').includes(feature)} ?disabled=${readOnly} />${feature}</label>`)}
+            .checked=${featureValues.includes(feature)} ?disabled=${readOnly} />${feature}</label>`)}
+          ${legacyFeatures.map(feature => html`<label><input type="checkbox" value=${feature} checked
+            ?disabled=${readOnly} />Legacy: ${feature}</label>`)}
         </div>
         <label for="policy-create-nat-${entry.id}">NAT</label>
-        <select id="policy-create-nat-${entry.id}" .value=${text('nat', 'auto')} ?disabled=${readOnly}>
+        <select id="policy-create-nat-${entry.id}" .value=${natValue} ?disabled=${readOnly}>
+          ${legacyNat ? html`<option value=${natValue}>Legacy value: ${natValue || '(empty)'}</option>` : nothing}
           <option value="auto">Automatic</option><option value="none">None</option>
         </select>
       </div>
@@ -8657,6 +8755,18 @@ export class SmithproxyApp extends LitElement {
         Policy order affects traffic decisions. This operation remains in the workspace draft until Smithproxy
         validates and atomically commits it.
       </div>
+      ${prefill ? html`
+        <div class="scope-note">
+          Prefilled from ${prefill.sourceName}. Persistent and pending draft values are copied; temporary augment
+          overlays are not baked into the new policy. Nothing is added until Save to draft is selected.
+        </div>
+      ` : nothing}
+      ${prefill && (legacyAction || legacyNat || legacyFeatures.length > 0) ? html`
+        <div class="validation warning" role="status">
+          This copy contains legacy values. Select supported action and NAT values and remove legacy features before
+          saving it as a new policy.
+        </div>
+      ` : nothing}
     `;
   }
 
@@ -10932,6 +11042,10 @@ export class SmithproxyApp extends LitElement {
     const profile = entry.kind === 'profile'
       ? this.snapshot?.profiles.find(item => item.id === entry.id)
       : undefined;
+    const policy = entry.kind === 'policy'
+      ? this.snapshot?.policies.find(item => item.id === entry.id)
+      : undefined;
+    const cloneBlocker = policy ? this.policyCloneBlocker(policy) : undefined;
     const mappedProfile = Boolean(
       profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns ||
       profile?.script || profile?.authentication,
@@ -11016,6 +11130,15 @@ export class SmithproxyApp extends LitElement {
                 @click=${() => this.deleteStructuralEntry(entry)}>
                 ${deletePending ? 'Deletion pending'
                   : deleteArmed ? `Confirm delete ${deleteTarget.label}` : `Delete ${deleteTarget.label}`}
+              </button>
+            ` : nothing}
+            ${policy ? html`
+              <button class="secondary" type="button"
+                title=${cloneBlocker ?? 'Open a prefilled policy copy without changing the draft'}
+                ?disabled=${cloneBlocker !== undefined || dirty || this.draftSaving || this.draftCommitting}
+                @click=${(event: MouseEvent) =>
+                  this.duplicatePolicy(policy, event.currentTarget as HTMLElement)}>
+                Duplicate policy
               </button>
             ` : nothing}
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>
