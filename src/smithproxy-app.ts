@@ -329,6 +329,7 @@ export class SmithproxyApp extends LitElement {
   @state() private policyBulkProfileKind: ProfileCreateType = 'tls';
   @state() private policyBulkProfileValue = '';
   @state() private policyBulkMessage: string | undefined;
+  @state() private policyBulkDeleteConfirmation: string | undefined;
   @state() private objectListQuery = '';
   @state() private objectKindFilter: ObjectKindFilter = 'all';
   @state() private objectUsageFilter: ObjectUsageFilter = 'all';
@@ -1247,6 +1248,7 @@ export class SmithproxyApp extends LitElement {
     this.policyBulkProfileKind = 'tls';
     this.policyBulkProfileValue = '';
     this.policyBulkMessage = undefined;
+    this.policyBulkDeleteConfirmation = undefined;
     this.discardDraftArmed = false;
     this.invalidateDraftOperations();
     this.clearEditorChain();
@@ -6083,11 +6085,93 @@ export class SmithproxyApp extends LitElement {
     else next.delete(policyId);
     this.selectedPolicyIds = next;
     this.policyBulkMessage = undefined;
+    this.policyBulkDeleteConfirmation = undefined;
   }
 
   private selectPolicies(policyIds: ReadonlyArray<string>): void {
     this.selectedPolicyIds = new Set(policyIds);
     this.policyBulkMessage = undefined;
+    this.policyBulkDeleteConfirmation = undefined;
+  }
+
+  private selectedPolicyDeleteIds(): string[] {
+    return (this.snapshot?.policies ?? [])
+      .filter(policy => this.selectedPolicyIds.has(policy.id))
+      .map(policy => policy.id);
+  }
+
+  private policyBulkDeleteBlocker(policyIds: ReadonlyArray<string>): string | undefined {
+    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !this.snapshot) {
+      return 'Bulk deletion requires reviewed structural transactions and stable entity IDs.';
+    }
+    if (policyIds.length === 0) return 'Select at least one live policy.';
+    if (policyIds.length > 256) return 'At most 256 policies can be deleted in one atomic batch.';
+    const selected = new Set(policyIds);
+    for (const policyId of policyIds) {
+      const index = this.snapshot.policies.findIndex(policy => policy.id === policyId);
+      if (index < 0) return 'A selected policy is no longer present in the live configuration.';
+      if (this.workspaceDraft.changes.some(change => change.path.startsWith(`policy.[${index}].`))) {
+        return 'Remove pending field edits from selected policies before deleting them.';
+      }
+      if (this.workspaceDraft.structuralOperations.some(operation =>
+        operation.collection === 'policy' && 'entityId' in operation && operation.entityId === policyId)) {
+        return 'Remove pending moves or deletions from selected policies before deleting them.';
+      }
+    }
+    if (this.workspaceDraft.structuralOperations.some(operation =>
+      (operation.op === 'create' || operation.op === 'move') && operation.collection === 'policy' &&
+      operation.position.reference !== null && selected.has(operation.position.reference))) {
+      return 'A selected policy anchors another pending policy position.';
+    }
+    return undefined;
+  }
+
+  private async deleteSelectedPolicies(): Promise<void> {
+    if (!this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const policyIds = this.selectedPolicyDeleteIds();
+    const blocker = this.policyBulkDeleteBlocker(policyIds);
+    if (blocker) {
+      this.policyBulkDeleteConfirmation = undefined;
+      this.policyBulkMessage = blocker;
+      return;
+    }
+    const confirmation = [...policyIds].sort().join('\n');
+    if (this.policyBulkDeleteConfirmation !== confirmation) {
+      this.policyBulkDeleteConfirmation = confirmation;
+      this.policyBulkMessage = `Confirm deletion of ${policyIds.length} ${
+        policyIds.length === 1 ? 'policy' : 'policies'} from the workspace draft.`;
+      return;
+    }
+    this.draftSaving = true;
+    this.draftError = undefined;
+    this.policyBulkMessage = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperations(
+        this.draftVersion,
+        policyIds.map((entityId, index) => ({
+          op: 'delete' as const,
+          localId: `delete-policy-batch-${index}-${crypto.randomUUID()}`,
+          collection: 'policy' as const,
+          entityId,
+        })),
+      );
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.selectedPolicyIds = new Set<string>();
+      this.policyBulkDeleteConfirmation = undefined;
+      this.policyBulkMessage = `${policyIds.length} ${policyIds.length === 1 ? 'policy' : 'policies'} marked for deletion in the workspace draft.`;
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Policies could not be deleted from the draft.';
+      await this.loadDraft();
+      this.policyBulkDeleteConfirmation = undefined;
+      this.draftError = message;
+      this.policyBulkMessage = undefined;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
   }
 
   private async setSelectedPolicyField(
@@ -6133,6 +6217,7 @@ export class SmithproxyApp extends LitElement {
     }
     if (changes.length + removePaths.length === 0) {
       this.selectedPolicyIds = new Set<string>();
+      this.policyBulkDeleteConfirmation = undefined;
       this.policyBulkMessage = `Selected policies ${alreadyState}.`;
       return;
     }
@@ -6147,6 +6232,7 @@ export class SmithproxyApp extends LitElement {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.applyDraft(draft);
       this.selectedPolicyIds = new Set<string>();
+      this.policyBulkDeleteConfirmation = undefined;
       this.policyBulkMessage = `${writableCount} ${writableCount === 1 ? 'policy' : 'policies'} ${
         completedState} in the workspace draft.`;
       await this.loadDraftPreflight();
@@ -6289,13 +6375,19 @@ export class SmithproxyApp extends LitElement {
     const selectableVisiblePolicyIds = visiblePolicyRows.flatMap(row => {
       if (row.kind !== 'live') return [];
       const base = `policy.[${row.configIndex}]`;
-      const readOnly = !bulkDraftReady || bulkFields.every(field =>
-        this.originReadOnly(`${base}.${field}`, false));
+      const fieldsReadOnly = bulkFields.every(field => this.originReadOnly(`${base}.${field}`, false));
+      const deletionBlocked = this.policyBulkDeleteBlocker([row.item.id]) !== undefined;
+      const readOnly = !bulkDraftReady || (fieldsReadOnly && deletionBlocked);
       return readOnly ? [] : [row.item.id];
     });
     const selectedCount = [...this.selectedPolicyIds].filter(id =>
       this.snapshot?.policies.some(policy => policy.id === id),
     ).length;
+    const selectedDeleteIds = this.selectedPolicyDeleteIds();
+    const bulkDeleteBlocker = selectedCount > 0
+      ? this.policyBulkDeleteBlocker(selectedDeleteIds) : undefined;
+    const deleteConfirmation = [...selectedDeleteIds].sort().join('\n');
+    const deleteArmed = this.policyBulkDeleteConfirmation === deleteConfirmation;
     const bulkProfileOptions = this.policyBulkProfileOptions(this.policyBulkProfileKind);
     return html`
       <div class="content" tabindex="0">
@@ -6423,6 +6515,12 @@ export class SmithproxyApp extends LitElement {
             <button class="secondary" type="button"
               ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
               @click=${() => { void this.setSelectedPoliciesProfile(); }}>Apply profile</button>
+            <button class="secondary danger-button" type="button"
+              title=${bulkDeleteBlocker ?? 'Add one atomic deletion batch to the workspace draft'}
+              ?disabled=${bulkDeleteBlocker !== undefined || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.deleteSelectedPolicies(); }}>
+              ${deleteArmed ? `Confirm delete ${selectedCount}` : 'Delete selected'}
+            </button>
             <button class="secondary" type="button"
               @click=${() => this.selectPolicies([])}>Clear selection</button>
           ` : nothing}
@@ -6474,11 +6572,12 @@ export class SmithproxyApp extends LitElement {
             );
             const action = this.presentedValue(`${base}.action`, policy.action);
             const enabled = !this.presentedValue(`${base}.disabled`, !policy.enabled);
-            const stateReadOnly = !bulkDraftReady || bulkFields.every(field =>
-              this.originReadOnly(`${base}.${field}`, false));
+            const fieldsReadOnly = bulkFields.every(field => this.originReadOnly(`${base}.${field}`, false));
+            const deletionBlocked = this.policyBulkDeleteBlocker([policy.id]) !== undefined;
+            const stateReadOnly = !bulkDraftReady || (fieldsReadOnly && deletionBlocked);
             return html`<div class="policy-table-row">
               <label class="policy-row-select" title=${stateReadOnly
-                ? 'This policy has no bulk-editable fields in the current configuration session.'
+                ? 'This policy has no available bulk operation in the current configuration session.'
                 : `Select ${name}`}>
                 <input type="checkbox" aria-label=${`Select policy ${name}`}
                   .checked=${this.selectedPolicyIds.has(policy.id)}

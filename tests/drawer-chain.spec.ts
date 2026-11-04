@@ -4503,6 +4503,57 @@ test('stages real policy state changes in one workspace draft operation', async 
   }]);
 });
 
+test('marks selected live policies for deletion in one confirmed atomic batch', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', secondPolicy: true, commitReady: true, structuralDraftsReady: true,
+    structuralBatchMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('button', {name: 'Delete selected'}).click();
+
+  expect(state.structuralBatchMutationRequests).toEqual([]);
+  await expect(actions.getByText('Confirm deletion of 2 policies from the workspace draft.')).toBeVisible();
+  await actions.getByRole('button', {name: 'Confirm delete 2'}).click();
+
+  await expect(actions.getByText('2 policies marked for deletion in the workspace draft.')).toBeVisible();
+  await expect(actions.getByText('0 selected')).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Review draft · 2'})).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toHaveLength(1);
+  const request = state.structuralBatchMutationRequests![0]!;
+  expect(request).toMatchObject({expectedVersion: 0, csrf: '1'});
+  expect(request.operations).toHaveLength(2);
+  expect(request.operations[0]).toMatchObject({
+    op: 'delete', collection: 'policy', entity_id: 'policy-0',
+  });
+  expect(request.operations[1]).toMatchObject({
+    op: 'delete', collection: 'policy', entity_id: 'policy-1',
+  });
+  expect(request.operations.every(operation => typeof operation.local_id === 'string')).toBe(true);
+});
+
+test('blocks bulk policy deletion when a selected policy has a pending field edit', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', secondPolicy: true, commitReady: true, structuralDraftsReady: true,
+    structuralBatchMutationRequests: [],
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  const remove = actions.getByRole('button', {name: 'Delete selected'});
+  await expect(remove).toBeDisabled();
+  await expect(remove).toHaveAttribute(
+    'title', 'Remove pending field edits from selected policies before deleting them.',
+  );
+});
+
 test('excludes augment-owned policy fields from their bulk operation', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', secondPolicy: true, draftMutationBatches: [],

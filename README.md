@@ -77,6 +77,10 @@ ctest --test-dir build --output-on-failure
 A relocatable production bundle can be staged with standard CMake install
 semantics. The installed executable resolves its fingerprinted frontend next to
 the installation automatically; `--assets` remains an explicit override.
+JavaScript, CSS, and split chunks use content-fingerprinted filenames. The GUI
+core serves those files with an immutable one-year cache while every SPA entry
+point is served with `Cache-Control: no-store`, so a deployment immediately
+selects the new asset names without a forced browser refresh.
 
 ```sh
 cmake --install build --prefix ./package
@@ -178,6 +182,10 @@ clears the selected reference. Returning policies to their persistent state
 removes the corresponding overrides instead of retaining no-op changes.
 Each bulk operation independently excludes fields owned by active augment layers
 while leaving the policy available for its other editable fields.
+Selected live policies can also be marked for deletion in one confirmed atomic
+structural batch. The GUI rejects the batch when a selected policy has pending
+field or structural edits, anchors another pending policy position, or the
+selection exceeds the server transaction limit.
 An existing policy can be duplicated into a prefilled structural-create drawer.
 The copy uses persistent values plus pending workspace changes, deliberately does
 not bake temporary augment overlays into the new object, and does not mutate the
