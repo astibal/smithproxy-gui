@@ -4325,6 +4325,33 @@ test('does not fabricate configuration without configuration API access', async 
   expect(protectedRequests).toEqual([]);
 });
 
+test('summarizes the live configuration on the dashboard and opens real inventory views', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  const inventory = page.getByRole('region', {name: 'Live configuration inventory'});
+  await expect(inventory).toContainText('Real values from the authenticated Smithproxy API');
+  const policies = inventory.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Policies'}),
+  });
+  await expect(policies).toContainText('Total1');
+  await expect(policies).toContainText('Enabled1');
+  const objects = inventory.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Reusable objects'}),
+  });
+  await expect(objects).toContainText('Total4');
+  await expect(objects).toContainText('Addresses2');
+  const profiles = inventory.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Profiles'}),
+  });
+  await expect(profiles).toContainText('Total8');
+  await expect(profiles).toContainText('Profile types8');
+
+  await objects.getByRole('button', {name: 'Open objects'}).click();
+  await expect(page.getByRole('heading', {name: 'Configuration objects'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Address objects'})).toContainText('office');
+});
+
 test('removes an open live editor when gateway configuration access is revoked', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: true,
@@ -5334,6 +5361,11 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
 
   await expect(page.locator('link[data-saslik-theme]')).toHaveAttribute('href', '/saslik-theme.css');
   await expect(page.locator('script[data-app="smithproxy-gui"]')).toHaveAttribute('src', '/saslik-theme.js');
+  const inventory = page.getByRole('region', {name: 'Live configuration inventory'});
+  await expect(inventory).toBeVisible();
+  await expect.poll(() => inventory.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const search = page.getByRole('searchbox', {name: 'Search'});
   await expect(search).toBeVisible();
   await search.fill('office');

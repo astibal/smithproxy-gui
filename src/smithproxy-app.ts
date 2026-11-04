@@ -7116,6 +7116,80 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderConfigurationInventory() {
+    const snapshot = this.snapshot;
+    const ready = snapshot?.state === 'ready';
+    if (!ready) {
+      return html`
+        <section class="monitor-panel" aria-label="Live configuration inventory">
+          <div class="runtime-heading">
+            <div><h3>Live configuration</h3><p>Policies and reusable Smithproxy configuration</p></div>
+            <span class="runtime-state warning">● ${snapshot ? displayState(snapshot.state) : 'Discovering'}</span>
+          </div>
+          <div class="metrics-message" role="status">
+            ${snapshot?.detail ?? 'Waiting for authenticated configuration API access.'}
+          </div>
+        </section>`;
+    }
+    const enabledPolicies = snapshot.policies.filter((policy, index) =>
+      !this.presentedValue(`policy.[${index}].disabled`, !policy.enabled)).length;
+    const objectCount = snapshot.addresses.length + snapshot.ports.length + snapshot.protocols.length;
+    const unusedObjects = [...snapshot.addresses, ...snapshot.ports, ...snapshot.protocols]
+      .filter(item => item.usedBy.length === 0).length;
+    const unusedProfiles = snapshot.profiles.filter(profile =>
+      profile.usedBy.length + this.effectivePrivateProfileReferences(profile) === 0).length;
+    const profileTypes = new Set(snapshot.profiles.map(profile => profile.type)).size;
+    const authorities = snapshot.securityAssets?.certificateAuthorityCount;
+    const signatures = snapshot.securityAssets === null ? undefined :
+      snapshot.securityAssets.starttlsSignatureCount + snapshot.securityAssets.detectionSignatureCount;
+    const open = (section: 'Objects' | 'Policy' | 'System') => { this.activeSection = section; };
+    return html`
+      <section class="monitor-panel" aria-label="Live configuration inventory">
+        <div class="runtime-heading">
+          <div><h3>Live configuration</h3><p>Real values from the authenticated Smithproxy API</p></div>
+          <span class="runtime-state success">● Ready</span>
+        </div>
+        <div class="card-grid">
+          <article class="domain-card">
+            <header><div><h3>Policies</h3><p>Ordered traffic decisions</p></div></header>
+            <dl>
+              <dt>Total</dt><dd>${snapshot.policies.length.toLocaleString()}</dd>
+              <dt>Enabled</dt><dd>${enabledPolicies.toLocaleString()}</dd>
+              <dt>Disabled</dt><dd>${(snapshot.policies.length - enabledPolicies).toLocaleString()}</dd>
+            </dl>
+            <button class="secondary" type="button" @click=${() => open('Policy')}>Open policies</button>
+          </article>
+          <article class="domain-card">
+            <header><div><h3>Reusable objects</h3><p>Addresses, ports, and protocols</p></div></header>
+            <dl>
+              <dt>Total</dt><dd>${objectCount.toLocaleString()}</dd>
+              <dt>Addresses</dt><dd>${snapshot.addresses.length.toLocaleString()}</dd>
+              <dt>Unused</dt><dd>${unusedObjects.toLocaleString()}</dd>
+            </dl>
+            <button class="secondary" type="button" @click=${() => open('Objects')}>Open objects</button>
+          </article>
+          <article class="domain-card">
+            <header><div><h3>Profiles</h3><p>Inspection and routing behavior</p></div></header>
+            <dl>
+              <dt>Total</dt><dd>${snapshot.profiles.length.toLocaleString()}</dd>
+              <dt>Profile types</dt><dd>${profileTypes.toLocaleString()}</dd>
+              <dt>Unused</dt><dd>${unusedProfiles.toLocaleString()}</dd>
+            </dl>
+            <button class="secondary" type="button" @click=${() => open('Objects')}>Open profiles</button>
+          </article>
+          <article class="domain-card">
+            <header><div><h3>Trust and signatures</h3><p>TLS authorities and detection rules</p></div></header>
+            <dl>
+              <dt>Authorities</dt><dd>${authorities === undefined ? 'Unavailable' : authorities.toLocaleString()}</dd>
+              <dt>Signatures</dt><dd>${signatures === undefined ? 'Unavailable' : signatures.toLocaleString()}</dd>
+              <dt>Pending draft</dt><dd>${this.draftChangeCount.toLocaleString()}</dd>
+            </dl>
+            <button class="secondary" type="button" @click=${() => open('System')}>Open trust assets</button>
+          </article>
+        </div>
+      </section>`;
+  }
+
   private renderDashboard() {
     const history = this.systemStatus.history;
     const emptySlots = Math.max(0, 60 - history.length);
@@ -7124,6 +7198,7 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Control plane</h2><p>Live reachability of the Smithproxy API</p></div>
         </div>
+        ${this.renderConfigurationInventory()}
         <div class="metric-grid">
           <article class="metric">
             <span class="metric-label">Smithproxy API</span>
