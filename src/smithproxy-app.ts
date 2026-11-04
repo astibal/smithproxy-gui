@@ -302,6 +302,8 @@ export class SmithproxyApp extends LitElement {
   @state() private policyListQuery = '';
   @state() private policyStatusFilter: PolicyStatusFilter = 'all';
   @state() private policyActionFilter = 'all';
+  @state() private selectedPolicyIds = new Set<string>();
+  @state() private policyBulkMessage: string | undefined;
   @state() private objectListQuery = '';
   @state() private objectKindFilter: ObjectKindFilter = 'all';
   @state() private objectUsageFilter: ObjectUsageFilter = 'all';
@@ -462,6 +464,9 @@ export class SmithproxyApp extends LitElement {
     .list-filter:first-child { flex: 1 1 260px; }
     .list-filter input, .list-filter select { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
     .list-filter-summary { align-self: center; color: var(--app-muted); font-size: 12px; white-space: nowrap; }
+    .policy-bulk-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--app-border); background: var(--app-raised); }
+    .policy-bulk-actions strong { margin-right: auto; }
+    .policy-bulk-actions .validation { flex-basis: 100%; }
     .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 3px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .55; }
 
@@ -586,6 +591,14 @@ export class SmithproxyApp extends LitElement {
     .row:not(.heading):hover { background: var(--app-raised); }
     .row.heading { color: var(--app-muted); font-size: 12px; cursor: default; }
     .row strong { font-weight: 650; }
+    .policy-table-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); border-bottom: 1px solid var(--app-border); }
+    .policy-table-row:last-child { border-bottom: 0; }
+    .policy-table-row:not(.heading):hover { background: var(--app-raised); }
+    .policy-row-select { display: grid; place-items: center; }
+    .policy-row-select input { width: 16px; height: 16px; margin: 0; accent-color: var(--app-brand); }
+    .policy-row-main { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px; gap: 16px; align-items: center; min-width: 0; padding: 12px 14px 12px 0; border: 0; background: transparent; color: var(--app-text); text-align: left; cursor: pointer; }
+    .policy-row-main.heading { color: var(--app-muted); font-size: 12px; cursor: default; }
+    .policy-row-main strong { font-weight: 650; }
     .draft-row { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr) auto; gap: 18px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .draft-row:last-child { border-bottom: 0; }
     .draft-row.heading { color: var(--app-muted); font-size: 12px; }
@@ -708,6 +721,8 @@ export class SmithproxyApp extends LitElement {
       .drawer[data-depth='5'] { left: calc(8% + 90px); }
       .row { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
       .row > :nth-child(3), .row > :nth-child(5) { display: none; }
+      .policy-row-main { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
+      .policy-row-main > :nth-child(3), .policy-row-main > :nth-child(5) { display: none; }
       .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
       .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
@@ -1191,6 +1206,8 @@ export class SmithproxyApp extends LitElement {
     this.draftVersion = 0;
     this.draftChangeCount = 0;
     this.draftObjects = new Set<string>();
+    this.selectedPolicyIds = new Set<string>();
+    this.policyBulkMessage = undefined;
     this.discardDraftArmed = false;
     this.invalidateDraftOperations();
     this.clearEditorChain();
@@ -5909,6 +5926,76 @@ export class SmithproxyApp extends LitElement {
     return rows;
   }
 
+  private setPolicySelected(policyId: string, selected: boolean): void {
+    const next = new Set(this.selectedPolicyIds);
+    if (selected) next.add(policyId);
+    else next.delete(policyId);
+    this.selectedPolicyIds = next;
+    this.policyBulkMessage = undefined;
+  }
+
+  private selectPolicies(policyIds: ReadonlyArray<string>): void {
+    this.selectedPolicyIds = new Set(policyIds);
+    this.policyBulkMessage = undefined;
+  }
+
+  private async setSelectedPoliciesEnabled(enabled: boolean): Promise<void> {
+    if (!this.snapshot || !this.draftAvailable || !this.draftClient || this.draftSaving ||
+        this.draftCommitting || this.selectedPolicyIds.size === 0) return;
+    const pendingPaths = new Set((this.workspaceDraft?.changes ?? []).map(change => change.path));
+    const changes: DraftChange[] = [];
+    const removePaths: string[] = [];
+    let writableCount = 0;
+    this.snapshot.policies.forEach((policy, index) => {
+      if (!this.selectedPolicyIds.has(policy.id)) return;
+      const path = `policy.[${index}].disabled`;
+      if (this.originReadOnly(path, false)) return;
+      writableCount += 1;
+      const desired = !enabled;
+      const origin = this.valueOrigin(path);
+      const persistent = typeof origin?.persistentValue === 'boolean'
+        ? origin.persistentValue : !policy.enabled;
+      const pending = this.pendingDraftValue(path);
+      if (pendingPaths.has(path) && desired === persistent) {
+        removePaths.push(path);
+      } else if (pending !== desired) {
+        changes.push({path, value: desired});
+      }
+    });
+    if (writableCount === 0) {
+      this.policyBulkMessage = 'Selected policies are owned by active augment layers.';
+      return;
+    }
+    if (changes.length + removePaths.length === 0) {
+      this.selectedPolicyIds = new Set<string>();
+      this.policyBulkMessage = `Selected policies are already ${enabled ? 'enabled' : 'disabled'}.`;
+      return;
+    }
+    this.draftSaving = true;
+    this.draftError = undefined;
+    this.policyBulkMessage = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = removePaths.length > 0
+        ? await this.draftClient.reconcile(this.draftVersion, changes, removePaths)
+        : await this.draftClient.upsertMany(this.draftVersion, changes);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.selectedPolicyIds = new Set<string>();
+      this.policyBulkMessage = `${writableCount} ${writableCount === 1 ? 'policy' : 'policies'} ${
+        enabled ? 'enabled' : 'disabled'} in the workspace draft.`;
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Policy states could not be saved to the draft.';
+      await this.loadDraft();
+      this.draftError = message;
+      this.policyBulkMessage = undefined;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
   private renderPolicyList() {
     const overlayCounts = this.overlayCounts();
     const structuralOperations = this.workspaceDraft?.structuralOperations ?? [];
@@ -5961,6 +6048,14 @@ export class SmithproxyApp extends LitElement {
       return statusMatches && actionMatches && queryMatches;
     });
     const actions = [...new Set(policyRows.map(row => rowValues(row).action))].sort();
+    const selectableVisiblePolicyIds = visiblePolicyRows.flatMap(row => {
+      if (row.kind !== 'live') return [];
+      const path = `policy.[${row.configIndex}].disabled`;
+      return this.originReadOnly(path, !this.draftAvailable) ? [] : [row.item.id];
+    });
+    const selectedCount = [...this.selectedPolicyIds].filter(id =>
+      this.snapshot?.policies.some(policy => policy.id === id),
+    ).length;
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -6007,9 +6102,26 @@ export class SmithproxyApp extends LitElement {
             Showing ${visiblePolicyRows.length.toLocaleString()} of ${policyRows.length.toLocaleString()}
           </span>
         </div>
+        <div class="policy-bulk-actions" role="group" aria-label="Policy state actions">
+          <strong>${selectedCount.toLocaleString()} selected</strong>
+          <button class="secondary" type="button"
+            ?disabled=${selectableVisiblePolicyIds.length === 0 || this.draftSaving || this.draftCommitting}
+            @click=${() => this.selectPolicies(selectableVisiblePolicyIds)}>Select visible</button>
+          <button class="secondary" type="button"
+            ?disabled=${selectedCount === 0 || !this.draftAvailable || this.draftSaving || this.draftCommitting}
+            @click=${() => { void this.setSelectedPoliciesEnabled(true); }}>Enable selected</button>
+          <button class="secondary" type="button"
+            ?disabled=${selectedCount === 0 || !this.draftAvailable || this.draftSaving || this.draftCommitting}
+            @click=${() => { void this.setSelectedPoliciesEnabled(false); }}>Disable selected</button>
+          <button class="secondary" type="button" ?disabled=${selectedCount === 0}
+            @click=${() => this.selectPolicies([])}>Clear selection</button>
+          ${this.policyBulkMessage ? html`<span class="validation" role="status">${this.policyBulkMessage}</span>` : nothing}
+        </div>
         <div class="table" role="group" aria-label="Policies">
-          <div class="row heading" aria-hidden="true">
-            <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
+          <div class="policy-table-row heading" aria-hidden="true">
+            <span></span><div class="policy-row-main heading">
+              <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
+            </div>
           </div>
           ${visiblePolicyRows.map(row => {
             if (row.kind === 'create') {
@@ -6023,19 +6135,22 @@ export class SmithproxyApp extends LitElement {
                 return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
               };
               const disabled = operation.fields['disabled'] === true;
-              return html`<button class="row" type="button"
-                @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
-                  operation.localId, event.currentTarget as HTMLElement,
-                )}>
-                <strong>${text('name', 'New policy')}</strong>
-                <span>${this.referenceNameSummary(list('src'))}</span>
-                <span>${this.referenceNameSummary(list('dst'))}</span>
-                <span class="action">${text('action', 'unknown')}</span>
-                <span class="row-meta">
-                  <span class="status ${disabled ? 'disabled' : ''}">${disabled ? 'Disabled' : 'Enabled'}</span>
-                  <span class="pending-badge" title="This policy is a pending structural create">Pending create</span>
-                </span>
-              </button>`;
+              return html`<div class="policy-table-row">
+                <span class="policy-row-select" title="Pending policies are edited through their create drawer"></span>
+                <button class="policy-row-main" type="button"
+                  @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+                    operation.localId, event.currentTarget as HTMLElement,
+                  )}>
+                  <strong>${text('name', 'New policy')}</strong>
+                  <span>${this.referenceNameSummary(list('src'))}</span>
+                  <span>${this.referenceNameSummary(list('dst'))}</span>
+                  <span class="action">${text('action', 'unknown')}</span>
+                  <span class="row-meta">
+                    <span class="status ${disabled ? 'disabled' : ''}">${disabled ? 'Disabled' : 'Enabled'}</span>
+                    <span class="pending-badge" title="This policy is a pending structural create">Pending create</span>
+                  </span>
+                </button>
+              </div>`;
             }
             const {item: policy, configIndex: index} = row;
             const base = `policy.[${index}]`;
@@ -6048,18 +6163,31 @@ export class SmithproxyApp extends LitElement {
             );
             const action = this.presentedValue(`${base}.action`, policy.action);
             const enabled = !this.presentedValue(`${base}.disabled`, !policy.enabled);
-            return html`<button class="row" type="button"
-              @click=${(event: MouseEvent) => this.openPolicy(policy, event.currentTarget as HTMLElement)}>
-              <strong>${name}</strong>
-              <span>${this.referenceNameSummary(sources)}</span>
-              <span>${this.referenceNameSummary(destinations)}</span>
-              <span class="action">${action}</span>
-              <span class="row-meta">
-                <span class="status ${enabled ? '' : 'disabled'}">${enabled ? 'Enabled' : 'Disabled'}</span>
-                ${this.renderPendingBadge('policy', policy.id)}
-                ${this.renderOverlayBadge(`policy.[${index}].`, overlayCounts)}
-              </span>
-            </button>`;
+            const stateReadOnly = this.originReadOnly(`${base}.disabled`, !this.draftAvailable);
+            return html`<div class="policy-table-row">
+              <label class="policy-row-select" title=${stateReadOnly
+                ? 'This policy state is read-only for the current configuration session.'
+                : `Select ${name}`}>
+                <input type="checkbox" aria-label=${`Select policy ${name}`}
+                  .checked=${this.selectedPolicyIds.has(policy.id)}
+                  ?disabled=${stateReadOnly || this.draftSaving || this.draftCommitting}
+                  @change=${(event: Event) => this.setPolicySelected(
+                    policy.id, (event.currentTarget as HTMLInputElement).checked,
+                  )} />
+              </label>
+              <button class="policy-row-main" type="button"
+                @click=${(event: MouseEvent) => this.openPolicy(policy, event.currentTarget as HTMLElement)}>
+                <strong>${name}</strong>
+                <span>${this.referenceNameSummary(sources)}</span>
+                <span>${this.referenceNameSummary(destinations)}</span>
+                <span class="action">${action}</span>
+                <span class="row-meta">
+                  <span class="status ${enabled ? '' : 'disabled'}">${enabled ? 'Enabled' : 'Disabled'}</span>
+                  ${this.renderPendingBadge('policy', policy.id)}
+                  ${this.renderOverlayBadge(`policy.[${index}].`, overlayCounts)}
+                </span>
+              </button>
+            </div>`;
           })}
           ${visiblePolicyRows.length === 0 ? html`
             <div class="metrics-message" role="status">No policies match the current filters.</div>

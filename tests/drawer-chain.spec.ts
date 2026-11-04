@@ -4387,6 +4387,61 @@ test('filters real and pending policies by text, status, and action', async ({pa
   await expect(page.getByText('Showing 1 of 2', {exact: true})).toBeVisible();
 });
 
+test('stages real policy state changes in one workspace draft operation', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', secondPolicy: true, draftMutationBatches: [], draftReconcileRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const actions = page.getByRole('group', {name: 'Policy state actions'});
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await expect(actions.getByText('2 selected')).toBeVisible();
+  await actions.getByRole('button', {name: 'Disable selected'}).click();
+
+  await expect(actions.getByText('2 policies disabled in the workspace draft.')).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Review draft · 2'})).toBeVisible();
+  expect(state.draftMutationBatches).toEqual([[
+    {path: 'policy.[0].disabled', value: true},
+    {path: 'policy.[1].disabled', value: true},
+  ]]);
+
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('button', {name: 'Enable selected'}).click();
+  await expect(actions.getByText('2 policies enabled in the workspace draft.')).toBeVisible();
+  await expect(page.getByRole('button', {name: /Review draft/})).toHaveCount(0);
+  expect(state.draftReconcileRequests).toEqual([{
+    expectedVersion: 1,
+    changes: [],
+    removePaths: ['policy.[0].disabled', 'policy.[1].disabled'],
+  }]);
+});
+
+test('excludes augment-owned policy states from bulk changes', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', secondPolicy: true, draftMutationBatches: [],
+    valueOrigins: [{
+      path: 'policy.[0].disabled', persistent_value: false, effective_value: true,
+      layers: [{id: 'temporary-policy-state', priority: 100, value: true, active: true}],
+      editable: false,
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  await expect(page.getByRole('checkbox', {name: 'Select policy Policy 1'})).toBeDisabled();
+  await expect(page.getByRole('checkbox', {name: 'Select policy Policy 2'})).toBeEnabled();
+  const actions = page.getByRole('group', {name: 'Policy state actions'});
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await expect(actions.getByText('1 selected')).toBeVisible();
+  await actions.getByRole('button', {name: 'Disable selected'}).click();
+  expect(state.draftMutationBatches).toEqual([[
+    {path: 'policy.[1].disabled', value: true},
+  ]]);
+});
+
 test('filters real configuration objects by value, kind, and effective usage', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready', unusedProfile: true}, true);
   await page.goto('/');
