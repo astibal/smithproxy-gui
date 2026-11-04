@@ -50,6 +50,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     api_key = None
     authorization_access_key = None
     authorization_requests = 0
+    authorization_status = 200
     auth_token = "a" * 32
     csrf_token = "b" * 32
     response_status = 200
@@ -311,9 +312,11 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                 self.send_error(400)
                 return
             FakeSmithproxy.authorization_requests += 1
-            self.send_response(200)
+            self.send_response(FakeSmithproxy.authorization_status)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
+            if FakeSmithproxy.authorization_status != 200:
+                return
             self.wfile.write(json.dumps({
                 "auth_token": FakeSmithproxy.auth_token,
                 "csrf_token": FakeSmithproxy.csrf_token,
@@ -386,6 +389,22 @@ def wait_for_config(port: int, gateway_secret: str):
             pass
         time.sleep(0.05)
     raise AssertionError(f"configuration endpoint did not become ready: {last_snapshot}")
+
+
+def wait_for_config_detail(port: int, gateway_secret: str, expected: str):
+    headers = {"X-Smithproxy-GUI-Gateway": gateway_secret}
+    last_snapshot = None
+    for _ in range(140):
+        try:
+            _, _, body = request(port, "/api/v1/config/snapshot", headers=headers)
+            snapshot = json.loads(body)
+            last_snapshot = snapshot
+            if snapshot.get("state") == "unavailable" and snapshot.get("detail") == expected:
+                return snapshot, body
+        except OSError:
+            pass
+        time.sleep(0.05)
+    raise AssertionError(f"configuration endpoint did not report {expected!r}: {last_snapshot}")
 
 
 def main() -> int:
@@ -1477,6 +1496,30 @@ def main() -> int:
         assert secret not in output
         assert gateway_secret not in output
         assert previous_gateway_secret not in output
+
+        FakeSmithproxy.authorization_status = 503
+        diagnostic_port = free_port()
+        diagnostic = subprocess.Popen(
+            [binary, "--port", str(diagnostic_port), "--assets", assets],
+            env=configured_environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            wait_for_state(diagnostic_port, "ready")
+            _, diagnostic_body = wait_for_config_detail(
+                diagnostic_port, gateway_secret,
+                "Smithproxy authorization returned HTTP 503")
+            assert secret.encode() not in diagnostic_body
+        finally:
+            FakeSmithproxy.authorization_status = 200
+            diagnostic.send_signal(signal.SIGTERM)
+            diagnostic.wait(timeout=4)
+        diagnostic_output = diagnostic.stdout.read() + diagnostic.stderr.read()
+        assert diagnostic.returncode == 0
+        assert secret not in diagnostic_output
+        assert gateway_secret not in diagnostic_output
     fake.shutdown()
     fake.server_close()
     fake_thread.join(timeout=2)

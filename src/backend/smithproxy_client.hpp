@@ -74,8 +74,13 @@ private:
         std::string csrf_token;
     };
 
+    struct UpstreamSessionResult {
+        std::optional<UpstreamSession> session;
+        std::string error;
+    };
+
     void run(std::stop_token stop_token);
-    [[nodiscard]] std::optional<UpstreamSession> upstream_session(
+    [[nodiscard]] UpstreamSessionResult upstream_session(
         std::optional<std::string_view> rejected_auth_token = std::nullopt) const;
     SmithproxyStatus ping() const;
     RuntimeMetrics fetch_runtime_metrics() const;

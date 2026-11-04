@@ -1468,6 +1468,7 @@ export class SmithproxyApp extends LitElement {
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.configError = error instanceof Error ? error.message : 'Live configuration is unavailable.';
+      this.nextConfigRefreshAt = Date.now() + 5_000;
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.configRefreshInFlight = false;
     }
@@ -12166,6 +12167,7 @@ export class SmithproxyApp extends LitElement {
           <span class="status-secondary" title=${this.configError ?? this.snapshot?.detail ?? ''}>
             Config: ${this.snapshot
               ? `${displayState(this.snapshot.state)}${this.configError ? ' · refresh failed' : ''}`
+              : this.configError ? 'Unavailable'
               : this.configReadAvailable ? 'Loading' : 'Unavailable'}
             ${this.configRefreshDeferred ? ' · refresh paused' : ''}
           </span>

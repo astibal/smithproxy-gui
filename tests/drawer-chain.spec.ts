@@ -68,6 +68,7 @@ type MockState = {
   now?: number;
   collectorLastSuccessAgeMs?: number;
   configFetches?: number;
+  configFailuresRemaining?: number;
   configSnapshotDelayMs?: number;
   draftRequests?: number;
   draftLoadDelayMs?: number;
@@ -715,6 +716,11 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
   if (configRead) {
     await page.route('**/api/v1/config/snapshot', async route => {
       state.configFetches = (state.configFetches ?? 0) + 1;
+      if ((state.configFailuresRemaining ?? 0) > 0) {
+        state.configFailuresRemaining = (state.configFailuresRemaining ?? 0) - 1;
+        await route.fulfill({status: 503, json: {error: {code: 'config.unavailable'}}});
+        return;
+      }
       if (state.configSnapshotDelayMs) {
         await new Promise(resolve => setTimeout(resolve, state.configSnapshotDelayMs));
       }
@@ -4086,6 +4092,27 @@ test('refreshes live configuration only outside an active edit transaction', asy
     .getByRole('button', {name: 'Cancel'}).click();
   await expect.poll(() => state.configFetches).toBe(4);
   await expect(page.locator('.statusbar')).not.toContainText('refresh paused');
+});
+
+test('recovers live configuration automatically after a transient API failure', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', configFetches: 0, configFailuresRemaining: 1,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  await expect.poll(() => state.configFetches).toBe(1);
+  await expect(page.getByRole('button', {name: 'Retry config'})).toBeVisible();
+  await expect(page.locator('.statusbar')).toContainText('Config: Unavailable');
+
+  await page.evaluate(() => {
+    const recoveredAt = Date.now() + 6_000;
+    Date.now = () => recoveredAt;
+    window.dispatchEvent(new Event('online'));
+  });
+  await expect.poll(() => state.configFetches).toBe(2);
+  await expect(page.getByText('Config: Ready')).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Refresh config'})).toBeVisible();
 });
 
 test('recovers from a concurrent draft writer without losing either change set', async ({page}) => {

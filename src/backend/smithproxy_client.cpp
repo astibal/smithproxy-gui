@@ -164,24 +164,28 @@ void SmithproxyMonitor::stop() {
     worker_.join();
 }
 
-std::optional<SmithproxyMonitor::UpstreamSession> SmithproxyMonitor::upstream_session(
+SmithproxyMonitor::UpstreamSessionResult SmithproxyMonitor::upstream_session(
     const std::optional<std::string_view> rejected_auth_token) const {
-    if (!config_) return std::nullopt;
+    if (!config_) return {std::nullopt, "Smithproxy authorization is not configured"};
     std::scoped_lock lock(upstream_session_mutex_);
     if (upstream_session_ &&
         (!rejected_auth_token || upstream_session_->auth_token != *rejected_auth_token)) {
-        return upstream_session_;
+        return {upstream_session_, {}};
     }
     upstream_session_.reset();
 
     std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
-    if (!curl) return std::nullopt;
+    if (!curl) {
+        return {std::nullopt, "Cannot initialize the Smithproxy authorization client"};
+    }
     auto* raw_headers = curl_slist_append(nullptr, "Content-Type: application/json");
-    if (!raw_headers) return std::nullopt;
+    if (!raw_headers) {
+        return {std::nullopt, "Cannot prepare the Smithproxy authorization request"};
+    }
     auto* updated_headers = curl_slist_append(raw_headers, "Accept: application/json");
     if (!updated_headers) {
         curl_slist_free_all(raw_headers);
-        return std::nullopt;
+        return {std::nullopt, "Cannot prepare the Smithproxy authorization request"};
     }
     std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
     const auto request = nlohmann::json{{"access_key", config_->api_key}}.dump();
@@ -194,26 +198,37 @@ std::optional<SmithproxyMonitor::UpstreamSession> SmithproxyMonitor::upstream_se
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
     curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
     const auto result = curl_easy_perform(curl.get());
-    if (result != CURLE_OK || response.exceeded) return std::nullopt;
+    if (response.exceeded) {
+        return {std::nullopt, "Smithproxy authorization response exceeded the limit"};
+    }
+    if (result != CURLE_OK) {
+        return {std::nullopt, std::string("Cannot reach the Smithproxy authorization endpoint: ") +
+                                  curl_easy_strerror(result)};
+    }
     long status_code{};
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
-    if (status_code != 200L) return std::nullopt;
+    if (status_code != 200L) {
+        return {std::nullopt, "Smithproxy authorization returned HTTP " +
+                                  std::to_string(status_code)};
+    }
 
     const auto document = nlohmann::json::parse(response.body, nullptr, false);
-    if (document.is_discarded() || !document.is_object() ||
-        !document.contains("auth_token") || !document["auth_token"].is_string() ||
+    if (document.is_discarded() || !document.is_object()) {
+        return {std::nullopt, "Smithproxy authorization returned invalid JSON"};
+    }
+    if (!document.contains("auth_token") || !document["auth_token"].is_string() ||
         !document.contains("csrf_token") || !document["csrf_token"].is_string()) {
-        return std::nullopt;
+        return {std::nullopt, "Smithproxy authorization omitted required session tokens"};
     }
     UpstreamSession session{
         .auth_token = document["auth_token"].get<std::string>(),
         .csrf_token = document["csrf_token"].get<std::string>(),
     };
     if (!valid_session_token(session.auth_token) || !valid_session_token(session.csrf_token)) {
-        return std::nullopt;
+        return {std::nullopt, "Smithproxy authorization returned invalid session token metadata"};
     }
     upstream_session_ = session;
-    return session;
+    return {std::move(session), {}};
 }
 
 SmithproxyStatus SmithproxyMonitor::status() const {
@@ -269,12 +284,13 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
     const std::string endpoint = config_->api_url + "/api/config/v2/transaction";
     std::optional<std::string> rejected_auth_token;
     for (unsigned attempt = 0U; attempt < 2U; ++attempt) {
-        const auto session = upstream_session(rejected_auth_token);
-        if (!session) return transaction_failure("unauthorized");
+        const auto session_result = upstream_session(rejected_auth_token);
+        if (!session_result.session) return transaction_failure("unauthorized");
+        const auto& session = *session_result.session;
         std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
         if (!curl) return transaction_failure("unavailable");
         auto* raw_headers = append_session_headers(
-            nullptr, session->auth_token, session->csrf_token);
+            nullptr, session.auth_token, session.csrf_token);
         if (!raw_headers) return transaction_failure("unavailable");
         auto* updated_headers = curl_slist_append(raw_headers, "Expect:");
         if (!updated_headers) {
@@ -302,7 +318,7 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
         long status_code{};
         curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
         if ((status_code == 401L || status_code == 403L) && attempt == 0U) {
-            rejected_auth_token = session->auth_token;
+            rejected_auth_token = session.auth_token;
             continue;
         }
         return parse_transaction_response(
@@ -971,16 +987,17 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         const std::string request = "{\"params\":{\"section\":\"" + section + "\",\"name\":\"\"}}";
         std::optional<std::string> rejected_auth_token;
         for (unsigned attempt = 0U; attempt < 2U; ++attempt) {
-            const auto session = upstream_session(rejected_auth_token);
-            if (!session) {
-                return {std::nullopt, "Cannot authorize the Smithproxy configuration session"};
+            const auto session_result = upstream_session(rejected_auth_token);
+            if (!session_result.session) {
+                return {std::nullopt, session_result.error};
             }
+            const auto& session = *session_result.session;
             std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
             if (!curl) {
                 return {std::nullopt, "Cannot initialize the Smithproxy configuration client"};
             }
             auto* raw_headers = append_session_headers(
-                nullptr, session->auth_token, session->csrf_token);
+                nullptr, session.auth_token, session.csrf_token);
             if (!raw_headers) {
                 return {std::nullopt, "Cannot prepare Smithproxy configuration authentication"};
             }
@@ -1007,7 +1024,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
             long status_code{};
             curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
             if ((status_code == 401L || status_code == 403L) && attempt == 0U) {
-                rejected_auth_token = session->auth_token;
+                rejected_auth_token = session.auth_token;
                 continue;
             }
             if (status_code != 200L) {
