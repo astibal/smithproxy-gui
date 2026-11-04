@@ -5300,7 +5300,7 @@ test('filters real configuration objects by value, kind, and effective usage', a
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
-  await expect(page.getByText('Showing 13 of 13', {exact: true})).toBeVisible();
+  await expect(page.getByText('Showing 16 of 16', {exact: true})).toBeVisible();
   const query = page.getByRole('searchbox', {name: 'Filter object list'});
   await query.fill('example.test');
   await expect(page.getByRole('group', {name: 'Address objects'}).getByRole('button')).toHaveCount(1);
@@ -5321,12 +5321,19 @@ test('filters real configuration objects by value, kind, and effective usage', a
   await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('unused');
   await expect(profiles.getByRole('button')).toHaveCount(1);
   await expect(profiles).toContainText('unused-detection');
-  await expect(page.getByText('Showing 1 of 13', {exact: true})).toBeVisible();
+  await expect(page.getByText('Showing 1 of 16', {exact: true})).toBeVisible();
 
   await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('port');
   await expect(page.getByText('No configuration objects match the current filters.')).toBeVisible();
   await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('used');
   await expect(page.getByRole('group', {name: 'Port objects'})).toContainText('https');
+
+  await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('all');
+  await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('security');
+  await query.fill('http1');
+  const trust = page.getByRole('group', {name: 'Trust and signatures'});
+  await expect(trust.getByRole('button')).toHaveCount(1);
+  await expect(trust).toContainText('http/request');
 });
 
 test('removes an open live editor when gateway configuration access is revoked', async ({page}) => {
@@ -5714,6 +5721,17 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(authenticationEditor.getByText('Deprecated compatibility profile')).toBeVisible();
   await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeEnabled();
   await expect(authenticationEditor.getByLabel('Authenticate')).toHaveValue('true');
+  await page.keyboard.press('Escape');
+
+  const trust = page.getByRole('group', {name: 'Trust and signatures'});
+  await expect(trust.getByRole('button', {
+    name: /default Certificate authority CA path configured · redacted/i,
+  })).toBeVisible();
+  await trust.getByRole('button', {name: /smtp\/starttls STARTTLS signature mail · client/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit smtp/starttls'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await trust.getByRole('button', {name: /http\/request Detection signature www · client · severity 4/i}).click();
+  await expect(page.getByRole('dialog', {name: 'Edit http/request'})).toBeVisible();
   await page.keyboard.press('Escape');
 
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCSS('border-radius', '4px');

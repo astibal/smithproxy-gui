@@ -75,7 +75,7 @@ type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavaila
 type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 type PolicyStatusFilter = 'all' | 'enabled' | 'disabled';
-type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile';
+type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile' | 'security';
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
 
@@ -7831,6 +7831,12 @@ export class SmithproxyApp extends LitElement {
     const pendingProtocols = pendingCreates.filter(operation => operation.collection === 'proto_objects');
     const pendingProfiles = pendingCreates.filter(operation =>
       Object.values(profileCreateCollections).includes(operation.collection));
+    const pendingAuthorities = pendingCreates.filter(operation => operation.collection === 'tls_ca');
+    const pendingSignatures = pendingCreates.filter(operation =>
+      operation.collection === 'starttls_signatures' || operation.collection === 'detection_signatures');
+    const pendingSignatureFlows = pendingCreates.filter(operation =>
+      operation.collection === 'starttls_signatures.flow' ||
+      operation.collection === 'detection_signatures.flow');
     const fieldText = (operation: DraftCreateOperation, field: string, fallback = '') => {
       const value = operation.fields[field];
       return typeof value === 'string' ? value : fallback;
@@ -7928,12 +7934,65 @@ export class SmithproxyApp extends LitElement {
       .filter(row => kindMatches('profile') && usageMatches(row.usage > 0) && queryMatches([
         fieldText(row.operation, 'name'), row.type ?? 'profile', row.summary, 'profile', 'pending',
       ]));
+    const securityFilterAvailable = this.objectUsageFilter === 'all';
+    const authorityRows = (this.snapshot?.securityAssets?.certificateAuthorities ?? []).map((item, index) => {
+      const prefix = `tls_ca.[${index}].`;
+      const name = this.presentedValue(`${prefix}name`, item.name);
+      const summary = item.pathConfigured ? 'CA path configured · redacted' : 'CA path not configured';
+      return {item, prefix, name, summary};
+    }).filter(row => kindMatches('security') && securityFilterAvailable &&
+      queryMatches([row.name, row.summary, 'certificate authority', 'ca', 'trust']));
+    const pendingAuthorityRows = pendingAuthorities.map(operation => ({
+      operation,
+      name: fieldText(operation, 'name', 'New certificate authority'),
+      summary: 'CA path configured · redacted',
+    })).filter(row => kindMatches('security') && securityFilterAvailable &&
+      queryMatches([row.name, row.summary, 'certificate authority', 'ca', 'trust', 'pending']));
+    const signatureIndexes = {starttls: 0, detection: 0};
+    const signatureRows = (this.snapshot?.securityAssets?.signatures ?? []).map(item => {
+      const index = signatureIndexes[item.kind]++;
+      const base = `${item.kind}_signatures.[${index}]`;
+      const name = this.presentedValue(`${base}.name`, item.name);
+      const category = this.presentedValue(`${base}.cat`, item.category);
+      const side = this.presentedValue(`${base}.side`, item.side);
+      const severity = this.presentedValue(`${base}.severity`, item.severity);
+      const engine = this.presentedValue(`${base}.engine`, item.engine);
+      const liveFlowIds = new Set(item.flow.map(flow => flow.id));
+      const flowDelta = (this.workspaceDraft?.structuralOperations ?? []).reduce((delta, operation) => {
+        const collection = `${item.kind}_signatures.flow`;
+        if (operation.collection !== collection) return delta;
+        if (operation.op === 'create' && operation.parentId === item.id) return delta + 1;
+        if (operation.op === 'delete' && liveFlowIds.has(operation.entityId)) return delta - 1;
+        return delta;
+      }, 0);
+      const flowCount = Math.max(0, item.flow.length + flowDelta);
+      const summary = `${category} · ${side} · severity ${severity} · ${engine || 'default engine'} · ${flowCount} flow ${
+        flowCount === 1 ? 'step' : 'steps'}`;
+      return {item, prefix: `${base}.`, name, summary};
+    }).filter(row => kindMatches('security') && securityFilterAvailable &&
+      queryMatches([row.name, row.summary, row.item.kind, 'signature', 'trust']));
+    const pendingSignatureRows = pendingSignatures.map(operation => {
+      const kind = operation.collection === 'starttls_signatures' ? 'starttls' : 'detection';
+      const flowCount = pendingSignatureFlows.filter(flow =>
+        flow.parentId === operation.clientId && flow.collection === `${kind}_signatures.flow`).length;
+      const name = fieldText(operation, 'name', 'New signature');
+      const summary = `${fieldText(operation, 'cat', 'unknown')} · ${
+        fieldText(operation, 'side', 'unknown')} · severity ${fieldNumber(operation, 'severity') ?? 'unknown'} · ${
+        fieldText(operation, 'engine', '') || 'default engine'} · ${flowCount} flow ${
+        flowCount === 1 ? 'step' : 'steps'}`;
+      return {operation, kind, name, summary};
+    }).filter(row => kindMatches('security') && securityFilterAvailable &&
+      queryMatches([row.name, row.summary, row.kind, 'signature', 'trust', 'pending']));
     const totalCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
       (this.snapshot?.protocols.length ?? 0) + (this.snapshot?.profiles.length ?? 0) +
-      pendingAddresses.length + pendingPorts.length + pendingProtocols.length + pendingProfiles.length;
+      (this.snapshot?.securityAssets?.certificateAuthorities.length ?? 0) +
+      (this.snapshot?.securityAssets?.signatures.length ?? 0) + pendingAddresses.length +
+      pendingPorts.length + pendingProtocols.length + pendingProfiles.length + pendingAuthorities.length +
+      pendingSignatures.length;
     const visibleCount = addressRows.length + pendingAddressRows.length + portRows.length +
       pendingPortRows.length + protocolRows.length + pendingProtocolRows.length +
-      profileRows.length + pendingProfileRows.length;
+      profileRows.length + pendingProfileRows.length + authorityRows.length + pendingAuthorityRows.length +
+      signatureRows.length + pendingSignatureRows.length;
     const visibleUnusedObjectEntries: DrawerEntry[] = [
       ...addressRows.filter(row => !row.usage.used)
         .map(row => ({kind: 'address' as const, id: row.item.id, title: row.name})),
@@ -7961,7 +8020,7 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
-          <div><h2>Configuration objects</h2><p>Reusable values referenced by policy</p></div>
+          <div><h2>Configuration objects</h2><p>Reusable values, trust roots, and traffic signatures</p></div>
           <div class="structural-action object-structural-action">
             <div class="structural-buttons">
               <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
@@ -8008,7 +8067,7 @@ export class SmithproxyApp extends LitElement {
               }}>
               <option value="all">All kinds</option><option value="address">Addresses</option>
               <option value="port">Ports</option><option value="protocol">Protocols</option>
-              <option value="profile">Profiles</option>
+              <option value="profile">Profiles</option><option value="security">Trust and signatures</option>
             </select>
           </label>
           <label class="list-filter">Usage
@@ -8158,6 +8217,67 @@ export class SmithproxyApp extends LitElement {
                 title="This profile is a pending structural create">Pending create</span></span>
               <span>${usage}</span>
             </button>`)}
+          </div>
+        </section>
+        <section class="object-section"
+          ?hidden=${!kindMatches('security') || !securityFilterAvailable ||
+            (filtersActive && authorityRows.length + pendingAuthorityRows.length +
+              signatureRows.length + pendingSignatureRows.length === 0)}>
+          <div class="section-head">
+            <div><h3>Trust and signatures</h3><p>Paths and matcher expressions remain write-only</p></div>
+            <div class="structural-buttons">
+              <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
+                New certificate authority
+              </button>
+              <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                @click=${(event: MouseEvent) => this.openNewSignature(
+                  'starttls', event.currentTarget as HTMLElement,
+                )}>New STARTTLS signature</button>
+              <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+                @click=${(event: MouseEvent) => this.openNewSignature(
+                  'detection', event.currentTarget as HTMLElement,
+                )}>New detection signature</button>
+            </div>
+          </div>
+          <div class="table" role="group" aria-label="Trust and signatures">
+            <div class="row object-row heading" aria-hidden="true">
+              <span>Name</span><span>Type</span><span>Safe summary</span><span>State</span>
+            </div>
+            ${authorityRows.map(({item: authority, prefix, name, summary}) => html`
+              <button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => this.openAuthority(
+                  authority.id, event.currentTarget as HTMLElement,
+                )}>
+                <strong>${name}</strong><span>Certificate authority</span>
+                <span class="object-value">${summary}</span><span class="row-meta">
+                  ${this.renderPendingBadge('authority', authority.id)}${
+                    this.renderOverlayBadge(prefix, overlayCounts)}</span>
+              </button>`)}
+            ${pendingAuthorityRows.map(({operation, name, summary}) => html`
+              <button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
+                <strong>${name}</strong><span>Certificate authority</span>
+                <span class="object-value">${summary}</span>
+                <span class="pending-badge">Pending create</span>
+              </button>`)}
+            ${signatureRows.map(({item: signature, prefix, name, summary}) => html`
+              <button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => this.openSignature(
+                  signature.id, event.currentTarget as HTMLElement,
+                )}>
+                <strong>${name}</strong><span>${signature.kind === 'starttls' ? 'STARTTLS' : 'Detection'} signature</span>
+                <span class="object-value">${summary}</span><span class="row-meta">
+                  ${this.renderPendingBadge('signature', signature.id)}${
+                    this.renderOverlayBadge(prefix, overlayCounts)}</span>
+              </button>`)}
+            ${pendingSignatureRows.map(({operation, kind, name, summary}) => html`
+              <button class="row object-row" type="button"
+                @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
+                <strong>${name}</strong><span>${kind === 'starttls' ? 'STARTTLS' : 'Detection'} signature</span>
+                <span class="object-value">${summary}</span>
+                <span class="pending-badge">Pending create</span>
+              </button>`)}
           </div>
         </section>
       </div>
