@@ -4485,6 +4485,12 @@ test('excludes augment-owned policy fields from their bulk operation', async ({p
       path: 'policy.[0].disabled', persistent_value: false, effective_value: true,
       layers: [{id: 'temporary-policy-state', priority: 100, value: true, active: true}],
       editable: false,
+    }, {
+      path: 'policy.[0].features', persistent_value: ['sinkhole'], effective_value: ['sinkhole', 'sink-all'],
+      layers: [{
+        id: 'temporary-policy-features', priority: 100, value: ['sinkhole', 'sink-all'], active: true,
+      }],
+      editable: false,
     }],
   };
   await mockSystemApi(page, state, true);
@@ -4501,6 +4507,14 @@ test('excludes augment-owned policy fields from their bulk operation', async ({p
   expect(state.draftMutationBatches).toEqual([[
     {path: 'policy.[1].disabled', value: true},
   ]]);
+
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('button', {name: 'Add feature'}).click();
+  await expect(actions.getByText('1 policy updated with feature statistics in the workspace draft.')).toBeVisible();
+  expect(state.draftMutationBatches).toEqual([
+    [{path: 'policy.[1].disabled', value: true}],
+    [{path: 'policy.[1].features', value: ['statistics']}],
+  ]);
 });
 
 test('stages a real action change for selected policies in one batch', async ({page}) => {
@@ -4519,6 +4533,59 @@ test('stages a real action change for selected policies in one batch', async ({p
     {path: 'policy.[0].action', value: 'deny'},
     {path: 'policy.[1].action', value: 'deny'},
   ]]);
+});
+
+test('updates policy NAT and feature lists without dropping legacy values or retaining no-op overrides', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', secondPolicy: true, draftMutationBatches: [], draftReconcileRequests: [],
+    draftMutationVersions: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('combobox', {name: 'Set selected policy NAT'}).selectOption('none');
+  await actions.getByRole('button', {name: 'Apply NAT'}).click();
+  await expect(actions.getByText('2 policies changed to NAT None in the workspace draft.')).toBeVisible();
+
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('combobox', {name: 'Selected policy feature'}).selectOption('statistics');
+  await expectNoWcagViolations(page);
+  await actions.getByRole('button', {name: 'Add feature'}).click();
+  await expect(actions.getByText(
+    '2 policies updated with feature statistics in the workspace draft.',
+  )).toBeVisible();
+
+  expect(state.draftMutationVersions).toEqual([0, 1]);
+  expect(state.draftMutationBatches).toEqual([
+    [
+      {path: 'policy.[0].nat', value: 'none'},
+      {path: 'policy.[1].nat', value: 'none'},
+    ],
+    [
+      {path: 'policy.[0].features', value: ['sinkhole', 'statistics']},
+      {path: 'policy.[1].features', value: ['statistics']},
+    ],
+  ]);
+
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('button', {name: 'Remove feature'}).click();
+  await expect(actions.getByText(
+    '2 policies updated without feature statistics in the workspace draft.',
+  )).toBeVisible();
+  expect(state.draftReconcileRequests).toEqual([{
+    expectedVersion: 2,
+    changes: [],
+    removePaths: ['policy.[0].features', 'policy.[1].features'],
+  }]);
+
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('button', {name: 'Apply NAT'}).click();
+  await expect(actions.getByText('Selected policies already use NAT None.')).toBeVisible();
+  expect(state.draftMutationBatches).toHaveLength(3);
+  expect(state.draftReconcileRequests).toHaveLength(1);
 });
 
 test('assigns live policies to a pending profile and restores mixed persistent references', async ({page}) => {

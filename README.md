@@ -170,10 +170,12 @@ show a pending badge, and state explicitly that Smithproxy runtime remains
 unchanged until a validated atomic commit.
 The Policy inventory supports selecting the current filtered live rows and
 staging their enabled state, traffic action, or routing and inspection profile
-references in one optimistic workspace-draft mutation. Profile assignment can
-target a compatible live profile or a profile created in the same draft, and
-`None` clears the selected reference. Returning policies to their persistent
-state removes the corresponding overrides instead of retaining no-op changes.
+references in one optimistic workspace-draft mutation. NAT mode can be changed
+in the same workflow, while canonical features can be added or removed without
+discarding unrelated or legacy entries. Profile assignment can target a
+compatible live profile or a profile created in the same draft, and `None`
+clears the selected reference. Returning policies to their persistent state
+removes the corresponding overrides instead of retaining no-op changes.
 Each bulk operation independently excludes fields owned by active augment layers
 while leaving the policy available for its other editable fields.
 An existing policy can be duplicated into a prefilled structural-create drawer.
