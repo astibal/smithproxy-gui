@@ -10,6 +10,7 @@
 #include "job_store.hpp"
 #include "interface_metrics.hpp"
 #include "live_sessions.hpp"
+#include "log.hpp"
 #include "neighbor_metrics.hpp"
 #include "operational_alerts.hpp"
 #include "operational_event_store.hpp"
@@ -28,6 +29,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <regex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,6 +42,15 @@ int main() {
     unsetenv("SMITHPROXY_CA_CERT");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
+
+    const auto log_line = format_log_line(
+        LogLevel::Warning,
+        "Configuration refresh delayed",
+        std::chrono::system_clock::from_time_t(1'800'000'000));
+    assert(std::regex_match(
+        log_line,
+        std::regex{
+            R"(^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}[+-][0-9]{2}:[0-9]{2} WARNING Configuration refresh delayed$)"}));
     assert(normalize_base_path("/") == "/");
     assert(normalize_base_path("/ws001/smithproxy-gui/") == "/ws001/smithproxy-gui");
     assert(!normalize_base_path("ws001"));

@@ -102,6 +102,7 @@ add_library(smithproxy_gui_core
     src/backend/json.cpp
     src/backend/job_store.cpp
     src/backend/live_sessions.cpp
+    src/backend/log.cpp
     src/backend/neighbor_metrics.cpp
     src/backend/operational_alerts.cpp
     src/backend/operational_event_store.cpp
