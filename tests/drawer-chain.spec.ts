@@ -1487,6 +1487,7 @@ test('validates the immutable workspace draft through the Smithproxy transaction
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByRole('button', {name: 'Refresh config'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
 
   const preflight = page.getByRole('region', {name: 'Draft preflight'});
@@ -3588,6 +3589,10 @@ test('refreshes live configuration only outside an active edit transaction', asy
   await page.goto('/');
   await expect(page.getByText('Config: Ready')).toBeVisible();
   await expect.poll(() => state.configFetches).toBe(1);
+  const refresh = page.getByRole('button', {name: 'Refresh config'});
+  await expect(refresh).toBeEnabled();
+  await refresh.click();
+  await expect.poll(() => state.configFetches).toBe(2);
 
   const advanceRefreshWindow = async () => page.evaluate(() => {
     const advanced = Date.now() + 31_000;
@@ -3595,20 +3600,21 @@ test('refreshes live configuration only outside an active edit transaction', asy
   });
   await advanceRefreshWindow();
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect.poll(() => state.configFetches).toBe(2);
+  await expect.poll(() => state.configFetches).toBe(3);
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
+  await expect(refresh).toBeDisabled();
   await advanceRefreshWindow();
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.locator('.statusbar')).toContainText('Config: Ready');
   await expect(page.locator('.statusbar')).toContainText('refresh paused');
-  await expect.poll(() => state.configFetches).toBe(2);
+  await expect.poll(() => state.configFetches).toBe(3);
 
   await page.getByRole('dialog', {name: 'Edit Policy 1'})
     .getByRole('button', {name: 'Cancel'}).click();
-  await expect.poll(() => state.configFetches).toBe(3);
+  await expect.poll(() => state.configFetches).toBe(4);
   await expect(page.locator('.statusbar')).not.toContainText('refresh paused');
 });
 

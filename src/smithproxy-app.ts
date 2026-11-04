@@ -338,6 +338,7 @@ export class SmithproxyApp extends LitElement {
   @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
+  @state() private configRefreshInFlight = false;
   @state() private searchQuery = '';
   @state() private authIdentityEditors = new Map<string, AuthIdentityEditorState>();
 
@@ -356,7 +357,6 @@ export class SmithproxyApp extends LitElement {
   private eventStreamEpoch = 0;
   private closeEventStream: (() => void) | undefined;
   private eventStreamDegradedTimer: number | undefined;
-  private configRefreshInFlight = false;
   private nextConfigRefreshAt = 0;
   private drawerHistoryDepth = 0;
   private drawerHistoryNavigationPending = false;
@@ -10815,6 +10815,17 @@ export class SmithproxyApp extends LitElement {
                   this.discardDraftArmed = false;
                   this.activeSection = 'Draft';
                 }}>Review draft · ${this.draftChangeCount}</button>
+            ` : nothing}
+            ${this.configReadAvailable && this.draftChangeCount === 0 ? html`
+              <button class="secondary config-refresh" type="button"
+                title=${this.drawers.length > 0
+                  ? 'Close the active editor before refreshing configuration.'
+                  : this.configError ?? 'Reload the authenticated Smithproxy configuration snapshot.'}
+                ?disabled=${this.configRefreshInFlight || this.drawers.length > 0 || this.draftSaving ||
+                  this.draftCommitting}
+                @click=${() => { void this.refreshConfiguration(true); }}>
+                ${this.configRefreshInFlight ? 'Refreshing…' : this.configError ? 'Retry config' : 'Refresh config'}
+              </button>
             ` : nothing}
             <input class="search" type="search" aria-label="Search" maxlength="128"
               placeholder="Search configuration" .value=${this.searchQuery}
