@@ -6100,6 +6100,37 @@ export class SmithproxyApp extends LitElement {
       .map(policy => policy.id);
   }
 
+  private selectedPolicyMoveIds(): string[] {
+    const operations = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation | DraftMoveOperation =>
+        operation.collection === 'policy' && (operation.op === 'create' || operation.op === 'move'),
+    );
+    return this.draftOrderedRows(this.snapshot?.policies ?? [], operations)
+      .flatMap(row => row.kind === 'live' && this.selectedPolicyIds.has(row.item.id) ? [row.item.id] : []);
+  }
+
+  private policyBulkMoveBlocker(policyIds: ReadonlyArray<string>): string | undefined {
+    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !this.snapshot) {
+      return 'Bulk ordering requires reviewed structural transactions and stable entity IDs.';
+    }
+    if (policyIds.length === 0) return 'Select at least one live policy.';
+    if (policyIds.length > 256) return 'At most 256 policies can be moved in one atomic batch.';
+    const selected = new Set(policyIds);
+    if (policyIds.some(policyId => !this.snapshot!.policies.some(policy => policy.id === policyId))) {
+      return 'A selected policy is no longer present in the live configuration.';
+    }
+    if (this.workspaceDraft.structuralOperations.some(operation =>
+      operation.collection === 'policy' && 'entityId' in operation && selected.has(operation.entityId))) {
+      return 'Remove pending moves or deletions from selected policies before reordering them.';
+    }
+    if (this.workspaceDraft.structuralOperations.some(operation =>
+      (operation.op === 'create' || operation.op === 'move') && operation.collection === 'policy' &&
+      operation.position.reference !== null && selected.has(operation.position.reference))) {
+      return 'A selected policy anchors another pending policy position.';
+    }
+    return undefined;
+  }
+
   private policyBulkDeleteBlocker(policyIds: ReadonlyArray<string>): string | undefined {
     if (!this.structuralDraftsAvailable || !this.workspaceDraft || !this.snapshot) {
       return 'Bulk deletion requires reviewed structural transactions and stable entity IDs.';
@@ -6167,6 +6198,64 @@ export class SmithproxyApp extends LitElement {
       const message = error instanceof Error ? error.message : 'Policies could not be deleted from the draft.';
       await this.loadDraft();
       this.policyBulkDeleteConfirmation = undefined;
+      this.draftError = message;
+      this.policyBulkMessage = undefined;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  private async moveSelectedPolicies(position: 'first' | 'last'): Promise<void> {
+    if (!this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const policyIds = this.selectedPolicyMoveIds();
+    const blocker = this.policyBulkMoveBlocker(policyIds);
+    if (blocker) {
+      this.policyBulkMessage = blocker;
+      return;
+    }
+    const orderedIds = this.draftOrderedRows(
+      this.snapshot?.policies ?? [],
+      (this.workspaceDraft?.structuralOperations ?? []).filter(
+        (operation): operation is DraftCreateOperation | DraftMoveOperation =>
+          operation.collection === 'policy' && (operation.op === 'create' || operation.op === 'move'),
+      ),
+    ).map(row => row.id);
+    const edgeIds = position === 'first'
+      ? orderedIds.slice(0, policyIds.length)
+      : orderedIds.slice(-policyIds.length);
+    if (edgeIds.length === policyIds.length && edgeIds.every((id, index) => id === policyIds[index])) {
+      this.selectedPolicyIds = new Set<string>();
+      this.policyBulkDeleteConfirmation = undefined;
+      this.policyBulkMessage = `Selected policies are already ${position}.`;
+      return;
+    }
+    const mutationIds = position === 'first' ? [...policyIds].reverse() : policyIds;
+    this.draftSaving = true;
+    this.draftError = undefined;
+    this.policyBulkMessage = undefined;
+    this.policyBulkDeleteConfirmation = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperations(
+        this.draftVersion,
+        mutationIds.map(entityId => ({
+          op: 'move' as const,
+          localId: `move-policy-batch-${crypto.randomUUID()}`,
+          collection: 'policy' as const,
+          entityId,
+          position: {kind: position, reference: null},
+        })),
+      );
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.selectedPolicyIds = new Set<string>();
+      this.policyBulkMessage = `${policyIds.length} ${policyIds.length === 1 ? 'policy' : 'policies'} moved ${
+        position} in the workspace draft.`;
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Policies could not be reordered in the draft.';
+      await this.loadDraft();
       this.draftError = message;
       this.policyBulkMessage = undefined;
     } finally {
@@ -6377,15 +6466,19 @@ export class SmithproxyApp extends LitElement {
       const base = `policy.[${row.configIndex}]`;
       const fieldsReadOnly = bulkFields.every(field => this.originReadOnly(`${base}.${field}`, false));
       const deletionBlocked = this.policyBulkDeleteBlocker([row.item.id]) !== undefined;
-      const readOnly = !bulkDraftReady || (fieldsReadOnly && deletionBlocked);
+      const orderingBlocked = this.policyBulkMoveBlocker([row.item.id]) !== undefined;
+      const readOnly = !bulkDraftReady || (fieldsReadOnly && deletionBlocked && orderingBlocked);
       return readOnly ? [] : [row.item.id];
     });
     const selectedCount = [...this.selectedPolicyIds].filter(id =>
       this.snapshot?.policies.some(policy => policy.id === id),
     ).length;
     const selectedDeleteIds = this.selectedPolicyDeleteIds();
+    const selectedMoveIds = this.selectedPolicyMoveIds();
     const bulkDeleteBlocker = selectedCount > 0
       ? this.policyBulkDeleteBlocker(selectedDeleteIds) : undefined;
+    const bulkMoveBlocker = selectedCount > 0
+      ? this.policyBulkMoveBlocker(selectedMoveIds) : undefined;
     const deleteConfirmation = [...selectedDeleteIds].sort().join('\n');
     const deleteArmed = this.policyBulkDeleteConfirmation === deleteConfirmation;
     const bulkProfileOptions = this.policyBulkProfileOptions(this.policyBulkProfileKind);
@@ -6515,6 +6608,14 @@ export class SmithproxyApp extends LitElement {
             <button class="secondary" type="button"
               ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
               @click=${() => { void this.setSelectedPoliciesProfile(); }}>Apply profile</button>
+            <button class="secondary" type="button"
+              title=${bulkMoveBlocker ?? 'Move the selection to the first positions in one atomic batch'}
+              ?disabled=${bulkMoveBlocker !== undefined || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.moveSelectedPolicies('first'); }}>Move selected first</button>
+            <button class="secondary" type="button"
+              title=${bulkMoveBlocker ?? 'Move the selection to the last positions in one atomic batch'}
+              ?disabled=${bulkMoveBlocker !== undefined || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.moveSelectedPolicies('last'); }}>Move selected last</button>
             <button class="secondary danger-button" type="button"
               title=${bulkDeleteBlocker ?? 'Add one atomic deletion batch to the workspace draft'}
               ?disabled=${bulkDeleteBlocker !== undefined || this.draftSaving || this.draftCommitting}
@@ -6574,7 +6675,8 @@ export class SmithproxyApp extends LitElement {
             const enabled = !this.presentedValue(`${base}.disabled`, !policy.enabled);
             const fieldsReadOnly = bulkFields.every(field => this.originReadOnly(`${base}.${field}`, false));
             const deletionBlocked = this.policyBulkDeleteBlocker([policy.id]) !== undefined;
-            const stateReadOnly = !bulkDraftReady || (fieldsReadOnly && deletionBlocked);
+            const orderingBlocked = this.policyBulkMoveBlocker([policy.id]) !== undefined;
+            const stateReadOnly = !bulkDraftReady || (fieldsReadOnly && deletionBlocked && orderingBlocked);
             return html`<div class="policy-table-row">
               <label class="policy-row-select" title=${stateReadOnly
                 ? 'This policy has no available bulk operation in the current configuration session.'

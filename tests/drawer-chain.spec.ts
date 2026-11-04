@@ -4554,6 +4554,65 @@ test('blocks bulk policy deletion when a selected policy has a pending field edi
   );
 });
 
+test('moves selected live policies last in one atomic batch while preserving their order', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', secondPolicy: true, commitReady: true, structuralDraftsReady: true,
+    structuralBatchMutationRequests: [],
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'pending-policy', client_id: 'pending-policy',
+      collection: 'policy', position: {last: true},
+      fields: {
+        name: 'Pending policy', disabled: false, proto: 'tcp', src: ['office'], sport: [],
+        dst: ['internet'], dport: [], features: [], action: 'accept', nat: 'auto', routing: '',
+        tls_profile: '', ssh_profile: '', detection_profile: '', content_profile: '',
+        auth_profile: '', alg_dns_profile: '', script_profile: '',
+      },
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('button', {name: 'Move selected last'}).click();
+
+  await expect(actions.getByText('2 policies moved last in the workspace draft.')).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Review draft · 3'})).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toHaveLength(1);
+  const request = state.structuralBatchMutationRequests![0]!;
+  expect(request).toMatchObject({expectedVersion: 1, csrf: '1'});
+  expect(request.operations).toHaveLength(2);
+  expect(request.operations[0]).toMatchObject({
+    op: 'move', collection: 'policy', entity_id: 'policy-0', position: {last: true},
+  });
+  expect(request.operations[1]).toMatchObject({
+    op: 'move', collection: 'policy', entity_id: 'policy-1', position: {last: true},
+  });
+  const rows = page.getByRole('group', {name: 'Policies'}).getByRole('button');
+  await expect(rows.nth(0)).toContainText('Pending policy');
+  await expect(rows.nth(1)).toContainText('Policy 1');
+  await expect(rows.nth(2)).toContainText('Policy 2');
+});
+
+test('does not retain a bulk policy move when the selection is already at the edge', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', secondPolicy: true, commitReady: true, structuralDraftsReady: true,
+    structuralBatchMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  await page.getByRole('checkbox', {name: 'Select policy Policy 1'}).check();
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
+  await actions.getByRole('button', {name: 'Move selected first'}).click();
+
+  await expect(actions.getByText('Selected policies are already first.')).toBeVisible();
+  await expect(actions.getByText('0 selected')).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toEqual([]);
+});
+
 test('excludes augment-owned policy fields from their bulk operation', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', secondPolicy: true, draftMutationBatches: [],

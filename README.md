@@ -186,6 +186,10 @@ Selected live policies can also be marked for deletion in one confirmed atomic
 structural batch. The GUI rejects the batch when a selected policy has pending
 field or structural edits, anchors another pending policy position, or the
 selection exceeds the server transaction limit.
+The same selection can be moved to the first or last policy positions in one
+atomic structural batch while preserving its internal order. Existing moves,
+deletions, and pending operations anchored to the selection block reordering;
+an already satisfied edge placement does not create a no-op draft.
 An existing policy can be duplicated into a prefilled structural-create drawer.
 The copy uses persistent values plus pending workspace changes, deliberately does
 not bake temporary augment overlays into the new object, and does not mutate the
