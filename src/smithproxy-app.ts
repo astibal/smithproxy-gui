@@ -632,6 +632,10 @@ export class SmithproxyApp extends LitElement {
     .draft-path { overflow-wrap: anywhere; color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
     .draft-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: end; }
     .draft-value { overflow-wrap: anywhere; }
+    .draft-transition { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 9px; align-items: center; }
+    .draft-transition-value { min-width: 0; padding: 7px 9px; border: 1px solid var(--app-border); background: var(--app-canvas); overflow-wrap: anywhere; }
+    .draft-transition-value small { display: block; margin-bottom: 2px; color: var(--app-muted); font-size: 10px; text-transform: uppercase; }
+    .draft-transition-arrow { color: var(--app-muted); }
     .preflight { padding: 15px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-surface); }
     .preflight h3 { margin: 0; font-size: 15px; }
     .preflight-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -776,6 +780,8 @@ export class SmithproxyApp extends LitElement {
       .workspace .drawer[data-depth] { inset: 0; left: 0; }
       .form-grid { grid-template-columns: 1fr; gap: 7px; }
       .form-grid.wide-form-grid { grid-template-columns: 1fr; }
+      .draft-transition { grid-template-columns: 1fr; }
+      .draft-transition-arrow { rotate: 90deg; justify-self: center; }
       .write-only-control { grid-template-columns: 1fr; }
       .identity-row { grid-template-columns: 1fr; }
       .form-grid > *, .reference-edit { min-width: 0; }
@@ -2808,16 +2814,7 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
-  private draftValueSummary(path: string, value: DraftScalar): string {
-    if (value === '[redacted:clear]') return 'Cleared · redacted';
-    if (value === '[redacted:replace]') return 'Replaced · redacted';
-    if (typeof value === 'string') {
-      const redactedCollection = /^\[redacted:replace:(\d+)]$/.exec(value);
-      if (redactedCollection) {
-        const count = Number(redactedCollection[1]);
-        return `Replaced · redacted · ${count} item${count === 1 ? '' : 's'}`;
-      }
-    }
+  private draftPathIsSensitive(path: string): boolean {
     const sensitivePaths = new Set([
       'settings.webhook.url', 'settings.syslog_server', 'settings.write_payload_dir',
       'settings.log_file', 'settings.sslkeylog_file', 'settings.certs_path',
@@ -2842,7 +2839,20 @@ export class SmithproxyApp extends LitElement {
       (path.startsWith('tls_ca.[') && path.endsWith('].path')) ||
       ((path.startsWith('starttls_signatures.[') || path.startsWith('detection_signatures.[')) &&
         path.endsWith('].signature'));
-    if (sensitivePaths.has(path) || indexedSensitivePath) {
+    return sensitivePaths.has(path) || indexedSensitivePath;
+  }
+
+  private draftValueSummary(path: string, value: DraftScalar): string {
+    if (value === '[redacted:clear]') return 'Cleared · redacted';
+    if (value === '[redacted:replace]') return 'Replaced · redacted';
+    if (typeof value === 'string') {
+      const redactedCollection = /^\[redacted:replace:(\d+)]$/.exec(value);
+      if (redactedCollection) {
+        const count = Number(redactedCollection[1]);
+        return `Replaced · redacted · ${count} item${count === 1 ? '' : 's'}`;
+      }
+    }
+    if (this.draftPathIsSensitive(path)) {
       if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared · redacted';
       const count = Array.isArray(value) ? ` · ${value.length} item${value.length === 1 ? '' : 's'}` : '';
       return `Replaced · redacted${count}`;
@@ -2853,6 +2863,16 @@ export class SmithproxyApp extends LitElement {
     }
     const text = String(value);
     return text.length > 160 ? `${text.slice(0, 157)}…` : text;
+  }
+
+  private persistentDraftValueSummary(
+    path: string,
+    persistentValues: ReadonlyMap<string, ConfigValue>,
+  ): string {
+    if (this.draftPathIsSensitive(path)) return 'Current value · redacted';
+    const originValue = this.valueOrigin(path)?.persistentValue;
+    const value = originValue ?? persistentValues.get(path);
+    return value === undefined ? 'Unavailable' : this.draftValueSummary(path, value);
   }
 
   private policyDisplayName(policy: PolicySummary): string {
@@ -5781,6 +5801,8 @@ export class SmithproxyApp extends LitElement {
   private renderDraftReview() {
     const changes = this.workspaceDraft?.changes ?? [];
     const structuralOperations = this.workspaceDraft?.structuralOperations ?? [];
+    const persistentValues = this.snapshot
+      ? persistentConfigurationValues(this.snapshot) : new Map<string, ConfigValue>();
     const pendingCount = changes.length + structuralOperations.length;
     const commitReady = this.draftPreflight?.commitAvailable && this.draftValidation &&
       this.draftValidation.draftVersion === this.draftVersion &&
@@ -5907,7 +5929,7 @@ export class SmithproxyApp extends LitElement {
           <div class="table" role="table" aria-label="Pending draft changes">
             <div class="draft-row heading" role="row">
               <span role="columnheader">Configuration path</span>
-              <span role="columnheader">Draft value</span>
+              <span role="columnheader">Persistent → pending</span>
               <span role="columnheader">Action</span>
             </div>
             ${changes.map(change => {
@@ -5915,7 +5937,18 @@ export class SmithproxyApp extends LitElement {
               const removalBlocker = this.draftChangeRemovalBlocker(change.path);
               return html`<div class="draft-row" role="row">
                 <span class="draft-path" role="cell">${change.path}</span>
-                <span class="draft-value" role="cell">${this.draftValueSummary(change.path, change.value)}</span>
+                <span class="draft-value" role="cell">
+                  <span class="draft-transition">
+                    <span class="draft-transition-value">
+                      <small>Persistent</small>
+                      ${this.persistentDraftValueSummary(change.path, persistentValues)}
+                    </span>
+                    <span class="draft-transition-arrow" aria-hidden="true">→</span>
+                    <span class="draft-transition-value">
+                      <small>Pending</small>${this.draftValueSummary(change.path, change.value)}
+                    </span>
+                  </span>
+                </span>
                 <span class="draft-actions" role="cell">
                   ${target ? html`
                     <button class="secondary" type="button"
@@ -5934,16 +5967,28 @@ export class SmithproxyApp extends LitElement {
             })}
             ${structuralOperations.map(operation => {
               const removalBlocker = this.pendingCreateRemovalBlocker(operation.localId);
+              const before = operation.op === 'create' ? 'Does not exist'
+                : operation.op === 'delete' ? operation.entityId : `${operation.entityId} · Current position`;
+              const position = operation.op === 'create' || operation.op === 'move'
+                ? operation.position.kind === 'first' ? 'First'
+                  : operation.position.kind === 'last' ? 'Last'
+                    : `Before ${operation.position.reference}`
+                : undefined;
+              const after = operation.op === 'create'
+                ? `${typeof operation.fields['name'] === 'string'
+                  ? operation.fields['name'] : operation.clientId} · ${Object.keys(operation.fields).length} fields · ${position}`
+                : operation.op === 'delete' ? 'Deleted' : position!;
               return html`
               <div class="draft-row" role="row">
                 <span class="draft-path" role="cell">
                   ${operation.collection} · ${operation.op}
                 </span>
                 <span class="draft-value" role="cell">
-                  ${operation.op === 'create'
-                    ? `${typeof operation.fields['name'] === 'string'
-                      ? operation.fields['name'] : operation.clientId} · ${Object.keys(operation.fields).length} fields`
-                    : operation.entityId}
+                  <span class="draft-transition">
+                    <span class="draft-transition-value"><small>Persistent</small>${before}</span>
+                    <span class="draft-transition-arrow" aria-hidden="true">→</span>
+                    <span class="draft-transition-value"><small>Pending</small>${after}</span>
+                  </span>
                 </span>
                 <span class="draft-actions" role="cell">
                   ${(operation.op === 'create' && [

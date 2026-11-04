@@ -246,6 +246,11 @@ snapshot reader because its display IDs are index-derived; activation requires
 an exact reviewed collection schema and opaque stable entity IDs bound to the
 draft revision. The review surface already counts, displays, removes, validates,
 and commits scalar and structural operations as one transaction.
+Every scalar row presents its persistent value next to the pending value, using
+the augment origin's persistent base when available instead of the temporary
+effective overlay. Write-only paths show fixed redacted posture on both sides.
+Structural creates, deletes, and moves use the same before/after presentation,
+so the operator can review existence and ordering changes before validation.
 When the core advertises `structural_drafts`, the Objects and Policy views enable
 typed right-side creation drawers for address, port, protocol, policy, routing,
 TLS, detection, DNS ALG, authentication, content, SSH, and script entries.

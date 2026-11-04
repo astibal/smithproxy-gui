@@ -1192,6 +1192,16 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('Replaced · redacted · 2 items');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('private-user');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('private-admin');
+  const addressDiff = page.getByRole('table', {name: 'Pending draft changes'})
+    .getByRole('row').filter({hasText: 'address_objects.[0].value'});
+  await expect(addressDiff.locator('.draft-transition-value')).toHaveText([
+    /Persistent\s*10\.0\.0\.0\/24/u, /Pending\s*10\.0\.1\.0\/24/u,
+  ]);
+  const authorityDiff = page.getByRole('table', {name: 'Pending draft changes'})
+    .getByRole('row').filter({hasText: 'tls_ca.[0].path'});
+  await expect(authorityDiff.locator('.draft-transition-value')).toHaveText([
+    /Persistent\s*Current value · redacted/u, /Pending\s*Replaced · redacted/u,
+  ]);
   await expect(page.getByRole('button', {name: 'Edit policy.[0].action'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Edit address_objects.[0].value'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Edit routing.[0].dnat_lb_method'})).toBeVisible();
@@ -2113,6 +2123,11 @@ test('reviews and removes a structural draft operation', async ({page}) => {
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(table).toContainText('policy · move');
   await expect(table).toContainText('cfg:policy:second');
+  await expect(table.getByRole('row').filter({hasText: 'policy · move'}).locator('.draft-transition-value'))
+    .toHaveText([
+      /Persistent\s*cfg:policy:second · Current position/u,
+      /Pending\s*Before cfg:policy:first/u,
+    ]);
   await table.getByRole('button', {name: /Remove move operation move-policy-1/u}).click();
 
   await expect(page.getByText('No pending changes')).toBeVisible();
@@ -2145,6 +2160,9 @@ test('removes pending create operations only after their draft dependents', asyn
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   const addressRow = table.getByRole('row').filter({hasText: 'address_objects · create'});
   const policyRow = table.getByRole('row').filter({hasText: 'policy · create'});
+  await expect(addressRow.locator('.draft-transition-value')).toHaveText([
+    /Persistent\s*Does not exist/u, /Pending\s*pending-office · 3 fields · Last/u,
+  ]);
   const addressRemove = addressRow.getByRole('button', {name: /Remove create operation/u});
   await expect(addressRemove).toBeDisabled();
   await expect(addressRemove).toHaveAttribute(
@@ -3900,6 +3918,13 @@ test('keeps persistent, effective, and pending values distinct in overlay chains
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  const reviewRow = page.getByRole('table', {name: 'Pending draft changes'})
+    .getByRole('row').filter({hasText: 'policy.[0].action'});
+  await expect(reviewRow.locator('.draft-transition-value')).toHaveText([
+    /Persistent\s*accept/u, /Pending\s*drop/u,
+  ]);
+  await expect(reviewRow).not.toContainText('reject');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /Policy 1 office internet drop .* Pending .* overridden/i}).click();
 
