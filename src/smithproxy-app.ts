@@ -7319,6 +7319,117 @@ export class SmithproxyApp extends LitElement {
     return values;
   }
 
+  private profileInventorySummary(item: ProfileObject, prefix: string | undefined): string {
+    const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
+      prefix ? this.presentedValue(`${prefix}${field}`, fallback) : fallback;
+    const strings = (field: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
+      prefix ? this.presentedListValue(`${prefix}${field}`, fallback, 'string') : fallback;
+    const enabled = (value: boolean) => value ? 'on' : 'off';
+
+    if (item.routing) {
+      const destinations = strings('dnat_address', item.routing.destinationAddresses).length;
+      const method = scalar('dnat_lb_method', item.routing.loadBalancingMethod);
+      return `${destinations} destination${destinations === 1 ? '' : 's'} · ${method}`;
+    }
+    if (item.tls) {
+      return `inspection ${enabled(scalar('inspect', item.tls.inspect))} · PFS ${
+        enabled(scalar('use_pfs', item.tls.usePfs))} · alerts ${scalar('alerts', item.tls.alerts)}`;
+    }
+    if (item.detection) {
+      const modes = ['disabled', 'observe', 'enforce'] as const;
+      const mode = scalar('mode', item.detection.mode);
+      return `${modes[mode]} · engines ${enabled(scalar('engines_enabled', item.detection.enginesEnabled))} · KB ${
+        enabled(scalar('kb_enabled', item.detection.knowledgeBaseEnabled))}`;
+    }
+    if (item.content) {
+      const rules = item.content.ruleCount;
+      return `${rules} rule${rules === 1 ? '' : 's'} · ${
+        scalar('write_format', item.content.writeFormat).toUpperCase()} capture ${
+        enabled(scalar('write_payload', item.content.writePayload))} · webhook ${
+        enabled(scalar('webhook_enable', item.content.webhookEnabled))}`;
+    }
+    if (item.ssh) {
+      const allowed = [
+        ['shell', item.ssh.shell], ['exec', item.ssh.exec], ['subsystem', item.ssh.subsystem],
+        ['pty', item.ssh.pty], ['environment', item.ssh.environment],
+        ['local_forward', item.ssh.localForward], ['remote_forward', item.ssh.remoteForward],
+        ['x11', item.ssh.x11], ['agent', item.ssh.agent],
+      ].filter(([field, fallback]) => scalar(String(field), Boolean(fallback))).length;
+      return `${scalar('hostkey_policy', item.ssh.hostKeyPolicy)} host key · ${allowed}/9 channels allowed`;
+    }
+    if (item.dns) {
+      return `request ID ${enabled(scalar('match_request_id', item.dns.matchRequestId))} · randomize ${
+        enabled(scalar('randomize_id', item.dns.randomizeId))} · cache ${
+        enabled(scalar('cached_responses', item.dns.cachedResponses))}`;
+    }
+    if (item.script) {
+      const type = scalar(
+        'type', item.script.runtime === 'python' ? '0' : item.script.runtime === 'go' ? '1' : '-1',
+      );
+      const runtime = type === '0' ? 'Python' : type === '1' ? 'Go' : 'Unknown runtime';
+      return `${runtime} · module ${item.script.modulePathConfigured ? 'configured' : 'not configured'}`;
+    }
+    if (item.authentication) {
+      const identities = item.authentication.identityCount;
+      return `authentication ${enabled(scalar('authenticate', item.authentication.authenticate))} · ${
+        identities} identit${identities === 1 ? 'y' : 'ies'}`;
+    }
+    return 'Metadata only';
+  }
+
+  private pendingProfileInventorySummary(
+    operation: DraftCreateOperation,
+    type: ProfileCreateType | undefined,
+  ): string {
+    const text = (field: string, fallback: string) =>
+      typeof operation.fields[field] === 'string' ? String(operation.fields[field]) : fallback;
+    const flag = (field: string, fallback: boolean) =>
+      typeof operation.fields[field] === 'boolean' ? Boolean(operation.fields[field]) : fallback;
+    const listCount = (field: string) => Array.isArray(operation.fields[field])
+      ? (operation.fields[field] as ReadonlyArray<unknown>).length : 0;
+    const enabled = (value: boolean) => value ? 'on' : 'off';
+
+    if (type === 'routing') {
+      const destinations = listCount('dnat_address');
+      return `${destinations} destination${destinations === 1 ? '' : 's'} · ${
+        text('dnat_lb_method', 'round-robin')}`;
+    }
+    if (type === 'tls') {
+      return `inspection ${enabled(flag('inspect', true))} · PFS ${enabled(flag('use_pfs', true))} · alerts ${
+        text('alerts', 'unusual')}`;
+    }
+    if (type === 'detection') {
+      const modeValue = operation.fields['mode'];
+      const mode = typeof modeValue === 'number' && modeValue >= 0 && modeValue <= 2
+        ? ['disabled', 'observe', 'enforce'][modeValue] : 'unknown';
+      return `${mode} · engines ${enabled(flag('engines_enabled', true))} · KB ${enabled(flag('kb_enabled', true))}`;
+    }
+    if (type === 'content') {
+      return `0 rules · ${text('write_format', 'smcap').toUpperCase()} capture ${
+        enabled(flag('write_payload', false))} · webhook ${enabled(flag('webhook_enable', false))}`;
+    }
+    if (type === 'ssh') {
+      const fields = [
+        'shell', 'exec', 'subsystem', 'pty', 'environment', 'local_forward', 'remote_forward', 'x11', 'agent',
+      ];
+      const allowed = fields.filter(field => text(field, 'reject') !== 'reject').length;
+      return `${text('hostkey_policy', 'strict')} host key · ${allowed}/9 channels allowed`;
+    }
+    if (type === 'dns') {
+      return `request ID ${enabled(flag('match_request_id', true))} · randomize ${
+        enabled(flag('randomize_id', true))} · cache ${enabled(flag('cached_responses', true))}`;
+    }
+    if (type === 'script') {
+      const runtime = text('type', '-1') === '0' ? 'Python' : text('type', '-1') === '1' ? 'Go' : 'Unknown runtime';
+      return `${runtime} · module ${operation.fields['script-file'] ? 'configured' : 'not configured'}`;
+    }
+    if (type === 'authentication') {
+      return `authentication ${enabled(flag('authenticate', true))} · identity mappings ${
+        operation.fields['identities'] ? 'configured' : 'empty'}`;
+    }
+    return 'Metadata only';
+  }
+
   private systemSearchValues(settings: SystemSettings, debug: DebugSettings | null): ReadonlyArray<string | number> {
     const scalar = <T extends ConfigScalar>(path: string, fallback: T): T =>
       this.presentedValue(`settings.${path}`, fallback);
@@ -7801,17 +7912,21 @@ export class SmithproxyApp extends LitElement {
     const profileRows = (this.snapshot?.profiles ?? []).map(item => {
       const prefix = profilePrefixes.get(item.id);
       const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
+      const summary = this.profileInventorySummary(item, prefix);
       const liveCount = item.usedBy.length + this.effectivePrivateProfileReferences(item);
       const collection = profileCreateCollections[item.type as ProfileCreateType];
       const usage = collection ? liveUsage(name, liveCount, collection) :
         {used: liveCount > 0, label: String(liveCount), pendingCount: 0};
-      return {item, prefix, name, usage};
+      return {item, prefix, name, summary, usage};
     }).filter(row => kindMatches('profile') && usageMatches(row.usage.used) &&
-      queryMatches([row.name, row.item.type, 'profile', 'routing']));
-    const pendingProfileRows = pendingProfiles.map(operation => ({operation, usage: pendingUsage(operation)}))
+      queryMatches([row.name, row.item.type, row.summary, 'profile', 'routing']));
+    const pendingProfileRows = pendingProfiles.map(operation => {
+      const type = profileTypes.get(operation.collection);
+      return {operation, type, summary: this.pendingProfileInventorySummary(operation, type),
+        usage: pendingUsage(operation)};
+    })
       .filter(row => kindMatches('profile') && usageMatches(row.usage > 0) && queryMatches([
-        fieldText(row.operation, 'name'), profileTypes.get(row.operation.collection) ?? 'profile',
-        'profile', 'pending',
+        fieldText(row.operation, 'name'), row.type ?? 'profile', row.summary, 'profile', 'pending',
       ]));
     const totalCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
       (this.snapshot?.protocols.length ?? 0) + (this.snapshot?.profiles.length ?? 0) +
@@ -8026,21 +8141,20 @@ export class SmithproxyApp extends LitElement {
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value exposure</span><span>Uses</span>
             </div>
-            ${profileRows.map(({item: profile, prefix, name, usage}) => {
+            ${profileRows.map(({item: profile, prefix, name, summary, usage}) => {
               return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openProfile(profile.id, event.currentTarget as HTMLElement)}>
                 <strong>${name}</strong><span class="action">${profile.type}</span>
-                <span class="row-meta"><span>${profile.routing || profile.tls || profile.detection || profile.content || profile.ssh ||
-                  profile.dns || profile.script || profile.authentication
-                  ? 'Typed details' : 'Metadata only'}</span>${this.renderPendingBadge('profile', profile.id)}${this.renderOverlayBadge(prefix, overlayCounts)}</span>
+                <span class="row-meta"><span class="object-value">${summary}</span>${
+                  this.renderPendingBadge('profile', profile.id)}${this.renderOverlayBadge(prefix, overlayCounts)}</span>
                 <span title=${usage.pendingCount > 0 ? 'Includes pending draft references' : nothing}>${usage.label}</span>
               </button>`;
             })}
-            ${pendingProfileRows.map(({operation, usage}) => html`<button class="row object-row" type="button"
+            ${pendingProfileRows.map(({operation, type, summary, usage}) => html`<button class="row object-row" type="button"
               @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
               <strong>${fieldText(operation, 'name', 'New profile')}</strong>
-              <span class="action">${profileTypes.get(operation.collection) ?? 'profile'}</span>
-              <span class="row-meta"><span>Typed details</span><span class="pending-badge"
+              <span class="action">${type ?? 'profile'}</span>
+              <span class="row-meta"><span class="object-value">${summary}</span><span class="pending-badge"
                 title="This profile is a pending structural create">Pending create</span></span>
               <span>${usage}</span>
             </button>`)}

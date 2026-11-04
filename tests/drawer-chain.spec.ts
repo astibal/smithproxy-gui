@@ -1244,7 +1244,7 @@ test('validates and clears write-only authentication identities', async ({page})
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('group', {name: 'Profiles and routing'})
-    .getByRole('button', {name: /legacy-auth authentication Typed details/i}).click();
+    .getByRole('button', {name: /^legacy-auth authentication /i}).click();
   const profileEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
   await profileEditor.getByRole('button', {name: /2 redacted entries Edit/i}).click();
   const identityEditor = page.getByRole('dialog', {name: 'Edit legacy-auth identities'});
@@ -1731,7 +1731,7 @@ test('shows pending policy and object values in their configuration lists', asyn
   await expect(page.getByRole('group', {name: 'Protocol objects'})
     .getByRole('button', {name: /pending-tcp IP protocol 17 .* Pending/i})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Profiles and routing'})
-    .getByRole('button', {name: /pending-main routing Typed details Pending/i})).toBeVisible();
+    .getByRole('button', {name: /pending-main routing 1 destination · round-robin Pending/i})).toBeVisible();
 
   const search = page.getByRole('searchbox', {name: 'Search'});
   await search.fill('Pending policy');
@@ -2061,7 +2061,7 @@ test('shows and reopens pending security rules and flow creates in context', asy
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('group', {name: 'Profiles and routing'})
-    .getByRole('button', {name: /capture content Typed details/u}).click();
+    .getByRole('button', {name: /^capture content /u}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
   const pendingRule = contentEditor.getByRole('group', {name: 'Content rules'})
     .getByRole('button').filter({hasText: 'Pending rule'});
@@ -4400,7 +4400,7 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
-  await expect(profiles.getByRole('button', {name: /main routing Typed details/u}))
+  await expect(profiles.getByRole('button', {name: /^main routing /u}))
     .toContainText('2 overridden');
 
   const verify = async (
@@ -4414,24 +4414,24 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
     await page.keyboard.press('Escape');
   };
 
-  await verify(/main routing Typed details/u, 'main', 'Load balancing', 'sticky-l3');
-  await profiles.getByRole('button', {name: /main routing Typed details/u}).click();
+  await verify(/^main routing /u, 'main', 'Load balancing', 'sticky-l3');
+  await profiles.getByRole('button', {name: /^main routing /u}).click();
   const routing = page.getByRole('dialog', {name: 'Edit main'});
   await expect(routing.getByLabel('Destination addresses')).toHaveValue('office-net');
   await expect(routing.getByLabel('Destination addresses')).toHaveAttribute('readonly', '');
   await page.keyboard.press('Escape');
-  await verify(/inspect tls Typed details/u, 'inspect', 'Allow invalid certificates', 'true');
-  await profiles.getByRole('button', {name: /inspect tls Typed details/u}).click();
+  await verify(/^inspect tls /u, 'inspect', 'Allow invalid certificates', 'true');
+  await profiles.getByRole('button', {name: /^inspect tls /u}).click();
   const tls = page.getByRole('dialog', {name: 'Edit inspect'});
   await expect(tls.getByLabel('Certificate warning ports')).toHaveValue('8443, 44443');
   await expect(tls.getByLabel('Certificate warning ports')).toHaveAttribute('readonly', '');
   await page.keyboard.press('Escape');
-  await verify(/detect detection Typed details/u, 'detect', 'Detection phase', '2');
-  await verify(/capture content Typed details/u, 'capture', 'Capture format', 'pcap');
-  await verify(/default-ssh ssh Typed details/u, 'default-ssh', 'Shell', 'reject');
-  await verify(/resolver dns Typed details/u, 'resolver', 'Randomize upstream ID', 'false');
-  await verify(/audit script Typed details/u, 'audit', 'Runtime', 'go');
-  await verify(/legacy-auth authentication Typed details/u, 'legacy-auth', 'Authenticate', 'false');
+  await verify(/^detect detection /u, 'detect', 'Detection phase', '2');
+  await verify(/^capture content /u, 'capture', 'Capture format', 'pcap');
+  await verify(/^default-ssh ssh /u, 'default-ssh', 'Shell', 'reject');
+  await verify(/^resolver dns /u, 'resolver', 'Randomize upstream ID', 'false');
+  await verify(/^audit script /u, 'audit', 'Runtime', 'go');
+  await verify(/^legacy-auth authentication /u, 'legacy-auth', 'Authenticate', 'false');
 });
 
 test('binds system, capture, and nested security editors to persistent values', async ({page}) => {
@@ -4520,7 +4520,7 @@ test('binds system, capture, and nested security editors to persistent values', 
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
-  await profiles.getByRole('button', {name: /capture content Typed details/u}).click();
+  await profiles.getByRole('button', {name: /^capture content /u}).click();
   const content = page.getByRole('dialog', {name: 'Edit capture'});
   await content.getByRole('button', {name: /Rule 1/u}).click();
   const rule = page.getByRole('dialog', {name: 'Edit Content rule 1'});
@@ -5308,8 +5308,17 @@ test('filters real configuration objects by value, kind, and effective usage', a
 
   await query.clear();
   await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('profile');
-  await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('unused');
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+  await expect(profiles.getByRole('button', {name: /inspect tls inspection on · PFS on · alerts unusual/i}))
+    .toBeVisible();
+  await expect(profiles.getByRole('button', {name: /capture content 2 rules · PCAP_SINGLE capture off · webhook on/i}))
+    .toBeVisible();
+  await query.fill('pcap_single');
+  await expect(profiles.getByRole('button')).toHaveCount(1);
+  await expect(profiles).toContainText('capture');
+
+  await query.clear();
+  await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('unused');
   await expect(profiles.getByRole('button')).toHaveCount(1);
   await expect(profiles).toContainText('unused-detection');
   await expect(page.getByText('Showing 1 of 13', {exact: true})).toBeVisible();
@@ -5678,29 +5687,29 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('dialog', {name: 'Edit tcp'})).toBeVisible();
   await page.keyboard.press('Escape');
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
-  await profiles.getByRole('button', {name: /detect detection Typed details/i}).click();
+  await profiles.getByRole('button', {name: /^detect detection /i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit detect'}).getByLabel('Detection phase')).toHaveValue('1');
   await page.keyboard.press('Escape');
-  await profiles.getByRole('button', {name: /capture content Typed details/i}).click();
+  await profiles.getByRole('button', {name: /^capture content /i}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
   await expect(contentEditor.getByRole('group', {name: 'Content rules'})
     .getByRole('button', {name: /Rule \d/i})).toHaveCount(2);
   await expect(contentEditor.getByText(/Current session filters and all content-rule payloads stay inside/i)).toBeVisible();
   await page.keyboard.press('Escape');
-  await profiles.getByRole('button', {name: /default-ssh ssh Typed details/i}).click();
+  await profiles.getByRole('button', {name: /^default-ssh ssh /i}).click();
   const sshEditor = page.getByRole('dialog', {name: 'Edit default-ssh'});
   await expect(sshEditor.getByLabel('Host key', {exact: true})).toHaveValue('unchanged');
   await expect(sshEditor.getByLabel('Upstream host-key policy')).toHaveValue('strict');
   await page.keyboard.press('Escape');
-  await profiles.getByRole('button', {name: /resolver dns Typed details/i}).click();
+  await profiles.getByRole('button', {name: /^resolver dns /i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit resolver'}).getByText('Randomize upstream ID')).toBeVisible();
   await page.keyboard.press('Escape');
-  await profiles.getByRole('button', {name: /audit script Typed details/i}).click();
+  await profiles.getByRole('button', {name: /^audit script /i}).click();
   const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
   await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
   await expect(scriptEditor.getByLabel('Runtime')).toHaveValue('python');
   await page.keyboard.press('Escape');
-  await profiles.getByRole('button', {name: /legacy-auth authentication Typed details/i}).click();
+  await profiles.getByRole('button', {name: /^legacy-auth authentication /i}).click();
   const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
   await expect(authenticationEditor.getByText('Deprecated compatibility profile')).toBeVisible();
   await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeEnabled();
@@ -6136,7 +6145,7 @@ test('rotates nested content rules without exposing expressions', async ({page})
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
-  await profiles.getByRole('button', {name: /capture content Typed details/i}).click();
+  await profiles.getByRole('button', {name: /^capture content /i}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
   await contentEditor.getByRole('group', {name: 'Content rules'})
     .getByRole('button', {name: /Rule 1/}).click();
