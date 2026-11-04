@@ -202,6 +202,10 @@ and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls. Pending structural
 policy, object, profile, trust-asset, content-rule, and signature-flow creates
 appear in their primary contextual lists and reopen the same draft create drawer.
+The filtered Objects inventory can mark every visible unused address, port, and
+protocol object for deletion in one confirmed atomic batch. Used objects,
+pending references, field edits, and existing structural operations remain
+excluded by the same dependency guards as individual deletion.
 Policy and routing reference fields preview the value being typed. Known objects
 open directly in the next nested editor. Objects and profiles created earlier in
 the same workspace draft are marked as pending and reopen their structural create

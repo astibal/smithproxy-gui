@@ -333,6 +333,8 @@ export class SmithproxyApp extends LitElement {
   @state() private objectListQuery = '';
   @state() private objectKindFilter: ObjectKindFilter = 'all';
   @state() private objectUsageFilter: ObjectUsageFilter = 'all';
+  @state() private objectBulkMessage: string | undefined;
+  @state() private objectBulkDeleteConfirmation: string | undefined;
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
   @state() private auditError: string | undefined;
@@ -1249,6 +1251,8 @@ export class SmithproxyApp extends LitElement {
     this.policyBulkProfileValue = '';
     this.policyBulkMessage = undefined;
     this.policyBulkDeleteConfirmation = undefined;
+    this.objectBulkMessage = undefined;
+    this.objectBulkDeleteConfirmation = undefined;
     this.discardDraftArmed = false;
     this.invalidateDraftOperations();
     this.clearEditorChain();
@@ -2487,6 +2491,79 @@ export class SmithproxyApp extends LitElement {
         this.draftSaving = false;
         this.structuralDeleteArmedKey = undefined;
       }
+    }
+  }
+
+  private async deleteObjectEntries(entries: ReadonlyArray<DrawerEntry>): Promise<void> {
+    if (!this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const unique = entries.filter((entry, index) =>
+      ['address', 'port', 'protocol'].includes(entry.kind) &&
+      entries.findIndex(candidate => this.drawerKey(candidate) === this.drawerKey(entry)) === index);
+    if (unique.length === 0) {
+      this.objectBulkDeleteConfirmation = undefined;
+      this.objectBulkMessage = 'No visible unused primitive object is available for deletion.';
+      return;
+    }
+    if (unique.length > 256) {
+      this.objectBulkDeleteConfirmation = undefined;
+      this.objectBulkMessage = 'At most 256 objects can be deleted in one atomic batch.';
+      return;
+    }
+    const targets: Array<{
+      entry: DrawerEntry;
+      collection: DraftDeleteOperation['collection'];
+      entityId: string;
+    }> = [];
+    for (const entry of unique) {
+      const target = this.structuralDeleteTarget(entry);
+      if (!target) {
+        this.objectBulkDeleteConfirmation = undefined;
+        this.objectBulkMessage = 'A visible object is no longer present in the live configuration.';
+        return;
+      }
+      const blocker = this.structuralDeleteBlocker(entry, target);
+      if (blocker) {
+        this.objectBulkDeleteConfirmation = undefined;
+        this.objectBulkMessage = blocker;
+        return;
+      }
+      targets.push({entry, collection: target.collection, entityId: target.entityId});
+    }
+    const confirmation = targets.map(({entry}) => this.drawerKey(entry)).sort().join('\n');
+    if (this.objectBulkDeleteConfirmation !== confirmation) {
+      this.objectBulkDeleteConfirmation = confirmation;
+      this.objectBulkMessage = `Confirm deletion of ${targets.length} visible unused ${
+        targets.length === 1 ? 'object' : 'objects'} from the workspace draft.`;
+      return;
+    }
+    this.draftSaving = true;
+    this.draftError = undefined;
+    this.objectBulkMessage = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperations(
+        this.draftVersion,
+        targets.map(({entry, collection, entityId}) => ({
+          op: 'delete' as const,
+          localId: `delete-${entry.kind}-batch-${crypto.randomUUID()}`,
+          collection,
+          entityId,
+        })),
+      );
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.objectBulkDeleteConfirmation = undefined;
+      this.objectBulkMessage = `${targets.length} ${targets.length === 1 ? 'object' : 'objects'} marked for deletion in the workspace draft.`;
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      const message = error instanceof Error ? error.message : 'Objects could not be deleted from the draft.';
+      await this.loadDraft();
+      this.objectBulkDeleteConfirmation = undefined;
+      this.draftError = message;
+      this.objectBulkMessage = undefined;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
     }
   }
 
@@ -7318,6 +7395,27 @@ export class SmithproxyApp extends LitElement {
     const visibleCount = addressRows.length + pendingAddressRows.length + portRows.length +
       pendingPortRows.length + protocolRows.length + pendingProtocolRows.length +
       profileRows.length + pendingProfileRows.length;
+    const visibleUnusedPrimitiveEntries: DrawerEntry[] = [
+      ...addressRows.filter(row => !row.usage.used)
+        .map(row => ({kind: 'address' as const, id: row.item.id, title: row.name})),
+      ...portRows.filter(row => !row.usage.used)
+        .map(row => ({kind: 'port' as const, id: row.item.id, title: row.name})),
+      ...protocolRows.filter(row => !row.usage.used)
+        .map(row => ({kind: 'protocol' as const, id: row.item.id, title: row.name})),
+    ];
+    const bulkDeleteEntries = visibleUnusedPrimitiveEntries.filter(entry => {
+      const target = this.structuralDeleteTarget(entry);
+      return target !== undefined && this.structuralDeleteBlocker(entry, target) === undefined;
+    });
+    const bulkDeleteFingerprint = bulkDeleteEntries.map(entry => this.drawerKey(entry)).sort().join('\n');
+    const bulkDeleteArmed = bulkDeleteEntries.length > 0 &&
+      this.objectBulkDeleteConfirmation === bulkDeleteFingerprint;
+    const bulkDeleteBlocker = !this.structuralDraftsAvailable
+      ? 'Requires reviewed structural transactions and stable entity IDs.'
+      : bulkDeleteEntries.length > 256
+        ? 'At most 256 objects can be deleted in one atomic batch.'
+      : bulkDeleteEntries.length === 0
+        ? 'No visible unused primitive object is available for deletion.' : undefined;
     const filtersActive = query.length > 0 || this.objectKindFilter !== 'all' || this.objectUsageFilter !== 'all';
     return html`
       <div class="content" tabindex="0">
@@ -7356,12 +7454,16 @@ export class SmithproxyApp extends LitElement {
             <input type="search" aria-label="Filter object list" .value=${this.objectListQuery}
               @input=${(event: Event) => {
                 this.objectListQuery = (event.currentTarget as HTMLInputElement).value.slice(0, 128);
+                this.objectBulkMessage = undefined;
+                this.objectBulkDeleteConfirmation = undefined;
               }} />
           </label>
           <label class="list-filter">Kind
             <select aria-label="Filter objects by kind" .value=${this.objectKindFilter}
               @change=${(event: Event) => {
                 this.objectKindFilter = (event.currentTarget as HTMLSelectElement).value as ObjectKindFilter;
+                this.objectBulkMessage = undefined;
+                this.objectBulkDeleteConfirmation = undefined;
               }}>
               <option value="all">All kinds</option><option value="address">Addresses</option>
               <option value="port">Ports</option><option value="protocol">Protocols</option>
@@ -7372,6 +7474,8 @@ export class SmithproxyApp extends LitElement {
             <select aria-label="Filter objects by usage" .value=${this.objectUsageFilter}
               @change=${(event: Event) => {
                 this.objectUsageFilter = (event.currentTarget as HTMLSelectElement).value as ObjectUsageFilter;
+                this.objectBulkMessage = undefined;
+                this.objectBulkDeleteConfirmation = undefined;
               }}>
               <option value="all">All usage</option><option value="used">Used</option>
               <option value="unused">Unused</option>
@@ -7380,6 +7484,22 @@ export class SmithproxyApp extends LitElement {
           <span class="list-filter-summary" role="status">
             Showing ${visibleCount.toLocaleString()} of ${totalCount.toLocaleString()}
           </span>
+        </div>
+        <div class="policy-bulk-actions" role="group" aria-label="Object cleanup actions">
+          <strong>${bulkDeleteEntries.length.toLocaleString()} visible unused primitive ${
+            bulkDeleteEntries.length === 1 ? 'object' : 'objects'} deletable</strong>
+          <button class="secondary danger-button" type="button"
+            title=${bulkDeleteBlocker ?? 'Add one atomic deletion batch to the workspace draft'}
+            ?disabled=${bulkDeleteBlocker !== undefined || this.draftSaving || this.draftCommitting}
+            @click=${() => { void this.deleteObjectEntries(bulkDeleteEntries); }}>
+            ${bulkDeleteArmed ? `Confirm delete ${bulkDeleteEntries.length}` : 'Delete visible unused'}
+          </button>
+          ${visibleUnusedPrimitiveEntries.length > bulkDeleteEntries.length ? html`
+            <span class="metric-note">${visibleUnusedPrimitiveEntries.length - bulkDeleteEntries.length}
+              visible unused ${visibleUnusedPrimitiveEntries.length - bulkDeleteEntries.length === 1
+                ? 'object is' : 'objects are'} blocked by pending work.</span>
+          ` : nothing}
+          ${this.objectBulkMessage ? html`<span class="validation" role="status">${this.objectBulkMessage}</span>` : nothing}
         </div>
         ${visibleCount === 0 ? html`
           <div class="metrics-message" role="status">No configuration objects match the current filters.</div>

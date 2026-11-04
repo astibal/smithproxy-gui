@@ -104,6 +104,7 @@ type MockState = {
   commitReady?: boolean;
   structuralDraftsReady?: boolean;
   secondPolicy?: boolean;
+  unusedPrimitives?: boolean;
   unusedProfile?: boolean;
   privateProfileReferences?: number;
   privateDraftProfileReferencesComplete?: boolean;
@@ -734,9 +735,18 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       addresses: [
         {id: 'address-0', name: 'office', type: 'cidr', value: '10.0.0.0/24'},
         {id: 'address-1', name: 'internet', type: 'fqdn', value: 'example.test'},
+        ...(state.unusedPrimitives
+          ? [{id: 'address-2', name: 'unused-branch', type: 'cidr', value: '198.51.100.0/24'}]
+          : []),
       ],
-      ports: [{id: 'port-0', name: 'https', start: 443, end: 443}],
-      protocols: [{id: 'protocol-0', name: 'tcp', number: 6}],
+      ports: [
+        {id: 'port-0', name: 'https', start: 443, end: 443},
+        ...(state.unusedPrimitives ? [{id: 'port-1', name: 'unused-admin', start: 9443, end: 9443}] : []),
+      ],
+      protocols: [
+        {id: 'protocol-0', name: 'tcp', number: 6},
+        ...(state.unusedPrimitives ? [{id: 'protocol-1', name: 'unused-udp', number: 17}] : []),
+      ],
       profiles: [
         {
           id: 'tls-0', name: 'inspect', type: 'tls', private_reference_count: 0, routing: null,
@@ -4770,6 +4780,64 @@ test('keeps bulk policy mutations disabled until the workspace draft is loaded',
     .getByRole('button', {name: 'Select visible'});
   await expect(selectVisible).toBeDisabled();
   await expect(selectVisible).toBeEnabled();
+});
+
+test('marks visible unused primitive objects for deletion in one confirmed atomic batch', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', unusedPrimitives: true, commitReady: true, structuralDraftsReady: true,
+    structuralBatchMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  const cleanup = page.getByRole('group', {name: 'Object cleanup actions'});
+  await expect(cleanup.getByText('3 visible unused primitive objects deletable')).toBeVisible();
+  await cleanup.getByRole('button', {name: 'Delete visible unused'}).click();
+
+  expect(state.structuralBatchMutationRequests).toEqual([]);
+  await expect(cleanup.getByText(
+    'Confirm deletion of 3 visible unused objects from the workspace draft.',
+  )).toBeVisible();
+  await cleanup.getByRole('button', {name: 'Confirm delete 3'}).click();
+
+  await expect(cleanup.getByText('3 objects marked for deletion in the workspace draft.')).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Review draft · 3'})).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toHaveLength(1);
+  const request = state.structuralBatchMutationRequests![0]!;
+  expect(request).toMatchObject({expectedVersion: 0, csrf: '1'});
+  expect(request.operations).toHaveLength(3);
+  expect(request.operations[0]).toMatchObject({
+    op: 'delete', collection: 'address_objects', entity_id: 'address-2',
+  });
+  expect(request.operations[1]).toMatchObject({
+    op: 'delete', collection: 'port_objects', entity_id: 'port-1',
+  });
+  expect(request.operations[2]).toMatchObject({
+    op: 'delete', collection: 'proto_objects', entity_id: 'protocol-1',
+  });
+});
+
+test('requires fresh object cleanup confirmation after the visible scope changes', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', unusedPrimitives: true, commitReady: true, structuralDraftsReady: true,
+    structuralBatchMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  const cleanup = page.getByRole('group', {name: 'Object cleanup actions'});
+  await cleanup.getByRole('button', {name: 'Delete visible unused'}).click();
+  await expect(cleanup.getByRole('button', {name: 'Confirm delete 3'})).toBeVisible();
+  await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('address');
+
+  await expect(cleanup.getByText('1 visible unused primitive object deletable')).toBeVisible();
+  await expect(cleanup.getByRole('button', {name: 'Delete visible unused'})).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toEqual([]);
+  await cleanup.getByRole('button', {name: 'Delete visible unused'}).click();
+  await expect(cleanup.getByRole('button', {name: 'Confirm delete 1'})).toBeVisible();
+  expect(state.structuralBatchMutationRequests).toEqual([]);
 });
 
 test('filters real configuration objects by value, kind, and effective usage', async ({page}) => {
