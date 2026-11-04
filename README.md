@@ -211,6 +211,10 @@ Live address, port, and protocol objects can be duplicated into explicit
 prefilled create drawers. Copies use persistent values plus pending draft edits,
 never temporary augment overlays, and do not mutate the draft until saved.
 Protocol copies require a new unique protocol number before saving.
+All typed routing and profile objects support the same explicit copy workflow.
+Write-only SNI filters, session filters, host-key and module paths,
+authentication identities, and nested content rules are intentionally excluded
+and called out in the prefilled create drawer before any draft mutation occurs.
 Policy and routing reference fields preview the value being typed. Known objects
 open directly in the next nested editor. Objects and profiles created earlier in
 the same workspace draft are marked as pending and reopen their structural create

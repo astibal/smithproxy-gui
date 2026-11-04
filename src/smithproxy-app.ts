@@ -291,6 +291,10 @@ interface PrimitiveCreatePrefill {
   sourceName: string;
 }
 
+interface ProfileCreatePrefill extends PrimitiveCreatePrefill {
+  omitted: string;
+}
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -405,6 +409,7 @@ export class SmithproxyApp extends LitElement {
   private readonly profileCreateTypes = new Map<string, ProfileCreateType>();
   private readonly policyCreatePrefills = new Map<string, PolicyCreatePrefill>();
   private readonly primitiveCreatePrefills = new Map<string, PrimitiveCreatePrefill>();
+  private readonly profileCreatePrefills = new Map<string, ProfileCreatePrefill>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -1234,6 +1239,7 @@ export class SmithproxyApp extends LitElement {
     this.profileCreateTypes.clear();
     this.policyCreatePrefills.clear();
     this.primitiveCreatePrefills.clear();
+    this.profileCreatePrefills.clear();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -3121,6 +3127,165 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({kind: 'profile-create', id: localId, title: 'New profile'}, origin);
   }
 
+  private profileType(profile: ProfileObject): ProfileCreateType | undefined {
+    return profile.routing ? 'routing' : profile.tls ? 'tls' : profile.detection ? 'detection' :
+      profile.dns ? 'dns' : profile.authentication ? 'authentication' : profile.content ? 'content' :
+        profile.ssh ? 'ssh' : profile.script ? 'script' : undefined;
+  }
+
+  private profileCloneBlocker(profile: ProfileObject): string | undefined {
+    const type = this.profileType(profile);
+    const prefix = this.profileOriginPrefixes().get(profile.id);
+    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !type || !prefix) {
+      return 'Profile duplication requires a typed profile and reviewed structural transactions.';
+    }
+    const collection = profileCreateCollections[type];
+    if (this.workspaceDraft.structuralOperations.some(operation =>
+      operation.op === 'delete' && operation.collection === collection && operation.entityId === profile.id)) {
+      return 'Remove the pending profile deletion before duplicating it.';
+    }
+    return undefined;
+  }
+
+  private uniqueProfileCopyName(type: ProfileCreateType, sourceName: string): string {
+    const names = new Set<string>();
+    const prefixes = this.profileOriginPrefixes();
+    this.snapshot?.profiles.forEach(profile => {
+      if (this.profileType(profile) !== type) return;
+      names.add(profile.name);
+      const prefix = prefixes.get(profile.id);
+      if (prefix) names.add(this.persistentValue(`${prefix}name`, profile.name));
+    });
+    const collection = profileCreateCollections[type];
+    this.workspaceDraft?.structuralOperations.forEach(operation => {
+      if (operation.op === 'create' && operation.collection === collection &&
+          typeof operation.fields['name'] === 'string') names.add(operation.fields['name']);
+    });
+    for (let copy = 1; copy <= names.size + 2; copy += 1) {
+      const suffix = copy === 1 ? ' copy' : ` copy ${copy}`;
+      const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
+      if (!names.has(candidate)) return candidate;
+    }
+    return `Profile copy ${crypto.randomUUID().slice(0, 8)}`;
+  }
+
+  private duplicateProfile(profile: ProfileObject, origin?: HTMLElement): void {
+    const type = this.profileType(profile);
+    const prefix = this.profileOriginPrefixes().get(profile.id);
+    if (this.profileCloneBlocker(profile) !== undefined || !type || !prefix) return;
+    const scalar = <T extends ConfigScalar>(field: string, fallback: T): T =>
+      this.persistentValue(`${prefix}${field}`, fallback);
+    const strings = (field: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
+      this.persistentListValue(`${prefix}${field}`, fallback, 'string');
+    const numbers = (field: string, fallback: ReadonlyArray<number>): ReadonlyArray<number> =>
+      this.persistentListValue(`${prefix}${field}`, fallback, 'number');
+    const sourceName = scalar('name', profile.name);
+    const name = this.uniqueProfileCopyName(type, sourceName);
+    let fields: DraftCreateOperation['fields'];
+    let omitted = '';
+    if (profile.routing) {
+      const value = profile.routing;
+      fields = {name, dnat_address: [...strings('dnat_address', value.destinationAddresses)],
+        dnat_port: [...strings('dnat_port', value.destinationPorts)],
+        dnat_lb_method: scalar('dnat_lb_method', value.loadBalancingMethod),
+        rewrite_sni: scalar('rewrite_sni', value.rewriteSni),
+        rewrite_sni_to: scalar('rewrite_sni_to', value.rewriteSniTo)};
+    } else if (profile.tls) {
+      const value = profile.tls;
+      fields = {
+        name, inspect: scalar('inspect', value.inspect), use_pfs: scalar('use_pfs', value.usePfs),
+        left_use_pfs: scalar('left_use_pfs', value.leftUsePfs),
+        right_use_pfs: scalar('right_use_pfs', value.rightUsePfs),
+        left_disable_reuse: scalar('left_disable_reuse', value.leftDisableReuse),
+        right_disable_reuse: scalar('right_disable_reuse', value.rightDisableReuse),
+        allow_untrusted_issuers: scalar('allow_untrusted_issuers', value.allowUntrustedIssuers),
+        allow_invalid_certs: scalar('allow_invalid_certs', value.allowInvalidCertificates),
+        allow_self_signed: scalar('allow_self_signed', value.allowSelfSigned),
+        ct_enable: scalar('ct_enable', value.certificateTransparency),
+        ocsp_mode: scalar('ocsp_mode', value.ocspMode),
+        ocsp_stapling: scalar('ocsp_stapling', value.ocspStapling),
+        ocsp_stapling_mode: scalar('ocsp_stapling_mode', value.ocspStaplingMode),
+        alpn_block: scalar('alpn_block', value.blockAlpn),
+        sni_based_cert: scalar('sni_based_cert', value.sniBasedCertificates),
+        ip_based_cert: scalar('ip_based_cert', value.ipBasedCertificates),
+        only_custom_certs: scalar('only_custom_certs', value.onlyCustomCertificates),
+        no_fallback_bypass: scalar('no_fallback_bypass', value.noFallbackBypass),
+        sni_filter_use_dns_cache: scalar('sni_filter_use_dns_cache', value.sniFilterUsesDnsCache),
+        sni_filter_use_dns_domain_tree: scalar(
+          'sni_filter_use_dns_domain_tree', value.sniFilterUsesDnsDomainTree,
+        ),
+        redirect_warning_ports: [...numbers('redirect_warning_ports', value.redirectWarningPorts)],
+        failed_certcheck_replacement: scalar(
+          'failed_certcheck_replacement', value.failedCertificateReplacement,
+        ),
+        failed_certcheck_override: scalar('failed_certcheck_override', value.failedCertificateOverride),
+        failed_certcheck_override_timeout: scalar(
+          'failed_certcheck_override_timeout', value.failedCertificateOverrideTimeout,
+        ),
+        failed_certcheck_override_timeout_type: scalar(
+          'failed_certcheck_override_timeout_type', value.failedCertificateOverrideTimeoutType,
+        ),
+        sslkeylog: scalar('sslkeylog', value.sslKeyLog),
+        client_hello_timeout: scalar('client_hello_timeout', value.clientHelloTimeoutMs),
+        handshake_timeout: scalar('handshake_timeout', value.handshakeTimeoutMs),
+        client_cert_action: scalar('client_cert_action', value.clientCertificateAction),
+        alerts: scalar('alerts', value.alerts), sni_filter_bypass: [],
+      };
+      omitted = value.sniBypassEntries > 0
+        ? `${value.sniBypassEntries} write-only SNI bypass entr${value.sniBypassEntries === 1 ? 'y' : 'ies'}` : '';
+    } else if (profile.detection) {
+      const value = profile.detection;
+      fields = {name, mode: scalar('mode', value.mode),
+        engines_enabled: scalar('engines_enabled', value.enginesEnabled),
+        kb_enabled: scalar('kb_enabled', value.knowledgeBaseEnabled)};
+    } else if (profile.dns) {
+      const value = profile.dns;
+      fields = {name, match_request_id: scalar('match_request_id', value.matchRequestId),
+        randomize_id: scalar('randomize_id', value.randomizeId),
+        cached_responses: scalar('cached_responses', value.cachedResponses)};
+    } else if (profile.authentication) {
+      const value = profile.authentication;
+      fields = {name, authenticate: scalar('authenticate', value.authenticate),
+        resolve: scalar('resolve', value.resolve)};
+      omitted = value.identityCount > 0
+        ? `${value.identityCount} write-only identity mapping${value.identityCount === 1 ? '' : 's'}` : '';
+    } else if (profile.content) {
+      const value = profile.content;
+      fields = {name, write_payload: scalar('write_payload', value.writePayload),
+        write_format: scalar('write_format', value.writeFormat),
+        webhook_enable: scalar('webhook_enable', value.webhookEnabled),
+        webhook_lock_traffic: scalar('webhook_lock_traffic', value.webhookLocksTraffic),
+        ja4_tls_ch: scalar('ja4_tls_ch', value.ja4TlsClientHello),
+        ja4_tls_ch_ignore_sni: scalar('ja4_tls_ch_ignore_sni', value.ja4TlsClientHelloIgnoresSni),
+        ja4_tls_sh: scalar('ja4_tls_sh', value.ja4TlsServerHello),
+        ja4_http: scalar('ja4_http', value.ja4Http), rules_session_filter: ''};
+      omitted = [value.sessionFilterConfigured ? 'the write-only session filter' : '',
+        value.ruleCount > 0 ? `${value.ruleCount} nested content rule${value.ruleCount === 1 ? '' : 's'}` : '']
+        .filter(Boolean).join(' and ');
+    } else if (profile.ssh) {
+      const value = profile.ssh;
+      const action = (field: string, fallback: boolean) => scalar(field, fallback) ? 'pass' : 'reject';
+      fields = {name, hostkey_policy: scalar('hostkey_policy', value.hostKeyPolicy), host_key: '',
+        shell: action('shell', value.shell), exec: action('exec', value.exec),
+        subsystem: action('subsystem', value.subsystem), pty: action('pty', value.pty),
+        environment: action('environment', value.environment),
+        local_forward: action('local_forward', value.localForward),
+        remote_forward: action('remote_forward', value.remoteForward),
+        x11: action('x11', value.x11), agent: action('agent', value.agent)};
+      omitted = value.hostKeyConfigured ? 'the write-only host-key path' : '';
+    } else if (profile.script) {
+      const runtime = profile.script.runtime === 'python' ? '0' : profile.script.runtime === 'go' ? '1' : '-1';
+      fields = {name, type: scalar('type', runtime), 'script-file': ''};
+      omitted = profile.script.modulePathConfigured ? 'the write-only module path' : '';
+    } else {
+      return;
+    }
+    const localId = `create-profile-${crypto.randomUUID()}`;
+    this.profileCreateTypes.set(localId, type);
+    this.profileCreatePrefills.set(localId, {fields, sourceName, omitted});
+    this.openObjectDrawer({kind: 'profile-create', id: localId, title: name}, origin);
+  }
+
   private openNewPolicy(origin?: HTMLElement): void {
     if (!this.structuralDraftsAvailable) return;
     const localId = `create-policy-${crypto.randomUUID()}`;
@@ -3472,6 +3637,7 @@ export class SmithproxyApp extends LitElement {
       }
       if (entry.kind === 'profile-create') {
         this.profileCreateTypes.delete(entry.id);
+        this.profileCreatePrefills.delete(entry.id);
         const identityEditors = new Map(this.authIdentityEditors);
         identityEditors.delete(entry.id);
         this.authIdentityEditors = identityEditors;
@@ -4570,6 +4736,7 @@ export class SmithproxyApp extends LitElement {
       });
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.profileCreateTypes.set(entry.id, type);
+      this.profileCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
       for (const selector of [
         `#profile-create-content-filter-${entry.id}`,
@@ -9656,8 +9823,10 @@ export class SmithproxyApp extends LitElement {
 
   private renderProfileCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingProfileCreate(entry);
+    const prefill = operation ? undefined : this.profileCreatePrefills.get(entry.id);
     const type = this.profileCreateType(entry);
-    const field = (name: string, fallback: DraftScalar): DraftScalar => operation?.fields[name] ?? fallback;
+    const field = (name: string, fallback: DraftScalar): DraftScalar =>
+      operation?.fields[name] ?? prefill?.fields[name] ?? fallback;
     const stringList = (name: string): ReadonlyArray<string> => {
       const value = field(name, []);
       return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
@@ -9695,7 +9864,8 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="form-grid wide-form-grid">
         <label for="profile-create-type-${entry.id}">Profile type</label>
-        <select id="profile-create-type-${entry.id}" .value=${type} ?disabled=${readOnly || operation !== undefined}
+        <select id="profile-create-type-${entry.id}" .value=${type}
+          ?disabled=${readOnly || operation !== undefined || prefill !== undefined}
           @change=${(event: Event) => {
             const value = (event.currentTarget as HTMLSelectElement).value as ProfileCreateType;
             if (supportedProfileCreateTypes.has(value)) {
@@ -9786,7 +9956,7 @@ export class SmithproxyApp extends LitElement {
             booleanField('sni_filter_use_dns_domain_tree', true))}
           <label for="profile-create-tls-warning-ports-${entry.id}">Certificate warning ports</label>
           <input id="profile-create-tls-warning-ports-${entry.id}"
-            .value=${operation ? numberList('redirect_warning_ports').join(', ') : '443'}
+            .value=${operation || prefill ? numberList('redirect_warning_ports').join(', ') : '443'}
             placeholder="443, 44443" .readOnly=${readOnly} />
           ${booleanSelect('tls-failed-replacement', 'Certificate failure replacement',
             booleanField('failed_certcheck_replacement', true))}
@@ -9904,6 +10074,11 @@ export class SmithproxyApp extends LitElement {
             .readOnly=${readOnly} />
         `}
       </div>
+      ${prefill ? html`<div class="scope-note">
+        Prefilled from ${prefill.sourceName}. Persistent and pending values are copied; temporary augment overlays are not.
+        ${prefill.omitted ? html` For security, ${prefill.omitted} ${prefill.omitted.includes(' and ') ||
+          /(?:entries|mappings|rules)$/u.test(prefill.omitted) ? 'are' : 'is'} not copied.` : nothing}
+      </div>` : nothing}
       <div class="impact">
         The complete typed profile is retained in the workspace draft until Smithproxy validates and commits it.
       </div>
@@ -11588,6 +11763,7 @@ export class SmithproxyApp extends LitElement {
       ? this.snapshot?.policies.find(item => item.id === entry.id)
       : undefined;
     const cloneBlocker = policy ? this.policyCloneBlocker(policy) : undefined;
+    const profileCloneBlocker = profile ? this.profileCloneBlocker(profile) : undefined;
     const primitive = entry.kind === 'address' || entry.kind === 'port' || entry.kind === 'protocol';
     const primitiveCloneBlocker = primitive ? this.primitiveCloneBlocker(entry) : undefined;
     const mappedProfile = Boolean(
@@ -11692,6 +11868,16 @@ export class SmithproxyApp extends LitElement {
                 @click=${(event: MouseEvent) =>
                   this.duplicatePrimitiveObject(entry, event.currentTarget as HTMLElement)}>
                 Duplicate object
+              </button>
+            ` : nothing}
+            ${profile ? html`
+              <button class="secondary" type="button"
+                title=${profileCloneBlocker ??
+                  'Open a prefilled profile copy; write-only values and nested rules remain excluded'}
+                ?disabled=${profileCloneBlocker !== undefined || dirty || this.draftSaving || this.draftCommitting}
+                @click=${(event: MouseEvent) =>
+                  this.duplicateProfile(profile, event.currentTarget as HTMLElement)}>
+                Duplicate profile
               </button>
             ` : nothing}
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>

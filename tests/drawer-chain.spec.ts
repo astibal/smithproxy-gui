@@ -1,5 +1,5 @@
 import {readFile} from 'node:fs/promises';
-import {expect, test, type Page} from '@playwright/test';
+import {expect, test, type Locator, type Page} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 const saslikVisualThemes = {
@@ -2958,6 +2958,152 @@ test('duplicates real primitive objects into explicit creates without baking aug
       op: 'create', collection: 'proto_objects', fields: {name: 'tcp copy', id: 17},
     },
   });
+});
+
+test('duplicates a typed profile from persistent and pending values without augment overlays', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
+    structuralMutationRequests: [],
+    initialDraftChanges: [{path: 'detection_profiles.[0].mode', value: 2}],
+    valueOrigins: [{
+      path: 'detection_profiles.[0].engines_enabled', persistent_value: false, effective_value: true,
+      layers: [{id: 'temporary-detection', priority: 100, value: true, active: true}],
+      editable: false,
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /detect detection/i}).click();
+
+  const liveEditor = page.getByRole('dialog', {name: 'Edit detect'});
+  await liveEditor.getByRole('button', {name: 'Duplicate profile'}).click();
+  const createEditor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(createEditor.getByLabel('Profile type')).toHaveValue('detection');
+  await expect(createEditor.getByLabel('Profile type')).toBeDisabled();
+  await expect(createEditor.getByLabel('Name')).toHaveValue('detect copy');
+  await expect(createEditor.getByLabel('Detection mode')).toHaveValue('2');
+  await expect(createEditor.getByLabel('Detection engines')).toHaveValue('false');
+  await expect(createEditor.getByLabel('Knowledge base')).toHaveValue('false');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'Persistent and pending values are copied; temporary augment overlays are not.',
+  );
+  expect(state.structuralMutationRequests).toEqual([]);
+
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 1,
+    operation: {
+      op: 'create', collection: 'detection_profiles',
+      fields: {name: 'detect copy', mode: 2, engines_enabled: false, kb_enabled: false},
+    },
+    csrf: '1',
+  });
+});
+
+test('omits write-only values and nested rules from a duplicated content profile', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
+    structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /capture content/i}).click();
+
+  const liveEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  await liveEditor.getByRole('button', {name: 'Duplicate profile'}).click();
+  const createEditor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(createEditor.getByLabel('Name')).toHaveValue('capture copy');
+  await expect(createEditor.getByLabel('Profile type')).toHaveValue('content');
+  await expect(createEditor.getByLabel('Session filter', {exact: true})).toHaveValue('empty');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'the write-only session filter and 2 nested content rules are not copied',
+  );
+  await expect(createEditor.getByLabel('Capture format')).toHaveValue('pcap_single');
+  await expect(createEditor.getByLabel('Webhook', {exact: true})).toHaveValue('true');
+
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    operation: {
+      op: 'create', collection: 'content_profiles',
+      fields: {
+        name: 'capture copy', write_payload: false, write_format: 'pcap_single',
+        webhook_enable: true, webhook_lock_traffic: false, ja4_tls_ch: true,
+        ja4_tls_ch_ignore_sni: false, ja4_tls_sh: true, ja4_http: false,
+        rules_session_filter: '',
+      },
+    },
+  });
+  expect(state.structuralMutationRequests![0].operation.fields).not.toHaveProperty('content_rules');
+});
+
+test('prefills every remaining typed profile while keeping private values empty', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const profiles = page.getByRole('group', {name: 'Profiles and routing'});
+
+  const duplicate = async (source: RegExp, name: string) => {
+    await profiles.getByRole('button', {name: source}).click();
+    const liveEditor = page.getByRole('dialog', {name: `Edit ${name}`});
+    await liveEditor.getByRole('button', {name: 'Duplicate profile'}).click();
+    return page.getByRole('dialog', {name: 'Create profile'});
+  };
+  const closePair = async (createEditor: Locator) => {
+    await createEditor.getByRole('button', {name: 'Cancel'}).click();
+    await page.getByRole('dialog', {name: /^Edit /u}).getByRole('button', {name: 'Cancel'}).click();
+  };
+
+  let createEditor = await duplicate(/main routing/i, 'main');
+  await expect(createEditor.getByLabel('Profile type')).toHaveValue('routing');
+  await expect(createEditor.getByLabel('Destination addresses')).toHaveValue('internet');
+  await expect(createEditor.getByLabel('Destination ports')).toHaveValue('https');
+  await closePair(createEditor);
+
+  createEditor = await duplicate(/inspect tls/i, 'inspect');
+  await expect(createEditor.getByLabel('Certificate warning ports')).toHaveValue('443, 44443');
+  await expect(createEditor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('empty');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    '2 write-only SNI bypass entries are not copied',
+  );
+  await closePair(createEditor);
+
+  createEditor = await duplicate(/resolver dns/i, 'resolver');
+  await expect(createEditor.getByLabel('Randomize response ID')).toHaveValue('true');
+  await expect(createEditor.getByLabel('Cached responses')).toHaveValue('false');
+  await closePair(createEditor);
+
+  createEditor = await duplicate(/legacy-auth authentication/i, 'legacy-auth');
+  await expect(createEditor.getByLabel('Authenticate')).toHaveValue('true');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    '2 write-only identity mappings are not copied',
+  );
+  await closePair(createEditor);
+
+  createEditor = await duplicate(/default-ssh ssh/i, 'default-ssh');
+  await expect(createEditor.getByLabel('Host-key path', {exact: true})).toHaveValue('empty');
+  await expect(createEditor.getByLabel('Shell')).toHaveValue('pass');
+  await expect(createEditor.getByLabel('Exec')).toHaveValue('reject');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'the write-only host-key path is not copied',
+  );
+  await closePair(createEditor);
+
+  createEditor = await duplicate(/audit script/i, 'audit');
+  await expect(createEditor.getByLabel('Runtime')).toHaveValue('0');
+  await expect(createEditor.getByLabel('Module path', {exact: true})).toHaveValue('empty');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'the write-only module path is not copied',
+  );
 });
 
 test('blocks primitive object duplication while deletion is pending', async ({page}) => {
