@@ -169,11 +169,13 @@ System and Captures summary cards use the same pending values as their editors,
 show a pending badge, and state explicitly that Smithproxy runtime remains
 unchanged until a validated atomic commit.
 The Policy inventory supports selecting the current filtered live rows and
-staging their enabled state or traffic action in one optimistic workspace-draft
-mutation. Returning policies to their persistent state removes the corresponding
-overrides instead of retaining no-op changes. Each bulk operation independently
-excludes fields owned by active augment layers while leaving the policy available
-for its other editable fields.
+staging their enabled state, traffic action, or routing and inspection profile
+references in one optimistic workspace-draft mutation. Profile assignment can
+target a compatible live profile or a profile created in the same draft, and
+`None` clears the selected reference. Returning policies to their persistent
+state removes the corresponding overrides instead of retaining no-op changes.
+Each bulk operation independently excludes fields owned by active augment layers
+while leaving the policy available for its other editable fields.
 Policies, objects, system settings, profiles, certificate authorities,
 and protocol signatures have typed draft editors. Sensitive paths, credentials,
 filters, and matcher expressions use write-only controls. Pending structural

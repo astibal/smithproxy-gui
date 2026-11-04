@@ -169,6 +169,20 @@ const profileCreateCollections: Readonly<Record<ProfileCreateType, DraftCreateOp
   script: 'script_profiles',
 };
 
+const policyProfileAssignments = [
+  {kind: 'routing', field: 'routing', property: 'routing', label: 'Routing'},
+  {kind: 'tls', field: 'tls_profile', property: 'tlsProfile', label: 'TLS'},
+  {kind: 'detection', field: 'detection_profile', property: 'detectionProfile', label: 'Detection'},
+  {kind: 'content', field: 'content_profile', property: 'contentProfile', label: 'Content'},
+  {kind: 'ssh', field: 'ssh_profile', property: 'sshProfile', label: 'SSH'},
+  {kind: 'authentication', field: 'auth_profile', property: 'authProfile', label: 'Authentication'},
+  {kind: 'dns', field: 'alg_dns_profile', property: 'dnsProfile', label: 'DNS ALG'},
+  {kind: 'script', field: 'script_profile', property: 'scriptProfile', label: 'Script'},
+] as const;
+
+type PolicyProfileAssignment = (typeof policyProfileAssignments)[number];
+type PolicyBulkField = 'disabled' | 'action' | PolicyProfileAssignment['field'];
+
 const supportedProfileCreateTypes = new Set<ProfileCreateType>(
   Object.keys(profileCreateCollections) as ProfileCreateType[],
 );
@@ -304,6 +318,8 @@ export class SmithproxyApp extends LitElement {
   @state() private policyActionFilter = 'all';
   @state() private selectedPolicyIds = new Set<string>();
   @state() private policyBulkAction: (typeof policyActions)[number] = 'accept';
+  @state() private policyBulkProfileKind: ProfileCreateType = 'tls';
+  @state() private policyBulkProfileValue = '';
   @state() private policyBulkMessage: string | undefined;
   @state() private objectListQuery = '';
   @state() private objectKindFilter: ObjectKindFilter = 'all';
@@ -1210,6 +1226,8 @@ export class SmithproxyApp extends LitElement {
     this.draftObjects = new Set<string>();
     this.selectedPolicyIds = new Set<string>();
     this.policyBulkAction = 'accept';
+    this.policyBulkProfileKind = 'tls';
+    this.policyBulkProfileValue = '';
     this.policyBulkMessage = undefined;
     this.discardDraftArmed = false;
     this.invalidateDraftOperations();
@@ -5943,9 +5961,9 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async setSelectedPolicyField(
-    field: 'disabled' | 'action', desired: boolean | string, completedState: string,
+    field: PolicyBulkField, desired: boolean | string, completedState: string, alreadyState: string,
   ): Promise<void> {
-    if (!this.snapshot || !this.draftAvailable || !this.draftClient || this.draftSaving ||
+    if (!this.snapshot || !this.workspaceDraft || !this.draftAvailable || !this.draftClient || this.draftSaving ||
         this.draftCommitting || this.selectedPolicyIds.size === 0) return;
     const pendingPaths = new Set((this.workspaceDraft?.changes ?? []).map(change => change.path));
     const changes: DraftChange[] = [];
@@ -5957,7 +5975,10 @@ export class SmithproxyApp extends LitElement {
       if (this.originReadOnly(path, false)) return;
       writableCount += 1;
       const origin = this.valueOrigin(path);
-      const fallback = field === 'disabled' ? !policy.enabled : policy.action;
+      const profile = policyProfileAssignments.find(item => item.field === field);
+      const fallback = field === 'disabled' ? !policy.enabled
+        : field === 'action' ? policy.action
+          : profile ? policy[profile.property] : '';
       const persistent = origin && typeof origin.persistentValue === typeof desired
         ? origin.persistentValue : fallback;
       const pending = this.pendingDraftValue(path);
@@ -5968,14 +5989,13 @@ export class SmithproxyApp extends LitElement {
       }
     });
     if (writableCount === 0) {
-      this.policyBulkMessage = `Selected policy ${field === 'disabled' ? 'states are' : 'actions are'} owned by active augment layers.`;
+      const label = field === 'disabled' ? 'states' : field === 'action' ? 'actions' : 'profile references';
+      this.policyBulkMessage = `Selected policy ${label} are owned by active augment layers.`;
       return;
     }
     if (changes.length + removePaths.length === 0) {
       this.selectedPolicyIds = new Set<string>();
-      this.policyBulkMessage = field === 'disabled'
-        ? `Selected policies are already ${completedState}.`
-        : `Selected policies already use ${completedState.replace('changed to ', '')}.`;
+      this.policyBulkMessage = `Selected policies ${alreadyState}.`;
       return;
     }
     this.draftSaving = true;
@@ -6004,13 +6024,48 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async setSelectedPoliciesEnabled(enabled: boolean): Promise<void> {
-    await this.setSelectedPolicyField('disabled', !enabled, enabled ? 'enabled' : 'disabled');
+    const state = enabled ? 'enabled' : 'disabled';
+    await this.setSelectedPolicyField('disabled', !enabled, state, `are already ${state}`);
   }
 
   private async setSelectedPoliciesAction(): Promise<void> {
     if (!policyActions.includes(this.policyBulkAction)) return;
+    const action = displayState(this.policyBulkAction);
     await this.setSelectedPolicyField(
-      'action', this.policyBulkAction, `changed to ${displayState(this.policyBulkAction)}`,
+      'action', this.policyBulkAction, `changed to ${action}`, `already use ${action}`,
+    );
+  }
+
+  private policyBulkProfileOptions(kind: ProfileCreateType): ReadonlyArray<string> {
+    const profilePrefixes = this.profileOriginPrefixes();
+    const names = (this.snapshot?.profiles ?? []).flatMap(profile => {
+      if (!profile[kind]) return [];
+      const prefix = profilePrefixes.get(profile.id);
+      return [prefix ? this.presentedValue(`${prefix}name`, profile.name) : profile.name];
+    });
+    const collection = profileCreateCollections[kind];
+    for (const operation of this.workspaceDraft?.structuralOperations ?? []) {
+      if (operation.op !== 'create' || operation.collection !== collection) continue;
+      const name = operation.fields['name'];
+      if (typeof name === 'string') names.push(name);
+    }
+    return [...new Set(names)].sort((left, right) => left.localeCompare(right));
+  }
+
+  private async setSelectedPoliciesProfile(): Promise<void> {
+    const assignment = policyProfileAssignments.find(item => item.kind === this.policyBulkProfileKind);
+    if (!assignment) return;
+    const options = this.policyBulkProfileOptions(assignment.kind);
+    if (this.policyBulkProfileValue && !options.includes(this.policyBulkProfileValue)) {
+      this.policyBulkMessage = 'The selected profile is no longer available.';
+      return;
+    }
+    const profile = this.policyBulkProfileValue;
+    await this.setSelectedPolicyField(
+      assignment.field,
+      profile,
+      profile ? `assigned ${assignment.label} profile ${profile}` : `cleared ${assignment.label} profile`,
+      profile ? `already use ${assignment.label} profile ${profile}` : `already have no ${assignment.label} profile`,
     );
   }
 
@@ -6066,17 +6121,21 @@ export class SmithproxyApp extends LitElement {
       return statusMatches && actionMatches && queryMatches;
     });
     const actions = [...new Set(policyRows.map(row => rowValues(row).action))].sort();
+    const bulkFields: ReadonlyArray<PolicyBulkField> = [
+      'disabled', 'action', ...policyProfileAssignments.map(item => item.field),
+    ];
+    const bulkDraftReady = this.draftAvailable && this.workspaceDraft !== undefined;
     const selectableVisiblePolicyIds = visiblePolicyRows.flatMap(row => {
       if (row.kind !== 'live') return [];
       const base = `policy.[${row.configIndex}]`;
-      const readOnly = !this.draftAvailable || (
-        this.originReadOnly(`${base}.disabled`, false) && this.originReadOnly(`${base}.action`, false)
-      );
+      const readOnly = !bulkDraftReady || bulkFields.every(field =>
+        this.originReadOnly(`${base}.${field}`, false));
       return readOnly ? [] : [row.item.id];
     });
     const selectedCount = [...this.selectedPolicyIds].filter(id =>
       this.snapshot?.policies.some(policy => policy.id === id),
     ).length;
+    const bulkProfileOptions = this.policyBulkProfileOptions(this.policyBulkProfileKind);
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -6126,29 +6185,57 @@ export class SmithproxyApp extends LitElement {
         <div class="policy-bulk-actions" role="group" aria-label="Policy bulk actions">
           <strong>${selectedCount.toLocaleString()} selected</strong>
           <button class="secondary" type="button"
-            ?disabled=${selectableVisiblePolicyIds.length === 0 || this.draftSaving || this.draftCommitting}
+            ?disabled=${selectableVisiblePolicyIds.length === 0 || !bulkDraftReady || this.draftSaving || this.draftCommitting}
             @click=${() => this.selectPolicies(selectableVisiblePolicyIds)}>Select visible</button>
-          <button class="secondary" type="button"
-            ?disabled=${selectedCount === 0 || !this.draftAvailable || this.draftSaving || this.draftCommitting}
-            @click=${() => { void this.setSelectedPoliciesEnabled(true); }}>Enable selected</button>
-          <button class="secondary" type="button"
-            ?disabled=${selectedCount === 0 || !this.draftAvailable || this.draftSaving || this.draftCommitting}
-            @click=${() => { void this.setSelectedPoliciesEnabled(false); }}>Disable selected</button>
-          <select aria-label="Set selected policy action" .value=${this.policyBulkAction}
-            ?disabled=${selectedCount === 0 || !this.draftAvailable || this.draftSaving || this.draftCommitting}
-            @change=${(event: Event) => {
-              const value = (event.currentTarget as HTMLSelectElement).value;
-              if (policyActions.some(action => action === value)) {
-                this.policyBulkAction = value as (typeof policyActions)[number];
-              }
-            }}>
-            ${policyActions.map(action => html`<option value=${action}>${displayState(action)}</option>`)}
-          </select>
-          <button class="secondary" type="button"
-            ?disabled=${selectedCount === 0 || !this.draftAvailable || this.draftSaving || this.draftCommitting}
-            @click=${() => { void this.setSelectedPoliciesAction(); }}>Apply action</button>
-          <button class="secondary" type="button" ?disabled=${selectedCount === 0}
-            @click=${() => this.selectPolicies([])}>Clear selection</button>
+          ${selectedCount > 0 ? html`
+            <button class="secondary" type="button"
+              ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.setSelectedPoliciesEnabled(true); }}>Enable selected</button>
+            <button class="secondary" type="button"
+              ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.setSelectedPoliciesEnabled(false); }}>Disable selected</button>
+            <select aria-label="Set selected policy action" .value=${this.policyBulkAction}
+              ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
+              @change=${(event: Event) => {
+                const value = (event.currentTarget as HTMLSelectElement).value;
+                if (policyActions.some(action => action === value)) {
+                  this.policyBulkAction = value as (typeof policyActions)[number];
+                }
+              }}>
+              ${policyActions.map(action => html`<option value=${action}>${displayState(action)}</option>`)}
+            </select>
+            <button class="secondary" type="button"
+              ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.setSelectedPoliciesAction(); }}>Apply action</button>
+            <select aria-label="Selected policy profile type" .value=${this.policyBulkProfileKind}
+              ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
+              @change=${(event: Event) => {
+                const value = (event.currentTarget as HTMLSelectElement).value;
+                if (supportedProfileCreateTypes.has(value as ProfileCreateType)) {
+                  this.policyBulkProfileKind = value as ProfileCreateType;
+                  this.policyBulkProfileValue = '';
+                }
+              }}>
+              ${policyProfileAssignments.map(item => html`
+                <option value=${item.kind} ?selected=${item.kind === this.policyBulkProfileKind}>
+                  ${item.label} profile
+                </option>`)}
+            </select>
+            <select aria-label="Selected policy profile" .value=${this.policyBulkProfileValue}
+              ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
+              @change=${(event: Event) => {
+                this.policyBulkProfileValue = (event.currentTarget as HTMLSelectElement).value;
+              }}>
+              <option value="" ?selected=${this.policyBulkProfileValue === ''}>None</option>
+              ${bulkProfileOptions.map(name => html`
+                <option value=${name} ?selected=${name === this.policyBulkProfileValue}>${name}</option>`)}
+            </select>
+            <button class="secondary" type="button"
+              ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.setSelectedPoliciesProfile(); }}>Apply profile</button>
+            <button class="secondary" type="button"
+              @click=${() => this.selectPolicies([])}>Clear selection</button>
+          ` : nothing}
           ${this.policyBulkMessage ? html`<span class="validation" role="status">${this.policyBulkMessage}</span>` : nothing}
         </div>
         <div class="table" role="group" aria-label="Policies">
@@ -6197,9 +6284,8 @@ export class SmithproxyApp extends LitElement {
             );
             const action = this.presentedValue(`${base}.action`, policy.action);
             const enabled = !this.presentedValue(`${base}.disabled`, !policy.enabled);
-            const stateReadOnly = !this.draftAvailable || (
-              this.originReadOnly(`${base}.disabled`, false) && this.originReadOnly(`${base}.action`, false)
-            );
+            const stateReadOnly = !bulkDraftReady || bulkFields.every(field =>
+              this.originReadOnly(`${base}.${field}`, false));
             return html`<div class="policy-table-row">
               <label class="policy-row-select" title=${stateReadOnly
                 ? 'This policy has no bulk-editable fields in the current configuration session.'

@@ -4461,6 +4461,55 @@ test('stages a real action change for selected policies in one batch', async ({p
   ]]);
 });
 
+test('assigns live policies to a pending profile and restores mixed persistent references', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', secondPolicy: true, commitReady: true, structuralDraftsReady: true,
+    draftMutationBatches: [], draftReconcileRequests: [],
+    initialStructuralOperations: [{
+      op: 'create', local_id: 'create-tls-future', collection: 'tls_profiles',
+      client_id: 'tls-future', position: {last: true},
+      fields: {name: 'future-tls', inspect: true},
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await expect(page.getByRole('button', {name: 'Review draft · 1'})).toBeVisible();
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('combobox', {name: 'Selected policy profile', exact: true}).selectOption('future-tls');
+  await expectNoWcagViolations(page);
+  await actions.getByRole('button', {name: 'Apply profile'}).click();
+  await expect(actions.getByText(
+    '2 policies assigned TLS profile future-tls in the workspace draft.',
+  )).toBeVisible();
+  expect(state.draftMutationBatches).toEqual([[
+    {path: 'policy.[0].tls_profile', value: 'future-tls'},
+    {path: 'policy.[1].tls_profile', value: 'future-tls'},
+  ]]);
+
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('combobox', {name: 'Selected policy profile', exact: true}).selectOption('');
+  await actions.getByRole('button', {name: 'Apply profile'}).click();
+  expect(state.draftReconcileRequests).toEqual([{
+    expectedVersion: 2,
+    changes: [{path: 'policy.[0].tls_profile', value: ''}],
+    removePaths: ['policy.[1].tls_profile'],
+  }]);
+});
+
+test('keeps bulk policy mutations disabled until the workspace draft is loaded', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready', secondPolicy: true, draftLoadDelayMs: 750}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const selectVisible = page.getByRole('group', {name: 'Policy bulk actions'})
+    .getByRole('button', {name: 'Select visible'});
+  await expect(selectVisible).toBeDisabled();
+  await expect(selectVisible).toBeEnabled();
+});
+
 test('filters real configuration objects by value, kind, and effective usage', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready', unusedProfile: true}, true);
   await page.goto('/');
