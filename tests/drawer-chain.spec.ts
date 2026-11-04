@@ -4395,7 +4395,7 @@ test('stages real policy state changes in one workspace draft operation', async 
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
 
-  const actions = page.getByRole('group', {name: 'Policy state actions'});
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
   await actions.getByRole('button', {name: 'Select visible'}).click();
   await expect(actions.getByText('2 selected')).toBeVisible();
   await actions.getByRole('button', {name: 'Disable selected'}).click();
@@ -4418,7 +4418,7 @@ test('stages real policy state changes in one workspace draft operation', async 
   }]);
 });
 
-test('excludes augment-owned policy states from bulk changes', async ({page}) => {
+test('excludes augment-owned policy fields from their bulk operation', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', secondPolicy: true, draftMutationBatches: [],
     valueOrigins: [{
@@ -4431,14 +4431,33 @@ test('excludes augment-owned policy states from bulk changes', async ({page}) =>
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
 
-  await expect(page.getByRole('checkbox', {name: 'Select policy Policy 1'})).toBeDisabled();
+  await expect(page.getByRole('checkbox', {name: 'Select policy Policy 1'})).toBeEnabled();
   await expect(page.getByRole('checkbox', {name: 'Select policy Policy 2'})).toBeEnabled();
-  const actions = page.getByRole('group', {name: 'Policy state actions'});
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
   await actions.getByRole('button', {name: 'Select visible'}).click();
-  await expect(actions.getByText('1 selected')).toBeVisible();
+  await expect(actions.getByText('2 selected')).toBeVisible();
   await actions.getByRole('button', {name: 'Disable selected'}).click();
+  await expect(actions.getByText('1 policy disabled in the workspace draft.')).toBeVisible();
   expect(state.draftMutationBatches).toEqual([[
     {path: 'policy.[1].disabled', value: true},
+  ]]);
+});
+
+test('stages a real action change for selected policies in one batch', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', secondPolicy: true, draftMutationBatches: []};
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const actions = page.getByRole('group', {name: 'Policy bulk actions'});
+  await actions.getByRole('button', {name: 'Select visible'}).click();
+  await actions.getByRole('combobox', {name: 'Set selected policy action'}).selectOption('deny');
+  await actions.getByRole('button', {name: 'Apply action'}).click();
+
+  await expect(actions.getByText('2 policies changed to Deny in the workspace draft.')).toBeVisible();
+  expect(state.draftMutationBatches).toEqual([[
+    {path: 'policy.[0].action', value: 'deny'},
+    {path: 'policy.[1].action', value: 'deny'},
   ]]);
 });
 
