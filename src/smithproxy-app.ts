@@ -72,6 +72,7 @@ const policyFeatures = ['sink-left', 'sink-right', 'sink-all', 'statistics', 'ac
 type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavailable';
 type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
+type PolicyStatusFilter = 'all' | 'enabled' | 'disabled';
 type StatusTone = 'success' | 'warning' | 'danger';
 
 interface CollectorPresentation {
@@ -296,6 +297,9 @@ export class SmithproxyApp extends LitElement {
   @state() private eventStreamLastDisconnectAtUnixMs: number | null = null;
   @state() private eventStreamReconnectCount = 0;
   @state() private eventCategoryFilter: EventCategoryFilter = 'all';
+  @state() private policyListQuery = '';
+  @state() private policyStatusFilter: PolicyStatusFilter = 'all';
+  @state() private policyActionFilter = 'all';
   @state() private eventsError: string | undefined;
   @state() private alertsError: string | undefined;
   @state() private auditError: string | undefined;
@@ -448,6 +452,11 @@ export class SmithproxyApp extends LitElement {
     .object-structural-action { max-width: 520px; }
     .structural-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .structural-action small { color: var(--app-muted); }
+    .list-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 0 0 12px; }
+    .list-filter { display: grid; min-width: 150px; gap: 4px; color: var(--app-muted); font-size: 12px; }
+    .list-filter:first-child { flex: 1 1 260px; }
+    .list-filter input, .list-filter select { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
+    .list-filter-summary { align-self: center; color: var(--app-muted); font-size: 12px; white-space: nowrap; }
     .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 3px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .55; }
 
@@ -5894,6 +5903,50 @@ export class SmithproxyApp extends LitElement {
         operation.collection === 'policy' && (operation.op === 'create' || operation.op === 'move'),
     );
     const policyRows = this.draftOrderedRows(this.snapshot?.policies ?? [], policyOperations);
+    const rowValues = (row: DraftOrderedRow<PolicySummary>) => {
+      if (row.kind === 'create') {
+        const text = (field: string, fallback = '') => {
+          const value = row.operation.fields[field];
+          return typeof value === 'string' ? value : fallback;
+        };
+        const list = (field: string) => {
+          const value = row.operation.fields[field];
+          return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
+        };
+        return {
+          name: text('name', 'New policy'), protocol: text('proto'), sources: list('src'),
+          sourcePorts: list('sport'), destinations: list('dst'), destinationPorts: list('dport'),
+          action: text('action', 'unknown'), enabled: row.operation.fields['disabled'] !== true,
+        };
+      }
+      const {item: policy, configIndex: index} = row;
+      const base = `policy.[${index}]`;
+      return {
+        name: this.presentedValue(`${base}.name`, policy.name),
+        protocol: this.presentedValue(`${base}.proto`, policy.protocol),
+        sources: this.presentedListValue(`${base}.src`, policy.sources.map(item => item.name), 'string'),
+        sourcePorts: this.presentedListValue(`${base}.sport`, policy.sourcePorts, 'string'),
+        destinations: this.presentedListValue(
+          `${base}.dst`, policy.destinations.map(item => item.name), 'string',
+        ),
+        destinationPorts: this.presentedListValue(`${base}.dport`, policy.destinationPorts, 'string'),
+        action: this.presentedValue(`${base}.action`, policy.action),
+        enabled: !this.presentedValue(`${base}.disabled`, !policy.enabled),
+      };
+    };
+    const query = this.policyListQuery.trim().toLocaleLowerCase();
+    const visiblePolicyRows = policyRows.filter(row => {
+      const values = rowValues(row);
+      const statusMatches = this.policyStatusFilter === 'all' ||
+        (this.policyStatusFilter === 'enabled') === values.enabled;
+      const actionMatches = this.policyActionFilter === 'all' || this.policyActionFilter === values.action;
+      const queryMatches = !query || this.searchMatches([
+        values.name, values.protocol, values.action, ...values.sources, ...values.sourcePorts,
+        ...values.destinations, ...values.destinationPorts,
+      ], query);
+      return statusMatches && actionMatches && queryMatches;
+    });
+    const actions = [...new Set(policyRows.map(row => rowValues(row).action))].sort();
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -5909,11 +5962,42 @@ export class SmithproxyApp extends LitElement {
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
         </div>
+        <div class="list-filters" role="search" aria-label="Filter policies">
+          <label class="list-filter">Name, reference, or protocol
+            <input type="search" aria-label="Filter policy list"
+              .value=${this.policyListQuery}
+              @input=${(event: Event) => {
+                this.policyListQuery = (event.currentTarget as HTMLInputElement).value.slice(0, 128);
+              }} />
+          </label>
+          <label class="list-filter">Status
+            <select aria-label="Filter policies by status" .value=${this.policyStatusFilter}
+              @change=${(event: Event) => {
+                this.policyStatusFilter = (event.currentTarget as HTMLSelectElement).value as PolicyStatusFilter;
+              }}>
+              <option value="all">All statuses</option>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
+          <label class="list-filter">Action
+            <select aria-label="Filter policies by action" .value=${this.policyActionFilter}
+              @change=${(event: Event) => {
+                this.policyActionFilter = (event.currentTarget as HTMLSelectElement).value;
+              }}>
+              <option value="all">All actions</option>
+              ${actions.map(action => html`<option value=${action}>${displayState(action)}</option>`)}
+            </select>
+          </label>
+          <span class="list-filter-summary" role="status">
+            Showing ${visiblePolicyRows.length.toLocaleString()} of ${policyRows.length.toLocaleString()}
+          </span>
+        </div>
         <div class="table" role="group" aria-label="Policies">
           <div class="row heading" aria-hidden="true">
             <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
           </div>
-          ${policyRows.map(row => {
+          ${visiblePolicyRows.map(row => {
             if (row.kind === 'create') {
               const {operation} = row;
               const text = (field: string, fallback = '') => {
@@ -5963,6 +6047,9 @@ export class SmithproxyApp extends LitElement {
               </span>
             </button>`;
           })}
+          ${visiblePolicyRows.length === 0 ? html`
+            <div class="metrics-message" role="status">No policies match the current filters.</div>
+          ` : nothing}
         </div>
       </div>
     `;

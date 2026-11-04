@@ -4352,6 +4352,34 @@ test('summarizes the live configuration on the dashboard and opens real inventor
   await expect(page.getByRole('group', {name: 'Address objects'})).toContainText('office');
 });
 
+test('filters real and pending policies by text, status, and action', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', secondPolicy: true,
+    initialDraftChanges: [{path: 'policy.[1].disabled', value: true}],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const policies = page.getByRole('group', {name: 'Policies'});
+  await expect(policies.getByRole('button')).toHaveCount(2);
+  await expect(page.getByText('Showing 2 of 2', {exact: true})).toBeVisible();
+
+  const query = page.getByRole('searchbox', {name: 'Filter policy list'});
+  await query.fill('Policy 2');
+  await expect(policies.getByRole('button')).toHaveCount(1);
+  await expect(policies).toContainText('Policy 2');
+  await query.clear();
+
+  await page.getByRole('combobox', {name: 'Filter policies by status'}).selectOption('disabled');
+  await expect(policies.getByRole('button')).toHaveCount(1);
+  await expect(policies).toContainText('Policy 2');
+  await page.getByRole('combobox', {name: 'Filter policies by action'}).selectOption('accept');
+  await expect(policies.getByText('No policies match the current filters.')).toBeVisible();
+  await page.getByRole('combobox', {name: 'Filter policies by action'}).selectOption('reject');
+  await expect(policies.getByRole('button')).toHaveCount(1);
+  await expect(page.getByText('Showing 1 of 2', {exact: true})).toBeVisible();
+});
+
 test('removes an open live editor when gateway configuration access is revoked', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: true,
