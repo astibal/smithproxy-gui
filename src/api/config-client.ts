@@ -544,7 +544,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       usedBy: [],
     };
   });
-  for (const collection of [ports, protocols, profiles]) {
+  for (const collection of [ports, protocols]) {
     const ids = new Set<string>();
     const names = new Set<string>();
     for (const item of collection) {
@@ -552,6 +552,16 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       ids.add(item.id);
       names.add(item.name);
     }
+  }
+  const profileIds = new Set<string>();
+  const profileIdentities = new Set<string>();
+  for (const profile of profiles) {
+    const identity = `${profile.type}:${profile.name}`;
+    if (profileIds.has(profile.id) || profileIdentities.has(identity)) {
+      throw new Error('Duplicate configuration profile.');
+    }
+    profileIds.add(profile.id);
+    profileIdentities.add(identity);
   }
   const portsByName = new Map(ports.map(item => [item.name, item]));
   const protocolsByName = new Map(protocols.map(item => [item.name, item]));

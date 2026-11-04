@@ -407,6 +407,22 @@ describe('ApiConfigClient', () => {
     expect(legacy.policies[0]).toMatchObject({action: 'bypass', nat: 'masquerade'});
   });
 
+  it('scopes profile names by type while keeping profile identities unique', () => {
+    const sharedName = parseConfigSnapshot({
+      ...liveSnapshot,
+      profiles: liveSnapshot.profiles.map(profile =>
+        profile.type === 'content' ? {...profile, name: 'default'} : profile),
+    });
+    expect(sharedName.profiles.filter(profile => profile.name === 'default').map(profile => profile.type))
+      .toEqual(['detection', 'content']);
+
+    const detection = liveSnapshot.profiles.find(profile => profile.type === 'detection')!;
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      profiles: [...liveSnapshot.profiles, {...detection, id: 'detection-duplicate'}],
+    })).toThrow('Duplicate configuration profile');
+  });
+
   it('rejects malformed collections, unsafe paths, and non-success responses', async () => {
     expect(() => new ApiConfigClient('https://other.example/api')).toThrow('same-origin');
     expect(() => new ApiConfigClient('/api/../secret')).toThrow('relative path');
