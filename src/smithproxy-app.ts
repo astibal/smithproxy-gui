@@ -652,9 +652,10 @@ export class SmithproxyApp extends LitElement {
     .policy-table-row:not(.heading):hover { background: var(--app-raised); }
     .policy-row-select { display: grid; place-items: center; }
     .policy-row-select input { width: 16px; height: 16px; margin: 0; accent-color: var(--app-brand); }
-    .policy-row-main { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px; gap: 16px; align-items: center; min-width: 0; padding: 12px 14px 12px 0; border: 0; background: transparent; color: var(--app-text); text-align: left; cursor: pointer; }
+    .policy-row-main { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px minmax(170px, .9fr); gap: 16px; align-items: center; min-width: 0; padding: 12px 14px 12px 0; border: 0; background: transparent; color: var(--app-text); text-align: left; cursor: pointer; }
     .policy-row-main.heading { color: var(--app-muted); font-size: 12px; cursor: default; }
     .policy-row-main strong { font-weight: 650; }
+    .policy-transport { overflow: hidden; color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .draft-row { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr) auto; gap: 18px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .draft-row:last-child { border-bottom: 0; }
     .draft-row.heading { color: var(--app-muted); font-size: 12px; }
@@ -782,7 +783,7 @@ export class SmithproxyApp extends LitElement {
       .row { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
       .row > :nth-child(3), .row > :nth-child(5) { display: none; }
       .policy-row-main { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
-      .policy-row-main > :nth-child(3), .policy-row-main > :nth-child(5) { display: none; }
+      .policy-row-main > :nth-child(3), .policy-row-main > :nth-child(5), .policy-row-main > :nth-child(6) { display: none; }
       .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
       .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
@@ -7112,6 +7113,7 @@ export class SmithproxyApp extends LitElement {
           <div class="policy-table-row heading" aria-hidden="true">
             <span></span><div class="policy-row-main heading">
               <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
+              <span>Transport</span>
             </div>
           </div>
           ${visiblePolicyRows.map(row => {
@@ -7140,6 +7142,9 @@ export class SmithproxyApp extends LitElement {
                     <span class="status ${disabled ? 'disabled' : ''}">${disabled ? 'Disabled' : 'Enabled'}</span>
                     <span class="pending-badge" title="This policy is a pending structural create">Pending create</span>
                   </span>
+                  <span class="policy-transport">${this.policyTransportSummary(
+                    text('proto', 'tcp'), list('sport'), list('dport'),
+                  )}</span>
                 </button>
               </div>`;
             }
@@ -7153,6 +7158,9 @@ export class SmithproxyApp extends LitElement {
               `${base}.dst`, policy.destinations.map(item => item.name), 'string',
             );
             const action = this.presentedValue(`${base}.action`, policy.action);
+            const protocol = this.presentedValue(`${base}.proto`, policy.protocol);
+            const sourcePorts = this.presentedListValue(`${base}.sport`, policy.sourcePorts, 'string');
+            const destinationPorts = this.presentedListValue(`${base}.dport`, policy.destinationPorts, 'string');
             const enabled = !this.presentedValue(`${base}.disabled`, !policy.enabled);
             const fieldsReadOnly = bulkFields.every(field => this.originReadOnly(`${base}.${field}`, false));
             const deletionBlocked = this.policyBulkDeleteBlocker([policy.id]) !== undefined;
@@ -7180,6 +7188,9 @@ export class SmithproxyApp extends LitElement {
                   ${this.renderPendingBadge('policy', policy.id)}
                   ${this.renderOverlayBadge(`policy.[${index}].`, overlayCounts)}
                 </span>
+                <span class="policy-transport">${this.policyTransportSummary(
+                  protocol, sourcePorts, destinationPorts,
+                )}</span>
               </button>
             </div>`;
           })}
@@ -7189,6 +7200,15 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private policyTransportSummary(
+    protocol: string,
+    sourcePorts: ReadonlyArray<string>,
+    destinationPorts: ReadonlyArray<string>,
+  ): string {
+    const summary = (ports: ReadonlyArray<string>) => ports.length === 0 ? 'any' : ports.join(', ');
+    return `${protocol || 'any'} · ${summary(sourcePorts)} → ${summary(destinationPorts)}`;
   }
 
   private updateSearch(value: string): void {

@@ -969,8 +969,10 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
-  await expect(page.getByRole('button', {name: /Policy 1 office internet accept/i})).toBeVisible();
-  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+  const policyRow = page.getByRole('button', {name: /Policy 1 office internet accept/i});
+  await expect(policyRow).toBeVisible();
+  await expect(policyRow).toContainText('tcp · any → https');
+  await policyRow.click();
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await expect(editor.getByText('Validation ready')).toBeVisible();
   await editor.getByRole('button', {name: 'internet', exact: true}).click();
