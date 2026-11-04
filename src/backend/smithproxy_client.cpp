@@ -3,8 +3,11 @@
 #include "revision.hpp"
 
 #include <curl/curl.h>
+#include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <condition_variable>
 #include <future>
 #include <iterator>
@@ -89,6 +92,33 @@ TransactionResponse transaction_failure(std::string state) {
     };
 }
 
+bool valid_session_token(const std::string_view token) {
+    return token.size() == 32U && std::all_of(token.begin(), token.end(), [](const char value) {
+        return std::isxdigit(static_cast<unsigned char>(value)) != 0;
+    });
+}
+
+curl_slist* append_session_headers(
+    curl_slist* headers, const std::string_view auth_token,
+    const std::string_view csrf_token) {
+    const std::array values{
+        "Cookie: __sx_api=" + std::string(auth_token) +
+            "; __Host-csrf_token=" + std::string(csrf_token),
+        "csrf_token: " + std::string(csrf_token),
+        std::string{"Content-Type: application/json"},
+        std::string{"Accept: application/json"},
+    };
+    for (const auto& value : values) {
+        auto* updated = curl_slist_append(headers, value.c_str());
+        if (!updated) {
+            curl_slist_free_all(headers);
+            return nullptr;
+        }
+        headers = updated;
+    }
+    return headers;
+}
+
 } // namespace
 
 SmithproxyMonitor::SmithproxyMonitor(
@@ -132,6 +162,58 @@ void SmithproxyMonitor::stop() {
     worker_.request_stop();
     wakeup_.notify_all();
     worker_.join();
+}
+
+std::optional<SmithproxyMonitor::UpstreamSession> SmithproxyMonitor::upstream_session(
+    const std::optional<std::string_view> rejected_auth_token) const {
+    if (!config_) return std::nullopt;
+    std::scoped_lock lock(upstream_session_mutex_);
+    if (upstream_session_ &&
+        (!rejected_auth_token || upstream_session_->auth_token != *rejected_auth_token)) {
+        return upstream_session_;
+    }
+    upstream_session_.reset();
+
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if (!curl) return std::nullopt;
+    auto* raw_headers = curl_slist_append(nullptr, "Content-Type: application/json");
+    if (!raw_headers) return std::nullopt;
+    auto* updated_headers = curl_slist_append(raw_headers, "Accept: application/json");
+    if (!updated_headers) {
+        curl_slist_free_all(raw_headers);
+        return std::nullopt;
+    }
+    std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
+    const auto request = nlohmann::json{{"access_key", config_->api_key}}.dump();
+    ResponseBuffer response{.limit = 4096U, .body = {}, .exceeded = false};
+    configure_request(curl.get(), *config_, config_->api_url + "/api/authorize", headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                     static_cast<curl_off_t>(request.size()));
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto result = curl_easy_perform(curl.get());
+    if (result != CURLE_OK || response.exceeded) return std::nullopt;
+    long status_code{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    if (status_code != 200L) return std::nullopt;
+
+    const auto document = nlohmann::json::parse(response.body, nullptr, false);
+    if (document.is_discarded() || !document.is_object() ||
+        !document.contains("auth_token") || !document["auth_token"].is_string() ||
+        !document.contains("csrf_token") || !document["csrf_token"].is_string()) {
+        return std::nullopt;
+    }
+    UpstreamSession session{
+        .auth_token = document["auth_token"].get<std::string>(),
+        .csrf_token = document["csrf_token"].get<std::string>(),
+    };
+    if (!valid_session_token(session.auth_token) || !valid_session_token(session.csrf_token)) {
+        return std::nullopt;
+    }
+    upstream_session_ = session;
+    return session;
 }
 
 SmithproxyStatus SmithproxyMonitor::status() const {
@@ -184,47 +266,50 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
             : "unavailable");
     }
 
-    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
-    if (!curl) return transaction_failure("unavailable");
-    curl_slist* raw_headers = nullptr;
-    for (const auto& header : {
-             "X-API-Key: " + config_->api_key,
-             std::string{"Content-Type: application/json"},
-             std::string{"Accept: application/json"},
-             std::string{"Expect:"},
-         }) {
-        auto* updated = curl_slist_append(raw_headers, header.c_str());
-        if (!updated) {
+    const std::string endpoint = config_->api_url + "/api/config/v2/transaction";
+    std::optional<std::string> rejected_auth_token;
+    for (unsigned attempt = 0U; attempt < 2U; ++attempt) {
+        const auto session = upstream_session(rejected_auth_token);
+        if (!session) return transaction_failure("unauthorized");
+        std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+        if (!curl) return transaction_failure("unavailable");
+        auto* raw_headers = append_session_headers(
+            nullptr, session->auth_token, session->csrf_token);
+        if (!raw_headers) return transaction_failure("unavailable");
+        auto* updated_headers = curl_slist_append(raw_headers, "Expect:");
+        if (!updated_headers) {
             curl_slist_free_all(raw_headers);
             return transaction_failure("unavailable");
         }
-        raw_headers = updated;
+        std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
+        ResponseBuffer response{
+            .limit = transaction_response_limit,
+            .body = {},
+            .exceeded = false,
+        };
+        configure_request(curl.get(), *config_, endpoint, headers.get());
+        curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
+        curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, envelope.body->data());
+        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                         static_cast<curl_off_t>(envelope.body->size()));
+        curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+        curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+        const auto result = curl_easy_perform(curl.get());
+        if (response.exceeded) return transaction_failure("invalid-response");
+        if (result != CURLE_OK) return transaction_failure("unavailable");
+
+        long status_code{};
+        curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+        if ((status_code == 401L || status_code == 403L) && attempt == 0U) {
+            rejected_auth_token = session->auth_token;
+            continue;
+        }
+        return parse_transaction_response(
+            status_code, response.body, mode, *draft.base_revision,
+            draft.operation_count());
     }
-    std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
-
-    const std::string endpoint = config_->api_url + "/api/config/v2/transaction";
-    ResponseBuffer response{
-        .limit = transaction_response_limit,
-        .body = {},
-        .exceeded = false,
-    };
-    configure_request(curl.get(), *config_, endpoint, headers.get());
-    curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
-    curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
-    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, envelope.body->data());
-    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
-                     static_cast<curl_off_t>(envelope.body->size()));
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
-    const auto result = curl_easy_perform(curl.get());
-    if (response.exceeded) return transaction_failure("invalid-response");
-    if (result != CURLE_OK) return transaction_failure("unavailable");
-
-    long status_code{};
-    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
-    return parse_transaction_response(
-        status_code, response.body, mode, *draft.base_revision,
-        draft.operation_count());
+    return transaction_failure("unauthorized");
 }
 
 void SmithproxyMonitor::run(const std::stop_token stop_token) {
@@ -876,47 +961,56 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         std::string error;
     };
     const auto fetch_section = [this](const std::string& section) -> SectionResponse {
-        std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
-        if (!curl) return {std::nullopt, "Cannot initialize the Smithproxy configuration client"};
-
-        auto* raw_headers = curl_slist_append(
-            nullptr, ("X-API-Key: " + config_->api_key).c_str());
-        if (!raw_headers) return {std::nullopt, "Cannot prepare Smithproxy configuration authentication"};
-        auto* updated_headers = curl_slist_append(raw_headers, "Content-Type: application/json");
-        if (!updated_headers) {
-            curl_slist_free_all(raw_headers);
-            return {std::nullopt, "Cannot prepare Smithproxy configuration headers"};
-        }
-        std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
-
         const std::string endpoint = config_->api_url + "/api/config/uni/get";
         const std::string request = "{\"params\":{\"section\":\"" + section + "\",\"name\":\"\"}}";
-        ResponseBuffer response{
-            .limit = 2U * 1024U * 1024U,
-            .body = {},
-            .exceeded = false,
-        };
-        configure_request(curl.get(), *config_, endpoint, headers.get());
-        curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
-        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.c_str());
-        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, static_cast<long>(request.size()));
-        curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
-        curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
-        const auto result = curl_easy_perform(curl.get());
-        if (response.exceeded) {
-            return {std::nullopt, "Smithproxy configuration exceeded the response limit"};
+        std::optional<std::string> rejected_auth_token;
+        for (unsigned attempt = 0U; attempt < 2U; ++attempt) {
+            const auto session = upstream_session(rejected_auth_token);
+            if (!session) {
+                return {std::nullopt, "Cannot authorize the Smithproxy configuration session"};
+            }
+            std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+            if (!curl) {
+                return {std::nullopt, "Cannot initialize the Smithproxy configuration client"};
+            }
+            auto* raw_headers = append_session_headers(
+                nullptr, session->auth_token, session->csrf_token);
+            if (!raw_headers) {
+                return {std::nullopt, "Cannot prepare Smithproxy configuration authentication"};
+            }
+            std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
+            ResponseBuffer response{
+                .limit = 2U * 1024U * 1024U,
+                .body = {},
+                .exceeded = false,
+            };
+            configure_request(curl.get(), *config_, endpoint, headers.get());
+            curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.c_str());
+            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, static_cast<long>(request.size()));
+            curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+            curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+            const auto result = curl_easy_perform(curl.get());
+            if (response.exceeded) {
+                return {std::nullopt, "Smithproxy configuration exceeded the response limit"};
+            }
+            if (result != CURLE_OK) {
+                return {std::nullopt, std::string("Cannot retrieve Smithproxy configuration: ") +
+                                          curl_easy_strerror(result)};
+            }
+            long status_code{};
+            curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+            if ((status_code == 401L || status_code == 403L) && attempt == 0U) {
+                rejected_auth_token = session->auth_token;
+                continue;
+            }
+            if (status_code != 200L) {
+                return {std::nullopt, "Smithproxy configuration returned HTTP " +
+                                          std::to_string(status_code)};
+            }
+            return {std::move(response.body), {}};
         }
-        if (result != CURLE_OK) {
-            return {std::nullopt, std::string("Cannot retrieve Smithproxy configuration: ") +
-                                      curl_easy_strerror(result)};
-        }
-        long status_code{};
-        curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
-        if (status_code != 200L) {
-            return {std::nullopt, "Smithproxy configuration returned HTTP " +
-                                      std::to_string(status_code)};
-        }
-        return {std::move(response.body), {}};
+        return {std::nullopt, "Smithproxy configuration session was rejected"};
     };
 
     const std::array profile_categories{

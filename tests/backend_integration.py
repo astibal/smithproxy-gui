@@ -48,6 +48,10 @@ def assert_error_response(result, expected_status: int, expected_code: str) -> s
 
 class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     api_key = None
+    authorization_access_key = None
+    authorization_requests = 0
+    auth_token = "a" * 32
+    csrf_token = "b" * 32
     response_status = 200
     config_revision = "sha256:" + "c" * 64
     revision_requests = 0
@@ -298,10 +302,34 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        if self.path == "/api/authorize":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                document = json.loads(self.rfile.read(length))
+                FakeSmithproxy.authorization_access_key = document["access_key"]
+            except (KeyError, ValueError, json.JSONDecodeError):
+                self.send_error(400)
+                return
+            FakeSmithproxy.authorization_requests += 1
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "auth_token": FakeSmithproxy.auth_token,
+                "csrf_token": FakeSmithproxy.csrf_token,
+            }).encode())
+            return
         if self.path != "/api/config/uni/get":
             self.send_error(404)
             return
-        FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+        expected_cookie = (
+            f"__sx_api={FakeSmithproxy.auth_token}; "
+            f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
+        if (self.headers.get("Cookie") != expected_cookie or
+                self.headers.get("csrf_token") != FakeSmithproxy.csrf_token or
+                self.headers.get("X-API-Key") is not None):
+            self.send_error(401)
+            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             document = json.loads(self.rfile.read(length))
@@ -528,6 +556,8 @@ def main() -> int:
     assert process.returncode == 0, process.stderr.read()
 
     fake_port = free_port()
+    FakeSmithproxy.authorization_access_key = None
+    FakeSmithproxy.authorization_requests = 0
     fake = http.server.ThreadingHTTPServer(("127.0.0.1", fake_port), FakeSmithproxy)
     fake_thread = threading.Thread(target=fake.serve_forever, daemon=True)
     fake_thread.start()
@@ -556,6 +586,9 @@ def main() -> int:
             gateway_headers = {"X-Smithproxy-GUI-Gateway": gateway_secret}
             health_body = wait_for_state(configured_port, "ready")
             assert FakeSmithproxy.api_key == secret
+            wait_for_config(configured_port, gateway_secret)
+            assert FakeSmithproxy.authorization_access_key == secret
+            assert FakeSmithproxy.authorization_requests == 1
             assert secret.encode() not in health_body
             assert isinstance(json.loads(health_body)["smithproxy"]["checked_at_unix_ms"], int)
             protected_paths = (

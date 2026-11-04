@@ -69,7 +69,14 @@ public:
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 
 private:
+    struct UpstreamSession {
+        std::string auth_token;
+        std::string csrf_token;
+    };
+
     void run(std::stop_token stop_token);
+    [[nodiscard]] std::optional<UpstreamSession> upstream_session(
+        std::optional<std::string_view> rejected_auth_token = std::nullopt) const;
     SmithproxyStatus ping() const;
     RuntimeMetrics fetch_runtime_metrics() const;
     TlsCacheMetrics fetch_tls_cache_metrics() const;
@@ -85,6 +92,8 @@ private:
     std::optional<SmithproxyConfig> config_;
     bool config_enabled_{};
     ReviewedTransactionSchemas reviewed_transaction_schemas_;
+    mutable std::mutex upstream_session_mutex_;
+    mutable std::optional<UpstreamSession> upstream_session_;
     mutable std::mutex mutex_;
     SmithproxyStatus status_;
     std::atomic_bool config_refresh_requested_{};

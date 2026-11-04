@@ -23,13 +23,25 @@ PRIVATE_VALUE = "transaction-private-password"
 class TransactionSmithproxy(FakeSmithproxy):
     requests = []
     request_lock = threading.Lock()
+    reject_first_session_request = True
     reject_first_commit_transport = True
 
     def do_POST(self):
         if self.path != "/api/config/v2/transaction":
             super().do_POST()
             return
-        FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+        expected_cookie = (
+            f"__sx_api={FakeSmithproxy.auth_token}; "
+            f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
+        if (self.headers.get("Cookie") != expected_cookie or
+                self.headers.get("csrf_token") != FakeSmithproxy.csrf_token or
+                self.headers.get("X-API-Key") is not None):
+            self.send_error(401)
+            return
+        if TransactionSmithproxy.reject_first_session_request:
+            TransactionSmithproxy.reject_first_session_request = False
+            self.send_error(401)
+            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             document = json.loads(self.rfile.read(length))
@@ -105,6 +117,8 @@ def main() -> int:
     binary, assets = sys.argv[1:]
     FakeSmithproxy.config_revision = BASE_REVISION
     FakeSmithproxy.response_status = 200
+    FakeSmithproxy.authorization_access_key = None
+    FakeSmithproxy.authorization_requests = 0
     FakeSmithproxy.transaction_capabilities = {
         "success": {
             "transaction_version": 1,
@@ -122,6 +136,7 @@ def main() -> int:
         },
     }
     TransactionSmithproxy.requests = []
+    TransactionSmithproxy.reject_first_session_request = True
     TransactionSmithproxy.reject_first_commit_transport = True
 
     fake_port = free_port()
@@ -233,6 +248,7 @@ def main() -> int:
                 "validate", "commit", "commit"]
             assert upstream_requests[1]["idempotency_key"] == upstream_requests[2]["idempotency_key"]
             assert upstream_requests[0]["idempotency_key"] != upstream_requests[1]["idempotency_key"]
+            assert FakeSmithproxy.authorization_requests == 2
             assert upstream_requests[1]["operations"] == [
                 {"op": "set", "path": "policy.[0].action", "value": "reject"},
                 {"op": "set", "path": "settings.certs_ca_key_password", "value": PRIVATE_VALUE},

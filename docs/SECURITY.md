@@ -25,6 +25,17 @@ musí být uzavřená a vzdálený přístup se povoluje explicitně.
 Konkrétní autentizační mechanismus bude zvolen podle deployment modelu. Podpora
 externího identity proxy nesmí automaticky znamenat důvěru libovolným hlavičkám.
 
+## Smithproxy upstream session
+
+The Smithproxy API key is a server-side bootstrap credential only. The GUI core
+exchanges it through `POST /api/authorize`, validates the bounded auth and CSRF
+tokens, and retains them only in process memory. Upstream POST requests use the
+Smithproxy secure session cookie plus the matching CSRF header; they never rely
+on `X-API-Key`, which Smithproxy intentionally permits only for GET requests.
+An HTTP 401 or 403 invalidates only the rejected in-memory session and triggers
+one bounded reauthorization attempt. Neither bootstrap nor session credentials
+cross the browser boundary or enter logs, diagnostics, or audit records.
+
 ## Trusted gateway handoff
 
 Sensitive browser-facing APIs are disabled unless
