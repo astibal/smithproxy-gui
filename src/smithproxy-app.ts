@@ -89,6 +89,7 @@ const systemBooleanFields = [
   ['accept_tproxy', 'accept-tproxy'], ['accept_redirect', 'accept-redirect'],
   ['accept_socks', 'accept-socks'], ['accept_http_connect', 'accept-http-connect'],
   ['accept_api', 'accept-api'],
+  ['extended_local_destination_protection', 'local-destination-protection'],
   ['policy_fail_open', 'policy-fail-open'],
   ['policy_access_request_fail_open', 'access-fail-open'],
   ['ssl_autodetect', 'tls-autodetect'], ['ssl_autodetect_harder', 'tls-autodetect-harder'],
@@ -103,6 +104,8 @@ const systemBooleanFields = [
   ['tpool_log', 'aux-thread-pool-log'], ['socks.async_dns', 'aux-socks-async-dns'],
   ['socks.ipver_mixing', 'aux-socks-ipver-mixing'],
   ['socks.prefer_ipv6', 'aux-socks-prefer-ipv6'],
+  ['socks.proxy_authorization', 'socks-proxy-authorization'],
+  ['http_connect.proxy_authorization', 'http-connect-proxy-authorization'],
 ] as const;
 
 const systemWorkerFields = [
@@ -6087,6 +6090,7 @@ export class SmithproxyApp extends LitElement {
       flag('accept_socks', settings.acceptSocks),
       flag('accept_http_connect', settings.acceptHttpConnect),
       flag('accept_api', settings.acceptApi),
+      flag('extended_local_destination_protection', settings.extendedLocalDestinationProtection),
       flag('policy_fail_open', settings.policyFailOpen),
       flag('policy_access_request_fail_open', settings.accessRequestFailOpen),
       scalar('plaintext_workers', settings.workers.plaintext),
@@ -6118,6 +6122,8 @@ export class SmithproxyApp extends LitElement {
       flag('socks.async_dns', settings.auxiliary.socksAsyncDns),
       flag('socks.ipver_mixing', settings.auxiliary.socksIpVersionMixing),
       flag('socks.prefer_ipv6', settings.auxiliary.socksPreferIpv6),
+      flag('socks.proxy_authorization', settings.auxiliary.socksProxyAuthorization),
+      flag('http_connect.proxy_authorization', settings.auxiliary.httpConnectProxyAuthorization),
       ...strings('udp_quick_ports', settings.auxiliary.udpQuickPorts),
       scalar('tuning.host_bufsz_min', settings.auxiliary.tuning.hostBufferMin),
       scalar('tuning.host_bufsz_max_multiplier', settings.auxiliary.tuning.hostBufferMaxMultiplier),
@@ -7537,6 +7543,8 @@ export class SmithproxyApp extends LitElement {
               <dl>
                 <dt>TPROXY / REDIRECT</dt><dd>${setting('accept_tproxy', settings.acceptTproxy) ? 'On' : 'Off'} / ${setting('accept_redirect', settings.acceptRedirect) ? 'On' : 'Off'}</dd>
                 <dt>SOCKS / CONNECT</dt><dd>${setting('accept_socks', settings.acceptSocks) ? 'On' : 'Off'} / ${setting('accept_http_connect', settings.acceptHttpConnect) ? 'On' : 'Off'}</dd>
+                <dt>Local destinations</dt><dd>${setting('extended_local_destination_protection', settings.extendedLocalDestinationProtection) ? 'Protected' : 'Allowed'}</dd>
+                <dt>Proxy authentication</dt><dd>SOCKS ${setting('socks.proxy_authorization', settings.auxiliary.socksProxyAuthorization) ? 'required' : 'anonymous'} / CONNECT ${setting('http_connect.proxy_authorization', settings.auxiliary.httpConnectProxyAuthorization) ? 'required' : 'anonymous'}</dd>
                 <dt>Policy failure</dt><dd>${setting('policy_fail_open', settings.policyFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
                 <dt>Access request failure</dt><dd>${setting('policy_access_request_fail_open', settings.accessRequestFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
               </dl>
@@ -9250,6 +9258,10 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('accept-socks', 'SOCKS listener', settings.acceptSocks)}
         ${booleanField('accept-http-connect', 'HTTP CONNECT listener', settings.acceptHttpConnect)}
         ${booleanField('accept-api', 'Smithproxy API listener', settings.acceptApi)}
+        <h3 class="form-span">Explicit proxy security</h3>
+        ${booleanField('local-destination-protection', 'Protect local destinations', settings.extendedLocalDestinationProtection)}
+        ${booleanField('socks-proxy-authorization', 'Require SOCKS authentication', settings.auxiliary.socksProxyAuthorization)}
+        ${booleanField('http-connect-proxy-authorization', 'Require HTTP CONNECT authentication', settings.auxiliary.httpConnectProxyAuthorization)}
         ${booleanField('policy-fail-open', 'Policy failure', settings.policyFailOpen)}
         ${booleanField('access-fail-open', 'Access request failure', settings.accessRequestFailOpen)}
         ${workerField('plaintext', 'Plaintext workers', settings.workers.plaintext)}

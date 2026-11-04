@@ -91,6 +91,7 @@ const liveSnapshot = {
   settings: {
     accept_tproxy: true, accept_redirect: true, accept_socks: false,
     accept_http_connect: true, accept_api: true,
+    extended_local_destination_protection: true,
     policy_fail_open: false,
     access_request_fail_open: false,
     workers: {plaintext: 2, tls: 4, udp: 1, dtls: 1, quic: -1, socks: -1, http_connect: 1},
@@ -116,6 +117,7 @@ const liveSnapshot = {
       },
       thread_pool_logging: false, socks_async_dns: true,
       socks_ip_version_mixing: true, socks_prefer_ipv6: false,
+      socks_proxy_authorization: false, http_connect_proxy_authorization: true,
     },
     tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
     nameserver_count: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
@@ -228,12 +230,16 @@ describe('ApiConfigClient', () => {
     });
     expect(snapshot.settings).toMatchObject({
       policyFailOpen: false,
+      extendedLocalDestinationProtection: true,
       workers: {tls: 4, quic: -1, socks: -1},
       ports: {tls: 50443, quic: 443},
       ocspStatusTtl: 1800,
       crlStatusTtl: 86400,
       logging: {level: 6, pcapSingleQuota: 100, syslogFamily: 4},
-      auxiliary: {cliPort: 50000, socksAsyncDns: true, udpQuickPorts: ['0']},
+      auxiliary: {
+        cliPort: 50000, socksAsyncDns: true, udpQuickPorts: ['0'],
+        socksProxyAuthorization: false, httpConnectProxyAuthorization: true,
+      },
       nameservers: ['192.0.2.53', '2001:db8::53'],
       httpApi: {
         allowedIps: ['127.0.0.1'], keyTimeout: 3600, port: 55555,

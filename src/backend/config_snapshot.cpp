@@ -630,6 +630,8 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto accept_socks = boolean_scalar(*value, "accept_socks", false);
     const auto accept_http_connect = boolean_scalar(*value, "accept_http_connect", false);
     const auto accept_api = boolean_scalar(*value, "accept_api", false);
+    const auto extended_local_destination_protection = boolean_scalar(
+        *value, "extended_local_destination_protection", true);
     const auto policy_fail_open = boolean_scalar(*value, "policy_fail_open", false);
     const auto access_fail_open = boolean_scalar(*value, "policy_access_request_fail_open", false);
     const auto plaintext_workers = optional_signed_decimal(*value, "plaintext_workers", 0, -1, 4096);
@@ -724,6 +726,15 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto socks_async_dns = boolean_scalar(socks, "async_dns", true);
     const auto socks_ip_version_mixing = boolean_scalar(socks, "ipver_mixing", true);
     const auto socks_prefer_ipv6 = boolean_scalar(socks, "prefer_ipv6", false);
+    const auto socks_proxy_authorization = boolean_scalar(socks, "proxy_authorization", false);
+    const auto http_connect_value = value->find("http_connect");
+    if (http_connect_value != value->end() && !http_connect_value->is_object()) {
+        return {std::nullopt, "Smithproxy returned invalid HTTP CONNECT settings"};
+    }
+    const Json& http_connect = http_connect_value != value->end() && http_connect_value->is_object()
+        ? *http_connect_value : empty;
+    const auto http_connect_proxy_authorization = boolean_scalar(
+        http_connect, "proxy_authorization", false);
     const auto thread_pool_logging = boolean_scalar(*value, "tpool_log", false);
     const auto tls_autodetect = boolean_scalar(*value, "ssl_autodetect", false);
     const auto tls_autodetect_harder = boolean_scalar(*value, "ssl_autodetect_harder", false);
@@ -772,6 +783,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto webhook_task_debug_dump = boolean_scalar(webhook, "task_debug_dump", false);
 
     if (!accept_tproxy || !accept_redirect || !accept_socks || !accept_http_connect || !accept_api ||
+        !extended_local_destination_protection ||
         !policy_fail_open || !access_fail_open || !plaintext_workers || !tls_workers || !udp_workers ||
         !dtls_workers || !quic_workers || !socks_workers || !http_connect_workers || !plaintext_port ||
         !tls_port || !udp_port || !dtls_port || !quic_port || !socks_port || !http_connect_port ||
@@ -793,7 +805,8 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !tuning_tls_write_chunk || *tuning_tls_write_chunk < 1024U || !tuning_host_open_timeout ||
         !tuning_host_idle_timeout || !tuning_neighbor_cache_size || *tuning_neighbor_cache_size == 0U ||
         !thread_pool_logging || !socks_async_dns ||
-        !socks_ip_version_mixing || !socks_prefer_ipv6 ||
+        !socks_ip_version_mixing || !socks_prefer_ipv6 || !socks_proxy_authorization ||
+        !http_connect_proxy_authorization ||
         !tls_autodetect ||
         !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips ||
         !api_key_timeout || *api_key_timeout == 0U || !api_port || *api_port < 1024U || !key_extend ||
@@ -820,6 +833,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     }
     return {ConfigSystemSettings{
                 *accept_tproxy, *accept_redirect, *accept_socks, *accept_http_connect, *accept_api,
+                *extended_local_destination_protection,
                 *policy_fail_open, *access_fail_open, *plaintext_workers, *tls_workers, *udp_workers,
                 *dtls_workers, *quic_workers, *socks_workers, *http_connect_workers,
                 *plaintext_port, *tls_port, *udp_port, *dtls_port, *quic_port, *socks_port, *http_connect_port,
@@ -837,7 +851,8 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *tuning_host_buffer_max_multiplier, *tuning_host_write_full, *tuning_host_io_batch,
                 *tuning_tls_write_chunk, *tuning_host_open_timeout, *tuning_host_idle_timeout,
                 *tuning_neighbor_cache_size, *thread_pool_logging, *socks_async_dns,
-                *socks_ip_version_mixing, *socks_prefer_ipv6, *tls_autodetect,
+                *socks_ip_version_mixing, *socks_prefer_ipv6, *socks_proxy_authorization,
+                *http_connect_proxy_authorization, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, nameservers->size(), *nameservers,
                 *api_keys, allowed_ips->size(), *allowed_ips,
                 *api_key_timeout, *api_port, *key_extend, *loopback_only, *pam_login, *api_header,

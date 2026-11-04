@@ -375,6 +375,7 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
         std::string_view{"accept_tproxy"}, std::string_view{"accept_redirect"},
         std::string_view{"accept_socks"}, std::string_view{"accept_http_connect"},
         std::string_view{"accept_api"},
+        std::string_view{"extended_local_destination_protection"},
         std::string_view{"policy_fail_open"}, std::string_view{"policy_access_request_fail_open"},
         std::string_view{"ssl_autodetect"}, std::string_view{"ssl_autodetect_harder"},
         std::string_view{"ssl_use_ktls"}, std::string_view{"http_api.key_extend_on_access"},
@@ -386,6 +387,8 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
         std::string_view{"default_write_payload"}, std::string_view{"log_console"},
         std::string_view{"tpool_log"}, std::string_view{"socks.async_dns"},
         std::string_view{"socks.ipver_mixing"}, std::string_view{"socks.prefer_ipv6"},
+        std::string_view{"socks.proxy_authorization"},
+        std::string_view{"http_connect.proxy_authorization"},
     };
     if (one_of(field, booleans)) return valid(boolean(value));
     struct IntegerRule { std::string_view path; std::int64_t minimum; std::int64_t maximum; };

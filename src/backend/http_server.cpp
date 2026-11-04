@@ -1601,6 +1601,8 @@ private:
                        ",\"accept_socks\":" + (value.accept_socks ? "true" : "false") +
                        ",\"accept_http_connect\":" + (value.accept_http_connect ? "true" : "false") +
                        ",\"accept_api\":" + (value.accept_api ? "true" : "false") +
+                       ",\"extended_local_destination_protection\":" +
+                       (value.extended_local_destination_protection ? "true" : "false") +
                        ",\"policy_fail_open\":" + (value.policy_fail_open ? "true" : "false") +
                        ",\"access_request_fail_open\":" +
                        (value.access_request_fail_open ? "true" : "false") +
@@ -1672,7 +1674,11 @@ private:
                        ",\"thread_pool_logging\":" + (value.thread_pool_logging ? "true" : "false") +
                        ",\"socks_async_dns\":" + (value.socks_async_dns ? "true" : "false") +
                        ",\"socks_ip_version_mixing\":" + (value.socks_ip_version_mixing ? "true" : "false") +
-                       ",\"socks_prefer_ipv6\":" + (value.socks_prefer_ipv6 ? "true" : "false") + "}" +
+                       ",\"socks_prefer_ipv6\":" + (value.socks_prefer_ipv6 ? "true" : "false") +
+                       ",\"socks_proxy_authorization\":" +
+                       (value.socks_proxy_authorization ? "true" : "false") +
+                       ",\"http_connect_proxy_authorization\":" +
+                       (value.http_connect_proxy_authorization ? "true" : "false") + "}" +
                        ",\"tls_autodetect\":" + (value.tls_autodetect ? "true" : "false") +
                        ",\"tls_autodetect_harder\":" + (value.tls_autodetect_harder ? "true" : "false") +
                        ",\"kernel_tls\":" + (value.kernel_tls ? "true" : "false") +

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "upstream": {
     "repository": "astibal/smithproxy",
-    "revision": "495d0aa51bf5b86c39d999222152b4d2789f2ede",
+    "revision": "e85418d1aade90751d80c06bdebe13f3c173daa5",
     "reference_config": "etc/smithproxy.cfg"
   },
   "status_definitions": {
@@ -18,7 +18,7 @@
       "sensitivity": "secret-bearing",
       "tracked_fields": [
         "accept_tproxy", "accept_redirect", "accept_socks", "accept_http_connect",
-        "accept_api", "policy_fail_open",
+        "accept_api", "extended_local_destination_protection", "policy_fail_open",
         "policy_access_request_fail_open",
         "plaintext_workers", "ssl_workers", "udp_workers", "dtls_workers",
         "quic_workers", "socks_workers", "http_connect_workers", "plaintext_port",
@@ -30,7 +30,7 @@
         "udp_quick_ports", "certs_path", "certs_ca_key_password", "certs_ctlog",
         "ca_bundle_path", "ca_bundle_file", "admin", "tuning",
         "messages_dir", "write_payload_file_prefix", "write_payload_file_suffix",
-        "cli", "web_rating", "tpool_log", "socks",
+        "cli", "web_rating", "tpool_log", "socks", "http_connect",
         "ssl_autodetect_harder", "ssl_use_ktls", "nameservers", "http_api", "webhook"
       ],
       "notes": "All active writable settings emitted by the current Smithproxy saver are typed and editable with ranges aligned to the pinned upstream schema. Non-QUIC worker pools accept non-negative counts and defer the target-specific hardware ceiling to authoritative Smithproxy validation; QUIC accepts -1, 0, or 1. Non-canonical legacy live worker values remain readable without being resubmitted when unrelated settings change. OCSP and CRL status TTLs remain visible but read-only because upstream marks them VALUE_NONE. Integer quotas accept the full lossless JSON range. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys use write-only replace/clear controls. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."

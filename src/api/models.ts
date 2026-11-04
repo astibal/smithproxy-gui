@@ -179,6 +179,7 @@ export interface SystemSettings {
   acceptSocks: boolean;
   acceptHttpConnect: boolean;
   acceptApi: boolean;
+  extendedLocalDestinationProtection: boolean;
   policyFailOpen: boolean;
   accessRequestFailOpen: boolean;
   workers: Readonly<Record<'plaintext' | 'tls' | 'udp' | 'dtls' | 'quic' | 'socks' | 'httpConnect', number>>;
@@ -228,6 +229,8 @@ export interface SystemSettings {
     socksAsyncDns: boolean;
     socksIpVersionMixing: boolean;
     socksPreferIpv6: boolean;
+    socksProxyAuthorization: boolean;
+    httpConnectProxyAuthorization: boolean;
   };
   tlsAutodetect: boolean;
   tlsAutodetectHarder: boolean;

@@ -180,6 +180,7 @@ struct ConfigSystemSettings {
     bool accept_socks{};
     bool accept_http_connect{};
     bool accept_api{};
+    bool extended_local_destination_protection{true};
     bool policy_fail_open{};
     bool access_request_fail_open{};
     std::int64_t plaintext_workers{};
@@ -236,6 +237,8 @@ struct ConfigSystemSettings {
     bool socks_async_dns{};
     bool socks_ip_version_mixing{};
     bool socks_prefer_ipv6{};
+    bool socks_proxy_authorization{};
+    bool http_connect_proxy_authorization{};
     bool tls_autodetect{};
     bool tls_autodetect_harder{};
     bool kernel_tls{};

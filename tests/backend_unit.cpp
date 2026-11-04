@@ -648,12 +648,18 @@ int main() {
            DraftMutationResult::InvalidValue);
     assert(schema_draft.upsert_many(1U, {
         {"settings.accept_api", true},
+        {"settings.extended_local_destination_protection", false},
+        {"settings.socks.proxy_authorization", true},
+        {"settings.http_connect.proxy_authorization", true},
         {"captures.remote.tun_type", std::string("gre")},
         {"captures.remote.tun_ttl", std::int64_t{64}},
         {"content_profiles.[0].content_rules.[0].replace", std::string("first\nsecond")},
         {"detection_signatures.[0].flow.[0].type", std::string("regex")},
         {"debug.log.tls", std::string("trace")},
     }) == DraftMutationResult::Applied);
+    assert(validate_draft_schema({
+        "settings.socks.proxy_authorization", std::string("true"),
+    }) == DraftSchemaResult::InvalidValue);
     assert(schema_draft.upsert(2U, {"policy.[4096].name", std::string("outside")}) ==
            DraftMutationResult::InvalidPath);
 
@@ -1366,6 +1372,15 @@ int main() {
     assert(settings.settings->webhook_neighbor_tag_refresh_age == 240U);
     assert(settings.settings->webhook_task_debug);
     assert(!settings.settings->webhook_task_debug_dump);
+    const auto proxy_security_settings = parse_config_settings(
+        R"({"success":{"settings":{"extended_local_destination_protection":"false","socks":{"proxy_authorization":"true"},"http_connect":{"proxy_authorization":"true"}}}})"
+    );
+    assert(proxy_security_settings.settings);
+    assert(!proxy_security_settings.settings->extended_local_destination_protection);
+    assert(proxy_security_settings.settings->socks_proxy_authorization);
+    assert(proxy_security_settings.settings->http_connect_proxy_authorization);
+    assert(!parse_config_settings(
+        R"({"success":{"settings":{"http_connect":"invalid"}}})").settings);
     const auto tuning_settings = parse_config_settings(
         R"({"success":{"settings":{"certs_ctlog":"/private/ct-log.cnf","ca_bundle_file":"/private/ca.pem","admin":{"group":"smithproxy-admins"},"tuning":{"host_bufsz_min":"4096","host_bufsz_max_multiplier":"512","host_write_full":"100000","host_io_batch":"131072","tls_write_chunk":"32768","host_open_timeout":"9","host_idle_timeout":"1800","nbr_cache_size":"4000"}}}})");
     assert(tuning_settings.settings);

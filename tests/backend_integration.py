@@ -103,6 +103,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         "settings": {
             "accept_tproxy": "true", "accept_redirect": "true",
             "accept_socks": "false", "accept_http_connect": "true", "accept_api": "true",
+            "extended_local_destination_protection": "true",
             "policy_fail_open": "false", "policy_access_request_fail_open": "false",
             "plaintext_workers": "2", "ssl_workers": "4", "udp_workers": "1",
             "dtls_workers": "1", "quic_workers": "-1", "socks_workers": "-1",
@@ -132,7 +133,11 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                 "host_idle_timeout": "3600", "nbr_cache_size": "8000",
             },
             "web_rating": {"wot_key": "private-rating-key"},
-            "socks": {"async_dns": "true", "ipver_mixing": "true", "prefer_ipv6": "false"},
+            "socks": {
+                "async_dns": "true", "ipver_mixing": "true", "prefer_ipv6": "false",
+                "proxy_authorization": "true",
+            },
+            "http_connect": {"proxy_authorization": "false"},
             "ssl_autodetect_harder": "false", "ssl_use_ktls": "false",
             "nameservers": ["192.0.2.53"],
             "http_api": {
@@ -762,6 +767,8 @@ def main() -> int:
                 "socks_async_dns": True,
                 "socks_ip_version_mixing": True,
                 "socks_prefer_ipv6": False,
+                "socks_proxy_authorization": True,
+                "http_connect_proxy_authorization": False,
             }
             assert config_snapshot["settings"]["nameservers"] == ["192.0.2.53"]
             assert config_snapshot["settings"]["http_api"] == {

@@ -72,13 +72,15 @@ const indexedProvenanceFields: Readonly<Record<string, ReadonlySet<string>>> = {
 
 const settingsProvenanceFields = new Set([
   'accept_tproxy', 'accept_redirect', 'accept_socks', 'accept_http_connect', 'accept_api',
+  'extended_local_destination_protection',
   'policy_fail_open', 'policy_access_request_fail_open',
   'ssl_autodetect', 'ssl_autodetect_harder', 'ssl_use_ktls',
   'http_api.key_extend_on_access', 'http_api.loopback_only', 'http_api.pam_login',
   'http_api.allow_api_header', 'webhook.enabled', 'webhook.tls_verify', 'webhook.sift',
   'webhook.api_override', 'webhook.task_debug',
   'webhook.task_debug_dump', 'default_write_payload', 'log_console', 'tpool_log',
-  'socks.async_dns', 'socks.ipver_mixing', 'socks.prefer_ipv6', 'plaintext_workers',
+  'socks.async_dns', 'socks.ipver_mixing', 'socks.prefer_ipv6', 'socks.proxy_authorization',
+  'http_connect.proxy_authorization', 'plaintext_workers',
   'ssl_workers', 'udp_workers', 'dtls_workers', 'quic_workers', 'socks_workers',
   'http_connect_workers', 'plaintext_port', 'ssl_port', 'udp_port', 'dtls_port',
   'quic_port', 'socks_port', 'http_connect_port', 'ssl_ocsp_status_ttl', 'ssl_crl_status_ttl',
@@ -606,6 +608,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       acceptSocks: safeBoolean(value.settings.accept_socks, 'SOCKS listener state'),
       acceptHttpConnect: safeBoolean(value.settings.accept_http_connect, 'HTTP CONNECT listener state'),
       acceptApi: safeBoolean(value.settings.accept_api, 'Smithproxy API listener state'),
+      extendedLocalDestinationProtection: safeBoolean(
+        value.settings.extended_local_destination_protection, 'local-destination protection state',
+      ),
       policyFailOpen: safeBoolean(value.settings.policy_fail_open, 'policy fail-open state'),
       accessRequestFailOpen: safeBoolean(
         value.settings.access_request_fail_open, 'access-request fail-open state',
@@ -735,6 +740,13 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         ),
         socksPreferIpv6: safeBoolean(
           value.settings.auxiliary.socks_prefer_ipv6, 'SOCKS IPv6 preference state',
+        ),
+        socksProxyAuthorization: safeBoolean(
+          value.settings.auxiliary.socks_proxy_authorization, 'SOCKS proxy authorization state',
+        ),
+        httpConnectProxyAuthorization: safeBoolean(
+          value.settings.auxiliary.http_connect_proxy_authorization,
+          'HTTP CONNECT proxy authorization state',
         ),
       },
       tlsAutodetect: safeBoolean(value.settings.tls_autodetect, 'TLS autodetection state'),

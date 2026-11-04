@@ -839,6 +839,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       settings: {
         accept_tproxy: true, accept_redirect: true, accept_socks: false,
         accept_http_connect: true, accept_api: true,
+        extended_local_destination_protection: true,
         policy_fail_open: false,
         access_request_fail_open: false,
         workers: {
@@ -867,6 +868,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
           },
           thread_pool_logging: false, socks_async_dns: true,
           socks_ip_version_mixing: true, socks_prefer_ipv6: false,
+          socks_proxy_authorization: false, http_connect_proxy_authorization: false,
         },
         tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
         nameserver_count: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
@@ -4871,6 +4873,9 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(settingsEditor.getByLabel('OCSP status TTL (seconds)')).toHaveAttribute('readonly', '');
   await expect(settingsEditor.getByLabel('CRL status TTL (seconds)')).toHaveAttribute('readonly', '');
   await expect(settingsEditor.getByText(/configuration schema marks them read-only/i)).toBeVisible();
+  await expect(settingsEditor.getByLabel('Protect local destinations')).toHaveValue('true');
+  await expect(settingsEditor.getByLabel('Require SOCKS authentication')).toHaveValue('false');
+  await expect(settingsEditor.getByLabel('Require HTTP CONNECT authentication')).toHaveValue('false');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('1023');
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText(/numeric values must be integers within their documented ranges/i))
@@ -4894,6 +4899,9 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('Thread-pool task logging').selectOption('true');
   await settingsEditor.getByLabel('SOCKS IP-version mixing').selectOption('false');
   await settingsEditor.getByLabel('SOCKS prefer IPv6').selectOption('true');
+  await settingsEditor.getByLabel('Protect local destinations').selectOption('false');
+  await settingsEditor.getByLabel('Require SOCKS authentication').selectOption('true');
+  await settingsEditor.getByLabel('Require HTTP CONNECT authentication').selectOption('true');
   await settingsEditor.getByLabel('Nameservers').fill('192.0.2.53, 2001:db8::53, resolver.example');
   await settingsEditor.getByLabel('UDP quick ports').fill('0, 53, 443');
   await settingsEditor.getByLabel('HTTP API allowed IPs').fill('127.0.0.1, 192.0.2.0/24');
@@ -4935,6 +4943,8 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(page.getByText(/Configuration cards include pending workspace draft values.*runtime remains unchanged/u))
     .toBeVisible();
   await expect(trafficCard).toContainText('Policy failureFail open');
+  await expect(trafficCard).toContainText('Local destinationsAllowed');
+  await expect(trafficCard).toContainText('Proxy authenticationSOCKS required / CONNECT required');
   await expect(trafficCard.getByText('Pending', {exact: true})).toBeVisible();
   const workerCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Worker pools'}),
@@ -4990,6 +5000,9 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(changes).toContainText('settings.tpool_log');
   await expect(changes).toContainText('settings.socks.ipver_mixing');
   await expect(changes).toContainText('settings.socks.prefer_ipv6');
+  await expect(changes).toContainText('settings.extended_local_destination_protection');
+  await expect(changes).toContainText('settings.socks.proxy_authorization');
+  await expect(changes).toContainText('settings.http_connect.proxy_authorization');
   await expect(changes).toContainText('settings.log_level');
   await expect(changes).toContainText('settings.cli.port');
   await expect(changes).toContainText('settings.nameservers');
