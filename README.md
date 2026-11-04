@@ -206,6 +206,10 @@ The filtered Objects inventory can mark every visible unused address, port, and
 protocol object for deletion in one confirmed atomic batch. Used objects,
 pending references, field edits, and existing structural operations remain
 excluded by the same dependency guards as individual deletion.
+Live address, port, and protocol objects can be duplicated into explicit
+prefilled create drawers. Copies use persistent values plus pending draft edits,
+never temporary augment overlays, and do not mutate the draft until saved.
+Protocol copies require a new unique protocol number before saving.
 Policy and routing reference fields preview the value being typed. Known objects
 open directly in the next nested editor. Objects and profiles created earlier in
 the same workspace draft are marked as pending and reopen their structural create

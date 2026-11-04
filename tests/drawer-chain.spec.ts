@@ -2875,6 +2875,110 @@ test('duplicates a real policy into an explicit draft create without baking augm
   });
 });
 
+test('duplicates real primitive objects into explicit creates without baking augment overlays', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
+    structuralMutationRequests: [],
+    initialDraftChanges: [
+      {path: 'address_objects.[0].name', value: 'branch-office'},
+      {path: 'port_objects.[0].end', value: 8443},
+    ],
+    valueOrigins: [{
+      path: 'address_objects.[0].value', persistent_value: '10.0.0.0/24',
+      effective_value: '192.0.2.0/24',
+      layers: [{id: 'temporary-office', priority: 100, value: '192.0.2.0/24', active: true}],
+      editable: false,
+    }],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button', {name: /branch-office/i}).click();
+  let liveEditor = page.getByRole('dialog', {name: 'Edit branch-office'});
+  await liveEditor.getByRole('button', {name: 'Duplicate object'}).click();
+  let createEditor = page.getByRole('dialog', {name: 'Create address object'});
+  await expect(createEditor.getByLabel('Name')).toHaveValue('branch-office copy');
+  await expect(createEditor.getByLabel('Type')).toHaveValue('cidr');
+  await expect(createEditor.getByLabel('Address', {exact: true})).toHaveValue('10.0.0.0/24');
+  await expect(createEditor.locator('.scope-note')).toContainText(
+    'Persistent and pending values are copied; temporary augment overlays are not.',
+  );
+  expect(state.structuralMutationRequests).toEqual([]);
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 1,
+    operation: {
+      op: 'create', collection: 'address_objects',
+      fields: {name: 'branch-office copy', type: 'cidr', value: '10.0.0.0/24'},
+    },
+    csrf: '1',
+  });
+  await createEditor.getByRole('button', {name: 'Cancel'}).click();
+  await liveEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('group', {name: 'Port objects'})
+    .getByRole('button', {name: /https/i}).click();
+  liveEditor = page.getByRole('dialog', {name: 'Edit https'});
+  await liveEditor.getByRole('button', {name: 'Duplicate object'}).click();
+  createEditor = page.getByRole('dialog', {name: 'Create port object'});
+  await expect(createEditor.getByLabel('Name')).toHaveValue('https copy');
+  await expect(createEditor.getByLabel('First port')).toHaveValue('443');
+  await expect(createEditor.getByLabel('Last port')).toHaveValue('8443');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 2,
+    operation: {
+      op: 'create', collection: 'port_objects',
+      fields: {name: 'https copy', start: 443, end: 8443},
+    },
+  });
+  await createEditor.getByRole('button', {name: 'Cancel'}).click();
+  await liveEditor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('group', {name: 'Protocol objects'})
+    .getByRole('button', {name: /tcp/i}).click();
+  liveEditor = page.getByRole('dialog', {name: 'Edit tcp'});
+  await liveEditor.getByRole('button', {name: 'Duplicate object'}).click();
+  createEditor = page.getByRole('dialog', {name: 'Create protocol object'});
+  await expect(createEditor.getByLabel('Name')).toHaveValue('tcp copy');
+  await expect(createEditor.getByLabel('IP protocol number')).toHaveValue('6');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Protocol object names and numbers must be unique.')).toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(2);
+  await createEditor.getByLabel('IP protocol number').fill('17');
+  await createEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  expect(state.structuralMutationRequests![2]).toMatchObject({
+    expectedVersion: 3,
+    operation: {
+      op: 'create', collection: 'proto_objects', fields: {name: 'tcp copy', id: 17},
+    },
+  });
+});
+
+test('blocks primitive object duplication while deletion is pending', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
+    initialStructuralOperations: [{
+      op: 'delete', local_id: 'delete-address-pending',
+      collection: 'address_objects', entity_id: 'address-0',
+    }],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button', {name: /office/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit office'});
+  const duplicate = editor.getByRole('button', {name: 'Duplicate object'});
+  await expect(duplicate).toBeDisabled();
+  await expect(duplicate).toHaveAttribute('title', 'Remove the pending object deletion before duplicating it.');
+});
+
 test('links policy references to objects created earlier in the same draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,

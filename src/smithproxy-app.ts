@@ -286,6 +286,11 @@ interface PolicyCreatePrefill {
   sourceName: string;
 }
 
+interface PrimitiveCreatePrefill {
+  fields: DraftCreateOperation['fields'];
+  sourceName: string;
+}
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -399,6 +404,7 @@ export class SmithproxyApp extends LitElement {
   private readonly signatureCreateFlowIds = new Map<string, string>();
   private readonly profileCreateTypes = new Map<string, ProfileCreateType>();
   private readonly policyCreatePrefills = new Map<string, PolicyCreatePrefill>();
+  private readonly primitiveCreatePrefills = new Map<string, PrimitiveCreatePrefill>();
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -1227,6 +1233,7 @@ export class SmithproxyApp extends LitElement {
     this.signatureCreateFlowIds.clear();
     this.profileCreateTypes.clear();
     this.policyCreatePrefills.clear();
+    this.primitiveCreatePrefills.clear();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -3022,6 +3029,91 @@ export class SmithproxyApp extends LitElement {
     this.openObjectDrawer({kind: 'protocol-create', id: localId, title: 'New protocol object'}, origin);
   }
 
+  private primitiveCloneBlocker(entry: DrawerEntry): string | undefined {
+    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !this.snapshot ||
+        !['address', 'port', 'protocol'].includes(entry.kind)) {
+      return 'Object duplication requires reviewed structural transactions and stable entity IDs.';
+    }
+    const target = this.structuralDeleteTarget(entry);
+    if (!target) return 'The source object is no longer present in the live configuration.';
+    if (this.pendingStructuralDelete(target)) return 'Remove the pending object deletion before duplicating it.';
+    return undefined;
+  }
+
+  private uniquePrimitiveCopyName(
+    kind: 'address' | 'port' | 'protocol', sourceName: string,
+  ): string {
+    const names = new Set<string>();
+    const collection = kind === 'address' ? 'address_objects'
+      : kind === 'port' ? 'port_objects' : 'proto_objects';
+    const live = kind === 'address' ? this.snapshot?.addresses
+      : kind === 'port' ? this.snapshot?.ports : this.snapshot?.protocols;
+    live?.forEach((item, index) => {
+      names.add(item.name);
+      names.add(this.persistentValue(`${collection}.[${index}].name`, item.name));
+    });
+    this.workspaceDraft?.structuralOperations.forEach(operation => {
+      if (operation.op === 'create' && operation.collection === collection &&
+          typeof operation.fields['name'] === 'string') names.add(operation.fields['name']);
+    });
+    for (let copy = 1; copy <= names.size + 2; copy += 1) {
+      const suffix = copy === 1 ? ' copy' : ` copy ${copy}`;
+      const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
+      if (!names.has(candidate)) return candidate;
+    }
+    return `Object copy ${crypto.randomUUID().slice(0, 8)}`;
+  }
+
+  private duplicatePrimitiveObject(entry: DrawerEntry, origin?: HTMLElement): void {
+    if (this.primitiveCloneBlocker(entry) !== undefined || !this.snapshot ||
+        (entry.kind !== 'address' && entry.kind !== 'port' && entry.kind !== 'protocol')) return;
+    let fields: DraftCreateOperation['fields'];
+    let localId: string;
+    let createKind: 'address-create' | 'port-create' | 'protocol-create';
+    let sourceName: string;
+    if (entry.kind === 'address') {
+      const index = this.snapshot.addresses.findIndex(item => item.id === entry.id);
+      const object = this.snapshot.addresses[index];
+      if (index < 0 || !object) return;
+      const base = `address_objects.[${index}]`;
+      sourceName = this.persistentValue(`${base}.name`, object.name);
+      fields = {
+        name: this.uniquePrimitiveCopyName(entry.kind, sourceName),
+        type: this.persistentValue(`${base}.type`, object.type),
+        value: this.persistentValue(`${base}.value`, object.value),
+      };
+      localId = `create-address-${crypto.randomUUID()}`;
+      createKind = 'address-create';
+    } else if (entry.kind === 'port') {
+      const index = this.snapshot.ports.findIndex(item => item.id === entry.id);
+      const object = this.snapshot.ports[index];
+      if (index < 0 || !object) return;
+      const base = `port_objects.[${index}]`;
+      sourceName = this.persistentValue(`${base}.name`, object.name);
+      fields = {
+        name: this.uniquePrimitiveCopyName(entry.kind, sourceName),
+        start: this.persistentValue(`${base}.start`, object.start),
+        end: this.persistentValue(`${base}.end`, object.end),
+      };
+      localId = `create-port-${crypto.randomUUID()}`;
+      createKind = 'port-create';
+    } else {
+      const index = this.snapshot.protocols.findIndex(item => item.id === entry.id);
+      const object = this.snapshot.protocols[index];
+      if (index < 0 || !object) return;
+      const base = `proto_objects.[${index}]`;
+      sourceName = this.persistentValue(`${base}.name`, object.name);
+      fields = {
+        name: this.uniquePrimitiveCopyName(entry.kind, sourceName),
+        id: this.persistentValue(`${base}.id`, object.number),
+      };
+      localId = `create-protocol-${crypto.randomUUID()}`;
+      createKind = 'protocol-create';
+    }
+    this.primitiveCreatePrefills.set(localId, {fields, sourceName});
+    this.openObjectDrawer({kind: createKind, id: localId, title: String(fields['name'])}, origin);
+  }
+
   private openNewProfile(origin?: HTMLElement): void {
     if (!this.structuralDraftsAvailable) return;
     const localId = `create-profile-${crypto.randomUUID()}`;
@@ -3370,6 +3462,9 @@ export class SmithproxyApp extends LitElement {
       this.clearReferencePreviews(entry);
       if (entry.kind === 'content-rule-create') this.contentRuleCreateParents.delete(entry.id);
       if (entry.kind === 'policy-create') this.policyCreatePrefills.delete(entry.id);
+      if (entry.kind === 'address-create' || entry.kind === 'port-create' || entry.kind === 'protocol-create') {
+        this.primitiveCreatePrefills.delete(entry.id);
+      }
       if (entry.kind === 'signature-flow-create') this.signatureFlowCreateParents.delete(entry.id);
       if (entry.kind === 'signature-create') {
         this.signatureCreateKinds.delete(entry.id);
@@ -4091,6 +4186,7 @@ export class SmithproxyApp extends LitElement {
         fields: {name, type, value},
       });
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.primitiveCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
       this.markDrawerSaved(entry);
       await this.loadDraftPreflight();
@@ -4201,6 +4297,7 @@ export class SmithproxyApp extends LitElement {
         parentId: null, position: {kind: 'last', reference: null}, fields,
       });
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.primitiveCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
       this.markDrawerSaved(entry);
       await this.loadDraftPreflight();
@@ -9474,7 +9571,9 @@ export class SmithproxyApp extends LitElement {
 
   private renderAddressCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingAddressCreate(entry);
-    const field = (name: string, fallback: DraftScalar): DraftScalar => operation?.fields[name] ?? fallback;
+    const prefill = operation ? undefined : this.primitiveCreatePrefills.get(entry.id);
+    const field = (name: string, fallback: DraftScalar): DraftScalar =>
+      operation?.fields[name] ?? prefill?.fields[name] ?? fallback;
     const name = String(field('name', ''));
     const type = String(field('type', 'cidr'));
     const value = String(field('value', ''));
@@ -9495,14 +9594,18 @@ export class SmithproxyApp extends LitElement {
       <div class="impact">
         The new object is retained only in the workspace draft until Smithproxy validates and commits the transaction.
       </div>
+      ${prefill ? html`<div class="scope-note">
+        Prefilled from ${prefill.sourceName}. Persistent and pending values are copied; temporary augment overlays are not.
+      </div>` : nothing}
     `;
   }
 
   private renderPortCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingSimpleObjectCreate(entry);
-    const name = String(operation?.fields['name'] ?? '');
-    const start = Number(operation?.fields['start'] ?? 0);
-    const end = Number(operation?.fields['end'] ?? 65535);
+    const prefill = operation ? undefined : this.primitiveCreatePrefills.get(entry.id);
+    const name = String(operation?.fields['name'] ?? prefill?.fields['name'] ?? '');
+    const start = Number(operation?.fields['start'] ?? prefill?.fields['start'] ?? 0);
+    const end = Number(operation?.fields['end'] ?? prefill?.fields['end'] ?? 65535);
     const readOnly = !this.structuralDraftsAvailable;
     return html`
       <div class="form-grid">
@@ -9519,13 +9622,17 @@ export class SmithproxyApp extends LitElement {
       <div class="impact">
         The port range is retained only in the workspace draft until Smithproxy validates and commits it.
       </div>
+      ${prefill ? html`<div class="scope-note">
+        Prefilled from ${prefill.sourceName}. Persistent and pending values are copied; temporary augment overlays are not.
+      </div>` : nothing}
     `;
   }
 
   private renderProtocolCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingSimpleObjectCreate(entry);
-    const name = String(operation?.fields['name'] ?? '');
-    const number = Number(operation?.fields['id'] ?? 6);
+    const prefill = operation ? undefined : this.primitiveCreatePrefills.get(entry.id);
+    const name = String(operation?.fields['name'] ?? prefill?.fields['name'] ?? '');
+    const number = Number(operation?.fields['id'] ?? prefill?.fields['id'] ?? 6);
     const readOnly = !this.structuralDraftsAvailable;
     return html`
       <div class="form-grid">
@@ -9539,6 +9646,9 @@ export class SmithproxyApp extends LitElement {
       <div class="impact">
         The protocol object is retained only in the workspace draft until Smithproxy validates and commits it.
       </div>
+      ${prefill ? html`<div class="scope-note">
+        Prefilled from ${prefill.sourceName}. Choose a unique protocol number before saving; temporary augment overlays are not copied.
+      </div>` : nothing}
     `;
   }
 
@@ -11476,6 +11586,8 @@ export class SmithproxyApp extends LitElement {
       ? this.snapshot?.policies.find(item => item.id === entry.id)
       : undefined;
     const cloneBlocker = policy ? this.policyCloneBlocker(policy) : undefined;
+    const primitive = entry.kind === 'address' || entry.kind === 'port' || entry.kind === 'protocol';
+    const primitiveCloneBlocker = primitive ? this.primitiveCloneBlocker(entry) : undefined;
     const mappedProfile = Boolean(
       profile?.routing || profile?.tls || profile?.detection || profile?.content || profile?.ssh || profile?.dns ||
       profile?.script || profile?.authentication,
@@ -11569,6 +11681,15 @@ export class SmithproxyApp extends LitElement {
                 @click=${(event: MouseEvent) =>
                   this.duplicatePolicy(policy, event.currentTarget as HTMLElement)}>
                 Duplicate policy
+              </button>
+            ` : nothing}
+            ${primitive ? html`
+              <button class="secondary" type="button"
+                title=${primitiveCloneBlocker ?? 'Open a prefilled object copy without changing the draft'}
+                ?disabled=${primitiveCloneBlocker !== undefined || dirty || this.draftSaving || this.draftCommitting}
+                @click=${(event: MouseEvent) =>
+                  this.duplicatePrimitiveObject(entry, event.currentTarget as HTMLElement)}>
+                Duplicate object
               </button>
             ` : nothing}
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>
