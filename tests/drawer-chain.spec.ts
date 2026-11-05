@@ -106,6 +106,7 @@ type MockState = {
   structuralDraftsReady?: boolean;
   primitiveStructuralDraftsReady?: boolean;
   namedStructuralDraftsReady?: boolean;
+  policyStructuralDraftsReady?: boolean;
   secondPolicy?: boolean;
   unusedPrimitives?: boolean;
   unusedProfile?: boolean;
@@ -208,10 +209,15 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         configurationFeature('config_write'),
       primitive_structural_drafts: Boolean(
         (state.primitiveStructuralDraftsReady || state.namedStructuralDraftsReady ||
+         state.policyStructuralDraftsReady ||
          state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       named_structural_drafts: Boolean(
-        (state.namedStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
+        (state.namedStructuralDraftsReady || state.policyStructuralDraftsReady ||
+         state.structuralDraftsReady) && state.commitReady,
+      ) && configurationFeature('config_write'),
+      policy_structural_drafts: Boolean(
+        (state.policyStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       drafts: configurationFeature('drafts'),
       draft_preflight: configurationFeature('draft_preflight'),
@@ -2305,7 +2311,7 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
     smithproxy: 'ready',
     validationReady: true,
     commitReady: true,
-    structuralDraftsReady: true,
+    primitiveStructuralDraftsReady: true,
     structuralMutationRequests: [],
   };
   await mockSystemApi(page, state, true);
@@ -2900,7 +2906,7 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
     smithproxy: 'ready',
     validationReady: true,
     commitReady: true,
-    structuralDraftsReady: true,
+    policyStructuralDraftsReady: true,
     structuralMutationRequests: [],
   };
   await mockSystemApi(page, state, true);

@@ -1176,6 +1176,72 @@ int main() {
         },
     }));
 
+    const auto policy_row = [](std::string id, std::string name) {
+        ConfigPolicy policy;
+        policy.id = std::move(id);
+        policy.name = std::move(name);
+        return policy;
+    };
+    transaction_snapshot.policies = {
+        policy_row("policy-0", "first"),
+        policy_row("policy-1", "second"),
+        policy_row("policy-2", "third"),
+    };
+    v2_draft.changes = {{"policy.[1].action", std::string("deny")}};
+    v2_draft.structural_operations = {
+        DraftCreateOperation{
+            .local_id = "create-policy-1",
+            .collection = "policy",
+            .client_id = "new-policy",
+            .parent_id = std::nullopt,
+            .position = {DraftPositionKind::Before, "policy-1"},
+            .fields = {
+                {"action", std::string("accept")},
+                {"name", std::string("inserted")},
+            },
+        },
+        DraftMoveOperation{
+            .local_id = "move-policy-1",
+            .collection = "policy",
+            .entity_id = "policy-2",
+            .position = {DraftPositionKind::First, std::nullopt},
+        },
+        DraftDeleteOperation{
+            .local_id = "delete-policy-1",
+            .collection = "policy",
+            .entity_id = "policy-0",
+        },
+    };
+    const auto policy_envelope = build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(policy_envelope.body);
+    assert(nlohmann::json::parse(*policy_envelope.body) == nlohmann::json::array({
+        {
+            {"op", "set"}, {"path", "policy.[1].action"},
+            {"value", {{"type", "string"}, {"data", "deny"}}},
+        },
+        {{"op", "add"}, {"path", "policy"}, {"name", ""}},
+        {
+            {"op", "set"}, {"path", "policy.[3].action"},
+            {"value", {{"type", "string"}, {"data", "accept"}}},
+        },
+        {
+            {"op", "set"}, {"path", "policy.[3].name"},
+            {"value", {{"type", "string"}, {"data", "inserted"}}},
+        },
+        {
+            {"op", "move"}, {"path", "policy"}, {"source", 3}, {"target", 1},
+            {"position", "before"},
+        },
+        {
+            {"op", "move"}, {"path", "policy"}, {"source", 3}, {"target", 0},
+            {"position", "before"},
+        },
+        {
+            {"op", "remove"}, {"path", "policy"},
+            {"entries", nlohmann::json::array({"1"})},
+        },
+    }));
+
     auto oversized_transaction = ready_transaction;
     oversized_transaction.maximum_request_bytes = 64U;
     assert(build_transaction_envelope(

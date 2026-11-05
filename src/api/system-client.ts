@@ -42,6 +42,7 @@ export interface SystemCapabilities {
     structuralDrafts: boolean;
     primitiveStructuralDrafts: boolean;
     namedStructuralDrafts: boolean;
+    policyStructuralDrafts: boolean;
     drafts: boolean;
     draftPreflight: boolean;
     jobs: boolean;
@@ -378,10 +379,12 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const features = value.features;
   const primitiveStructuralDrafts = features.primitive_structural_drafts ?? false;
   const namedStructuralDrafts = features.named_structural_drafts ?? false;
+  const policyStructuralDrafts = features.policy_structural_drafts ?? false;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof features.structural_drafts !== 'boolean' ||
       typeof primitiveStructuralDrafts !== 'boolean' ||
       typeof namedStructuralDrafts !== 'boolean' ||
+      typeof policyStructuralDrafts !== 'boolean' ||
       typeof features.drafts !== 'boolean' || typeof features.draft_preflight !== 'boolean' ||
       typeof features.jobs !== 'boolean' ||
       typeof features.events !== 'boolean' || typeof features.alerts !== 'boolean' ||
@@ -403,6 +406,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       (features.structural_drafts && (!features.config_write || !features.drafts)) ||
       (primitiveStructuralDrafts && (!features.config_write || !features.drafts)) ||
       (namedStructuralDrafts && (!primitiveStructuralDrafts || !features.config_write || !features.drafts)) ||
+      (policyStructuralDrafts && (!namedStructuralDrafts || !features.config_write || !features.drafts)) ||
       (features.draft_preflight && !features.drafts)) {
     throw new Error('Inconsistent privileged capabilities.');
   }
@@ -421,6 +425,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       structuralDrafts: features.structural_drafts,
       primitiveStructuralDrafts,
       namedStructuralDrafts,
+      policyStructuralDrafts,
       drafts: features.drafts,
       draftPreflight: features.draft_preflight,
       jobs: features.jobs,

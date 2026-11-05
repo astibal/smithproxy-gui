@@ -188,6 +188,7 @@ def main() -> int:
             assert capabilities["features"]["structural_drafts"] is False
             assert capabilities["features"]["primitive_structural_drafts"] is True
             assert capabilities["features"]["named_structural_drafts"] is True
+            assert capabilities["features"]["policy_structural_drafts"] is True
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
@@ -235,12 +236,17 @@ def main() -> int:
                             "op": "delete", "local_id": "delete-address-office",
                             "collection": "address_objects", "entity_id": "address-0",
                         },
+                        {
+                            "op": "create", "local_id": "create-policy-branch",
+                            "collection": "policy", "client_id": "branch-policy",
+                            "position": {"first": True}, "fields": {"name": "branch policy"},
+                        },
                     ],
                 }),
             )
             mutated = json.loads(body)
             assert status == 200
-            assert len(mutated["structural_operations"]) == 2
+            assert len(mutated["structural_operations"]) == 3
 
             status, _, body = request(
                 port, "/api/v1/config/draft/validate", "POST",
@@ -255,7 +261,7 @@ def main() -> int:
                 "draft_version": mutated["version"],
                 "base_revision": BASE_REVISION,
                 "upstream_validation": "valid",
-                "validated_operations": 5,
+                "validated_operations": 6,
                 "warning_count": 0,
                 "restart": "not-required",
             }
@@ -269,7 +275,7 @@ def main() -> int:
             assert status == 200
             assert receipt["previous_revision"] == BASE_REVISION
             assert receipt["revision"] == COMMITTED_REVISION
-            assert receipt["committed_operations"] == 5
+            assert receipt["committed_operations"] == 6
             assert receipt["warning_count"] == 0
             assert receipt["restart"] == "not-required"
             assert isinstance(receipt["refresh_job_id"], str)
@@ -285,13 +291,18 @@ def main() -> int:
                  "value": {"type": "string", "data": "cidr"}},
                 {"op": "set", "path": "address_objects.branch.value",
                  "value": {"type": "string", "data": "203.0.113.0/24"}},
-                {"op": "remove", "path": "address_objects", "entries": ["internet"]},
                 {"op": "set", "path": "policy.[0].action",
                  "value": {"type": "string", "data": "reject"}},
                 {"op": "set", "path": "address_objects.office.cidr",
                  "value": {"type": "string", "data": "10.0.1.0/24"}},
                 {"op": "set", "path": "settings.certs_ca_key_password",
                  "value": {"type": "string", "data": PRIVATE_VALUE}},
+                {"op": "remove", "path": "address_objects", "entries": ["internet"]},
+                {"op": "add", "path": "policy", "name": ""},
+                {"op": "set", "path": "policy.[1].name",
+                 "value": {"type": "string", "data": "branch policy"}},
+                {"op": "move", "path": "policy", "source": 1, "target": 0,
+                 "position": "before"},
             ], upstream_requests[1]["params"]["operations"]
 
             status, _, body = request(

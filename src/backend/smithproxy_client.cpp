@@ -1071,7 +1071,7 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
         capabilities.detail = "Smithproxy exposes begin, prepare, and commit transactions";
         capabilities.maximum_operations = 4096U;
         capabilities.maximum_request_bytes = 1024U * 1024U;
-        capabilities.operations = {"set", "create", "delete"};
+        capabilities.operations = {"set", "create", "delete", "move"};
         capabilities.collections = {
             {"address_objects", false, false, "builtin:v2"},
             {"port_objects", false, false, "builtin:v2"},
@@ -1085,6 +1085,7 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
             {"detection_profiles", false, false, "builtin:v2"},
             {"alg_dns_profiles", false, false, "builtin:v2"},
             {"tls_ca", false, false, "builtin:v2"},
+            {"policy", true, false, "builtin:v2"},
         };
         capabilities.wire_version = 2U;
         return capabilities;

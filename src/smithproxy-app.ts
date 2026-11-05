@@ -368,6 +368,7 @@ export class SmithproxyApp extends LitElement {
   @state() private structuralDraftsAvailable = false;
   @state() private primitiveStructuralDraftsAvailable = false;
   @state() private namedStructuralDraftsAvailable = false;
+  @state() private policyStructuralDraftsAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftPreflightAvailable = false;
   @state() private jobsAvailable = false;
@@ -1383,12 +1384,14 @@ export class SmithproxyApp extends LitElement {
       const structuralDraftsWereAvailable = this.structuralDraftsAvailable;
       const primitiveStructuralDraftsWereAvailable = this.primitiveStructuralDraftsAvailable;
       const namedStructuralDraftsWereAvailable = this.namedStructuralDraftsAvailable;
+      const policyStructuralDraftsWereAvailable = this.policyStructuralDraftsAvailable;
       const draftPreflightWasAvailable = this.draftPreflightAvailable;
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
       const nextStructuralDraftsAvailable = capabilities.features.structuralDrafts;
       const nextPrimitiveStructuralDraftsAvailable = capabilities.features.primitiveStructuralDrafts;
       const nextNamedStructuralDraftsAvailable = capabilities.features.namedStructuralDrafts;
+      const nextPolicyStructuralDraftsAvailable = capabilities.features.policyStructuralDrafts;
       const nextDraftAvailable = capabilities.features.drafts;
       const nextDraftPreflightAvailable = capabilities.features.draftPreflight;
       const configurationCapabilitiesChanged =
@@ -1397,6 +1400,7 @@ export class SmithproxyApp extends LitElement {
         nextStructuralDraftsAvailable !== structuralDraftsWereAvailable ||
         nextPrimitiveStructuralDraftsAvailable !== primitiveStructuralDraftsWereAvailable ||
         nextNamedStructuralDraftsAvailable !== namedStructuralDraftsWereAvailable ||
+        nextPolicyStructuralDraftsAvailable !== policyStructuralDraftsWereAvailable ||
         nextDraftAvailable !== draftWasAvailable ||
         nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
@@ -1406,6 +1410,7 @@ export class SmithproxyApp extends LitElement {
       this.structuralDraftsAvailable = nextStructuralDraftsAvailable;
       this.primitiveStructuralDraftsAvailable = nextPrimitiveStructuralDraftsAvailable;
       this.namedStructuralDraftsAvailable = nextNamedStructuralDraftsAvailable;
+      this.policyStructuralDraftsAvailable = nextPolicyStructuralDraftsAvailable;
       this.draftAvailable = nextDraftAvailable;
       this.draftPreflightAvailable = nextDraftPreflightAvailable;
       if (configurationCapabilitiesChanged) this.configurationAccessEpoch += 1;
@@ -1446,6 +1451,7 @@ export class SmithproxyApp extends LitElement {
       this.structuralDraftsAvailable = false;
       this.primitiveStructuralDraftsAvailable = false;
       this.namedStructuralDraftsAvailable = false;
+      this.policyStructuralDraftsAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
       this.updateMonitoringCapabilities(undefined);
@@ -2647,7 +2653,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async movePolicyInDraft(entry: DrawerEntry): Promise<void> {
-    if (entry.kind !== 'policy' || !this.structuralDraftsAvailable || !this.draftClient ||
+    if (entry.kind !== 'policy' || !this.policyTransactionsAvailable() || !this.draftClient ||
         this.draftSaving || this.draftCommitting) return;
     const policy = this.snapshot?.policies.find(item => item.id === entry.id);
     const placement = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-placement-${entry.id}`);
@@ -3082,6 +3088,8 @@ export class SmithproxyApp extends LitElement {
 
   private structuralTransactionsAvailable(entry: DrawerEntry): boolean {
     return this.structuralDraftsAvailable ||
+      (this.policyStructuralDraftsAvailable &&
+        (entry.kind === 'policy' || entry.kind === 'policy-create')) ||
       (this.namedStructuralDraftsAvailable &&
         (entry.kind === 'profile' || entry.kind === 'profile-create' ||
          entry.kind === 'authority' || entry.kind === 'authority-create')) ||
@@ -3099,6 +3107,10 @@ export class SmithproxyApp extends LitElement {
     return this.structuralDraftsAvailable || this.namedStructuralDraftsAvailable;
   }
 
+  private policyTransactionsAvailable(): boolean {
+    return this.structuralDraftsAvailable || this.policyStructuralDraftsAvailable;
+  }
+
   private structuralOperationTransactionsAvailable(operation: DraftStructuralOperation): boolean {
     if (['address_objects', 'port_objects', 'proto_objects'].includes(operation.collection)) {
       return this.primitiveTransactionsAvailable();
@@ -3106,6 +3118,7 @@ export class SmithproxyApp extends LitElement {
     if ([...Object.values(profileCreateCollections), 'tls_ca'].includes(operation.collection)) {
       return this.namedTransactionsAvailable();
     }
+    if (operation.collection === 'policy') return this.policyTransactionsAvailable();
     return this.structuralDraftsAvailable;
   }
 
@@ -3350,14 +3363,14 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewPolicy(origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable) return;
+    if (!this.policyTransactionsAvailable()) return;
     const localId = `create-policy-${crypto.randomUUID()}`;
     this.openObjectDrawer({kind: 'policy-create', id: localId, title: 'New policy'}, origin);
   }
 
   private policyCloneBlocker(policy: PolicySummary): string | undefined {
     const index = this.snapshot?.policies.findIndex(item => item.id === policy.id) ?? -1;
-    if (!this.structuralDraftsAvailable || !this.workspaceDraft || index < 0) {
+    if (!this.policyTransactionsAvailable() || !this.workspaceDraft || index < 0) {
       return 'Policy duplication requires reviewed structural transactions and stable entity IDs.';
     }
     if (this.workspaceDraft?.structuralOperations.some(operation =>
@@ -4049,7 +4062,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async savePolicyCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    if (!this.policyTransactionsAvailable() || !this.draftClient || this.draftCommitting) return;
     const input = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
       `#policy-create-${field}-${entry.id}`,
     );
@@ -6637,7 +6650,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private policyBulkMoveBlocker(policyIds: ReadonlyArray<string>): string | undefined {
-    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !this.snapshot) {
+    if (!this.policyTransactionsAvailable() || !this.workspaceDraft || !this.snapshot) {
       return 'Bulk ordering requires reviewed structural transactions and stable entity IDs.';
     }
     if (policyIds.length === 0) return 'Select at least one live policy.';
@@ -6659,7 +6672,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private policyBulkDeleteBlocker(policyIds: ReadonlyArray<string>): string | undefined {
-    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !this.snapshot) {
+    if (!this.policyTransactionsAvailable() || !this.workspaceDraft || !this.snapshot) {
       return 'Bulk deletion requires reviewed structural transactions and stable entity IDs.';
     }
     if (policyIds.length === 0) return 'Select at least one live policy.';
@@ -7014,12 +7027,12 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Policies</h2><p>Traffic decisions and inspection behavior</p></div>
           <div class="structural-action">
-            <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+            <button class="primary" type="button" ?disabled=${!this.policyTransactionsAvailable()}
               aria-describedby="new-policy-blocker"
               @click=${(event: MouseEvent) => this.openNewPolicy(event.currentTarget as HTMLElement)}>
               New policy
             </button>
-            <small id="new-policy-blocker">${this.structuralDraftsAvailable
+            <small id="new-policy-blocker">${this.policyTransactionsAvailable()
               ? 'Creates an ordered operation in the shared workspace draft.'
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
@@ -9774,7 +9787,7 @@ export class SmithproxyApp extends LitElement {
       return Array.isArray(value) && value.every(item => typeof item === 'string')
         ? value as ReadonlyArray<string> : fallback;
     };
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.policyTransactionsAvailable();
     const initialPosition = operation?.position ?? prefill?.position;
     const placement = initialPosition?.kind === 'before'
       ? `before:${initialPosition.reference ?? ''}`
@@ -9932,7 +9945,7 @@ export class SmithproxyApp extends LitElement {
     const pendingMove = this.pendingPolicyMove(policy.id);
     const precedingPolicies = this.precedingDraftCreates(pendingMove?.localId ?? '', 'policy', null);
     const placement = this.policyPlacementValue(policy.id);
-    const showPlacement = (this.structuralDraftsAvailable || pendingMove !== undefined) &&
+    const showPlacement = (this.policyTransactionsAvailable() || pendingMove !== undefined) &&
       (this.snapshot?.policies.length ?? 0) + precedingPolicies.length > 1;
     return html`
       <div class="form-grid">
@@ -9947,7 +9960,7 @@ export class SmithproxyApp extends LitElement {
           <label for="policy-placement-${entry.id}">Draft order</label>
           <div class="reference-edit">
             <select id="policy-placement-${entry.id}" data-structural-control="true"
-              ?disabled=${!this.structuralDraftsAvailable}>
+              ?disabled=${!this.policyTransactionsAvailable()}>
               <option value="first" ?selected=${placement === 'first'}>First policy</option>
               ${this.snapshot?.policies.filter(item => item.id !== policy.id).map(item => html`
                 <option value=${`before:${item.id}`} ?selected=${placement === `before:${item.id}`}>
@@ -9965,7 +9978,7 @@ export class SmithproxyApp extends LitElement {
               <option value="last" ?selected=${placement === 'last'}>Last policy</option>
             </select>
             <button class="secondary" type="button"
-              ?disabled=${!this.structuralDraftsAvailable || this.draftSaving || this.draftCommitting ||
+              ?disabled=${!this.policyTransactionsAvailable() || this.draftSaving || this.draftCommitting ||
                 this.dirtyDrawerKeys.has(this.drawerKey(entry))}
               title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
                 ? 'Save or discard ordinary policy field changes first.'

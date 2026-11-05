@@ -225,6 +225,87 @@ bool append_named_create(
     return true;
 }
 
+std::optional<std::size_t> row_index(
+    const std::vector<std::string>& rows, const std::string_view id) {
+    const auto found = std::find(rows.begin(), rows.end(), id);
+    if (found == rows.end()) return std::nullopt;
+    return static_cast<std::size_t>(std::distance(rows.begin(), found));
+}
+
+bool append_policy_move(
+    nlohmann::json& operations, std::vector<std::string>& rows,
+    const std::string_view entity_id, const DraftPosition& position) {
+    const auto source = row_index(rows, entity_id);
+    if (!source || rows.empty()) return false;
+
+    std::size_t target{};
+    std::string wire_position{"before"};
+    if (position.kind == DraftPositionKind::First) {
+        target = 0U;
+    } else if (position.kind == DraftPositionKind::Last) {
+        target = rows.size() - 1U;
+        wire_position = "after";
+    } else {
+        if (!position.reference) return false;
+        const auto reference = row_index(rows, *position.reference);
+        if (!reference || *reference == *source) return false;
+        target = *reference;
+        wire_position = position.kind == DraftPositionKind::After ? "after" : "before";
+    }
+
+    operations.push_back({
+        {"op", "move"}, {"path", "policy"}, {"source", *source},
+        {"target", target}, {"position", wire_position},
+    });
+    if (*source == target) return true;
+
+    const auto moved = rows[*source];
+    rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(*source));
+    auto insertion = row_index(rows, rows[target > *source ? target - 1U : target]);
+    if (!insertion) return false;
+    if (wire_position == "after") ++*insertion;
+    rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(*insertion), moved);
+    return true;
+}
+
+bool append_policy_operation(
+    nlohmann::json& operations, std::vector<std::string>& rows,
+    const DraftStructuralOperation& operation) {
+    return std::visit([&](const auto& item) {
+        using Operation = std::decay_t<decltype(item)>;
+        if (item.collection != "policy") return false;
+        if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+            if (item.parent_id || item.fields.empty()) return false;
+            operations.push_back({{"op", "add"}, {"path", "policy"}, {"name", ""}});
+            const auto index = rows.size();
+            for (const auto& [field, scalar] : item.fields) {
+                auto value = explicit_scalar_json(scalar);
+                if (value.is_null()) return false;
+                operations.push_back({
+                    {"op", "set"},
+                    {"path", "policy.[" + std::to_string(index) + "]." + field},
+                    {"value", std::move(value)},
+                });
+            }
+            const auto row_id = "client:" + item.client_id;
+            rows.push_back(row_id);
+            if (item.position.kind == DraftPositionKind::Last) return true;
+            return append_policy_move(operations, rows, row_id, item.position);
+        } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+            const auto index = row_index(rows, item.entity_id);
+            if (!index) return false;
+            operations.push_back({
+                {"op", "remove"}, {"path", "policy"},
+                {"entries", nlohmann::json::array({std::to_string(*index)})},
+            });
+            rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(*index));
+            return true;
+        } else {
+            return append_policy_move(operations, rows, item.entity_id, item.position);
+        }
+    }, operation);
+}
+
 nlohmann::json position_json(const DraftPosition& position) {
     switch (position.kind) {
         case DraftPositionKind::First: return {{"first", true}};
@@ -418,28 +499,15 @@ TransactionEnvelope build_transaction_v2_operations(
             !local_ids.emplace(draft_structural_local_id(operation)).second) {
             return {std::nullopt, "transaction.invalid_draft"};
         }
-        const auto valid = std::visit([&](const auto& item) {
-            using Operation = std::decay_t<decltype(item)>;
-            if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
-                return append_named_create(operations, item);
-            } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
-                const auto name = named_object_name(item.collection, item.entity_id, snapshot);
-                if (!name) return false;
-                operations.push_back({
-                    {"op", "remove"},
-                    {"path", item.collection},
-                    {"entries", nlohmann::json::array({*name})},
-                });
-                return true;
-            } else {
-                // Primitive object collections are unordered. Ordered and
-                // nested collection moves are enabled by later adapters.
-                return false;
-            }
-        }, operation);
-        if (!valid) return {std::nullopt, "transaction.invalid_draft"};
+        const auto* create = std::get_if<DraftCreateOperation>(&operation);
+        if (create && named_collection(create->collection) &&
+            !append_named_create(operations, *create)) {
+            return {std::nullopt, "transaction.invalid_draft"};
+        }
     }
 
+    // Scalar paths are bound to the base snapshot. Apply them after named
+    // prerequisites exist, but before ordered collections can shift indices.
     std::set<std::string, std::less<>> paths;
     for (const auto& change : draft.changes) {
         if (!paths.emplace(change.path).second ||
@@ -453,6 +521,32 @@ TransactionEnvelope build_transaction_v2_operations(
             {"op", "set"},
             {"path", std::move(*path)},
             {"value", std::move(value)},
+        });
+    }
+
+    std::vector<std::string> policy_rows;
+    policy_rows.reserve(snapshot.policies.size() + draft.structural_operations.size());
+    for (const auto& policy : snapshot.policies) policy_rows.push_back(policy.id);
+    for (const auto& operation : draft.structural_operations) {
+        const auto collection = draft_structural_collection(operation);
+        if (collection == "policy") {
+            if (!append_policy_operation(operations, policy_rows, operation)) {
+                return {std::nullopt, "transaction.invalid_draft"};
+            }
+            continue;
+        }
+        if (!named_collection(collection)) {
+            return {std::nullopt, "transaction.invalid_draft"};
+        }
+        if (std::holds_alternative<DraftCreateOperation>(operation)) continue;
+        const auto* remove = std::get_if<DraftDeleteOperation>(&operation);
+        if (!remove) return {std::nullopt, "transaction.invalid_draft"};
+        const auto name = named_object_name(remove->collection, remove->entity_id, snapshot);
+        if (!name) return {std::nullopt, "transaction.invalid_draft"};
+        operations.push_back({
+            {"op", "remove"},
+            {"path", remove->collection},
+            {"entries", nlohmann::json::array({*name})},
         });
     }
     if (operations.size() > hard_maximum_operations) {
