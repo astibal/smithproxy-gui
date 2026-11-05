@@ -207,6 +207,7 @@ def main() -> int:
                     "expected_version": draft["version"],
                     "changes": [
                         {"path": "policy.[0].action", "value": "reject"},
+                        {"path": "address_objects.[1].value", "value": "10.0.1.0/24"},
                         {"path": "settings.certs_ca_key_password", "value": PRIVATE_VALUE},
                     ],
                 }),
@@ -229,7 +230,7 @@ def main() -> int:
                 "draft_version": mutated["version"],
                 "base_revision": BASE_REVISION,
                 "upstream_validation": "valid",
-                "validated_operations": 2,
+                "validated_operations": 3,
                 "warning_count": 0,
                 "restart": "not-required",
             }
@@ -243,7 +244,7 @@ def main() -> int:
             assert status == 200
             assert receipt["previous_revision"] == BASE_REVISION
             assert receipt["revision"] == COMMITTED_REVISION
-            assert receipt["committed_operations"] == 2
+            assert receipt["committed_operations"] == 3
             assert receipt["warning_count"] == 0
             assert receipt["restart"] == "not-required"
             assert isinstance(receipt["refresh_job_id"], str)
@@ -256,6 +257,8 @@ def main() -> int:
             assert upstream_requests[1]["params"]["operations"] == [
                 {"op": "set", "path": "policy.[0].action",
                  "value": {"type": "string", "data": "reject"}},
+                {"op": "set", "path": "address_objects.office.cidr",
+                 "value": {"type": "string", "data": "10.0.1.0/24"}},
                 {"op": "set", "path": "settings.certs_ca_key_password",
                  "value": {"type": "string", "data": PRIVATE_VALUE}},
             ]
