@@ -190,6 +190,15 @@ const supportedProfileCreateTypes = new Set<ProfileCreateType>(
   Object.keys(profileCreateCollections) as ProfileCreateType[],
 );
 
+// Keep parsing legacy authentication profiles, but do not expose a workflow
+// for a runtime feature which is currently a no-op in Smithproxy.
+const visibleProfileCreateTypes = new Set<ProfileCreateType>(
+  [...supportedProfileCreateTypes].filter(type => type !== 'authentication'),
+);
+const visiblePolicyProfileAssignments = policyProfileAssignments.filter(
+  assignment => assignment.kind !== 'authentication',
+);
+
 const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
   state: 'starting',
   detail: 'Waiting for the first runtime metrics sample.',
@@ -3156,9 +3165,20 @@ export class SmithproxyApp extends LitElement {
     return this.structuralDraftsAvailable;
   }
 
+  private configSafeCopyStem(sourceName: string, fallback: string): string {
+    const sanitized = sourceName
+      .trim()
+      .replace(/[^A-Za-z0-9_-]+/gu, '-')
+      .replace(/-+/gu, '-')
+      .replace(/^-+|-+$/gu, '');
+    if (/^[A-Za-z_]/u.test(sanitized)) return sanitized;
+    return `${fallback}-${sanitized || 'object'}`;
+  }
+
   private uniquePrimitiveCopyName(
     kind: 'address' | 'port' | 'protocol', sourceName: string,
   ): string {
+    const stem = this.configSafeCopyStem(sourceName, kind);
     const names = new Set<string>();
     const collection = kind === 'address' ? 'address_objects'
       : kind === 'port' ? 'port_objects' : 'proto_objects';
@@ -3174,10 +3194,10 @@ export class SmithproxyApp extends LitElement {
     });
     for (let copy = 1; copy <= names.size + 2; copy += 1) {
       const suffix = copy === 1 ? '-copy' : `-copy-${copy}`;
-      const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
+      const candidate = `${stem.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
       if (!names.has(candidate)) return candidate;
     }
-    return `Object copy ${crypto.randomUUID().slice(0, 8)}`;
+    return `object-copy-${crypto.randomUUID().slice(0, 8)}`;
   }
 
   private duplicatePrimitiveObject(entry: DrawerEntry, origin?: HTMLElement): void {
@@ -3246,7 +3266,8 @@ export class SmithproxyApp extends LitElement {
   private profileCloneBlocker(profile: ProfileObject): string | undefined {
     const type = this.profileType(profile);
     const prefix = this.profileOriginPrefixes().get(profile.id);
-    if (!this.namedTransactionsAvailable() || !this.workspaceDraft || !type || !prefix) {
+    if (!this.namedTransactionsAvailable() || !this.workspaceDraft || !type ||
+        !visibleProfileCreateTypes.has(type) || !prefix) {
       return 'Profile duplication requires a typed profile and reviewed structural transactions.';
     }
     const collection = profileCreateCollections[type];
@@ -3258,6 +3279,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private uniqueProfileCopyName(type: ProfileCreateType, sourceName: string): string {
+    const stem = this.configSafeCopyStem(sourceName, type);
     const names = new Set<string>();
     const prefixes = this.profileOriginPrefixes();
     this.snapshot?.profiles.forEach(profile => {
@@ -3273,10 +3295,10 @@ export class SmithproxyApp extends LitElement {
     });
     for (let copy = 1; copy <= names.size + 2; copy += 1) {
       const suffix = copy === 1 ? '-copy' : `-copy-${copy}`;
-      const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
+      const candidate = `${stem.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
       if (!names.has(candidate)) return candidate;
     }
-    return `Profile copy ${crypto.randomUUID().slice(0, 8)}`;
+    return `profile-copy-${crypto.randomUUID().slice(0, 8)}`;
   }
 
   private duplicateProfile(profile: ProfileObject, origin?: HTMLElement): void {
@@ -3464,7 +3486,7 @@ export class SmithproxyApp extends LitElement {
       ssh_profile: this.persistentValue(`${base}.ssh_profile`, policy.sshProfile),
       detection_profile: this.persistentValue(`${base}.detection_profile`, policy.detectionProfile),
       content_profile: this.persistentValue(`${base}.content_profile`, policy.contentProfile),
-      auth_profile: this.persistentValue(`${base}.auth_profile`, policy.authProfile),
+      auth_profile: '',
       alg_dns_profile: this.persistentValue(`${base}.alg_dns_profile`, policy.dnsProfile),
       script_profile: this.persistentValue(`${base}.script_profile`, policy.scriptProfile),
     };
@@ -3495,7 +3517,7 @@ export class SmithproxyApp extends LitElement {
 
   private openProfile(id: string, origin?: HTMLElement): void {
     const profile = this.snapshot?.profiles.find(item => item.id === id);
-    if (!profile) return;
+    if (!profile || profile.authentication) return;
     this.openObjectDrawer({kind: 'profile', id: profile.id, title: this.profileDisplayName(profile)}, origin);
   }
 
@@ -3577,6 +3599,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private uniqueAuthorityCopyName(sourceName: string): string {
+    const stem = this.configSafeCopyStem(sourceName, 'authority');
     const names = new Set<string>();
     this.snapshot?.securityAssets?.certificateAuthorities.forEach((authority, index) => {
       names.add(authority.name);
@@ -3588,10 +3611,10 @@ export class SmithproxyApp extends LitElement {
     });
     for (let copy = 1; copy <= names.size + 2; copy += 1) {
       const suffix = copy === 1 ? '-copy' : `-copy-${copy}`;
-      const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
+      const candidate = `${stem.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
       if (!names.has(candidate)) return candidate;
     }
-    return `Authority copy ${crypto.randomUUID().slice(0, 8)}`;
+    return `authority-copy-${crypto.randomUUID().slice(0, 8)}`;
   }
 
   private duplicateAuthority(authority: CertificateAuthoritySummary, origin?: HTMLElement): void {
@@ -4113,7 +4136,7 @@ export class SmithproxyApp extends LitElement {
     const destinationPorts = input('destination-ports');
     const features = this.renderRoot.querySelector<HTMLElement>(`#policy-create-features-${entry.id}`);
     const nat = select('nat');
-    const referenceNames = ['routing', 'tls', 'ssh', 'detection', 'content', 'auth', 'dns', 'script'] as const;
+    const referenceNames = ['routing', 'tls', 'ssh', 'detection', 'content', 'dns', 'script'] as const;
     const references = new Map(referenceNames.map(field => [field, input(field)]));
     const placement = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-create-placement-${entry.id}`);
     if (!name || !enabled || !sources || !destinations || !action || !protocol || !sourcePorts ||
@@ -4189,7 +4212,7 @@ export class SmithproxyApp extends LitElement {
       ssh_profile: referenceValues.get('ssh')!,
       detection_profile: referenceValues.get('detection')!,
       content_profile: referenceValues.get('content')!,
-      auth_profile: referenceValues.get('auth')!,
+      auth_profile: '',
       alg_dns_profile: referenceValues.get('dns')!,
       script_profile: referenceValues.get('script')!,
     };
@@ -4718,7 +4741,7 @@ export class SmithproxyApp extends LitElement {
       this.renderRoot.querySelector<T>(`#profile-create-${field}-${entry.id}`);
     const typeInput = element<HTMLSelectElement>('type');
     const nameInput = element<HTMLInputElement>('name');
-    if (!typeInput || !nameInput || !supportedProfileCreateTypes.has(typeInput.value as ProfileCreateType)) return;
+    if (!typeInput || !nameInput || !visibleProfileCreateTypes.has(typeInput.value as ProfileCreateType)) return;
     const type = typeInput.value as ProfileCreateType;
     const name = nameInput.value.trim();
     const printable = (value: string, maximum: number, empty = false) =>
@@ -5603,7 +5626,7 @@ export class SmithproxyApp extends LitElement {
       const destinationPorts = field('destination-ports');
       const features = this.renderRoot.querySelector<HTMLElement>(`#policy-features-${entry.id}`);
       const nat = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-nat-${entry.id}`);
-      const referenceIds = ['routing', 'tls', 'ssh', 'detection', 'content', 'auth', 'dns', 'script'] as const;
+      const referenceIds = ['routing', 'tls', 'ssh', 'detection', 'content', 'dns', 'script'] as const;
       const references = new Map(referenceIds.map(id => [id, field(id)]));
       if (index < 0 || !name || !enabled || !destination || !action || !protocol || !sources ||
           !sourcePorts || !destinationPorts || !features || !nat ||
@@ -5662,7 +5685,6 @@ export class SmithproxyApp extends LitElement {
         {path: `policy.[${index}].ssh_profile`, value: references.get('ssh')!.value.trim()},
         {path: `policy.[${index}].detection_profile`, value: references.get('detection')!.value.trim()},
         {path: `policy.[${index}].content_profile`, value: references.get('content')!.value.trim()},
-        {path: `policy.[${index}].auth_profile`, value: references.get('auth')!.value.trim()},
         {path: `policy.[${index}].alg_dns_profile`, value: references.get('dns')!.value.trim()},
         {path: `policy.[${index}].script_profile`, value: references.get('script')!.value.trim()},
       ];
@@ -7165,7 +7187,7 @@ export class SmithproxyApp extends LitElement {
                   this.policyBulkProfileValue = '';
                 }
               }}>
-              ${policyProfileAssignments.map(item => html`
+              ${visiblePolicyProfileAssignments.map(item => html`
                 <option value=${item.kind} ?selected=${item.kind === this.policyBulkProfileKind}>
                   ${item.label} profile
                 </option>`)}
@@ -7700,10 +7722,11 @@ export class SmithproxyApp extends LitElement {
         values = safeValues(operation, [
           'name', 'action', 'proto', 'src', 'sport', 'dst', 'dport', 'tls_profile',
           'ssh_profile', 'detection_profile', 'content_profile', 'alg_dns_profile',
-          'script_profile', 'auth_profile', 'nat', 'routing', 'features', 'disabled',
+          'script_profile', 'nat', 'routing', 'features', 'disabled',
         ], ['policy', pending]);
       } else if (profileTypes.has(operation.collection)) {
         const type = profileTypes.get(operation.collection)!;
+        if (type === 'authentication') return [];
         kind = 'Profile';
         detail = `${type} · ${pending}`;
         values = [name, type, 'profile', pending];
@@ -7772,7 +7795,6 @@ export class SmithproxyApp extends LitElement {
         this.presentedValue(`${base}.ssh_profile`, item.sshProfile),
         this.presentedValue(`${base}.detection_profile`, item.detectionProfile),
         this.presentedValue(`${base}.content_profile`, item.contentProfile),
-        this.presentedValue(`${base}.auth_profile`, item.authProfile),
         this.presentedValue(`${base}.alg_dns_profile`, item.dnsProfile),
         this.presentedValue(`${base}.script_profile`, item.scriptProfile),
       ];
@@ -7799,7 +7821,7 @@ export class SmithproxyApp extends LitElement {
       return {item, name, number, matches: this.searchMatches([name, number], query)};
     }).filter(item => item.matches);
     const profilePrefixes = this.profileOriginPrefixes();
-    const profiles = this.snapshot.profiles.map(item => {
+    const profiles = this.snapshot.profiles.filter(item => !item.authentication).map(item => {
       const prefix = profilePrefixes.get(item.id);
       const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
       const details = this.profileSearchValues(item, prefix);
@@ -8007,7 +8029,7 @@ export class SmithproxyApp extends LitElement {
       .filter(row => kindMatches('protocol') && usageMatches(row.usage > 0) && queryMatches([
         fieldText(row.operation, 'name'), fieldNumber(row.operation, 'id') ?? '', 'protocol', 'pending',
       ]));
-    const profileRows = (this.snapshot?.profiles ?? []).map(item => {
+    const profileRows = (this.snapshot?.profiles ?? []).filter(item => !item.authentication).map(item => {
       const prefix = profilePrefixes.get(item.id);
       const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
       const summary = this.profileInventorySummary(item, prefix);
@@ -8023,7 +8045,8 @@ export class SmithproxyApp extends LitElement {
       return {operation, type, summary: this.pendingProfileInventorySummary(operation, type),
         usage: pendingUsage(operation)};
     })
-      .filter(row => kindMatches('profile') && usageMatches(row.usage > 0) && queryMatches([
+      .filter(row => row.type !== 'authentication' && kindMatches('profile') &&
+        usageMatches(row.usage > 0) && queryMatches([
         fieldText(row.operation, 'name'), row.type ?? 'profile', row.summary, 'profile', 'pending',
       ]));
     const securityFilterAvailable = this.objectUsageFilter === 'all';
@@ -8075,11 +8098,14 @@ export class SmithproxyApp extends LitElement {
       return {operation, kind, name, summary};
     }).filter(row => kindMatches('security') && securityFilterAvailable &&
       queryMatches([row.name, row.summary, row.kind, 'signature', 'trust', 'pending']));
+    const liveProfileCount = this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0;
+    const pendingProfileCount = pendingProfiles.filter(operation =>
+      profileTypes.get(operation.collection) !== 'authentication').length;
     const totalCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
-      (this.snapshot?.protocols.length ?? 0) + (this.snapshot?.profiles.length ?? 0) +
+      (this.snapshot?.protocols.length ?? 0) + liveProfileCount +
       (this.snapshot?.securityAssets?.certificateAuthorities.length ?? 0) +
       (this.snapshot?.securityAssets?.signatures.length ?? 0) + pendingAddresses.length +
-      pendingPorts.length + pendingProtocols.length + pendingProfiles.length + pendingAuthorities.length +
+      pendingPorts.length + pendingProtocols.length + pendingProfileCount + pendingAuthorities.length +
       pendingSignatures.length;
     const visibleCount = addressRows.length + pendingAddressRows.length + portRows.length +
       pendingPortRows.length + protocolRows.length + pendingProtocolRows.length +
@@ -9917,7 +9943,6 @@ export class SmithproxyApp extends LitElement {
         ${referenceField('detection', 'Detection profile', 'detection', 'detection_profile')}
         ${referenceField('content', 'Content profile', 'content', 'content_profile')}
         ${referenceField('ssh', 'SSH profile', 'ssh', 'ssh_profile')}
-        ${referenceField('auth', 'Authentication profile', 'authentication', 'auth_profile')}
         ${referenceField('dns', 'DNS ALG profile', 'dns', 'alg_dns_profile')}
         ${referenceField('script', 'Script profile', 'script', 'script_profile')}
         <label>Features</label>
@@ -10067,7 +10092,6 @@ export class SmithproxyApp extends LitElement {
           ${this.renderPolicyProfileField(entry, 'detection', 'Detection profile', 'detection', policy.detectionProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'content', 'Content profile', 'content', policy.contentProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'ssh', 'SSH profile', 'ssh', policy.sshProfile, liveReadOnly)}
-          ${this.renderPolicyProfileField(entry, 'auth', 'Authentication profile', 'authentication', policy.authProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'dns', 'DNS ALG profile', 'dns', policy.dnsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'script', 'Script profile', 'script', policy.scriptProfile, liveReadOnly)}
           <label>Features</label>
@@ -10354,7 +10378,7 @@ export class SmithproxyApp extends LitElement {
           ?disabled=${readOnly || operation !== undefined || prefill !== undefined}
           @change=${(event: Event) => {
             const value = (event.currentTarget as HTMLSelectElement).value as ProfileCreateType;
-            if (supportedProfileCreateTypes.has(value)) {
+            if (visibleProfileCreateTypes.has(value)) {
               const name = this.renderRoot.querySelector<HTMLInputElement>(
                 `#profile-create-name-${entry.id}`,
               )?.value ?? '';
@@ -10372,7 +10396,6 @@ export class SmithproxyApp extends LitElement {
           <option value="tls">TLS</option>
           <option value="detection">Detection</option>
           <option value="dns">DNS ALG</option>
-          <option value="authentication">Authentication</option>
           <option value="content">Content</option>
           <option value="ssh">SSH</option>
           <option value="script">Script</option>

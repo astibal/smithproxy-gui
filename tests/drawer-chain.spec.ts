@@ -1114,27 +1114,6 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
   await expect(scriptEditor.getByLabel('Module path replacement')).toHaveValue('');
   await scriptEditor.getByRole('button', {name: 'Cancel'}).click();
-  await editor.getByRole('button', {name: 'legacy-auth', exact: true}).click();
-  const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
-  await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeVisible();
-  await authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i}).click();
-  const identityEditor = page.getByRole('dialog', {name: 'Edit legacy-auth identities'});
-  await identityEditor.getByLabel('Identity name').fill('private-user');
-  await identityEditor.getByLabel('Detection').selectOption('detect');
-  await identityEditor.getByRole('button', {name: 'Add identity'}).click();
-  await identityEditor.getByLabel('Identity name').nth(1).fill('private-admin');
-  await identityEditor.getByLabel('TLS').nth(1).selectOption('inspect');
-  await identityEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(identityEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(identityEditor.getByLabel('Identity name')).toHaveValue('');
-  await expect(identityEditor.getByText(/pending write-only change exists; re-enter every value/i)).toBeVisible();
-  await identityEditor.getByRole('button', {name: 'Cancel'}).click();
-  await authenticationEditor.getByLabel('Authenticate').selectOption('false');
-  await authenticationEditor.getByLabel('Resolve identities').selectOption('false');
-  await authenticationEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(authenticationEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await authenticationEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'detect', exact: true}).click();
   const detectionEditor = page.getByRole('dialog', {name: 'Edit detect'});
   await detectionEditor.getByLabel('Detection phase').selectOption('2');
@@ -1236,11 +1215,6 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('office-secret');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('tls_ca.[0].path');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/etc/smithproxy/private/new-default-ca');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('auth_profiles.[0].authenticate');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('auth_profiles.[0].identities');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('Replaced · redacted · 2 items');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('private-user');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('private-admin');
   const addressDiff = page.getByRole('table', {name: 'Pending draft changes'})
     .getByRole('row').filter({hasText: 'address_objects.[0].value'});
   await expect(addressDiff.locator('.draft-transition-value')).toHaveText([
@@ -1265,32 +1239,6 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await confirmDiscard.click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
-});
-
-test('validates and clears write-only authentication identities', async ({page}) => {
-  const state: MockState = {smithproxy: 'ready', draftMutationBatches: []};
-  await mockSystemApi(page, state, true);
-  await page.goto('/');
-  await page.getByRole('button', {name: 'Objects', exact: true}).click();
-  await page.getByRole('group', {name: 'Profiles and routing'})
-    .getByRole('button', {name: /^legacy-auth authentication /i}).click();
-  const profileEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
-  await profileEditor.getByRole('button', {name: /2 redacted entries Edit/i}).click();
-  const identityEditor = page.getByRole('dialog', {name: 'Edit legacy-auth identities'});
-
-  await identityEditor.getByLabel('Identity name').fill('unbound-user');
-  await identityEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(identityEditor.getByText(/bind every identity to at least one profile/i)).toBeVisible();
-  expect(state.draftMutationBatches).toEqual([]);
-
-  await identityEditor.getByLabel('Draft action').selectOption('clear');
-  await identityEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect.poll(() => state.draftMutationBatches).toEqual([[
-    {path: 'auth_profiles.[0].identities', value: []},
-  ]]);
-  await expect(identityEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(identityEditor.getByLabel('Draft action')).toHaveValue('replace');
-  await expect(identityEditor.getByText(/pending write-only change exists; re-enter every value/i)).toBeVisible();
 });
 
 test('saves only fields changed since the editor opened', async ({page}) => {
@@ -2410,13 +2358,16 @@ test('enables named profile editors without exposing ordered structural operatio
   const editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Name')).toBeEditable();
   await expect(editor.getByLabel('Profile type')).toBeEnabled();
+  await expect(editor.getByLabel('Profile type').locator('option[value="authentication"]')).toHaveCount(0);
   await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /legacy-auth/i})).toHaveCount(0);
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await expect(page.getByRole('button', {name: 'New policy'})).toBeDisabled();
 });
 
-test('creates complete typed routing detection DNS and authentication profiles', async ({page}) => {
+test('creates complete typed routing detection and DNS profiles', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
     validationReady: true,
@@ -2462,41 +2413,7 @@ test('creates complete typed routing detection DNS and authentication profiles',
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await editor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'New profile'}).click();
-  editor = page.getByRole('dialog', {name: 'Create profile'});
-  await editor.getByLabel('Profile type').selectOption('authentication');
-  await editor.getByLabel('Name').fill('branch-auth');
-  await editor.getByLabel('Authenticate').selectOption('true');
-  await editor.getByLabel('Resolve identities').selectOption('false');
-  await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.locator('.privacy-note')).toContainText('Save the profile first');
-  await editor.getByRole('button', {name: /No mappings configured Edit/i}).click();
-  const identities = page.getByRole('dialog', {name: 'Edit branch-auth identities'});
-  await identities.getByLabel('Identity name').fill('branch-private-user');
-  await identities.getByLabel('Detection').selectOption('branch-detect');
-  await identities.getByLabel('DNS').selectOption('branch-dns');
-  await identities.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(identities.getByText('Saved to draft')).toBeVisible();
-  await expect(identities.getByLabel('Identity name')).toHaveValue('');
-  await identities.getByRole('button', {name: 'Cancel'}).click();
-  await expect(editor.getByRole('button', {name: 'Replaced · redacted · 1 item Edit →'})).toBeVisible();
-  await expect(page.getByText('branch-private-user')).toHaveCount(0);
-
-  await editor.getByLabel('Resolve identities').selectOption('true');
-  await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText(/Re-enter the complete write-only identity mapping/i)).toBeVisible();
-  expect(state.structuralMutationRequests).toHaveLength(5);
-  await editor.getByRole('button', {name: 'Replaced · redacted · 1 item Edit →'}).click();
-  await identities.getByLabel('Identity name').fill('branch-private-user-next');
-  await identities.getByLabel('Detection').selectOption('branch-detect');
-  await identities.getByLabel('DNS').selectOption('branch-dns');
-  await identities.getByRole('button', {name: 'Save to draft'}).click();
-  await identities.getByRole('button', {name: 'Cancel'}).click();
-  await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText('branch-private-user-next')).toHaveCount(0);
-
-  expect(state.structuralMutationRequests).toHaveLength(6);
+  expect(state.structuralMutationRequests).toHaveLength(3);
   expect(state.structuralMutationRequests![0]).toMatchObject({
     expectedVersion: 0, csrf: '1', operation: {
       op: 'create', collection: 'routing', position: {last: true},
@@ -2518,48 +2435,17 @@ test('creates complete typed routing detection DNS and authentication profiles',
       fields: {name: 'branch-dns', match_request_id: false, randomize_id: true, cached_responses: false},
     },
   });
-  expect(state.structuralMutationRequests![3]).toMatchObject({
-    expectedVersion: 3, csrf: '1', operation: {
-      op: 'create', collection: 'auth_profiles',
-      fields: {name: 'branch-auth', authenticate: true, resolve: false},
-    },
-  });
-  expect(state.structuralMutationRequests![4]).toMatchObject({
-    expectedVersion: 4, csrf: '1', operation: {
-      op: 'create', collection: 'auth_profiles',
-      fields: {
-        name: 'branch-auth', authenticate: true, resolve: false,
-        identities: [{
-          name: 'branch-private-user', detection_profile: 'branch-detect', alg_dns_profile: 'branch-dns',
-        }],
-      },
-    },
-  });
-  expect(state.structuralMutationRequests![5]).toMatchObject({
-    expectedVersion: 5, csrf: '1', operation: {
-      op: 'create', collection: 'auth_profiles',
-      fields: {
-        name: 'branch-auth', authenticate: true, resolve: true,
-        identities: [{
-          name: 'branch-private-user-next', detection_profile: 'branch-detect',
-          alg_dns_profile: 'branch-dns',
-        }],
-      },
-    },
-  });
   for (const request of state.structuralMutationRequests!) {
     expect(request.operation.local_id).toMatch(/^create-profile-[0-9a-f-]{36}$/u);
     expect(request.operation.client_id).toBe(request.operation.local_id);
   }
 
-  await editor.getByRole('button', {name: 'Cancel'}).click();
-  await page.getByRole('button', {name: 'Review draft · 4'}).click();
+  await page.getByRole('button', {name: 'Review draft · 3'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   const routeRow = table.getByRole('row').filter({hasText: 'routing · create'});
   await expect(routeRow).toContainText('branch-route');
   await expect(table).toContainText('detection_profiles · create');
   await expect(table).toContainText('alg_dns_profiles · create');
-  await expect(table).toContainText('auth_profiles · create');
   await routeRow.getByRole('button', {name: 'Edit'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Profile type')).toHaveValue('routing');
@@ -2799,7 +2685,7 @@ test('duplicates a certificate authority without exposing or copying its private
   const liveEditor = page.getByRole('dialog', {name: 'Edit default revised'});
   await liveEditor.getByRole('button', {name: 'Duplicate authority'}).click();
   const createEditor = page.getByRole('dialog', {name: 'Create certificate authority'});
-  await expect(createEditor.getByLabel('Name')).toHaveValue('default revised copy');
+  await expect(createEditor.getByLabel('Name')).toHaveValue('default-revised-copy');
   await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
   await expect(createEditor.locator('.scope-note')).toContainText(
     'Persistent and pending values are copied; temporary augment overlays are not.',
@@ -2817,7 +2703,7 @@ test('duplicates a certificate authority without exposing or copying its private
   expect(state.structuralMutationRequests![0]).toMatchObject({
     expectedVersion: 1, csrf: '1', operation: {
       op: 'create', collection: 'tls_ca',
-      fields: {name: 'default revised copy', path: '/private/pki/default-copy.pem'},
+      fields: {name: 'default-revised-copy', path: '/private/pki/default-copy.pem'},
     },
   });
   await expect(page.getByText('/private/pki/default-copy.pem')).toHaveCount(0);
@@ -3057,7 +2943,7 @@ test('duplicates a real policy into an explicit draft create without baking augm
         src: ['office'], sport: ['any'], dst: ['internet'], dport: ['https'],
         features: [], action: 'deny', nat: 'auto', routing: 'main', tls_profile: 'inspect',
         ssh_profile: 'default-ssh', detection_profile: 'detect', content_profile: 'capture',
-        auth_profile: 'legacy-auth', alg_dns_profile: 'resolver', script_profile: 'audit',
+        auth_profile: '', alg_dns_profile: 'resolver', script_profile: 'audit',
       },
     },
     csrf: '1',
@@ -3088,7 +2974,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
   let liveEditor = page.getByRole('dialog', {name: 'Edit branch-office'});
   await liveEditor.getByRole('button', {name: 'Duplicate object'}).click();
   let createEditor = page.getByRole('dialog', {name: 'Create address object'});
-  await expect(createEditor.getByLabel('Name')).toHaveValue('branch-office copy');
+  await expect(createEditor.getByLabel('Name')).toHaveValue('branch-office-copy');
   await expect(createEditor.getByLabel('Type')).toHaveValue('cidr');
   await expect(createEditor.getByLabel('Address', {exact: true})).toHaveValue('10.0.0.0/24');
   await expect(createEditor.locator('.scope-note')).toContainText(
@@ -3101,7 +2987,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
     expectedVersion: 1,
     operation: {
       op: 'create', collection: 'address_objects',
-      fields: {name: 'branch-office copy', type: 'cidr', value: '10.0.0.0/24'},
+      fields: {name: 'branch-office-copy', type: 'cidr', value: '10.0.0.0/24'},
     },
     csrf: '1',
   });
@@ -3113,7 +2999,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
   liveEditor = page.getByRole('dialog', {name: 'Edit https'});
   await liveEditor.getByRole('button', {name: 'Duplicate object'}).click();
   createEditor = page.getByRole('dialog', {name: 'Create port object'});
-  await expect(createEditor.getByLabel('Name')).toHaveValue('https copy');
+  await expect(createEditor.getByLabel('Name')).toHaveValue('https-copy');
   await expect(createEditor.getByLabel('First port')).toHaveValue('443');
   await expect(createEditor.getByLabel('Last port')).toHaveValue('8443');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
@@ -3122,7 +3008,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
     expectedVersion: 2,
     operation: {
       op: 'create', collection: 'port_objects',
-      fields: {name: 'https copy', start: 443, end: 8443},
+      fields: {name: 'https-copy', start: 443, end: 8443},
     },
   });
   await createEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -3133,7 +3019,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
   liveEditor = page.getByRole('dialog', {name: 'Edit tcp'});
   await liveEditor.getByRole('button', {name: 'Duplicate object'}).click();
   createEditor = page.getByRole('dialog', {name: 'Create protocol object'});
-  await expect(createEditor.getByLabel('Name')).toHaveValue('tcp copy');
+  await expect(createEditor.getByLabel('Name')).toHaveValue('tcp-copy');
   await expect(createEditor.getByLabel('IP protocol number')).toHaveValue('6');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(createEditor.getByText('Protocol object names and numbers must be unique.')).toBeVisible();
@@ -3144,7 +3030,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
   expect(state.structuralMutationRequests![2]).toMatchObject({
     expectedVersion: 3,
     operation: {
-      op: 'create', collection: 'proto_objects', fields: {name: 'tcp copy', id: 17},
+      op: 'create', collection: 'proto_objects', fields: {name: 'tcp-copy', id: 17},
     },
   });
 });
@@ -3171,7 +3057,7 @@ test('duplicates a typed profile from persistent and pending values without augm
   const createEditor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(createEditor.getByLabel('Profile type')).toHaveValue('detection');
   await expect(createEditor.getByLabel('Profile type')).toBeDisabled();
-  await expect(createEditor.getByLabel('Name')).toHaveValue('detect copy');
+  await expect(createEditor.getByLabel('Name')).toHaveValue('detect-copy');
   await expect(createEditor.getByLabel('Detection mode')).toHaveValue('2');
   await expect(createEditor.getByLabel('Detection engines')).toHaveValue('false');
   await expect(createEditor.getByLabel('Knowledge base')).toHaveValue('false');
@@ -3187,7 +3073,7 @@ test('duplicates a typed profile from persistent and pending values without augm
     expectedVersion: 1,
     operation: {
       op: 'create', collection: 'detection_profiles',
-      fields: {name: 'detect copy', mode: 2, engines_enabled: false, kb_enabled: false},
+      fields: {name: 'detect-copy', mode: 2, engines_enabled: false, kb_enabled: false},
     },
     csrf: '1',
   });
@@ -3207,7 +3093,7 @@ test('omits write-only values and nested rules from a duplicated content profile
   const liveEditor = page.getByRole('dialog', {name: 'Edit capture'});
   await liveEditor.getByRole('button', {name: 'Duplicate profile'}).click();
   const createEditor = page.getByRole('dialog', {name: 'Create profile'});
-  await expect(createEditor.getByLabel('Name')).toHaveValue('capture copy');
+  await expect(createEditor.getByLabel('Name')).toHaveValue('capture-copy');
   await expect(createEditor.getByLabel('Profile type')).toHaveValue('content');
   await expect(createEditor.getByLabel('Session filter', {exact: true})).toHaveValue('empty');
   await expect(createEditor.locator('.scope-note')).toContainText(
@@ -3223,7 +3109,7 @@ test('omits write-only values and nested rules from a duplicated content profile
     operation: {
       op: 'create', collection: 'content_profiles',
       fields: {
-        name: 'capture copy', write_payload: false, write_format: 'pcap_single',
+        name: 'capture-copy', write_payload: false, write_format: 'pcap_single',
         webhook_enable: true, webhook_lock_traffic: false, ja4_tls_ch: true,
         ja4_tls_ch_ignore_sni: false, ja4_tls_sh: true, ja4_http: false,
         rules_session_filter: '',
@@ -3269,13 +3155,6 @@ test('prefills every remaining typed profile while keeping private values empty'
   createEditor = await duplicate(/resolver dns/i, 'resolver');
   await expect(createEditor.getByLabel('Randomize response ID')).toHaveValue('true');
   await expect(createEditor.getByLabel('Cached responses')).toHaveValue('false');
-  await closePair(createEditor);
-
-  createEditor = await duplicate(/legacy-auth authentication/i, 'legacy-auth');
-  await expect(createEditor.getByLabel('Authenticate')).toHaveValue('true');
-  await expect(createEditor.locator('.scope-note')).toContainText(
-    '2 write-only identity mappings are not copied',
-  );
   await closePair(createEditor);
 
   createEditor = await duplicate(/default-ssh ssh/i, 'default-ssh');
@@ -4480,7 +4359,6 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   await verify(/^default-ssh ssh /u, 'default-ssh', 'Shell', 'reject');
   await verify(/^resolver dns /u, 'resolver', 'Randomize upstream ID', 'false');
   await verify(/^audit script /u, 'audit', 'Runtime', 'go');
-  await verify(/^legacy-auth authentication /u, 'legacy-auth', 'Authenticate', 'false');
 });
 
 test('binds system, capture, and nested security editors to persistent values', async ({page}) => {
@@ -5349,7 +5227,7 @@ test('filters real configuration objects by value, kind, and effective usage', a
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
-  await expect(page.getByText('Showing 16 of 16', {exact: true})).toBeVisible();
+  await expect(page.getByText('Showing 15 of 15', {exact: true})).toBeVisible();
   const query = page.getByRole('searchbox', {name: 'Filter object list'});
   await query.fill('example.test');
   await expect(page.getByRole('group', {name: 'Address objects'}).getByRole('button')).toHaveCount(1);
@@ -5370,7 +5248,7 @@ test('filters real configuration objects by value, kind, and effective usage', a
   await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('unused');
   await expect(profiles.getByRole('button')).toHaveCount(1);
   await expect(profiles).toContainText('unused-detection');
-  await expect(page.getByText('Showing 1 of 16', {exact: true})).toBeVisible();
+  await expect(page.getByText('Showing 1 of 15', {exact: true})).toBeVisible();
 
   await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('port');
   await expect(page.getByText('No configuration objects match the current filters.')).toBeVisible();
@@ -5765,13 +5643,6 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
   await expect(scriptEditor.getByLabel('Runtime')).toHaveValue('python');
   await page.keyboard.press('Escape');
-  await profiles.getByRole('button', {name: /^legacy-auth authentication /i}).click();
-  const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
-  await expect(authenticationEditor.getByText('Deprecated compatibility profile')).toBeVisible();
-  await expect(authenticationEditor.getByRole('button', {name: /2 redacted entries Edit/i})).toBeEnabled();
-  await expect(authenticationEditor.getByLabel('Authenticate')).toHaveValue('true');
-  await page.keyboard.press('Escape');
-
   const trust = page.getByRole('group', {name: 'Trust and signatures'});
   await expect(trust.getByRole('button', {
     name: /default Certificate authority CA path configured · redacted/i,

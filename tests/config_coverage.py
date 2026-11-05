@@ -112,6 +112,9 @@ FULL_READ_FIELDS = {
 
 PARTIAL_FIELDS = {
     "tls_ca": {"name", "path_configured"},
+}
+
+LEGACY_METADATA_FIELDS = {
     "auth_profiles": {"name", "authenticate", "resolve", "identity_count"},
 }
 
@@ -200,6 +203,15 @@ def main() -> None:
                 missing = sorted(expected_partial_fields - actual_fields)
                 extra = sorted(actual_fields - expected_partial_fields)
                 fail(f"{name}: audited partial inventory drifted; missing={missing}, extra={extra}")
+        expected_legacy_fields = LEGACY_METADATA_FIELDS.get(name)
+        if expected_legacy_fields is not None:
+            if section["read"] != "metadata" or section["edit"] != "none":
+                fail(f"{name}: obsolete schema must remain metadata-only and non-editable")
+            actual_fields = set(section["tracked_fields"])
+            if actual_fields != expected_legacy_fields:
+                missing = sorted(expected_legacy_fields - actual_fields)
+                extra = sorted(actual_fields - expected_legacy_fields)
+                fail(f"{name}: legacy metadata inventory drifted; missing={missing}, extra={extra}")
 
 
 if __name__ == "__main__":
