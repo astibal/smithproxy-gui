@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <limits>
 #include <map>
@@ -343,6 +344,68 @@ ConfigSnapshotParseResult parse_config_snapshot(
         return {std::nullopt, std::move(error)};
     }
     return {std::move(result), {}};
+}
+
+ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
+    const auto document = Json::parse(payload, nullptr, false);
+    if (document.is_discarded() || !document.is_object() ||
+        document.value("state", "") != "ready" ||
+        !document.contains("revision") || !document["revision"].is_string() ||
+        !document.contains("saved_revision") || !document["saved_revision"].is_string() ||
+        !document.contains("unsaved") || !document["unsaved"].is_boolean() ||
+        !document.contains("config") || !document["config"].is_object()) {
+        return {std::nullopt, "Smithproxy returned an invalid configuration state"};
+    }
+
+    const auto revision = document["revision"].get<std::string>();
+    const auto saved_revision = document["saved_revision"].get<std::string>();
+    if (!is_canonical_revision(revision) || !is_canonical_revision(saved_revision)) {
+        return {std::nullopt, "Smithproxy returned an invalid configuration state revision"};
+    }
+
+    // Existing section parsers remain the single validation boundary. The
+    // atomic endpoint carries the same config tree without the legacy
+    // {"success": ...} transport envelope, so adapt it once here.
+    const auto envelope = Json{{"success", document["config"]}}.dump();
+    auto parsed = parse_config_snapshot(envelope, envelope, envelope, envelope);
+    if (!parsed.snapshot) return parsed;
+
+    auto settings = parse_config_settings(envelope);
+    auto debug = parse_config_debug(envelope);
+    auto captures = parse_config_captures(envelope);
+    auto security = parse_config_security_assets(envelope, envelope, envelope);
+    if (!settings.settings) return {std::nullopt, std::move(settings.error)};
+    if (!debug.debug) return {std::nullopt, std::move(debug.error)};
+    if (!captures.captures) return {std::nullopt, std::move(captures.error)};
+    if (!security.security_assets) return {std::nullopt, std::move(security.error)};
+
+    constexpr std::array profile_categories{
+        std::pair{"detection_profiles", "detection"},
+        std::pair{"content_profiles", "content"},
+        std::pair{"tls_profiles", "tls"},
+        std::pair{"ssh_profiles", "ssh"},
+        std::pair{"alg_dns_profiles", "dns"},
+        std::pair{"script_profiles", "script"},
+        std::pair{"auth_profiles", "authentication"},
+        std::pair{"routing", "routing"},
+    };
+    for (const auto& [section, type] : profile_categories) {
+        auto profiles = parse_config_profiles(envelope, section, type);
+        if (!profiles.profiles) return {std::nullopt, std::move(profiles.error)};
+        parsed.snapshot->profiles.insert(
+            parsed.snapshot->profiles.end(),
+            std::make_move_iterator(profiles.profiles->begin()),
+            std::make_move_iterator(profiles.profiles->end()));
+    }
+    finalize_private_profile_references(parsed.snapshot->profiles);
+    parsed.snapshot->settings = std::move(settings.settings);
+    parsed.snapshot->debug = std::move(debug.debug);
+    parsed.snapshot->captures = std::move(captures.captures);
+    parsed.snapshot->security_assets = std::move(security.security_assets);
+    parsed.snapshot->revision = revision;
+    parsed.snapshot->saved_revision = saved_revision;
+    parsed.snapshot->unsaved = document["unsaved"].get<bool>();
+    return parsed;
 }
 
 ConfigProfileParseResult parse_config_profiles(

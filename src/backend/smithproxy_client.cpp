@@ -929,6 +929,58 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
     snapshot.observation_started_at = std::chrono::steady_clock::now();
     snapshot.checked_at = std::chrono::system_clock::now();
 
+    // New Smithproxy versions expose one revision-consistent configuration
+    // document. Prefer it over the legacy fan-out of section requests.
+    {
+        std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+        if (curl) {
+            auto* raw_headers = curl_slist_append(
+                nullptr, ("X-API-Key: " + config_->api_key).c_str());
+            if (raw_headers) {
+                auto* updated_headers = curl_slist_append(raw_headers, "Accept: application/json");
+                if (updated_headers) {
+                    std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
+                    ResponseBuffer response{
+                        .limit = 2U * 1024U * 1024U,
+                        .body = {},
+                        .exceeded = false,
+                    };
+                    configure_request(
+                        curl.get(), *config_, config_->api_url + "/api/config/state", headers.get());
+                    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+                    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+                    const auto result = curl_easy_perform(curl.get());
+                    long status_code{};
+                    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+                    if (result == CURLE_OK && status_code == 200L && !response.exceeded) {
+                        auto parsed = parse_config_state(response.body);
+                        if (!parsed.snapshot) {
+                            snapshot.detail = std::move(parsed.error);
+                            return snapshot;
+                        }
+                        parsed.snapshot->checked_at = std::chrono::system_clock::now();
+                        parsed.snapshot->observation_started_at = snapshot.observation_started_at;
+                        return std::move(*parsed.snapshot);
+                    }
+                    if (status_code != 404L) {
+                        if (response.exceeded) {
+                            snapshot.detail = "Smithproxy configuration state exceeded the response limit";
+                        } else if (result != CURLE_OK) {
+                            snapshot.detail = std::string("Cannot retrieve Smithproxy configuration state: ") +
+                                curl_easy_strerror(result);
+                        } else {
+                            snapshot.detail = "Smithproxy configuration state returned HTTP " +
+                                std::to_string(status_code);
+                        }
+                        return snapshot;
+                    }
+                } else {
+                    curl_slist_free_all(raw_headers);
+                }
+            }
+        }
+    }
+
     struct RevisionResponse {
         bool advertised{};
         std::optional<std::string> revision;

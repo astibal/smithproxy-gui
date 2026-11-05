@@ -7,6 +7,8 @@ const snapshot: ConfigSnapshot = {
   checkedAtUnixMs: null,
   lastSuccessAtUnixMs: null,
   revision: 'fixture-1',
+  savedRevision: 'fixture-1',
+  unsaved: false,
   policies: [
     {
       id: 'policy-office',

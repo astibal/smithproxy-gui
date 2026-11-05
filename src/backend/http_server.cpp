@@ -1827,6 +1827,9 @@ private:
                     ",\"last_success_at_unix_ms\":" + timestamp_json(snapshot.last_success_at) +
                     ",\"view\":\"runtime\",\"revision\":" +
                     (snapshot.revision ? json_string(*snapshot.revision) : "null") +
+                    ",\"saved_revision\":" +
+                    (snapshot.saved_revision ? json_string(*snapshot.saved_revision) : "null") +
+                    ",\"unsaved\":" + (snapshot.unsaved ? "true" : "false") +
                     ",\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +

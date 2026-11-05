@@ -12427,6 +12427,12 @@ export class SmithproxyApp extends LitElement {
           </span>
           <span class="status-secondary system-state ${this.gatewayStatus().tone}"
             title=${this.gatewayStatus().detail}>● Gateway: ${this.gatewayStatus().label}</span>
+          <span class="status-secondary ${this.snapshot?.unsaved ? 'draft' : ''}"
+            title=${this.snapshot?.savedRevision
+              ? `Saved revision ${this.snapshot.savedRevision}`
+              : 'Saved revision is not advertised'}>
+            Running config: ${this.snapshot ? this.snapshot.unsaved ? 'unsaved' : 'saved' : 'unknown'}
+          </span>
           <span class="status-tertiary">API: ${this.apiVersion}</span><span class="spacer"></span>
           <span class="status-tertiary">Revision ${this.snapshot?.revision ?? 'runtime'}</span>
         </footer>

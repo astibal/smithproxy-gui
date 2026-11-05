@@ -239,7 +239,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       !['ready', 'starting', 'unavailable', 'unconfigured'].includes(value.state) ||
       typeof value.detail !== 'string' || value.detail.length > 1024 ||
       /[\u0000-\u001f\u007f]/u.test(value.detail) || value.view !== 'runtime' ||
-      !isCanonicalRevisionOrNull(value.revision)) {
+      !isCanonicalRevisionOrNull(value.revision) ||
+      !isCanonicalRevisionOrNull(value.saved_revision) || typeof value.unsaved !== 'boolean' ||
+      (value.unsaved === false && value.revision !== value.saved_revision)) {
     throw new Error('Invalid configuration snapshot.');
   }
 
@@ -1084,6 +1086,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     checkedAtUnixMs: nullableInteger(value.checked_at_unix_ms, 'configuration check time'),
     lastSuccessAtUnixMs: nullableInteger(value.last_success_at_unix_ms, 'configuration success time'),
     revision: value.revision as string | null,
+    savedRevision: value.saved_revision as string | null,
+    unsaved: value.unsaved,
     policies,
     addresses,
     ports,

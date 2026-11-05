@@ -8,6 +8,8 @@ const liveSnapshot = {
   last_success_at_unix_ms: 100,
   view: 'runtime',
   revision: null,
+  saved_revision: null,
+  unsaved: false,
   policies: [{
     id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
     source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
@@ -196,6 +198,7 @@ describe('ApiConfigClient', () => {
     expect(parseConfigSnapshot({
       ...liveSnapshot,
       revision: `sha256:${'a'.repeat(64)}`,
+      saved_revision: `sha256:${'a'.repeat(64)}`,
     }).revision).toBe(`sha256:${'a'.repeat(64)}`);
     expect(snapshot.policies[0]).toMatchObject({
       protocol: 'tcp', action: 'accept',

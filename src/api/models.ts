@@ -368,6 +368,8 @@ export interface ConfigSnapshot {
   checkedAtUnixMs: number | null;
   lastSuccessAtUnixMs: number | null;
   revision: string | null;
+  savedRevision: string | null;
+  unsaved: boolean;
   policies: ReadonlyArray<PolicySummary>;
   addresses: ReadonlyArray<AddressObject>;
   ports: ReadonlyArray<PortObject>;

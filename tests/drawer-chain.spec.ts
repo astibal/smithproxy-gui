@@ -727,6 +727,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       await route.fulfill({json: {
       state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: now(),
       last_success_at_unix_ms: now(), view: 'runtime', revision: null,
+      saved_revision: null, unsaved: false,
       policies: [{
         id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
         source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],

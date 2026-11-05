@@ -348,6 +348,8 @@ struct ConfigSnapshot {
     std::string state{"unconfigured"};
     std::string detail{"Smithproxy configuration is not configured"};
     std::optional<std::string> revision;
+    std::optional<std::string> saved_revision;
+    bool unsaved{};
     // Legacy multi-section reads synthesize index IDs and must keep this false.
     bool stable_entity_ids{};
     // Local monotonic time prevents a late pre-commit fetch from rebinding the draft.
@@ -382,6 +384,8 @@ ConfigSnapshotParseResult parse_config_snapshot(
     std::string_view address_payload,
     std::string_view port_payload,
     std::string_view protocol_payload);
+
+ConfigSnapshotParseResult parse_config_state(std::string_view payload);
 
 struct ConfigProfileParseResult {
     std::optional<std::vector<ConfigProfile>> profiles;

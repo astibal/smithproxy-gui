@@ -56,6 +56,8 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     response_status = 200
     config_revision = "sha256:" + "c" * 64
     revision_requests = 0
+    state_requests = 0
+    state_status = 200
     transaction_capabilities = {
         "success": {
             "transaction_version": 1,
@@ -207,6 +209,22 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(FakeSmithproxy.transaction_capabilities).encode())
+            return
+        if self.path == "/api/config/state":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            FakeSmithproxy.state_requests += 1
+            self.send_response(FakeSmithproxy.state_status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            if FakeSmithproxy.state_status != 200:
+                return
+            self.wfile.write(json.dumps({
+                "state": "ready",
+                "revision": FakeSmithproxy.config_revision,
+                "saved_revision": FakeSmithproxy.config_revision,
+                "unsaved": False,
+                "config": FakeSmithproxy.config_sections,
+            }).encode())
             return
         if self.path == "/api/config/v2/revision":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
@@ -606,8 +624,7 @@ def main() -> int:
             health_body = wait_for_state(configured_port, "ready")
             assert FakeSmithproxy.api_key == secret
             wait_for_config(configured_port, gateway_secret)
-            assert FakeSmithproxy.authorization_access_key == secret
-            assert FakeSmithproxy.authorization_requests == 1
+            assert FakeSmithproxy.state_requests >= 1
             assert secret.encode() not in health_body
             assert isinstance(json.loads(health_body)["smithproxy"]["checked_at_unix_ms"], int)
             protected_paths = (
@@ -758,7 +775,7 @@ def main() -> int:
             config_snapshot, config_body = wait_for_config(configured_port, gateway_secret)
             assert config_snapshot["view"] == "runtime"
             assert config_snapshot["revision"] == FakeSmithproxy.config_revision
-            assert FakeSmithproxy.revision_requests >= 2
+            assert FakeSmithproxy.state_requests >= 1
             assert len(config_snapshot["policies"]) == 1
             assert config_snapshot["policies"][0]["name"] == "office policy"
             assert config_snapshot["policies"][0]["enabled"] is True
@@ -1497,7 +1514,7 @@ def main() -> int:
         assert gateway_secret not in output
         assert previous_gateway_secret not in output
 
-        FakeSmithproxy.authorization_status = 503
+        FakeSmithproxy.state_status = 503
         diagnostic_port = free_port()
         diagnostic = subprocess.Popen(
             [binary, "--port", str(diagnostic_port), "--assets", assets],
@@ -1510,10 +1527,10 @@ def main() -> int:
             wait_for_state(diagnostic_port, "ready")
             _, diagnostic_body = wait_for_config_detail(
                 diagnostic_port, gateway_secret,
-                "Smithproxy authorization returned HTTP 503")
+                "Smithproxy configuration state returned HTTP 503")
             assert secret.encode() not in diagnostic_body
         finally:
-            FakeSmithproxy.authorization_status = 200
+            FakeSmithproxy.state_status = 200
             diagnostic.send_signal(signal.SIGTERM)
             diagnostic.wait(timeout=4)
         diagnostic_output = diagnostic.stdout.read() + diagnostic.stderr.read()
