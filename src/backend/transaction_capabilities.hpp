@@ -24,6 +24,8 @@ struct TransactionCapabilities {
     std::size_t maximum_request_bytes{};
     std::vector<std::string> operations;
     std::vector<TransactionCollectionCapability> collections;
+    // 1 is the legacy single-request contract; 2 is begin/prepare/commit.
+    unsigned wire_version{1U};
 };
 
 using ReviewedTransactionSchemas = std::map<std::string, std::string, std::less<>>;

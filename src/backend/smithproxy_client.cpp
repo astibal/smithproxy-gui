@@ -14,6 +14,7 @@
 #include <limits>
 #include <memory>
 #include <string_view>
+#include <type_traits>
 
 namespace smithproxy::gui {
 namespace {
@@ -90,6 +91,41 @@ TransactionResponse transaction_failure(std::string state) {
         .warning_count = 0U,
         .restart = "unknown",
     };
+}
+
+nlohmann::json explicit_transaction_value(const DraftScalar& value) {
+    return std::visit([](const auto& item) -> nlohmann::json {
+        using Value = std::decay_t<decltype(item)>;
+        if constexpr (std::is_same_v<Value, bool>) {
+            return {{"type", "bool"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, std::int64_t>) {
+            return {{"type", "int"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, double>) {
+            return {{"type", "double"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, std::string>) {
+            return {{"type", "string"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, std::vector<std::int64_t>>) {
+            return {{"type", "int_array"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, std::vector<std::string>>) {
+            return {{"type", "string_array"}, {"data", item}};
+        } else {
+            // Identity objects are intentionally unsupported by the current
+            // Smithproxy transaction value model.
+            return nullptr;
+        }
+    }, value);
+}
+
+TransactionResponse transaction_http_failure(const long status_code) {
+    if (status_code == 401L || status_code == 403L) {
+        return transaction_failure("authorization-failed");
+    }
+    if (status_code == 409L) return transaction_failure("conflict");
+    if (status_code == 400L || status_code == 404L || status_code == 422L) {
+        return transaction_failure("rejected");
+    }
+    if (status_code >= 500L && status_code < 600L) return transaction_failure("failed");
+    return transaction_failure("invalid-response");
 }
 
 bool valid_session_token(const std::string_view token) {
@@ -279,6 +315,130 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
                     envelope.error_code == "transaction.invalid_draft"
             ? "rejected"
             : "unavailable");
+    }
+
+    if (capabilities.wire_version == 2U) {
+        if (!draft.structural_operations.empty()) return transaction_failure("rejected");
+
+        nlohmann::json operations = nlohmann::json::array();
+        for (const auto& change : draft.changes) {
+            auto value = explicit_transaction_value(change.value);
+            if (value.is_null()) return transaction_failure("rejected");
+            operations.push_back({
+                {"op", "set"},
+                {"path", change.path},
+                {"value", std::move(value)},
+            });
+        }
+
+        struct ApiResponse {
+            long status{};
+            std::optional<nlohmann::json> body;
+        };
+        const auto post = [&](const std::string_view path,
+                              const nlohmann::json& params) -> ApiResponse {
+            std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+            if (!curl) return {};
+            curl_slist* raw_headers = nullptr;
+            const std::array header_values{
+                "X-API-Key: " + config_->api_key,
+                std::string{"Content-Type: application/json"},
+                std::string{"Accept: application/json"},
+                std::string{"Expect:"},
+            };
+            for (const auto& value : header_values) {
+                auto* updated = curl_slist_append(raw_headers, value.c_str());
+                if (!updated) {
+                    curl_slist_free_all(raw_headers);
+                    return {};
+                }
+                raw_headers = updated;
+            }
+            std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
+            const auto request = nlohmann::json{{"params", params}}.dump();
+            ResponseBuffer response{
+                .limit = transaction_response_limit,
+                .body = {},
+                .exceeded = false,
+            };
+            configure_request(
+                curl.get(), *config_, config_->api_url + std::string(path), headers.get());
+            curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
+            curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
+            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                             static_cast<curl_off_t>(request.size()));
+            curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+            curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+            if (curl_easy_perform(curl.get()) != CURLE_OK || response.exceeded) return {};
+            long status{};
+            curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+            auto document = nlohmann::json::parse(response.body, nullptr, false);
+            if (document.is_discarded() || !document.is_object()) return {status, std::nullopt};
+            return {status, std::optional<nlohmann::json>{std::move(document)}};
+        };
+
+        const auto begin = post(
+            "/api/config/transaction/begin", {{"base_revision", *draft.base_revision}});
+        if (begin.status != 200L) return transaction_http_failure(begin.status);
+        if (!begin.body || begin.body->value("state", "") != "open" ||
+            !begin.body->contains("transaction") || !(*begin.body)["transaction"].is_string() ||
+            begin.body->value("base_revision", "") != *draft.base_revision) {
+            return transaction_failure("invalid-response");
+        }
+        const auto token = (*begin.body)["transaction"].get<std::string>();
+        if (token.empty() || token.size() > 256U) return transaction_failure("invalid-response");
+
+        const auto abort = [&] {
+            (void)post("/api/config/transaction/abort", {{"transaction", token}});
+        };
+        const auto prepared = post(
+            "/api/config/transaction/prepare",
+            {{"transaction", token}, {"operations", operations}});
+        if (prepared.status != 200L) {
+            abort();
+            return transaction_http_failure(prepared.status);
+        }
+        if (!prepared.body || prepared.body->value("state", "") != "prepared" ||
+            !prepared.body->contains("operation_count") ||
+            !(*prepared.body)["operation_count"].is_number_unsigned() ||
+            (*prepared.body)["operation_count"].get<std::size_t>() != draft.operation_count()) {
+            abort();
+            return transaction_failure("invalid-response");
+        }
+
+        if (mode == TransactionMode::Validate) {
+            abort();
+            return {
+                .state = "succeeded",
+                .revision = *draft.base_revision,
+                .previous_revision = *draft.base_revision,
+                .validated_operations = draft.operation_count(),
+                .warning_count = 0U,
+                .restart = "not-required",
+            };
+        }
+
+        const auto committed = post(
+            "/api/config/transaction/commit",
+            {{"transaction", token}, {"description", "Smithproxy GUI commit"}});
+        if (committed.status != 200L) return transaction_http_failure(committed.status);
+        if (!committed.body || committed.body->value("state", "") != "committed" ||
+            !committed.body->contains("revision") || !(*committed.body)["revision"].is_string()) {
+            return transaction_failure("invalid-response");
+        }
+        const auto revision = (*committed.body)["revision"].get<std::string>();
+        if (!is_canonical_revision(revision) || revision == *draft.base_revision) {
+            return transaction_failure("invalid-response");
+        }
+        return {
+            .state = "succeeded",
+            .revision = revision,
+            .previous_revision = *draft.base_revision,
+            .validated_operations = draft.operation_count(),
+            .warning_count = 0U,
+            .restart = "not-required",
+        };
     }
 
     const std::string endpoint = config_->api_url + "/api/config/v2/transaction";
@@ -914,8 +1074,35 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
     long status_code{};
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
     if (status_code == 404L) {
-        capabilities.state = "not-advertised";
-        capabilities.detail = "Smithproxy does not advertise atomic configuration transactions";
+        // The current transaction API is advertised by the atomic state
+        // endpoint. Probe it only when the legacy capability document is not
+        // present, so older reviewed deployments retain their exact contract.
+        ResponseBuffer state_response{
+            .limit = 2U * 1024U * 1024U,
+            .body = {},
+            .exceeded = false,
+        };
+        std::unique_ptr<CURL, CurlCleanup> state_curl(curl_easy_init());
+        if (!state_curl) return capabilities;
+        configure_request(
+            state_curl.get(), *config_, config_->api_url + "/api/config/state", headers.get());
+        curl_easy_setopt(state_curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+        curl_easy_setopt(state_curl.get(), CURLOPT_WRITEDATA, &state_response);
+        const auto state_result = curl_easy_perform(state_curl.get());
+        long state_status{};
+        curl_easy_getinfo(state_curl.get(), CURLINFO_RESPONSE_CODE, &state_status);
+        if (state_result != CURLE_OK || state_status != 200L || state_response.exceeded ||
+            !parse_config_state(state_response.body).snapshot) {
+            capabilities.state = "not-advertised";
+            capabilities.detail = "Smithproxy does not advertise atomic configuration transactions";
+            return capabilities;
+        }
+        capabilities.state = "ready";
+        capabilities.detail = "Smithproxy exposes begin, prepare, and commit transactions";
+        capabilities.maximum_operations = 4096U;
+        capabilities.maximum_request_bytes = 1024U * 1024U;
+        capabilities.operations = {"set"};
+        capabilities.wire_version = 2U;
         return capabilities;
     }
     if (status_code != 200L) return capabilities;

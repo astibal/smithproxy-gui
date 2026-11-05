@@ -23,71 +23,83 @@ PRIVATE_VALUE = "transaction-private-password"
 class TransactionSmithproxy(FakeSmithproxy):
     requests = []
     request_lock = threading.Lock()
-    reject_first_session_request = True
-    reject_first_commit_transport = True
+    transactions = {}
+    next_transaction = 1
+
+    def do_GET(self):
+        if self.path == "/api/config/v2/capabilities":
+            self.send_error(404)
+            return
+        super().do_GET()
 
     def do_POST(self):
-        if self.path != "/api/config/v2/transaction":
+        if not self.path.startswith("/api/config/transaction/"):
             super().do_POST()
             return
-        expected_cookie = (
-            f"__sx_api={FakeSmithproxy.auth_token}; "
-            f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
-        if (self.headers.get("Cookie") != expected_cookie or
-                self.headers.get("csrf_token") != FakeSmithproxy.csrf_token or
-                self.headers.get("X-API-Key") is not None):
-            self.send_error(401)
-            return
-        if TransactionSmithproxy.reject_first_session_request:
-            TransactionSmithproxy.reject_first_session_request = False
+        if self.headers.get("X-API-Key") != "transaction-api-key-that-must-not-leak" or \
+                self.headers.get("Cookie") is not None:
             self.send_error(401)
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             document = json.loads(self.rfile.read(length))
-            mode = document["mode"]
-            operations = document["operations"]
-            base_revision = document["base_revision"]
-            idempotency_key = document["idempotency_key"]
-            if mode not in ("validate", "commit") or not isinstance(operations, list):
-                raise ValueError
-            if base_revision != BASE_REVISION or not re.fullmatch(
-                    r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-                    idempotency_key):
-                raise ValueError
+            params = document["params"]
         except (KeyError, ValueError, json.JSONDecodeError):
             self.send_error(400)
             return
 
+        action = self.path.rsplit("/", 1)[-1]
         with TransactionSmithproxy.request_lock:
-            TransactionSmithproxy.requests.append(document)
-            lose_response = mode == "commit" and TransactionSmithproxy.reject_first_commit_transport
-            if lose_response:
-                TransactionSmithproxy.reject_first_commit_transport = False
+            TransactionSmithproxy.requests.append({"action": action, "params": params})
 
-        revision = BASE_REVISION
-        warnings = ["reviewed integration warning"]
-        restart = "not-required"
-        if mode == "commit":
-            revision = COMMITTED_REVISION
-            warnings = []
-            restart = "required"
+        if action == "begin":
+            if params.get("base_revision") != BASE_REVISION:
+                self.send_error(409)
+                return
+            token = f"transaction-{TransactionSmithproxy.next_transaction}"
+            TransactionSmithproxy.next_transaction += 1
+            TransactionSmithproxy.transactions[token] = None
+            response = {
+                "state": "open", "transaction": token,
+                "base_revision": BASE_REVISION, "expires_in_ms": 15000,
+            }
+        elif action == "prepare":
+            token = params.get("transaction")
+            operations = params.get("operations")
+            if token not in TransactionSmithproxy.transactions or not isinstance(operations, list):
+                self.send_error(404)
+                return
+            TransactionSmithproxy.transactions[token] = operations
+            response = {
+                "state": "prepared", "content_hash": "sha256:" + "e" * 64,
+                "operation_count": len(operations), "expires_in_ms": 15000,
+            }
+        elif action == "abort":
+            token = params.get("transaction")
+            if token not in TransactionSmithproxy.transactions:
+                self.send_error(404)
+                return
+            del TransactionSmithproxy.transactions[token]
+            response = {"state": "aborted"}
+        elif action == "commit":
+            token = params.get("transaction")
+            if token not in TransactionSmithproxy.transactions or \
+                    TransactionSmithproxy.transactions[token] is None:
+                self.send_error(409)
+                return
+            del TransactionSmithproxy.transactions[token]
             FakeSmithproxy.config_revision = COMMITTED_REVISION
-        if lose_response:
-            self.close_connection = True
+            response = {
+                "state": "committed", "revision": COMMITTED_REVISION,
+                "content_hash": "sha256:" + "e" * 64, "unsaved": True,
+            }
+        else:
+            self.send_error(404)
             return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps({
-            "success": {
-                "revision": revision,
-                "previous_revision": BASE_REVISION,
-                "validated_operations": len(operations),
-                "warnings": warnings,
-                "restart": restart,
-            },
-        }).encode())
+        self.wfile.write(json.dumps(response).encode())
 
 
 def wait_for_ready_capability(port: int, headers):
@@ -136,8 +148,8 @@ def main() -> int:
         },
     }
     TransactionSmithproxy.requests = []
-    TransactionSmithproxy.reject_first_session_request = True
-    TransactionSmithproxy.reject_first_commit_transport = True
+    TransactionSmithproxy.transactions = {}
+    TransactionSmithproxy.next_transaction = 1
 
     fake_port = free_port()
     fake = http.server.ThreadingHTTPServer(("127.0.0.1", fake_port), TransactionSmithproxy)
@@ -218,17 +230,12 @@ def main() -> int:
                 "base_revision": BASE_REVISION,
                 "upstream_validation": "valid",
                 "validated_operations": 2,
-                "warning_count": 1,
+                "warning_count": 0,
                 "restart": "not-required",
             }
             assert PRIVATE_VALUE.encode() not in body
 
             commit_body = json.dumps({"expected_version": mutated["version"]})
-            first_commit = request(
-                port, "/api/v1/config/draft/commit", "POST",
-                headers=mutation_headers, body=commit_body)
-            assert first_commit[0] == 503
-            assert PRIVATE_VALUE.encode() not in first_commit[2]
             status, _, body = request(
                 port, "/api/v1/config/draft/commit", "POST",
                 headers=mutation_headers, body=commit_body)
@@ -238,20 +245,19 @@ def main() -> int:
             assert receipt["revision"] == COMMITTED_REVISION
             assert receipt["committed_operations"] == 2
             assert receipt["warning_count"] == 0
-            assert receipt["restart"] == "required"
+            assert receipt["restart"] == "not-required"
             assert isinstance(receipt["refresh_job_id"], str)
             assert PRIVATE_VALUE.encode() not in body
 
             with TransactionSmithproxy.request_lock:
                 upstream_requests = list(TransactionSmithproxy.requests)
-            assert [item["mode"] for item in upstream_requests] == [
-                "validate", "commit", "commit"]
-            assert upstream_requests[1]["idempotency_key"] == upstream_requests[2]["idempotency_key"]
-            assert upstream_requests[0]["idempotency_key"] != upstream_requests[1]["idempotency_key"]
-            assert FakeSmithproxy.authorization_requests == 2
-            assert upstream_requests[1]["operations"] == [
-                {"op": "set", "path": "policy.[0].action", "value": "reject"},
-                {"op": "set", "path": "settings.certs_ca_key_password", "value": PRIVATE_VALUE},
+            assert [item["action"] for item in upstream_requests] == [
+                "begin", "prepare", "abort", "begin", "prepare", "commit"]
+            assert upstream_requests[1]["params"]["operations"] == [
+                {"op": "set", "path": "policy.[0].action",
+                 "value": {"type": "string", "data": "reject"}},
+                {"op": "set", "path": "settings.certs_ca_key_password",
+                 "value": {"type": "string", "data": PRIVATE_VALUE}},
             ]
 
             status, _, body = request(
@@ -274,10 +280,10 @@ def main() -> int:
                 port, "/api/v1/audit/recent", headers=gateway_headers)
             assert status == 200
             audits = json.loads(audit_body)["entries"]
-            assert [item["outcome"] for item in audits[-3:]] == [
-                "succeeded", "rejected", "succeeded"]
-            assert [item["operation"] for item in audits[-3:]] == [
-                "config.draft.validate", "config.draft.commit", "config.draft.commit"]
+            assert [item["outcome"] for item in audits[-2:]] == [
+                "succeeded", "succeeded"]
+            assert [item["operation"] for item in audits[-2:]] == [
+                "config.draft.validate", "config.draft.commit"]
             assert PRIVATE_VALUE.encode() not in audit_body
         finally:
             process.send_signal(signal.SIGTERM)
