@@ -380,6 +380,149 @@ bool append_content_rule_operation(
     }, operation);
 }
 
+struct SignatureRow {
+    std::string id;
+    std::vector<std::string> flow;
+};
+
+struct SignatureRows {
+    std::string collection;
+    std::vector<SignatureRow> rows;
+};
+
+// Smithproxy addresses signatures and flow steps by their current list index.
+// Keep a lightweight mirror of both levels so every later operation is bound
+// after earlier creates, moves, and removals have shifted those indices.
+std::vector<SignatureRows> signature_rows(const ConfigSnapshot& snapshot) {
+    std::vector<SignatureRows> result{
+        {.collection = "starttls_signatures", .rows = {}},
+        {.collection = "detection_signatures", .rows = {}},
+    };
+    if (!snapshot.security_assets) return result;
+    for (const auto& signature : snapshot.security_assets->signatures) {
+        auto context = std::find_if(result.begin(), result.end(), [&](const auto& candidate) {
+            return candidate.collection == signature.kind + "_signatures";
+        });
+        if (context == result.end()) continue;
+        SignatureRow row{.id = signature.id, .flow = {}};
+        row.flow.reserve(signature.flow.size());
+        for (const auto& step : signature.flow) row.flow.push_back(step.id);
+        context->rows.push_back(std::move(row));
+    }
+    return result;
+}
+
+std::optional<std::size_t> signature_index(
+    const SignatureRows& context, const std::string_view entity_id) {
+    const auto found = std::find_if(context.rows.begin(), context.rows.end(), [&](const auto& row) {
+        return row.id == entity_id;
+    });
+    if (found == context.rows.end()) return std::nullopt;
+    return static_cast<std::size_t>(std::distance(context.rows.begin(), found));
+}
+
+bool append_signature_operation(
+    nlohmann::json& operations, std::vector<SignatureRows>& contexts,
+    const DraftStructuralOperation& operation) {
+    return std::visit([&](const auto& item) {
+        using Operation = std::decay_t<decltype(item)>;
+        const bool nested = item.collection.ends_with("_signatures.flow");
+        const auto root = nested
+            ? item.collection.substr(0U, item.collection.size() - std::string_view{".flow"}.size())
+            : item.collection;
+        if (root != "starttls_signatures" && root != "detection_signatures") return false;
+        auto context = std::find_if(contexts.begin(), contexts.end(), [&](const auto& candidate) {
+            return candidate.collection == root;
+        });
+        if (context == contexts.end()) return false;
+
+        if (!nested) {
+            if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+                if (item.parent_id || item.fields.empty()) return false;
+                const auto name = item.fields.find("name");
+                if (name == item.fields.end() || !std::holds_alternative<std::string>(name->second)) {
+                    return false;
+                }
+                const auto index = context->rows.size();
+                operations.push_back({
+                    {"op", "add"}, {"path", context->collection},
+                    {"name", std::get<std::string>(name->second)},
+                });
+                for (const auto& [field, scalar] : item.fields) {
+                    auto value = explicit_scalar_json(scalar);
+                    if (value.is_null()) return false;
+                    operations.push_back({
+                        {"op", "set"},
+                        {"path", context->collection + ".[" + std::to_string(index) + "]." + field},
+                        {"value", std::move(value)},
+                    });
+                }
+                // Nested creates name their pending parent by client_id, so keep
+                // that exact identifier until the transaction has been emitted.
+                context->rows.push_back({.id = item.client_id, .flow = {}});
+                return item.position.kind == DraftPositionKind::Last;
+            } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+                const auto index = signature_index(*context, item.entity_id);
+                if (!index) return false;
+                operations.push_back({
+                    {"op", "remove"}, {"path", context->collection},
+                    {"entries", nlohmann::json::array({std::to_string(*index)})},
+                });
+                context->rows.erase(context->rows.begin() + static_cast<std::ptrdiff_t>(*index));
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // A create carries its parent explicitly. Existing flow operations can
+        // instead locate their unique parent through the stable flow-step ID.
+        std::optional<std::size_t> parent_index;
+        if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+            if (!item.parent_id) return false;
+            parent_index = signature_index(*context, *item.parent_id);
+        } else {
+            for (std::size_t index = 0U; index < context->rows.size(); ++index) {
+                if (row_index(context->rows[index].flow, item.entity_id)) {
+                    parent_index = index;
+                    break;
+                }
+            }
+        }
+        if (!parent_index) return false;
+        auto& flow = context->rows[*parent_index].flow;
+        const auto path = context->collection + ".[" + std::to_string(*parent_index) + "].flow";
+        if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+            operations.push_back({{"op", "add"}, {"path", path}, {"name", ""}});
+            const auto index = flow.size();
+            for (const auto& [field, scalar] : item.fields) {
+                auto value = explicit_scalar_json(scalar);
+                if (value.is_null()) return false;
+                operations.push_back({
+                    {"op", "set"},
+                    {"path", path + ".[" + std::to_string(index) + "]." + field},
+                    {"value", std::move(value)},
+                });
+            }
+            const auto row_id = "client:" + item.client_id;
+            flow.push_back(row_id);
+            if (item.position.kind == DraftPositionKind::Last) return true;
+            return append_ordered_move(operations, path, flow, row_id, item.position);
+        } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+            const auto index = row_index(flow, item.entity_id);
+            if (!index) return false;
+            operations.push_back({
+                {"op", "remove"}, {"path", path},
+                {"entries", nlohmann::json::array({std::to_string(*index)})},
+            });
+            flow.erase(flow.begin() + static_cast<std::ptrdiff_t>(*index));
+            return true;
+        } else {
+            return append_ordered_move(operations, path, flow, item.entity_id, item.position);
+        }
+    }, operation);
+}
+
 nlohmann::json position_json(const DraftPosition& position) {
     switch (position.kind) {
         case DraftPositionKind::First: return {{"first", true}};
@@ -602,6 +745,7 @@ TransactionEnvelope build_transaction_v2_operations(
     policy_rows.reserve(snapshot.policies.size() + draft.structural_operations.size());
     for (const auto& policy : snapshot.policies) policy_rows.push_back(policy.id);
     auto content_rows = content_rule_rows(snapshot);
+    auto signatures = signature_rows(snapshot);
     for (const auto& operation : draft.structural_operations) {
         const auto collection = draft_structural_collection(operation);
         if (collection == "policy") {
@@ -612,6 +756,13 @@ TransactionEnvelope build_transaction_v2_operations(
         }
         if (collection == "content_profiles.content_rules") {
             if (!append_content_rule_operation(operations, content_rows, operation)) {
+                return {std::nullopt, "transaction.invalid_draft"};
+            }
+            continue;
+        }
+        if (collection == "starttls_signatures" || collection == "detection_signatures" ||
+            collection == "starttls_signatures.flow" || collection == "detection_signatures.flow") {
+            if (!append_signature_operation(operations, signatures, operation)) {
                 return {std::nullopt, "transaction.invalid_draft"};
             }
             continue;

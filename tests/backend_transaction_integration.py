@@ -190,6 +190,7 @@ def main() -> int:
             assert capabilities["features"]["named_structural_drafts"] is True
             assert capabilities["features"]["policy_structural_drafts"] is True
             assert capabilities["features"]["content_rule_structural_drafts"] is True
+            assert capabilities["features"]["signature_structural_drafts"] is True
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
@@ -242,12 +243,28 @@ def main() -> int:
                             "collection": "policy", "client_id": "branch-policy",
                             "position": {"first": True}, "fields": {"name": "branch policy"},
                         },
+                        {
+                            "op": "create", "local_id": "create-signature-imap",
+                            "collection": "starttls_signatures", "client_id": "imap-signature",
+                            "position": {"last": True},
+                            "fields": {"cat": "mail", "name": "imap/starttls", "side": "server"},
+                        },
+                        {
+                            "op": "create", "local_id": "create-signature-imap-flow",
+                            "collection": "starttls_signatures.flow", "client_id": "imap-flow",
+                            "parent_id": "imap-signature", "position": {"last": True},
+                            "fields": {
+                                "side": "r", "type": "regex", "bytes_start": 0,
+                                "bytes_max": 64, "signature": "private signature matcher",
+                            },
+                        },
                     ],
                 }),
             )
             mutated = json.loads(body)
             assert status == 200
-            assert len(mutated["structural_operations"]) == 3
+            assert len(mutated["structural_operations"]) == 5
+            assert b"private signature matcher" not in body
 
             status, _, body = request(
                 port, "/api/v1/config/draft/validate", "POST",
@@ -262,7 +279,7 @@ def main() -> int:
                 "draft_version": mutated["version"],
                 "base_revision": BASE_REVISION,
                 "upstream_validation": "valid",
-                "validated_operations": 6,
+                "validated_operations": 8,
                 "warning_count": 0,
                 "restart": "not-required",
             }
@@ -276,7 +293,7 @@ def main() -> int:
             assert status == 200
             assert receipt["previous_revision"] == BASE_REVISION
             assert receipt["revision"] == COMMITTED_REVISION
-            assert receipt["committed_operations"] == 6
+            assert receipt["committed_operations"] == 8
             assert receipt["warning_count"] == 0
             assert receipt["restart"] == "not-required"
             assert isinstance(receipt["refresh_job_id"], str)
@@ -304,6 +321,24 @@ def main() -> int:
                  "value": {"type": "string", "data": "branch policy"}},
                 {"op": "move", "path": "policy", "source": 1, "target": 0,
                  "position": "before"},
+                {"op": "add", "path": "starttls_signatures", "name": "imap/starttls"},
+                {"op": "set", "path": "starttls_signatures.[1].cat",
+                 "value": {"type": "string", "data": "mail"}},
+                {"op": "set", "path": "starttls_signatures.[1].name",
+                 "value": {"type": "string", "data": "imap/starttls"}},
+                {"op": "set", "path": "starttls_signatures.[1].side",
+                 "value": {"type": "string", "data": "server"}},
+                {"op": "add", "path": "starttls_signatures.[1].flow", "name": ""},
+                {"op": "set", "path": "starttls_signatures.[1].flow.[0].bytes_max",
+                 "value": {"type": "int", "data": 64}},
+                {"op": "set", "path": "starttls_signatures.[1].flow.[0].bytes_start",
+                 "value": {"type": "int", "data": 0}},
+                {"op": "set", "path": "starttls_signatures.[1].flow.[0].side",
+                 "value": {"type": "string", "data": "r"}},
+                {"op": "set", "path": "starttls_signatures.[1].flow.[0].signature",
+                 "value": {"type": "string", "data": "private signature matcher"}},
+                {"op": "set", "path": "starttls_signatures.[1].flow.[0].type",
+                 "value": {"type": "string", "data": "regex"}},
             ], upstream_requests[1]["params"]["operations"]
 
             status, _, body = request(

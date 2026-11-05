@@ -1193,6 +1193,19 @@ private:
             });
         const bool content_rule_structural_drafts = policy_structural_drafts &&
             content_rule_collection != status.transaction_capabilities.collections.end();
+        const auto has_ordered_collection = [&](const std::string_view id, const bool nested) {
+            return std::any_of(
+                status.transaction_capabilities.collections.begin(),
+                status.transaction_capabilities.collections.end(),
+                [&](const auto& item) {
+                    return item.id == id && item.ordered && item.nested == nested;
+                });
+        };
+        const bool signature_structural_drafts = content_rule_structural_drafts &&
+            has_ordered_collection("starttls_signatures", false) &&
+            has_ordered_collection("detection_signatures", false) &&
+            has_ordered_collection("starttls_signatures.flow", true) &&
+            has_ordered_collection("detection_signatures.flow", true);
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
@@ -1208,6 +1221,8 @@ private:
                     (policy_structural_drafts ? "true" : "false") +
                     ",\"content_rule_structural_drafts\":" +
                     (content_rule_structural_drafts ? "true" : "false") +
+                    ",\"signature_structural_drafts\":" +
+                    (signature_structural_drafts ? "true" : "false") +
                     ",\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"draft_preflight\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":" + (monitoring ? "true" : "false") +

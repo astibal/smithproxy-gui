@@ -370,6 +370,7 @@ export class SmithproxyApp extends LitElement {
   @state() private namedStructuralDraftsAvailable = false;
   @state() private policyStructuralDraftsAvailable = false;
   @state() private contentRuleStructuralDraftsAvailable = false;
+  @state() private signatureStructuralDraftsAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftPreflightAvailable = false;
   @state() private jobsAvailable = false;
@@ -1387,6 +1388,7 @@ export class SmithproxyApp extends LitElement {
       const namedStructuralDraftsWereAvailable = this.namedStructuralDraftsAvailable;
       const policyStructuralDraftsWereAvailable = this.policyStructuralDraftsAvailable;
       const contentRuleStructuralDraftsWereAvailable = this.contentRuleStructuralDraftsAvailable;
+      const signatureStructuralDraftsWereAvailable = this.signatureStructuralDraftsAvailable;
       const draftPreflightWasAvailable = this.draftPreflightAvailable;
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
@@ -1395,6 +1397,7 @@ export class SmithproxyApp extends LitElement {
       const nextNamedStructuralDraftsAvailable = capabilities.features.namedStructuralDrafts;
       const nextPolicyStructuralDraftsAvailable = capabilities.features.policyStructuralDrafts;
       const nextContentRuleStructuralDraftsAvailable = capabilities.features.contentRuleStructuralDrafts;
+      const nextSignatureStructuralDraftsAvailable = capabilities.features.signatureStructuralDrafts;
       const nextDraftAvailable = capabilities.features.drafts;
       const nextDraftPreflightAvailable = capabilities.features.draftPreflight;
       const configurationCapabilitiesChanged =
@@ -1405,6 +1408,7 @@ export class SmithproxyApp extends LitElement {
         nextNamedStructuralDraftsAvailable !== namedStructuralDraftsWereAvailable ||
         nextPolicyStructuralDraftsAvailable !== policyStructuralDraftsWereAvailable ||
         nextContentRuleStructuralDraftsAvailable !== contentRuleStructuralDraftsWereAvailable ||
+        nextSignatureStructuralDraftsAvailable !== signatureStructuralDraftsWereAvailable ||
         nextDraftAvailable !== draftWasAvailable ||
         nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
@@ -1416,6 +1420,7 @@ export class SmithproxyApp extends LitElement {
       this.namedStructuralDraftsAvailable = nextNamedStructuralDraftsAvailable;
       this.policyStructuralDraftsAvailable = nextPolicyStructuralDraftsAvailable;
       this.contentRuleStructuralDraftsAvailable = nextContentRuleStructuralDraftsAvailable;
+      this.signatureStructuralDraftsAvailable = nextSignatureStructuralDraftsAvailable;
       this.draftAvailable = nextDraftAvailable;
       this.draftPreflightAvailable = nextDraftPreflightAvailable;
       if (configurationCapabilitiesChanged) this.configurationAccessEpoch += 1;
@@ -1458,6 +1463,7 @@ export class SmithproxyApp extends LitElement {
       this.namedStructuralDraftsAvailable = false;
       this.policyStructuralDraftsAvailable = false;
       this.contentRuleStructuralDraftsAvailable = false;
+      this.signatureStructuralDraftsAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
       this.updateMonitoringCapabilities(undefined);
@@ -2880,7 +2886,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async moveSignatureFlowInDraft(entry: DrawerEntry): Promise<void> {
-    if (entry.kind !== 'signature-flow' || !this.structuralDraftsAvailable || !this.draftClient ||
+    if (entry.kind !== 'signature-flow' || !this.signatureTransactionsAvailable() || !this.draftClient ||
         this.draftSaving || this.draftCommitting) return;
     const context = this.signatureFlowContext(entry.id);
     const placement = this.renderRoot.querySelector<HTMLSelectElement>(
@@ -3098,6 +3104,9 @@ export class SmithproxyApp extends LitElement {
         (entry.kind === 'policy' || entry.kind === 'policy-create')) ||
       (this.contentRuleStructuralDraftsAvailable &&
         (entry.kind === 'content-rule' || entry.kind === 'content-rule-create')) ||
+      (this.signatureStructuralDraftsAvailable &&
+        (entry.kind === 'signature' || entry.kind === 'signature-create' ||
+         entry.kind === 'signature-flow' || entry.kind === 'signature-flow-create')) ||
       (this.namedStructuralDraftsAvailable &&
         (entry.kind === 'profile' || entry.kind === 'profile-create' ||
          entry.kind === 'authority' || entry.kind === 'authority-create')) ||
@@ -3123,6 +3132,10 @@ export class SmithproxyApp extends LitElement {
     return this.structuralDraftsAvailable || this.contentRuleStructuralDraftsAvailable;
   }
 
+  private signatureTransactionsAvailable(): boolean {
+    return this.structuralDraftsAvailable || this.signatureStructuralDraftsAvailable;
+  }
+
   private structuralOperationTransactionsAvailable(operation: DraftStructuralOperation): boolean {
     if (['address_objects', 'port_objects', 'proto_objects'].includes(operation.collection)) {
       return this.primitiveTransactionsAvailable();
@@ -3133,6 +3146,12 @@ export class SmithproxyApp extends LitElement {
     if (operation.collection === 'policy') return this.policyTransactionsAvailable();
     if (operation.collection === 'content_profiles.content_rules') {
       return this.contentRuleTransactionsAvailable();
+    }
+    if (operation.collection === 'starttls_signatures' ||
+        operation.collection === 'detection_signatures' ||
+        operation.collection === 'starttls_signatures.flow' ||
+        operation.collection === 'detection_signatures.flow') {
+      return this.signatureTransactionsAvailable();
     }
     return this.structuralDraftsAvailable;
   }
@@ -3598,7 +3617,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewSignature(kind: 'starttls' | 'detection', origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable) return;
+    if (!this.signatureTransactionsAvailable()) return;
     const localId = `create-signature-${crypto.randomUUID()}`;
     this.signatureCreateKinds.set(localId, kind);
     this.signatureCreateFlowIds.set(localId, `create-sigflow-${crypto.randomUUID()}`);
@@ -3610,7 +3629,7 @@ export class SmithproxyApp extends LitElement {
 
   private signatureCloneBlocker(signature: SignatureDefinition): string | undefined {
     const prefix = this.originPrefix({kind: 'signature', id: signature.id, title: signature.name});
-    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !prefix || signature.flow.length === 0) {
+    if (!this.signatureTransactionsAvailable() || !this.workspaceDraft || !prefix || signature.flow.length === 0) {
       return 'Signature duplication requires a typed signature with at least one stable flow step.';
     }
     const target = this.structuralDeleteTarget({kind: 'signature', id: signature.id, title: signature.name});
@@ -3690,7 +3709,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewSignatureFlow(signatureId: string, origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable ||
+    if (!this.signatureTransactionsAvailable() ||
         !this.snapshot?.securityAssets?.signatures.some(item => item.id === signatureId)) return;
     const localId = `create-signature-flow-${crypto.randomUUID()}`;
     this.signatureFlowCreateParents.set(localId, signatureId);
@@ -4338,7 +4357,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveSignatureCreate(entry: DrawerEntry): Promise<void> {
-    if (entry.kind !== 'signature-create' || !this.structuralDraftsAvailable || !this.draftClient ||
+    if (entry.kind !== 'signature-create' || !this.signatureTransactionsAvailable() || !this.draftClient ||
         this.draftCommitting) return;
     const parent = this.pendingSignatureCreate(entry);
     const flow = this.pendingSignatureCreateFlow(entry);
@@ -4446,7 +4465,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveSignatureFlowCreate(entry: DrawerEntry): Promise<void> {
-    if (entry.kind !== 'signature-flow-create' || !this.structuralDraftsAvailable || !this.draftClient ||
+    if (entry.kind !== 'signature-flow-create' || !this.signatureTransactionsAvailable() || !this.draftClient ||
         this.draftCommitting) return;
     const signature = this.signatureFlowCreateSignature(entry);
     const side = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-flow-create-side-${entry.id}`);
@@ -8303,11 +8322,11 @@ export class SmithproxyApp extends LitElement {
                 @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
                 New certificate authority
               </button>
-              <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              <button class="secondary" type="button" ?disabled=${!this.signatureTransactionsAvailable()}
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'starttls', event.currentTarget as HTMLElement,
                 )}>New STARTTLS signature</button>
-              <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              <button class="secondary" type="button" ?disabled=${!this.signatureTransactionsAvailable()}
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'detection', event.currentTarget as HTMLElement,
                 )}>New detection signature</button>
@@ -9596,8 +9615,8 @@ export class SmithproxyApp extends LitElement {
                   <summary>${kind === 'starttls' ? 'STARTTLS' : 'Detection'} signatures</summary>
                   <div class="reference-stack" role="group"
                     aria-label="${kind === 'starttls' ? 'STARTTLS' : 'Detection'} signatures">
-                    <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
-                      title=${this.structuralDraftsAvailable
+                    <button class="secondary" type="button" ?disabled=${!this.signatureTransactionsAvailable()}
+                      title=${this.signatureTransactionsAvailable()
                         ? `Add a ${kind === 'starttls' ? 'STARTTLS' : 'detection'} signature and first flow step`
                         : 'Requires reviewed structural transactions and stable entity IDs.'}
                       @click=${(event: MouseEvent) => this.openNewSignature(
@@ -11705,8 +11724,8 @@ export class SmithproxyApp extends LitElement {
         <h3>Ordered flow</h3>
         <div class="reference-stack" role="group" aria-label="Signature flow steps">
           <button class="secondary" type="button"
-            ?disabled=${!this.structuralDraftsAvailable}
-            title=${this.structuralDraftsAvailable
+            ?disabled=${!this.signatureTransactionsAvailable()}
+            title=${this.signatureTransactionsAvailable()
               ? 'Add a signature flow step to the workspace draft'
               : 'Requires reviewed structural transactions and stable entity IDs.'}
             @click=${(event: MouseEvent) => this.openNewSignatureFlow(
@@ -11767,7 +11786,7 @@ export class SmithproxyApp extends LitElement {
     const collection: DraftCreateOperation['collection'] = signature.kind === 'starttls'
       ? 'starttls_signatures.flow' : 'detection_signatures.flow';
     const precedingSteps = this.precedingDraftCreates(pendingMove?.localId ?? '', collection, signature.id);
-    const showPlacement = (this.structuralDraftsAvailable || pendingMove !== undefined) &&
+    const showPlacement = (this.signatureTransactionsAvailable() || pendingMove !== undefined) &&
       signature.flow.length + precedingSteps.length > 1;
     return html`
       <div class="form-grid wide-form-grid">
@@ -11776,7 +11795,7 @@ export class SmithproxyApp extends LitElement {
           <label for="signature-flow-placement-${entry.id}">Draft order</label>
           <div class="reference-edit">
             <select id="signature-flow-placement-${entry.id}" data-structural-control="true"
-              ?disabled=${!this.structuralDraftsAvailable}>
+              ?disabled=${!this.signatureTransactionsAvailable()}>
               <option value="first" ?selected=${placement === 'first'}>First step</option>
               ${signature.flow.filter(item => item.id !== entry.id).map(item => html`
                 <option value=${`before:${item.id}`} ?selected=${placement === `before:${item.id}`}>
@@ -11793,7 +11812,7 @@ export class SmithproxyApp extends LitElement {
               <option value="last" ?selected=${placement === 'last'}>Last step</option>
             </select>
             <button class="secondary" type="button"
-              ?disabled=${!this.structuralDraftsAvailable || this.draftSaving || this.draftCommitting ||
+              ?disabled=${!this.signatureTransactionsAvailable() || this.draftSaving || this.draftCommitting ||
                 this.dirtyDrawerKeys.has(this.drawerKey(entry))}
               title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
                 ? 'Save or discard ordinary flow-step field changes first.'
@@ -11844,7 +11863,7 @@ export class SmithproxyApp extends LitElement {
       ? operation.collection === 'starttls_signatures' ? 'starttls' : 'detection'
       : this.signatureCreateKinds.get(entry.id);
     if (!kind) return nothing;
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.signatureTransactionsAvailable();
     const parentField = (field: string): DraftScalar | undefined =>
       operation?.fields[field] ?? prefill?.fields[field];
     const flowField = (field: string): DraftScalar | undefined =>
@@ -11934,7 +11953,7 @@ export class SmithproxyApp extends LitElement {
     const collection: DraftCreateOperation['collection'] = signature.kind === 'starttls'
       ? 'starttls_signatures.flow' : 'detection_signatures.flow';
     const precedingSteps = this.precedingDraftCreates(entry.id, collection, signature.id);
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.signatureTransactionsAvailable();
     const position = operation
       ? operation.position.reference === null
         ? operation.position.kind : `${operation.position.kind}:${operation.position.reference}`

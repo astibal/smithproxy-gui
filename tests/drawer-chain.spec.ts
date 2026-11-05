@@ -108,6 +108,7 @@ type MockState = {
   namedStructuralDraftsReady?: boolean;
   policyStructuralDraftsReady?: boolean;
   contentRuleStructuralDraftsReady?: boolean;
+  signatureStructuralDraftsReady?: boolean;
   secondPolicy?: boolean;
   unusedPrimitives?: boolean;
   unusedProfile?: boolean;
@@ -211,18 +212,25 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       primitive_structural_drafts: Boolean(
         (state.primitiveStructuralDraftsReady || state.namedStructuralDraftsReady ||
          state.policyStructuralDraftsReady || state.contentRuleStructuralDraftsReady ||
+         state.signatureStructuralDraftsReady ||
          state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       named_structural_drafts: Boolean(
         (state.namedStructuralDraftsReady || state.policyStructuralDraftsReady ||
-         state.contentRuleStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
+         state.contentRuleStructuralDraftsReady || state.signatureStructuralDraftsReady ||
+         state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       policy_structural_drafts: Boolean(
         (state.policyStructuralDraftsReady || state.contentRuleStructuralDraftsReady ||
+         state.signatureStructuralDraftsReady ||
          state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       content_rule_structural_drafts: Boolean(
-        (state.contentRuleStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
+        (state.contentRuleStructuralDraftsReady || state.signatureStructuralDraftsReady ||
+         state.structuralDraftsReady) && state.commitReady,
+      ) && configurationFeature('config_write'),
+      signature_structural_drafts: Boolean(
+        (state.signatureStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       drafts: configurationFeature('drafts'),
       draft_preflight: configurationFeature('draft_preflight'),
@@ -3904,7 +3912,7 @@ test('creates and safely reopens a signature flow step', async ({page}) => {
     smithproxy: 'ready',
     validationReady: true,
     commitReady: true,
-    structuralDraftsReady: true,
+    signatureStructuralDraftsReady: true,
     structuralMutationRequests: [],
   };
   await mockSystemApi(page, state, true);

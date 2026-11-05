@@ -1314,6 +1314,120 @@ int main() {
         },
     }));
 
+    ConfigSignature signature;
+    signature.id = "starttls-signature-0";
+    signature.kind = "starttls";
+    signature.name = "smtp/starttls";
+    ConfigSignatureFlowStep first_step;
+    first_step.id = "starttls-signature-0-flow-0";
+    ConfigSignatureFlowStep second_step;
+    second_step.id = "starttls-signature-0-flow-1";
+    signature.flow = {first_step, second_step};
+    ConfigSecurityAssets transaction_security_assets;
+    transaction_security_assets.signatures.push_back(std::move(signature));
+    transaction_snapshot.security_assets = std::move(transaction_security_assets);
+    v2_draft.changes = {
+        {"starttls_signatures.[0].flow.[1].bytes_max", std::int64_t{64}},
+    };
+    v2_draft.structural_operations = {
+        DraftCreateOperation{
+            .local_id = "create-signature-1",
+            .collection = "starttls_signatures",
+            .client_id = "new-signature",
+            .parent_id = std::nullopt,
+            .position = {DraftPositionKind::Last, std::nullopt},
+            .fields = {
+                {"cat", std::string("mail")},
+                {"name", std::string("imap/starttls")},
+                {"side", std::string("server")},
+            },
+        },
+        DraftCreateOperation{
+            .local_id = "create-signature-flow-1",
+            .collection = "starttls_signatures.flow",
+            .client_id = "new-signature-flow",
+            .parent_id = "new-signature",
+            .position = {DraftPositionKind::Last, std::nullopt},
+            .fields = {
+                {"bytes_max", std::int64_t{32}},
+                {"bytes_start", std::int64_t{0}},
+                {"side", std::string("r")},
+                {"signature", std::string("private matcher")},
+                {"type", std::string("regex")},
+            },
+        },
+        DraftMoveOperation{
+            .local_id = "move-signature-flow-1",
+            .collection = "starttls_signatures.flow",
+            .entity_id = "starttls-signature-0-flow-0",
+            .position = {DraftPositionKind::Last, std::nullopt},
+        },
+        DraftDeleteOperation{
+            .local_id = "delete-signature-flow-1",
+            .collection = "starttls_signatures.flow",
+            .entity_id = "starttls-signature-0-flow-1",
+        },
+        DraftDeleteOperation{
+            .local_id = "delete-signature-1",
+            .collection = "starttls_signatures",
+            .entity_id = "starttls-signature-0",
+        },
+    };
+    const auto signature_envelope = build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(signature_envelope.body);
+    assert(nlohmann::json::parse(*signature_envelope.body) == nlohmann::json::array({
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[0].flow.[1].bytes_max"},
+            {"value", {{"type", "int"}, {"data", 64}}},
+        },
+        {{"op", "add"}, {"path", "starttls_signatures"}, {"name", "imap/starttls"}},
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[1].cat"},
+            {"value", {{"type", "string"}, {"data", "mail"}}},
+        },
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[1].name"},
+            {"value", {{"type", "string"}, {"data", "imap/starttls"}}},
+        },
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[1].side"},
+            {"value", {{"type", "string"}, {"data", "server"}}},
+        },
+        {{"op", "add"}, {"path", "starttls_signatures.[1].flow"}, {"name", ""}},
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[1].flow.[0].bytes_max"},
+            {"value", {{"type", "int"}, {"data", 32}}},
+        },
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[1].flow.[0].bytes_start"},
+            {"value", {{"type", "int"}, {"data", 0}}},
+        },
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[1].flow.[0].side"},
+            {"value", {{"type", "string"}, {"data", "r"}}},
+        },
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[1].flow.[0].signature"},
+            {"value", {{"type", "string"}, {"data", "private matcher"}}},
+        },
+        {
+            {"op", "set"}, {"path", "starttls_signatures.[1].flow.[0].type"},
+            {"value", {{"type", "string"}, {"data", "regex"}}},
+        },
+        {
+            {"op", "move"}, {"path", "starttls_signatures.[0].flow"},
+            {"source", 0}, {"target", 1}, {"position", "after"},
+        },
+        {
+            {"op", "remove"}, {"path", "starttls_signatures.[0].flow"},
+            {"entries", nlohmann::json::array({"0"})},
+        },
+        {
+            {"op", "remove"}, {"path", "starttls_signatures"},
+            {"entries", nlohmann::json::array({"0"})},
+        },
+    }));
+
     auto oversized_transaction = ready_transaction;
     oversized_transaction.maximum_request_bytes = 64U;
     assert(build_transaction_envelope(

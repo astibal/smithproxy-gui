@@ -1087,6 +1087,10 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
             {"tls_ca", false, false, "builtin:v2"},
             {"policy", true, false, "builtin:v2"},
             {"content_profiles.content_rules", true, true, "builtin:v2"},
+            {"starttls_signatures", true, false, "builtin:v2"},
+            {"detection_signatures", true, false, "builtin:v2"},
+            {"starttls_signatures.flow", true, true, "builtin:v2"},
+            {"detection_signatures.flow", true, true, "builtin:v2"},
         };
         capabilities.wire_version = 2U;
         return capabilities;
