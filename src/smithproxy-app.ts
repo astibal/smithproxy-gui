@@ -365,6 +365,7 @@ export class SmithproxyApp extends LitElement {
   @state() private configReadAvailable = false;
   @state() private configWriteAvailable = false;
   @state() private structuralDraftsAvailable = false;
+  @state() private primitiveStructuralDraftsAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftPreflightAvailable = false;
   @state() private jobsAvailable = false;
@@ -1378,16 +1379,19 @@ export class SmithproxyApp extends LitElement {
       const configReadWasAvailable = this.configReadAvailable;
       const configWriteWasAvailable = this.configWriteAvailable;
       const structuralDraftsWereAvailable = this.structuralDraftsAvailable;
+      const primitiveStructuralDraftsWereAvailable = this.primitiveStructuralDraftsAvailable;
       const draftPreflightWasAvailable = this.draftPreflightAvailable;
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
       const nextStructuralDraftsAvailable = capabilities.features.structuralDrafts;
+      const nextPrimitiveStructuralDraftsAvailable = capabilities.features.primitiveStructuralDrafts;
       const nextDraftAvailable = capabilities.features.drafts;
       const nextDraftPreflightAvailable = capabilities.features.draftPreflight;
       const configurationCapabilitiesChanged =
         nextConfigReadAvailable !== configReadWasAvailable ||
         nextConfigWriteAvailable !== configWriteWasAvailable ||
         nextStructuralDraftsAvailable !== structuralDraftsWereAvailable ||
+        nextPrimitiveStructuralDraftsAvailable !== primitiveStructuralDraftsWereAvailable ||
         nextDraftAvailable !== draftWasAvailable ||
         nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
@@ -1395,6 +1399,7 @@ export class SmithproxyApp extends LitElement {
       this.configReadAvailable = nextConfigReadAvailable;
       this.configWriteAvailable = nextConfigWriteAvailable;
       this.structuralDraftsAvailable = nextStructuralDraftsAvailable;
+      this.primitiveStructuralDraftsAvailable = nextPrimitiveStructuralDraftsAvailable;
       this.draftAvailable = nextDraftAvailable;
       this.draftPreflightAvailable = nextDraftPreflightAvailable;
       if (configurationCapabilitiesChanged) this.configurationAccessEpoch += 1;
@@ -1433,6 +1438,7 @@ export class SmithproxyApp extends LitElement {
       this.configRefreshDeferred = false;
       this.configWriteAvailable = false;
       this.structuralDraftsAvailable = false;
+      this.primitiveStructuralDraftsAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
       this.updateMonitoringCapabilities(undefined);
@@ -2463,7 +2469,9 @@ export class SmithproxyApp extends LitElement {
     usageCount: number;
     blocker?: string;
   }): string | undefined {
-    if (!this.structuralDraftsAvailable) return 'Stable structural transactions are unavailable.';
+    if (!this.structuralTransactionsAvailable(entry)) {
+      return 'Stable structural transactions are unavailable for this object type.';
+    }
     if (this.dirtyDrawerKeys.has(this.drawerKey(entry))) return 'Discard or save unsaved editor changes first.';
     if (this.draftPathsForDrawer(entry).length > 0) return 'Remove pending field edits before deleting this entry.';
     if (target.blocker) return target.blocker;
@@ -3035,7 +3043,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewAddress(origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable) return;
+    if (!this.primitiveTransactionsAvailable()) return;
     const localId = `create-address-${crypto.randomUUID()}`;
     this.openObjectDrawer({
       kind: 'address-create', id: localId, title: 'New address object',
@@ -3043,19 +3051,19 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewPort(origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable) return;
+    if (!this.primitiveTransactionsAvailable()) return;
     const localId = `create-port-${crypto.randomUUID()}`;
     this.openObjectDrawer({kind: 'port-create', id: localId, title: 'New port object'}, origin);
   }
 
   private openNewProtocol(origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable) return;
+    if (!this.primitiveTransactionsAvailable()) return;
     const localId = `create-protocol-${crypto.randomUUID()}`;
     this.openObjectDrawer({kind: 'protocol-create', id: localId, title: 'New protocol object'}, origin);
   }
 
   private primitiveCloneBlocker(entry: DrawerEntry): string | undefined {
-    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !this.snapshot ||
+    if (!this.primitiveTransactionsAvailable() || !this.workspaceDraft || !this.snapshot ||
         !['address', 'port', 'protocol'].includes(entry.kind)) {
       return 'Object duplication requires reviewed structural transactions and stable entity IDs.';
     }
@@ -3063,6 +3071,18 @@ export class SmithproxyApp extends LitElement {
     if (!target) return 'The source object is no longer present in the live configuration.';
     if (this.pendingStructuralDelete(target)) return 'Remove the pending object deletion before duplicating it.';
     return undefined;
+  }
+
+  private structuralTransactionsAvailable(entry: DrawerEntry): boolean {
+    return this.structuralDraftsAvailable ||
+      (this.primitiveStructuralDraftsAvailable &&
+        (entry.kind === 'address' || entry.kind === 'port' || entry.kind === 'protocol' ||
+         entry.kind === 'address-create' || entry.kind === 'port-create' ||
+         entry.kind === 'protocol-create'));
+  }
+
+  private primitiveTransactionsAvailable(): boolean {
+    return this.structuralDraftsAvailable || this.primitiveStructuralDraftsAvailable;
   }
 
   private uniquePrimitiveCopyName(
@@ -3082,7 +3102,7 @@ export class SmithproxyApp extends LitElement {
           typeof operation.fields['name'] === 'string') names.add(operation.fields['name']);
     });
     for (let copy = 1; copy <= names.size + 2; copy += 1) {
-      const suffix = copy === 1 ? ' copy' : ` copy ${copy}`;
+      const suffix = copy === 1 ? '-copy' : `-copy-${copy}`;
       const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
       if (!names.has(candidate)) return candidate;
     }
@@ -4448,7 +4468,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveAddressCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    if (!this.primitiveTransactionsAvailable() || !this.draftClient || this.draftCommitting) return;
     const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#address-create-name-${entry.id}`);
     const typeInput = this.renderRoot.querySelector<HTMLSelectElement>(`#address-create-type-${entry.id}`);
     const valueInput = this.renderRoot.querySelector<HTMLInputElement>(`#address-create-value-${entry.id}`);
@@ -4456,9 +4476,10 @@ export class SmithproxyApp extends LitElement {
     const type = typeInput?.value ?? '';
     const value = valueInput?.value.trim() ?? '';
     const addressTypes = new Set(['cidr', 'fqdn']);
-    if (name.length === 0 || name.length > 128 || value.length === 0 || value.length > 1024 ||
+    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(name) ||
+        value.length === 0 || value.length > 1024 ||
         !addressTypes.has(type)) {
-      this.drawerError = 'Name, type, and address are required and must fit the configuration limits.';
+      this.drawerError = 'A configuration-safe name, type, and address value are required.';
       return;
     }
     const duplicateLive = this.snapshot?.addresses.some(address =>
@@ -4535,7 +4556,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveSimpleObjectCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting ||
+    if (!this.primitiveTransactionsAvailable() || !this.draftClient || this.draftCommitting ||
         (entry.kind !== 'port-create' && entry.kind !== 'protocol-create')) return;
     const port = entry.kind === 'port-create';
     const prefix = port ? 'port-create' : 'protocol-create';
@@ -4551,7 +4572,7 @@ export class SmithproxyApp extends LitElement {
     const first = firstInput.valueAsNumber;
     const end = endInput?.valueAsNumber;
     const maximum = port ? 65535 : 255;
-    if (name.length === 0 || name.length > 128 || /[\u0000-\u001f\u007f]/u.test(name) ||
+    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(name) ||
         !Number.isInteger(first) || first < (port ? 0 : 1) || first > maximum ||
         (port && (!Number.isInteger(end) || end! < first || end! > maximum))) {
       this.drawerError = port
@@ -8010,7 +8031,7 @@ export class SmithproxyApp extends LitElement {
     const bulkDeleteFingerprint = bulkDeleteEntries.map(entry => this.drawerKey(entry)).sort().join('\n');
     const bulkDeleteArmed = bulkDeleteEntries.length > 0 &&
       this.objectBulkDeleteConfirmation === bulkDeleteFingerprint;
-    const bulkDeleteBlocker = !this.structuralDraftsAvailable
+    const bulkDeleteBlocker = !this.primitiveTransactionsAvailable() && !this.structuralDraftsAvailable
       ? 'Requires reviewed structural transactions and stable entity IDs.'
       : bulkDeleteEntries.length > 256
         ? 'At most 256 objects can be deleted in one atomic batch.'
@@ -8023,17 +8044,17 @@ export class SmithproxyApp extends LitElement {
           <div><h2>Configuration objects</h2><p>Reusable values, trust roots, and traffic signatures</p></div>
           <div class="structural-action object-structural-action">
             <div class="structural-buttons">
-              <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              <button class="primary" type="button" ?disabled=${!this.primitiveTransactionsAvailable()}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>
                 New address
               </button>
-              <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              <button class="primary" type="button" ?disabled=${!this.primitiveTransactionsAvailable()}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewPort(event.currentTarget as HTMLElement)}>
                 New port
               </button>
-              <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              <button class="primary" type="button" ?disabled=${!this.primitiveTransactionsAvailable()}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>
                 New protocol
@@ -8044,8 +8065,8 @@ export class SmithproxyApp extends LitElement {
                 New profile
               </button>
             </div>
-            <small id="new-object-blocker">${this.structuralDraftsAvailable
-              ? 'Creates one typed operation in the shared workspace draft.'
+            <small id="new-object-blocker">${this.primitiveTransactionsAvailable()
+              ? 'Primitive objects use atomic Smithproxy transactions; other object types remain capability-gated.'
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
         </div>
@@ -12196,7 +12217,7 @@ export class SmithproxyApp extends LitElement {
       'signature-create', 'signature-flow-create', 'profile-create',
       'authority-create', 'auth-identities-create',
     ].includes(entry.kind)
-      ? this.structuralDraftsAvailable
+      ? this.structuralTransactionsAvailable(entry)
       : this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile);
     const readOnly = !draftable;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
@@ -12263,7 +12284,7 @@ export class SmithproxyApp extends LitElement {
                   : `Remove ${drawerDraftPaths.length} draft change${drawerDraftPaths.length === 1 ? '' : 's'}`}
               </button>
             ` : nothing}
-            ${deleteTarget && (this.structuralDraftsAvailable || deletePending) ? html`
+            ${deleteTarget && (this.structuralTransactionsAvailable(entry) || deletePending) ? html`
               <button class="secondary danger-button" type="button"
                 title=${deleteBlocker ?? `Add ${deleteTarget.label} deletion to the workspace draft`}
                 ?disabled=${deletePending || deleteBlocker !== undefined || this.draftSaving ||

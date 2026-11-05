@@ -28,6 +28,7 @@ describe('SystemClient', () => {
       config_transaction_state: 'not-advertised',
       features: {
         config_read: false, config_write: false, structural_drafts: false,
+        primitive_structural_drafts: false,
         drafts: false, draft_preflight: false,
         jobs: false, events: true, alerts: true, audit: true,
         smithproxy_events: false,
@@ -39,7 +40,8 @@ describe('SystemClient', () => {
 
     await expect(client.capabilities()).resolves.toMatchObject({
       apiVersion: 'v1', smithproxyState: 'unconfigured', transactionState: 'not-advertised',
-      features: {configWrite: false, structuralDrafts: false, drafts: false, draftPreflight: false, events: true,
+      features: {configWrite: false, structuralDrafts: false, primitiveStructuralDrafts: false,
+        drafts: false, draftPreflight: false, events: true,
         alerts: true, audit: true, smithproxyEvents: false, metrics: true},
     });
   });
@@ -64,6 +66,7 @@ describe('SystemClient', () => {
       config_transaction_state: 'ready',
       features: {
         config_read: true, config_write: true, structural_drafts: true,
+        primitive_structural_drafts: true,
         drafts: true, draft_preflight: true,
         jobs: true, events: true, alerts: true, audit: true, smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
@@ -75,7 +78,9 @@ describe('SystemClient', () => {
       new SystemClient('/api/v1', basePath, async () => jsonResponse(payload));
 
     await expect(client(capabilities()).capabilities()).resolves.toMatchObject({
-      transactionState: 'ready', features: {configWrite: true, structuralDrafts: true},
+      transactionState: 'ready', features: {
+        configWrite: true, structuralDrafts: true, primitiveStructuralDrafts: true,
+      },
     });
     await expect(client(capabilities({features: {
       ...capabilities().features, draft_preflight: false,

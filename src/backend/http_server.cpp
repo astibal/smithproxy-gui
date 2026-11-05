@@ -1158,9 +1158,21 @@ private:
             : std::string{"unavailable"};
         const bool config_write = config_read && transaction_state == "ready";
         const auto draft = draft_.snapshot();
-        const bool structural_drafts = config_write && status.config_snapshot.stable_entity_ids &&
+        const bool structural_drafts = config_write && status.transaction_capabilities.wire_version == 1U &&
+            status.config_snapshot.stable_entity_ids &&
             status.config_snapshot.revision && draft.base_revision &&
             *status.config_snapshot.revision == *draft.base_revision;
+        const auto supports_collection = [&](const std::string_view id) {
+            return std::any_of(
+                status.transaction_capabilities.collections.begin(),
+                status.transaction_capabilities.collections.end(),
+                [id](const auto& item) { return item.id == id && !item.ordered && !item.nested; });
+        };
+        const bool primitive_structural_drafts = config_write &&
+            status.config_snapshot.stable_entity_ids && status.config_snapshot.revision &&
+            draft.base_revision && *status.config_snapshot.revision == *draft.base_revision &&
+            supports_collection("address_objects") && supports_collection("port_objects") &&
+            supports_collection("proto_objects");
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
@@ -1168,6 +1180,8 @@ private:
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":" + (config_write ? "true" : "false") +
                     ",\"structural_drafts\":" + (structural_drafts ? "true" : "false") +
+                    ",\"primitive_structural_drafts\":" +
+                    (primitive_structural_drafts ? "true" : "false") +
                     ",\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"draft_preflight\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":" + (monitoring ? "true" : "false") +

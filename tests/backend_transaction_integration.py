@@ -186,6 +186,7 @@ def main() -> int:
             capabilities = wait_for_ready_capability(port, gateway_headers)
             assert capabilities["features"]["config_write"] is True
             assert capabilities["features"]["structural_drafts"] is False
+            assert capabilities["features"]["primitive_structural_drafts"] is True
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
@@ -218,6 +219,29 @@ def main() -> int:
             assert mutated["changes"][-1]["value"] == "[redacted:replace]"
 
             status, _, body = request(
+                port, "/api/v1/config/draft/operations/batch", "POST",
+                headers=mutation_headers,
+                body=json.dumps({
+                    "expected_version": mutated["version"],
+                    "operations": [
+                        {
+                            "op": "create", "local_id": "create-address-branch",
+                            "collection": "address_objects", "client_id": "branch-address",
+                            "position": {"last": True},
+                            "fields": {"name": "branch", "type": "cidr", "value": "203.0.113.0/24"},
+                        },
+                        {
+                            "op": "delete", "local_id": "delete-address-office",
+                            "collection": "address_objects", "entity_id": "address-0",
+                        },
+                    ],
+                }),
+            )
+            mutated = json.loads(body)
+            assert status == 200
+            assert len(mutated["structural_operations"]) == 2
+
+            status, _, body = request(
                 port, "/api/v1/config/draft/validate", "POST",
                 headers=mutation_headers,
                 body=json.dumps({"expected_version": mutated["version"]}),
@@ -230,7 +254,7 @@ def main() -> int:
                 "draft_version": mutated["version"],
                 "base_revision": BASE_REVISION,
                 "upstream_validation": "valid",
-                "validated_operations": 3,
+                "validated_operations": 5,
                 "warning_count": 0,
                 "restart": "not-required",
             }
@@ -244,7 +268,7 @@ def main() -> int:
             assert status == 200
             assert receipt["previous_revision"] == BASE_REVISION
             assert receipt["revision"] == COMMITTED_REVISION
-            assert receipt["committed_operations"] == 3
+            assert receipt["committed_operations"] == 5
             assert receipt["warning_count"] == 0
             assert receipt["restart"] == "not-required"
             assert isinstance(receipt["refresh_job_id"], str)
@@ -255,13 +279,19 @@ def main() -> int:
             assert [item["action"] for item in upstream_requests] == [
                 "begin", "prepare", "abort", "begin", "prepare", "commit"]
             assert upstream_requests[1]["params"]["operations"] == [
+                {"op": "add", "path": "address_objects", "name": "branch"},
+                {"op": "set", "path": "address_objects.branch.type",
+                 "value": {"type": "string", "data": "cidr"}},
+                {"op": "set", "path": "address_objects.branch.value",
+                 "value": {"type": "string", "data": "203.0.113.0/24"}},
+                {"op": "remove", "path": "address_objects", "entries": ["internet"]},
                 {"op": "set", "path": "policy.[0].action",
                  "value": {"type": "string", "data": "reject"}},
                 {"op": "set", "path": "address_objects.office.cidr",
                  "value": {"type": "string", "data": "10.0.1.0/24"}},
                 {"op": "set", "path": "settings.certs_ca_key_password",
                  "value": {"type": "string", "data": PRIVATE_VALUE}},
-            ]
+            ], upstream_requests[1]["params"]["operations"]
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)

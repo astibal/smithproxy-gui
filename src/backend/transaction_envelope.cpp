@@ -145,6 +145,65 @@ std::optional<std::string> transaction_config_path(
     return std::string(root) + "." + *name + "." + std::string(suffix);
 }
 
+std::optional<std::string> primitive_object_name(
+    const std::string_view collection, const std::string_view entity_id,
+    const ConfigSnapshot& snapshot) {
+    const auto find_name = [entity_id](const auto& objects) -> std::optional<std::string> {
+        const auto found = std::find_if(objects.begin(), objects.end(), [entity_id](const auto& item) {
+            return item.id == entity_id;
+        });
+        if (found == objects.end()) return std::nullopt;
+        return found->name;
+    };
+    if (collection == "address_objects") return find_name(snapshot.addresses);
+    if (collection == "port_objects") return find_name(snapshot.ports);
+    if (collection == "proto_objects") return find_name(snapshot.protocols);
+    return std::nullopt;
+}
+
+bool primitive_collection(const std::string_view collection) {
+    return collection == "address_objects" || collection == "port_objects" ||
+           collection == "proto_objects";
+}
+
+bool valid_config_group_name(const std::string_view name) {
+    if (name.empty() ||
+        !(std::isalpha(static_cast<unsigned char>(name.front())) || name.front() == '_')) {
+        return false;
+    }
+    return std::all_of(name.begin() + 1, name.end(), [](const unsigned char character) {
+        return std::isalnum(character) || character == '_' || character == '-';
+    });
+}
+
+bool append_primitive_create(
+    nlohmann::json& operations, const DraftCreateOperation& create) {
+    if (!primitive_collection(create.collection) || create.parent_id ||
+        create.position.kind != DraftPositionKind::Last) {
+        return false;
+    }
+    const auto name = create.fields.find("name");
+    if (name == create.fields.end() || !std::holds_alternative<std::string>(name->second)) {
+        return false;
+    }
+    const auto& object_name = std::get<std::string>(name->second);
+    if (!valid_config_group_name(object_name)) return false;
+    operations.push_back({
+        {"op", "add"}, {"path", create.collection}, {"name", object_name},
+    });
+    for (const auto& [field, scalar] : create.fields) {
+        if (field == "name") continue;
+        auto value = explicit_scalar_json(scalar);
+        if (value.is_null()) return false;
+        operations.push_back({
+            {"op", "set"},
+            {"path", create.collection + "." + object_name + "." + field},
+            {"value", std::move(value)},
+        });
+    }
+    return true;
+}
+
 nlohmann::json position_json(const DraftPosition& position) {
     switch (position.kind) {
         case DraftPositionKind::First: return {{"first", true}};
@@ -327,11 +386,39 @@ TransactionEnvelope build_transaction_v2_operations(
     const DraftSnapshot& draft, const ConfigSnapshot& snapshot) {
     if (!draft.base_revision || !snapshot.revision ||
         *draft.base_revision != *snapshot.revision || draft.empty() ||
-        !draft.structural_operations.empty() || draft.changes.size() > hard_maximum_operations) {
+        draft.operation_count() > hard_maximum_operations) {
         return {std::nullopt, "transaction.unavailable"};
     }
 
     nlohmann::json operations = nlohmann::json::array();
+    std::set<std::string, std::less<>> local_ids;
+    for (const auto& operation : draft.structural_operations) {
+        if (!valid_draft_structural_operation(operation) ||
+            !local_ids.emplace(draft_structural_local_id(operation)).second) {
+            return {std::nullopt, "transaction.invalid_draft"};
+        }
+        const auto valid = std::visit([&](const auto& item) {
+            using Operation = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+                return append_primitive_create(operations, item);
+            } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+                const auto name = primitive_object_name(item.collection, item.entity_id, snapshot);
+                if (!name) return false;
+                operations.push_back({
+                    {"op", "remove"},
+                    {"path", item.collection},
+                    {"entries", nlohmann::json::array({*name})},
+                });
+                return true;
+            } else {
+                // Primitive object collections are unordered. Ordered and
+                // nested collection moves are enabled by later adapters.
+                return false;
+            }
+        }, operation);
+        if (!valid) return {std::nullopt, "transaction.invalid_draft"};
+    }
+
     std::set<std::string, std::less<>> paths;
     for (const auto& change : draft.changes) {
         if (!paths.emplace(change.path).second ||
@@ -346,6 +433,9 @@ TransactionEnvelope build_transaction_v2_operations(
             {"path", std::move(*path)},
             {"value", std::move(value)},
         });
+    }
+    if (operations.size() > hard_maximum_operations) {
+        return {std::nullopt, "transaction.request_too_large"};
     }
     auto body = operations.dump();
     if (body.size() > hard_maximum_request_bytes) {

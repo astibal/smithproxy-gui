@@ -372,7 +372,7 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
         if (!prepared.body || prepared.body->value("state", "") != "prepared" ||
             !prepared.body->contains("operation_count") ||
             !(*prepared.body)["operation_count"].is_number_unsigned() ||
-            (*prepared.body)["operation_count"].get<std::size_t>() != draft.operation_count()) {
+            (*prepared.body)["operation_count"].get<std::size_t>() != operations.size()) {
             abort();
             return transaction_failure("invalid-response");
         }
@@ -1071,7 +1071,12 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
         capabilities.detail = "Smithproxy exposes begin, prepare, and commit transactions";
         capabilities.maximum_operations = 4096U;
         capabilities.maximum_request_bytes = 1024U * 1024U;
-        capabilities.operations = {"set"};
+        capabilities.operations = {"set", "create", "delete"};
+        capabilities.collections = {
+            {"address_objects", false, false, "builtin:v2"},
+            {"port_objects", false, false, "builtin:v2"},
+            {"proto_objects", false, false, "builtin:v2"},
+        };
         capabilities.wire_version = 2U;
         return capabilities;
     }

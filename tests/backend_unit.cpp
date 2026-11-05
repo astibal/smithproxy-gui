@@ -1082,6 +1082,56 @@ int main() {
     assert(build_transaction_v2_operations(v2_draft, transaction_snapshot).error_code ==
            "transaction.invalid_draft");
 
+    v2_draft.changes.clear();
+    v2_draft.structural_operations = {
+        DraftCreateOperation{
+            .local_id = "create-address-1",
+            .collection = "address_objects",
+            .client_id = "new-office-network",
+            .parent_id = std::nullopt,
+            .position = {DraftPositionKind::Last, std::nullopt},
+            .fields = {
+                {"name", std::string("branch")},
+                {"type", std::string("cidr")},
+                {"value", std::string("203.0.113.0/24")},
+            },
+        },
+        DraftDeleteOperation{
+            .local_id = "delete-address-1",
+            .collection = "address_objects",
+            .entity_id = "address-0",
+        },
+    };
+    const auto primitive_envelope =
+        build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(primitive_envelope.body);
+    assert(nlohmann::json::parse(*primitive_envelope.body) == nlohmann::json::array({
+        {{"op", "add"}, {"path", "address_objects"}, {"name", "branch"}},
+        {
+            {"op", "set"},
+            {"path", "address_objects.branch.type"},
+            {"value", {{"type", "string"}, {"data", "cidr"}}},
+        },
+        {
+            {"op", "set"},
+            {"path", "address_objects.branch.value"},
+            {"value", {{"type", "string"}, {"data", "203.0.113.0/24"}}},
+        },
+        {
+            {"op", "remove"},
+            {"path", "address_objects"},
+            {"entries", nlohmann::json::array({"office"})},
+        },
+    }));
+    std::get<DraftDeleteOperation>(v2_draft.structural_operations.back()).entity_id = "address-99";
+    assert(build_transaction_v2_operations(v2_draft, transaction_snapshot).error_code ==
+           "transaction.invalid_draft");
+    v2_draft.structural_operations.pop_back();
+    std::get<DraftCreateOperation>(v2_draft.structural_operations.front()).fields["name"] =
+        std::string("unsafe.path");
+    assert(build_transaction_v2_operations(v2_draft, transaction_snapshot).error_code ==
+           "transaction.invalid_draft");
+
     auto oversized_transaction = ready_transaction;
     oversized_transaction.maximum_request_bytes = 64U;
     assert(build_transaction_envelope(
