@@ -1212,6 +1212,15 @@ def main() -> int:
                     "value": [443, "8443"],
                 }),
             )[0] == 400
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers,
+                body=json.dumps({
+                    "expected_version": 2,
+                    "path": "auth_profiles.[0].identities",
+                    "value": [{"name": "unsupported", "tls_profile": "inspect"}],
+                }),
+            ), 400, "draft.change_rejected")
             batch_change = json.dumps({
                 "expected_version": 2,
                 "changes": [
@@ -1242,10 +1251,6 @@ def main() -> int:
                     {"path": "content_profiles.[0].rules_session_filter", "value": "secret session expression"},
                     {"path": "content_profiles.[0].content_rules.[0].match", "value": "secret content match"},
                     {"path": "content_profiles.[0].content_rules.[0].replace", "value": "secret content replacement"},
-                    {"path": "auth_profiles.[0].identities", "value": [
-                        {"name": "private-user", "tls_profile": "inspect"},
-                        {"name": "private-auditor", "content_profile": "safe-content"},
-                    ]},
                     {"path": "tls_ca.[0].path", "value": "/new/private/ca/default"},
                     {"path": "detection_signatures.[0].flow.[0].signature", "value": "secret replacement regex"},
                 ],
@@ -1258,8 +1263,7 @@ def main() -> int:
             assert batch_snapshot["version"] == 3
             assert batch_snapshot["private_profile_references_complete"] is True
             assert batch_snapshot["private_profile_references"] == [
-                {"profile_id": "content-0", "count": 1},
-                {"profile_id": "tls-0", "count": 1},
+                {"profile_id": "detection-0", "count": 1},
             ]
             changes_by_path = {item["path"]: item["value"] for item in batch_snapshot["changes"]}
             assert changes_by_path["policy.[0].dst"] == ["internet", "backup"]
@@ -1337,7 +1341,6 @@ def main() -> int:
                 "tls_ca.[0].path": "[redacted:replace]",
                 "content_profiles.[0].content_rules.[0].match": "[redacted:replace]",
                 "content_profiles.[0].content_rules.[0].replace": "[redacted:replace]",
-                "auth_profiles.[0].identities": "[redacted:replace:2]",
                 "detection_signatures.[0].flow.[0].signature": "[redacted:replace]",
             }
             for sensitive_path, expected_redaction in expected_redactions.items():
@@ -1345,7 +1348,6 @@ def main() -> int:
             assert b"new-private-password" not in body
             assert b"new-api-key" not in body
             assert b"overlap-api-key" not in body
-            assert b"private-user" not in body
             assert b"192.0.2.88" not in body
             assert b"private-api1" not in body
             assert b"new-private-sift" not in body

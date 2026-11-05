@@ -1176,8 +1176,7 @@ private:
         const bool named_structural_drafts = primitive_structural_drafts &&
             supports_collection("routing") && supports_collection("tls_profiles") &&
             supports_collection("content_profiles") && supports_collection("ssh_profiles") &&
-            supports_collection("script_profiles") && supports_collection("auth_profiles") &&
-            supports_collection("detection_profiles") &&
+            supports_collection("script_profiles") && supports_collection("detection_profiles") &&
             supports_collection("alg_dns_profiles") && supports_collection("tls_ca");
         const auto policy_collection = std::find_if(
             status.transaction_capabilities.collections.begin(),

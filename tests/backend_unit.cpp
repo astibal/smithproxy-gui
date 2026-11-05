@@ -153,44 +153,7 @@ int main() {
             }})},
         }},
     });
-    assert(parsed_auth_create);
-    const auto& auth_create = std::get<DraftCreateOperation>(*parsed_auth_create);
-    assert(valid_draft_structural_operation(auth_create));
-    assert(std::get<DraftAuthIdentities>(auth_create.fields.at("identities")).front().name ==
-           "branch_user");
-    const DraftCreateOperation create_detection{
-        .local_id = "create-detection-1",
-        .collection = "detection_profiles",
-        .client_id = "create-detection-1",
-        .parent_id = std::nullopt,
-        .position = {DraftPositionKind::Last, std::nullopt},
-        .fields = {
-            {"name", std::string("branch-detect")}, {"mode", std::int64_t{2}},
-            {"engines_enabled", true}, {"kb_enabled", true},
-        },
-    };
-    DraftStore identity_dependency_store{"identity-dependencies"};
-    assert(identity_dependency_store.upsert_structural_many(0U, {
-        create_detection,
-        auth_create,
-    }) == DraftMutationResult::Applied);
-    assert(identity_dependency_store.remove_structural(1U, "create-detection-1") ==
-           DraftMutationResult::InvalidValue);
-    assert(identity_dependency_store.remove_structural(1U, "create-auth-1") ==
-           DraftMutationResult::Applied);
-    assert(identity_dependency_store.remove_structural(2U, "create-detection-1") ==
-           DraftMutationResult::Applied);
-    DraftStore identity_change_dependency_store{"identity-change-dependencies"};
-    assert(identity_change_dependency_store.upsert_structural(0U, create_detection) ==
-           DraftMutationResult::Applied);
-    assert(identity_change_dependency_store.upsert(1U, {
-        "auth_profiles.[0].identities", DraftAuthIdentities{{
-            .name = "draft_user", .detection_profile = "branch-detect", .content_profile = {},
-            .tls_profile = {}, .alg_dns_profile = {},
-        }},
-    }) == DraftMutationResult::Applied);
-    assert(identity_change_dependency_store.remove_structural(2U, "create-detection-1") ==
-           DraftMutationResult::InvalidValue);
+    assert(!parsed_auth_create);
     const DraftCreateOperation create_policy{
         .local_id = "create-policy-1",
         .collection = "policy",
@@ -710,20 +673,22 @@ int main() {
         {"content_profiles.[0].write_format", std::string("smcap")},
         {"ssh_profiles.[0].hostkey_policy", std::string("strict")},
         {"script_profiles.[0].type", std::string("0")},
-        {"auth_profiles.[0].authenticate", true},
-        {"auth_profiles.[0].identities", DraftAuthIdentities{{
-            .name = "integration_user",
-            .detection_profile = "detect",
-            .content_profile = "capture",
-            .tls_profile = "inspect",
-            .alg_dns_profile = "dns-default",
-        }}},
         {"detection_profiles.[0].mode", std::int64_t{2}},
         {"alg_dns_profiles.[0].randomize_id", true},
         {"tls_ca.[0].path", std::string("/etc/smithproxy/ca.pem")},
         {"starttls_signatures.[0].severity", std::int64_t{3}},
         {"detection_signatures.[0].flow.[0].signature", std::string("^TLS")},
     }) == DraftMutationResult::Applied);
+    assert(validate_draft_schema({
+        "auth_profiles.[0].authenticate", true,
+    }) == DraftSchemaResult::UnknownPath);
+    assert(validate_draft_schema({
+        "auth_profiles.[0].identities", DraftAuthIdentities{{
+            .name = "integration_user", .detection_profile = "detect",
+            .content_profile = "capture", .tls_profile = "inspect",
+            .alg_dns_profile = "dns-default",
+        }},
+    }) == DraftSchemaResult::UnknownPath);
     assert(validate_draft_schema({
         "policy.[0].src", std::vector<std::string>{},
     }) == DraftSchemaResult::Valid);
@@ -745,27 +710,6 @@ int main() {
     }) == DraftSchemaResult::Valid);
     assert(validate_draft_schema({
         "address_objects.[0].type", std::string("subnet"),
-    }) == DraftSchemaResult::InvalidValue);
-    assert(validate_draft_schema({
-        "auth_profiles.[0].identities", DraftAuthIdentities{{
-            .name = "empty",
-            .detection_profile = {},
-            .content_profile = {},
-            .tls_profile = {},
-            .alg_dns_profile = {},
-        }},
-    }) == DraftSchemaResult::InvalidValue);
-    assert(validate_draft_schema({
-        "auth_profiles.[0].identities", DraftAuthIdentities{
-            {
-                .name = "duplicate", .detection_profile = "detect", .content_profile = {},
-                .tls_profile = {}, .alg_dns_profile = {},
-            },
-            {
-                .name = "duplicate", .detection_profile = {}, .content_profile = {},
-                .tls_profile = "inspect", .alg_dns_profile = {},
-            },
-        },
     }) == DraftSchemaResult::InvalidValue);
     const auto parsed_identities = parse_draft_scalar(nlohmann::json::array({
         {{"name", "alice"}, {"tls_profile", "inspect"}},
@@ -952,13 +896,8 @@ int main() {
     }};
     const auto identity_envelope = build_transaction_envelope(
         identity_transaction_draft, TransactionMode::Validate, idempotency_key, ready_transaction);
-    assert(identity_envelope.body);
-    const auto identity_document = nlohmann::json::parse(*identity_envelope.body);
-    assert(identity_document["operations"][0]["value"] == nlohmann::json::array({{
-        {"name", "integration_user"}, {"detection_profile", "detect"},
-        {"content_profile", "capture"}, {"tls_profile", "inspect"},
-        {"alg_dns_profile", "dns-default"},
-    }}));
+    assert(!identity_envelope.body);
+    assert(identity_envelope.error_code == "transaction.invalid_draft");
     DraftSnapshot structural_draft{
         .id = "workspace-draft",
         .base_revision = transaction_draft.base_revision,

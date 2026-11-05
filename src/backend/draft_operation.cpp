@@ -33,7 +33,6 @@ constexpr std::array collection_schemas{
                      "content_profiles.[0].content_rules.[0]", "match"},
     CollectionSchema{"ssh_profiles", "ssh_profiles.[0]", "name"},
     CollectionSchema{"script_profiles", "script_profiles.[0]", "name"},
-    CollectionSchema{"auth_profiles", "auth_profiles.[0]", "name"},
     CollectionSchema{"detection_profiles", "detection_profiles.[0]", "name"},
     CollectionSchema{"alg_dns_profiles", "alg_dns_profiles.[0]", "name"},
     CollectionSchema{"tls_ca", "tls_ca.[0]", "name"},
