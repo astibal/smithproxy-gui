@@ -1242,6 +1242,78 @@ int main() {
         },
     }));
 
+    ConfigProfile content_profile;
+    content_profile.id = "content-0";
+    content_profile.name = "capture";
+    content_profile.type = "content";
+    ConfigContentProfile content;
+    ConfigContentRule first_rule;
+    first_rule.id = "content-rule-0-0";
+    ConfigContentRule second_rule;
+    second_rule.id = "content-rule-0-1";
+    content.rules = {first_rule, second_rule};
+    content_profile.content = std::move(content);
+    transaction_snapshot.profiles.push_back(std::move(content_profile));
+    v2_draft.changes = {
+        {"content_profiles.[0].content_rules.[1].fill_length", true},
+    };
+    v2_draft.structural_operations = {
+        DraftCreateOperation{
+            .local_id = "create-content-rule-1",
+            .collection = "content_profiles.content_rules",
+            .client_id = "new-content-rule",
+            .parent_id = "content-0",
+            .position = {DraftPositionKind::Before, "content-rule-0-1"},
+            .fields = {
+                {"fill_length", true},
+                {"match", std::string("branch")},
+            },
+        },
+        DraftMoveOperation{
+            .local_id = "move-content-rule-1",
+            .collection = "content_profiles.content_rules",
+            .entity_id = "content-rule-0-0",
+            .position = {DraftPositionKind::Last, std::nullopt},
+        },
+        DraftDeleteOperation{
+            .local_id = "delete-content-rule-1",
+            .collection = "content_profiles.content_rules",
+            .entity_id = "content-rule-0-1",
+        },
+    };
+    const auto content_rule_envelope = build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(content_rule_envelope.body);
+    assert(nlohmann::json::parse(*content_rule_envelope.body) == nlohmann::json::array({
+        {
+            {"op", "set"},
+            {"path", "content_profiles.capture.content_rules.[1].fill_length"},
+            {"value", {{"type", "bool"}, {"data", true}}},
+        },
+        {{"op", "add"}, {"path", "content_profiles.capture.content_rules"}, {"name", ""}},
+        {
+            {"op", "set"},
+            {"path", "content_profiles.capture.content_rules.[2].fill_length"},
+            {"value", {{"type", "bool"}, {"data", true}}},
+        },
+        {
+            {"op", "set"},
+            {"path", "content_profiles.capture.content_rules.[2].match"},
+            {"value", {{"type", "string"}, {"data", "branch"}}},
+        },
+        {
+            {"op", "move"}, {"path", "content_profiles.capture.content_rules"},
+            {"source", 2}, {"target", 1}, {"position", "before"},
+        },
+        {
+            {"op", "move"}, {"path", "content_profiles.capture.content_rules"},
+            {"source", 0}, {"target", 2}, {"position", "after"},
+        },
+        {
+            {"op", "remove"}, {"path", "content_profiles.capture.content_rules"},
+            {"entries", nlohmann::json::array({"1"})},
+        },
+    }));
+
     auto oversized_transaction = ready_transaction;
     oversized_transaction.maximum_request_bytes = 64U;
     assert(build_transaction_envelope(

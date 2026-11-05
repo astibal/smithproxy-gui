@@ -31,6 +31,7 @@ describe('SystemClient', () => {
         primitive_structural_drafts: false,
         named_structural_drafts: false,
         policy_structural_drafts: false,
+        content_rule_structural_drafts: false,
         drafts: false, draft_preflight: false,
         jobs: false, events: true, alerts: true, audit: true,
         smithproxy_events: false,
@@ -45,6 +46,7 @@ describe('SystemClient', () => {
       features: {configWrite: false, structuralDrafts: false, primitiveStructuralDrafts: false,
         namedStructuralDrafts: false,
         policyStructuralDrafts: false,
+        contentRuleStructuralDrafts: false,
         drafts: false, draftPreflight: false, events: true,
         alerts: true, audit: true, smithproxyEvents: false, metrics: true},
     });
@@ -73,6 +75,7 @@ describe('SystemClient', () => {
         primitive_structural_drafts: true,
         named_structural_drafts: true,
         policy_structural_drafts: true,
+        content_rule_structural_drafts: true,
         drafts: true, draft_preflight: true,
         jobs: true, events: true, alerts: true, audit: true, smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
@@ -88,6 +91,7 @@ describe('SystemClient', () => {
         configWrite: true, structuralDrafts: true, primitiveStructuralDrafts: true,
         namedStructuralDrafts: true,
         policyStructuralDrafts: true,
+        contentRuleStructuralDrafts: true,
       },
     });
     await expect(client(capabilities({features: {

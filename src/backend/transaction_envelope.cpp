@@ -232,8 +232,8 @@ std::optional<std::size_t> row_index(
     return static_cast<std::size_t>(std::distance(rows.begin(), found));
 }
 
-bool append_policy_move(
-    nlohmann::json& operations, std::vector<std::string>& rows,
+bool append_ordered_move(
+    nlohmann::json& operations, const std::string_view path, std::vector<std::string>& rows,
     const std::string_view entity_id, const DraftPosition& position) {
     const auto source = row_index(rows, entity_id);
     if (!source || rows.empty()) return false;
@@ -254,7 +254,7 @@ bool append_policy_move(
     }
 
     operations.push_back({
-        {"op", "move"}, {"path", "policy"}, {"source", *source},
+        {"op", "move"}, {"path", path}, {"source", *source},
         {"target", target}, {"position", wire_position},
     });
     if (*source == target) return true;
@@ -290,7 +290,7 @@ bool append_policy_operation(
             const auto row_id = "client:" + item.client_id;
             rows.push_back(row_id);
             if (item.position.kind == DraftPositionKind::Last) return true;
-            return append_policy_move(operations, rows, row_id, item.position);
+            return append_ordered_move(operations, "policy", rows, row_id, item.position);
         } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
             const auto index = row_index(rows, item.entity_id);
             if (!index) return false;
@@ -301,7 +301,81 @@ bool append_policy_operation(
             rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(*index));
             return true;
         } else {
-            return append_policy_move(operations, rows, item.entity_id, item.position);
+            return append_ordered_move(operations, "policy", rows, item.entity_id, item.position);
+        }
+    }, operation);
+}
+
+struct ContentRuleRows {
+    std::string profile_id;
+    std::string path;
+    std::vector<std::string> rows;
+};
+
+std::vector<ContentRuleRows> content_rule_rows(const ConfigSnapshot& snapshot) {
+    std::vector<ContentRuleRows> result;
+    for (const auto& profile : snapshot.profiles) {
+        if (!profile.content) continue;
+        ContentRuleRows context{
+            .profile_id = profile.id,
+            .path = "content_profiles." + profile.name + ".content_rules",
+            .rows = {},
+        };
+        context.rows.reserve(profile.content->rules.size());
+        for (const auto& rule : profile.content->rules) context.rows.push_back(rule.id);
+        result.push_back(std::move(context));
+    }
+    return result;
+}
+
+bool append_content_rule_operation(
+    nlohmann::json& operations, std::vector<ContentRuleRows>& contexts,
+    const DraftStructuralOperation& operation) {
+    return std::visit([&](const auto& item) {
+        using Operation = std::decay_t<decltype(item)>;
+        if (item.collection != "content_profiles.content_rules") return false;
+        auto context = contexts.end();
+        if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+            if (!item.parent_id) return false;
+            context = std::find_if(contexts.begin(), contexts.end(), [&](const auto& candidate) {
+                return candidate.profile_id == *item.parent_id;
+            });
+        } else {
+            context = std::find_if(contexts.begin(), contexts.end(), [&](const auto& candidate) {
+                return row_index(candidate.rows, item.entity_id).has_value();
+            });
+        }
+        if (context == contexts.end()) return false;
+
+        if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+            operations.push_back({{"op", "add"}, {"path", context->path}, {"name", ""}});
+            const auto index = context->rows.size();
+            for (const auto& [field, scalar] : item.fields) {
+                auto value = explicit_scalar_json(scalar);
+                if (value.is_null()) return false;
+                operations.push_back({
+                    {"op", "set"},
+                    {"path", context->path + ".[" + std::to_string(index) + "]." + field},
+                    {"value", std::move(value)},
+                });
+            }
+            const auto row_id = "client:" + item.client_id;
+            context->rows.push_back(row_id);
+            if (item.position.kind == DraftPositionKind::Last) return true;
+            return append_ordered_move(
+                operations, context->path, context->rows, row_id, item.position);
+        } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+            const auto index = row_index(context->rows, item.entity_id);
+            if (!index) return false;
+            operations.push_back({
+                {"op", "remove"}, {"path", context->path},
+                {"entries", nlohmann::json::array({std::to_string(*index)})},
+            });
+            context->rows.erase(context->rows.begin() + static_cast<std::ptrdiff_t>(*index));
+            return true;
+        } else {
+            return append_ordered_move(
+                operations, context->path, context->rows, item.entity_id, item.position);
         }
     }, operation);
 }
@@ -527,10 +601,17 @@ TransactionEnvelope build_transaction_v2_operations(
     std::vector<std::string> policy_rows;
     policy_rows.reserve(snapshot.policies.size() + draft.structural_operations.size());
     for (const auto& policy : snapshot.policies) policy_rows.push_back(policy.id);
+    auto content_rows = content_rule_rows(snapshot);
     for (const auto& operation : draft.structural_operations) {
         const auto collection = draft_structural_collection(operation);
         if (collection == "policy") {
             if (!append_policy_operation(operations, policy_rows, operation)) {
+                return {std::nullopt, "transaction.invalid_draft"};
+            }
+            continue;
+        }
+        if (collection == "content_profiles.content_rules") {
+            if (!append_content_rule_operation(operations, content_rows, operation)) {
                 return {std::nullopt, "transaction.invalid_draft"};
             }
             continue;

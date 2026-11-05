@@ -369,6 +369,7 @@ export class SmithproxyApp extends LitElement {
   @state() private primitiveStructuralDraftsAvailable = false;
   @state() private namedStructuralDraftsAvailable = false;
   @state() private policyStructuralDraftsAvailable = false;
+  @state() private contentRuleStructuralDraftsAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftPreflightAvailable = false;
   @state() private jobsAvailable = false;
@@ -1385,6 +1386,7 @@ export class SmithproxyApp extends LitElement {
       const primitiveStructuralDraftsWereAvailable = this.primitiveStructuralDraftsAvailable;
       const namedStructuralDraftsWereAvailable = this.namedStructuralDraftsAvailable;
       const policyStructuralDraftsWereAvailable = this.policyStructuralDraftsAvailable;
+      const contentRuleStructuralDraftsWereAvailable = this.contentRuleStructuralDraftsAvailable;
       const draftPreflightWasAvailable = this.draftPreflightAvailable;
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
@@ -1392,6 +1394,7 @@ export class SmithproxyApp extends LitElement {
       const nextPrimitiveStructuralDraftsAvailable = capabilities.features.primitiveStructuralDrafts;
       const nextNamedStructuralDraftsAvailable = capabilities.features.namedStructuralDrafts;
       const nextPolicyStructuralDraftsAvailable = capabilities.features.policyStructuralDrafts;
+      const nextContentRuleStructuralDraftsAvailable = capabilities.features.contentRuleStructuralDrafts;
       const nextDraftAvailable = capabilities.features.drafts;
       const nextDraftPreflightAvailable = capabilities.features.draftPreflight;
       const configurationCapabilitiesChanged =
@@ -1401,6 +1404,7 @@ export class SmithproxyApp extends LitElement {
         nextPrimitiveStructuralDraftsAvailable !== primitiveStructuralDraftsWereAvailable ||
         nextNamedStructuralDraftsAvailable !== namedStructuralDraftsWereAvailable ||
         nextPolicyStructuralDraftsAvailable !== policyStructuralDraftsWereAvailable ||
+        nextContentRuleStructuralDraftsAvailable !== contentRuleStructuralDraftsWereAvailable ||
         nextDraftAvailable !== draftWasAvailable ||
         nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
@@ -1411,6 +1415,7 @@ export class SmithproxyApp extends LitElement {
       this.primitiveStructuralDraftsAvailable = nextPrimitiveStructuralDraftsAvailable;
       this.namedStructuralDraftsAvailable = nextNamedStructuralDraftsAvailable;
       this.policyStructuralDraftsAvailable = nextPolicyStructuralDraftsAvailable;
+      this.contentRuleStructuralDraftsAvailable = nextContentRuleStructuralDraftsAvailable;
       this.draftAvailable = nextDraftAvailable;
       this.draftPreflightAvailable = nextDraftPreflightAvailable;
       if (configurationCapabilitiesChanged) this.configurationAccessEpoch += 1;
@@ -1452,6 +1457,7 @@ export class SmithproxyApp extends LitElement {
       this.primitiveStructuralDraftsAvailable = false;
       this.namedStructuralDraftsAvailable = false;
       this.policyStructuralDraftsAvailable = false;
+      this.contentRuleStructuralDraftsAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
       this.updateMonitoringCapabilities(undefined);
@@ -2762,7 +2768,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async moveContentRuleInDraft(entry: DrawerEntry): Promise<void> {
-    if (entry.kind !== 'content-rule' || !this.structuralDraftsAvailable || !this.draftClient ||
+    if (entry.kind !== 'content-rule' || !this.contentRuleTransactionsAvailable() || !this.draftClient ||
         this.draftSaving || this.draftCommitting) return;
     const context = this.contentRuleContext(entry.id);
     const placement = this.renderRoot.querySelector<HTMLSelectElement>(
@@ -3090,6 +3096,8 @@ export class SmithproxyApp extends LitElement {
     return this.structuralDraftsAvailable ||
       (this.policyStructuralDraftsAvailable &&
         (entry.kind === 'policy' || entry.kind === 'policy-create')) ||
+      (this.contentRuleStructuralDraftsAvailable &&
+        (entry.kind === 'content-rule' || entry.kind === 'content-rule-create')) ||
       (this.namedStructuralDraftsAvailable &&
         (entry.kind === 'profile' || entry.kind === 'profile-create' ||
          entry.kind === 'authority' || entry.kind === 'authority-create')) ||
@@ -3111,6 +3119,10 @@ export class SmithproxyApp extends LitElement {
     return this.structuralDraftsAvailable || this.policyStructuralDraftsAvailable;
   }
 
+  private contentRuleTransactionsAvailable(): boolean {
+    return this.structuralDraftsAvailable || this.contentRuleStructuralDraftsAvailable;
+  }
+
   private structuralOperationTransactionsAvailable(operation: DraftStructuralOperation): boolean {
     if (['address_objects', 'port_objects', 'proto_objects'].includes(operation.collection)) {
       return this.primitiveTransactionsAvailable();
@@ -3119,6 +3131,9 @@ export class SmithproxyApp extends LitElement {
       return this.namedTransactionsAvailable();
     }
     if (operation.collection === 'policy') return this.policyTransactionsAvailable();
+    if (operation.collection === 'content_profiles.content_rules') {
+      return this.contentRuleTransactionsAvailable();
+    }
     return this.structuralDraftsAvailable;
   }
 
@@ -3440,7 +3455,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewContentRule(profileId: string, origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable ||
+    if (!this.contentRuleTransactionsAvailable() ||
         !this.snapshot?.profiles.some(item => item.id === profileId && item.content !== null)) return;
     const localId = `create-content-rule-${crypto.randomUUID()}`;
     this.contentRuleCreateParents.set(localId, profileId);
@@ -4208,7 +4223,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveContentRuleCreate(entry: DrawerEntry): Promise<void> {
-    if (entry.kind !== 'content-rule-create' || !this.structuralDraftsAvailable || !this.draftClient ||
+    if (entry.kind !== 'content-rule-create' || !this.contentRuleTransactionsAvailable() || !this.draftClient ||
         this.draftCommitting) return;
     const profile = this.contentRuleCreateProfile(entry);
     const match = this.renderRoot.querySelector<HTMLTextAreaElement>(`#content-rule-create-match-${entry.id}`);
@@ -10957,8 +10972,8 @@ export class SmithproxyApp extends LitElement {
           <label>Content rules</label>
           <div class="reference-stack" role="group" aria-label="Content rules">
             <button class="secondary" type="button"
-              ?disabled=${!this.structuralDraftsAvailable}
-              title=${this.structuralDraftsAvailable
+              ?disabled=${!this.contentRuleTransactionsAvailable()}
+              title=${this.contentRuleTransactionsAvailable()
                 ? 'Add a content rule to the workspace draft'
                 : 'Requires reviewed structural transactions and stable entity IDs.'}
               @click=${(event: MouseEvent) => this.openNewContentRule(
@@ -11491,7 +11506,7 @@ export class SmithproxyApp extends LitElement {
     const precedingRules = this.precedingDraftCreates(
       pendingMove?.localId ?? '', 'content_profiles.content_rules', profile.id,
     );
-    const showPlacement = (this.structuralDraftsAvailable || pendingMove !== undefined) &&
+    const showPlacement = (this.contentRuleTransactionsAvailable() || pendingMove !== undefined) &&
       rules.length + precedingRules.length > 1;
     return html`
       <div class="form-grid wide-form-grid">
@@ -11500,7 +11515,7 @@ export class SmithproxyApp extends LitElement {
           <label for="content-rule-placement-${entry.id}">Draft order</label>
           <div class="reference-edit">
             <select id="content-rule-placement-${entry.id}" data-structural-control="true"
-              ?disabled=${!this.structuralDraftsAvailable}>
+              ?disabled=${!this.contentRuleTransactionsAvailable()}>
               <option value="first" ?selected=${placement === 'first'}>First rule</option>
               ${rules.filter(item => item.id !== entry.id).map(item => html`
                 <option value=${`before:${item.id}`} ?selected=${placement === `before:${item.id}`}>
@@ -11517,7 +11532,7 @@ export class SmithproxyApp extends LitElement {
               <option value="last" ?selected=${placement === 'last'}>Last rule</option>
             </select>
             <button class="secondary" type="button"
-              ?disabled=${!this.structuralDraftsAvailable || this.draftSaving || this.draftCommitting ||
+              ?disabled=${!this.contentRuleTransactionsAvailable() || this.draftSaving || this.draftCommitting ||
                 this.dirtyDrawerKeys.has(this.drawerKey(entry))}
               title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
                 ? 'Save or discard ordinary content-rule field changes first.'
@@ -11574,7 +11589,7 @@ export class SmithproxyApp extends LitElement {
     const precedingRules = this.precedingDraftCreates(
       entry.id, 'content_profiles.content_rules', profile.id,
     );
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.contentRuleTransactionsAvailable();
     const position = operation
       ? operation.position.reference === null
         ? operation.position.kind : `${operation.position.kind}:${operation.position.reference}`

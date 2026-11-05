@@ -1086,6 +1086,7 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
             {"alg_dns_profiles", false, false, "builtin:v2"},
             {"tls_ca", false, false, "builtin:v2"},
             {"policy", true, false, "builtin:v2"},
+            {"content_profiles.content_rules", true, true, "builtin:v2"},
         };
         capabilities.wire_version = 2U;
         return capabilities;

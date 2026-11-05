@@ -1185,6 +1185,14 @@ private:
             [](const auto& item) { return item.id == "policy" && item.ordered && !item.nested; });
         const bool policy_structural_drafts = named_structural_drafts &&
             policy_collection != status.transaction_capabilities.collections.end();
+        const auto content_rule_collection = std::find_if(
+            status.transaction_capabilities.collections.begin(),
+            status.transaction_capabilities.collections.end(),
+            [](const auto& item) {
+                return item.id == "content_profiles.content_rules" && item.ordered && item.nested;
+            });
+        const bool content_rule_structural_drafts = policy_structural_drafts &&
+            content_rule_collection != status.transaction_capabilities.collections.end();
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
@@ -1198,6 +1206,8 @@ private:
                     (named_structural_drafts ? "true" : "false") +
                     ",\"policy_structural_drafts\":" +
                     (policy_structural_drafts ? "true" : "false") +
+                    ",\"content_rule_structural_drafts\":" +
+                    (content_rule_structural_drafts ? "true" : "false") +
                     ",\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"draft_preflight\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":" + (monitoring ? "true" : "false") +

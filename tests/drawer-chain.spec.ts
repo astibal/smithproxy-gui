@@ -107,6 +107,7 @@ type MockState = {
   primitiveStructuralDraftsReady?: boolean;
   namedStructuralDraftsReady?: boolean;
   policyStructuralDraftsReady?: boolean;
+  contentRuleStructuralDraftsReady?: boolean;
   secondPolicy?: boolean;
   unusedPrimitives?: boolean;
   unusedProfile?: boolean;
@@ -209,15 +210,19 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         configurationFeature('config_write'),
       primitive_structural_drafts: Boolean(
         (state.primitiveStructuralDraftsReady || state.namedStructuralDraftsReady ||
-         state.policyStructuralDraftsReady ||
+         state.policyStructuralDraftsReady || state.contentRuleStructuralDraftsReady ||
          state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       named_structural_drafts: Boolean(
         (state.namedStructuralDraftsReady || state.policyStructuralDraftsReady ||
-         state.structuralDraftsReady) && state.commitReady,
+         state.contentRuleStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       policy_structural_drafts: Boolean(
-        (state.policyStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
+        (state.policyStructuralDraftsReady || state.contentRuleStructuralDraftsReady ||
+         state.structuralDraftsReady) && state.commitReady,
+      ) && configurationFeature('config_write'),
+      content_rule_structural_drafts: Boolean(
+        (state.contentRuleStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
       drafts: configurationFeature('drafts'),
       draft_preflight: configurationFeature('draft_preflight'),
@@ -3734,7 +3739,7 @@ test('creates and safely reopens a nested content rule', async ({page}) => {
     smithproxy: 'ready',
     validationReady: true,
     commitReady: true,
-    structuralDraftsReady: true,
+    contentRuleStructuralDraftsReady: true,
     structuralMutationRequests: [],
   };
   await mockSystemApi(page, state, true);
