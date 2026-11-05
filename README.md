@@ -182,6 +182,12 @@ unsaved running configuration is a primary status even on narrow screens, and
 the System view compares the bounded running and saved revision identifiers.
 Persistence remains explicit; the GUI does not invent a save action until the
 authenticated Smithproxy API advertises one.
+The atomic configuration-state endpoint is sampled every five seconds, while
+legacy multi-request snapshots retain their conservative 30-second cadence.
+If another browser or CLI changes the canonical revision during an active
+workspace draft, the GUI preserves the operator's work, visibly reports the
+drift, invalidates prior validation, and blocks validation and commit until the
+old draft is discarded and the current configuration is loaded.
 The Policy inventory supports selecting the current filtered live rows and
 staging their enabled state, traffic action, or routing and inspection profile
 references in one optimistic workspace-draft mutation. NAT mode can be changed

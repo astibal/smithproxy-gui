@@ -523,7 +523,10 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                 next_interface_sample = std::chrono::steady_clock::now() + std::chrono::seconds(30);
             }
             if (sample_config) {
-                next_config_sample = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+                const auto interval = config_state_support_ == ConfigStateSupport::available
+                    ? std::chrono::seconds(5)
+                    : std::chrono::seconds(30);
+                next_config_sample = std::chrono::steady_clock::now() + interval;
             }
         }
         {
@@ -1135,6 +1138,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
                             snapshot.detail = std::move(parsed.error);
                             return snapshot;
                         }
+                        config_state_support_ = ConfigStateSupport::available;
                         parsed.snapshot->checked_at = std::chrono::system_clock::now();
                         parsed.snapshot->observation_started_at = snapshot.observation_started_at;
                         return std::move(*parsed.snapshot);
@@ -1151,6 +1155,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
                         }
                         return snapshot;
                     }
+                    config_state_support_ = ConfigStateSupport::unavailable;
                 } else {
                     curl_slist_free_all(raw_headers);
                 }

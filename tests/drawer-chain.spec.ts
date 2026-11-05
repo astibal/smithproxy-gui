@@ -71,6 +71,8 @@ type MockState = {
   configFailuresRemaining?: number;
   configSnapshotDelayMs?: number;
   unsavedConfig?: boolean;
+  configRevision?: string | null;
+  savedConfigRevision?: string | null;
   draftRequests?: number;
   draftLoadDelayMs?: number;
   conflictNextDraftWrite?: boolean;
@@ -753,11 +755,14 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       if (state.configSnapshotDelayMs) {
         await new Promise(resolve => setTimeout(resolve, state.configSnapshotDelayMs));
       }
+      const revision = state.configRevision ?? (state.unsavedConfig ? `sha256:${'2'.repeat(64)}` : null);
+      const savedRevision = state.savedConfigRevision ??
+        (state.unsavedConfig ? `sha256:${'1'.repeat(64)}` : revision);
       await route.fulfill({json: {
       state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: now(),
       last_success_at_unix_ms: now(), view: 'runtime',
-      revision: state.unsavedConfig ? `sha256:${'2'.repeat(64)}` : null,
-      saved_revision: state.unsavedConfig ? `sha256:${'1'.repeat(64)}` : null,
+      revision,
+      saved_revision: savedRevision,
       unsaved: state.unsavedConfig ?? false,
       policies: [{
         id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
@@ -4019,12 +4024,42 @@ test('refreshes live configuration only outside an active edit transaction', asy
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.locator('.statusbar')).toContainText('Config: Ready');
   await expect(page.locator('.statusbar')).toContainText('refresh paused');
-  await expect.poll(() => state.configFetches).toBe(3);
+  await expect.poll(() => state.configFetches).toBe(4);
 
   await page.getByRole('dialog', {name: 'Edit Policy 1'})
     .getByRole('button', {name: 'Cancel'}).click();
-  await expect.poll(() => state.configFetches).toBe(4);
+  await expect.poll(() => state.configFetches).toBe(5);
   await expect(page.locator('.statusbar')).not.toContainText('refresh paused');
+});
+
+test('detects an external revision while preserving and blocking the active draft', async ({page}) => {
+  const firstRevision = `sha256:${'1'.repeat(64)}`;
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, configFetches: 0,
+    configRevision: firstRevision, savedConfigRevision: firstRevision,
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await expect.poll(() => state.configFetches).toBe(1);
+
+  state.configRevision = `sha256:${'2'.repeat(64)}`;
+  state.savedConfigRevision = firstRevision;
+  state.unsavedConfig = true;
+  await page.evaluate(() => {
+    const changedAt = Date.now() + 6_000;
+    Date.now = () => changedAt;
+    window.dispatchEvent(new Event('online'));
+  });
+
+  const review = page.getByRole('button', {name: 'Review draft · 1 · live changed'});
+  await expect(review).toBeVisible();
+  await review.click();
+  await expect(page.getByRole('alert')).toContainText('Live configuration changed.');
+  const preflight = page.getByRole('region', {name: 'Draft preflight'});
+  await expect(preflight.getByRole('button', {name: 'Validate with Smithproxy'})).toBeDisabled();
+  await expect(preflight.getByText('Revision changed', {exact: true})).toBeVisible();
+  await expect(page.getByText('Draft: 1 changes')).toBeVisible();
 });
 
 test('recovers live configuration automatically after a transient API failure', async ({page}) => {

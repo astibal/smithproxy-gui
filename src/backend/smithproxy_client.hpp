@@ -69,6 +69,12 @@ public:
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 
 private:
+    enum class ConfigStateSupport {
+        unknown,
+        available,
+        unavailable,
+    };
+
     struct UpstreamSession {
         std::string auth_token;
         std::string csrf_token;
@@ -102,6 +108,7 @@ private:
     mutable std::mutex mutex_;
     SmithproxyStatus status_;
     std::atomic_bool config_refresh_requested_{};
+    mutable ConfigStateSupport config_state_support_{ConfigStateSupport::unknown};
     std::chrono::steady_clock::time_point minimum_config_observation_{};
     mutable std::mutex wakeup_mutex_;
     std::condition_variable_any wakeup_;

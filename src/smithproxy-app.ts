@@ -406,6 +406,7 @@ export class SmithproxyApp extends LitElement {
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
   @state() private configRefreshInFlight = false;
+  @state() private configRevisionDrift = false;
   @state() private searchQuery = '';
   @state() private authIdentityEditors = new Map<string, AuthIdentityEditorState>();
 
@@ -1328,6 +1329,7 @@ export class SmithproxyApp extends LitElement {
     this.clearDraftSessionState();
     this.configRefreshInFlight = false;
     this.configRefreshDeferred = false;
+    this.configRevisionDrift = false;
     this.configError = undefined;
     this.searchQuery = '';
     if (this.activeSection === 'Search') this.activeSection = 'Dashboard';
@@ -1492,22 +1494,29 @@ export class SmithproxyApp extends LitElement {
     if (!this.configReadAvailable || !this.configClient || this.configRefreshInFlight) return;
     const now = Date.now();
     if (!force && now < this.nextConfigRefreshAt) return;
-    if (this.draftChangeCount > 0 || this.drawers.length > 0 || this.draftSaving ||
-        this.draftCommitting) {
-      this.configRefreshDeferred = true;
-      return;
-    }
 
     this.configRefreshInFlight = true;
     const accessEpoch = this.configurationAccessEpoch;
-    this.nextConfigRefreshAt = now + 30_000;
+    this.nextConfigRefreshAt = now + 5_000;
     try {
       const snapshot = await this.configClient.loadSnapshot();
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (this.draftChangeCount > 0 || this.drawers.length > 0 || this.draftSaving ||
+          this.draftCommitting) {
+        this.configRefreshDeferred = true;
+        if (snapshot.revision && this.snapshot?.revision && snapshot.revision !== this.snapshot.revision) {
+          this.configRevisionDrift = true;
+          this.draftValidation = undefined;
+          this.draftCommitArmed = false;
+        }
+        this.configError = undefined;
+        return;
+      }
       this.snapshot = snapshot;
       this.restoreDrawerRoute();
       this.configError = undefined;
       this.configRefreshDeferred = false;
+      this.configRevisionDrift = false;
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.configError = error instanceof Error ? error.message : 'Live configuration is unavailable.';
@@ -6404,7 +6413,7 @@ export class SmithproxyApp extends LitElement {
     const persistentValues = this.snapshot
       ? persistentConfigurationValues(this.snapshot) : new Map<string, ConfigValue>();
     const pendingCount = changes.length + structuralOperations.length;
-    const commitReady = this.draftPreflight?.commitAvailable && this.draftValidation &&
+    const commitReady = !this.configRevisionDrift && this.draftPreflight?.commitAvailable && this.draftValidation &&
       this.draftValidation.draftVersion === this.draftVersion &&
       this.draftValidation.baseRevision === this.draftPreflight.baseRevision &&
       this.draftValidation.validatedOperations === pendingCount;
@@ -6426,6 +6435,11 @@ export class SmithproxyApp extends LitElement {
                 : 'Discard draft'}
           </button>
         </div>
+        ${this.configRevisionDrift ? html`<div class="impact" role="alert">
+          <strong>Live configuration changed.</strong>
+          This draft remains bound to its original revision and cannot be committed safely.
+          Discard it, then reload the current Smithproxy configuration.
+        </div>` : nothing}
         ${this.draftError ? html`<div class="error" role="alert">${this.draftError}</div>` : nothing}
         ${pendingCount > 0 ? html`
           <section class="preflight" aria-label="Draft preflight">
@@ -6433,7 +6447,7 @@ export class SmithproxyApp extends LitElement {
               <h3>Validation and impact preflight</h3>
               <div class="preflight-actions">
                 <button class="secondary" type="button"
-                  ?disabled=${!this.draftPreflight?.validationAvailable || this.draftValidating ||
+                  ?disabled=${this.configRevisionDrift || !this.draftPreflight?.validationAvailable || this.draftValidating ||
                     this.draftCommitting}
                   @click=${() => this.validateDraft()}>
                   ${this.draftValidating ? 'Validating…' : 'Validate with Smithproxy'}
@@ -6468,7 +6482,7 @@ export class SmithproxyApp extends LitElement {
                 <div class="preflight-check">
                   <small>Atomic commit</small>
                   <strong class="runtime-state ${commitReady ? 'success' : 'warning'}">
-                    ${commitReady ? 'Ready' : this.draftPreflight.commitAvailable
+                    ${commitReady ? 'Ready' : this.configRevisionDrift ? 'Revision changed' : this.draftPreflight.commitAvailable
                       ? 'Validation required' : 'Blocked'}
                   </strong>
                 </div>
@@ -12496,12 +12510,15 @@ export class SmithproxyApp extends LitElement {
             <h1>${this.activeSection}</h1>
             <p>${this.runtime?.mode === 'embedded' ? 'Saslik Tools' : 'Smithproxy management'}</p>
             ${this.snapshot?.source === 'live' && this.draftChangeCount > 0 ? html`
-              <button class="secondary" type="button"
+              <button class="secondary ${this.configRevisionDrift ? 'draft' : ''}" type="button"
                 ?disabled=${this.drawers.length > 0}
+                title=${this.configRevisionDrift
+                  ? 'Smithproxy configuration changed after this draft was opened.'
+                  : 'Review the shared workspace draft.'}
                 @click=${() => {
                   this.discardDraftArmed = false;
                   this.activeSection = 'Draft';
-                }}>Review draft · ${this.draftChangeCount}</button>
+                }}>Review draft · ${this.draftChangeCount}${this.configRevisionDrift ? ' · live changed' : ''}</button>
             ` : nothing}
             ${this.configReadAvailable && this.draftChangeCount === 0 ? html`
               <button class="secondary config-refresh" type="button"
