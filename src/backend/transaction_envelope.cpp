@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <charconv>
 #include <cmath>
 #include <cctype>
 #include <set>
@@ -52,6 +53,96 @@ nlohmann::json scalar_json(const DraftScalar& value) {
     return std::visit([](const auto& item) -> nlohmann::json {
         return item;
     }, value);
+}
+
+nlohmann::json explicit_scalar_json(const DraftScalar& value) {
+    return std::visit([](const auto& item) -> nlohmann::json {
+        using Value = std::decay_t<decltype(item)>;
+        if constexpr (std::is_same_v<Value, bool>) {
+            return {{"type", "bool"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, std::int64_t>) {
+            return {{"type", "int"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, double>) {
+            return {{"type", "double"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, std::string>) {
+            return {{"type", "string"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, std::vector<std::int64_t>>) {
+            return {{"type", "int_array"}, {"data", item}};
+        } else if constexpr (std::is_same_v<Value, std::vector<std::string>>) {
+            return {{"type", "string_array"}, {"data", item}};
+        } else {
+            return nullptr;
+        }
+    }, value);
+}
+
+std::optional<std::string> transaction_config_path(
+    const std::string_view logical_path, const ConfigSnapshot& snapshot) {
+    const auto marker = logical_path.find(".[");
+    if (marker == std::string_view::npos) return std::string(logical_path);
+    const auto close = logical_path.find(']', marker + 2U);
+    if (close == std::string_view::npos || close + 2U > logical_path.size() ||
+        logical_path[close + 1U] != '.') {
+        return std::nullopt;
+    }
+    std::size_t index{};
+    const auto index_text = logical_path.substr(marker + 2U, close - marker - 2U);
+    const auto [end, error] = std::from_chars(
+        index_text.data(), index_text.data() + index_text.size(), index);
+    if (index_text.empty() || error != std::errc{} ||
+        end != index_text.data() + index_text.size()) {
+        return std::nullopt;
+    }
+
+    const auto root = logical_path.substr(0U, marker);
+    auto suffix = logical_path.substr(close + 2U);
+    std::optional<std::string> name;
+    if (root == "address_objects" && index < snapshot.addresses.size()) {
+        name = snapshot.addresses[index].name;
+        if (suffix == "name" || suffix == "type") return std::nullopt;
+        if (suffix == "value") suffix = snapshot.addresses[index].type;
+    } else if (root == "port_objects" && index < snapshot.ports.size()) {
+        name = snapshot.ports[index].name;
+        if (suffix == "name") return std::nullopt;
+    } else if (root == "proto_objects" && index < snapshot.protocols.size()) {
+        name = snapshot.protocols[index].name;
+        if (suffix == "name") return std::nullopt;
+    } else if (root == "tls_ca" && snapshot.security_assets &&
+               index < snapshot.security_assets->certificate_authorities.size()) {
+        name = snapshot.security_assets->certificate_authorities[index].name;
+        if (suffix == "name") return std::nullopt;
+    } else {
+        const auto profile_name = [&](const auto& matches) -> std::optional<std::string> {
+            std::size_t current{};
+            for (const auto& profile : snapshot.profiles) {
+                if (!matches(profile)) continue;
+                if (current++ == index) return profile.name;
+            }
+            return std::nullopt;
+        };
+        if (root == "routing") {
+            name = profile_name([](const auto& item) { return item.routing.has_value(); });
+        } else if (root == "tls_profiles") {
+            name = profile_name([](const auto& item) { return item.tls.has_value(); });
+        } else if (root == "ssh_profiles") {
+            name = profile_name([](const auto& item) { return item.ssh.has_value(); });
+        } else if (root == "detection_profiles") {
+            name = profile_name([](const auto& item) { return item.detection.has_value(); });
+        } else if (root == "content_profiles") {
+            name = profile_name([](const auto& item) { return item.content.has_value(); });
+        } else if (root == "alg_dns_profiles") {
+            name = profile_name([](const auto& item) { return item.dns.has_value(); });
+        } else if (root == "script_profiles") {
+            name = profile_name([](const auto& item) { return item.script.has_value(); });
+        } else if (root == "auth_profiles") {
+            name = profile_name([](const auto& item) { return item.authentication.has_value(); });
+        } else {
+            return std::string(logical_path); // Ordered collections retain numeric paths.
+        }
+        if (suffix == "name") return std::nullopt;
+    }
+    if (!name) return std::nullopt;
+    return std::string(root) + "." + *name + "." + std::string(suffix);
 }
 
 nlohmann::json position_json(const DraftPosition& position) {
@@ -227,6 +318,37 @@ TransactionEnvelope build_transaction_envelope(
     auto body = document.dump();
     if (body.size() > capabilities.maximum_request_bytes ||
         body.size() > hard_maximum_request_bytes) {
+        return {std::nullopt, "transaction.request_too_large"};
+    }
+    return {std::move(body), {}};
+}
+
+TransactionEnvelope build_transaction_v2_operations(
+    const DraftSnapshot& draft, const ConfigSnapshot& snapshot) {
+    if (!draft.base_revision || !snapshot.revision ||
+        *draft.base_revision != *snapshot.revision || draft.empty() ||
+        !draft.structural_operations.empty() || draft.changes.size() > hard_maximum_operations) {
+        return {std::nullopt, "transaction.unavailable"};
+    }
+
+    nlohmann::json operations = nlohmann::json::array();
+    std::set<std::string, std::less<>> paths;
+    for (const auto& change : draft.changes) {
+        if (!paths.emplace(change.path).second ||
+            validate_draft_schema(change) != DraftSchemaResult::Valid) {
+            return {std::nullopt, "transaction.invalid_draft"};
+        }
+        auto path = transaction_config_path(change.path, snapshot);
+        auto value = explicit_scalar_json(change.value);
+        if (!path || value.is_null()) return {std::nullopt, "transaction.invalid_draft"};
+        operations.push_back({
+            {"op", "set"},
+            {"path", std::move(*path)},
+            {"value", std::move(value)},
+        });
+    }
+    auto body = operations.dump();
+    if (body.size() > hard_maximum_request_bytes) {
         return {std::nullopt, "transaction.request_too_large"};
     }
     return {std::move(body), {}};

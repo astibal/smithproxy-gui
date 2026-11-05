@@ -1,6 +1,7 @@
 #pragma once
 
 #include "draft_store.hpp"
+#include "config_snapshot.hpp"
 #include "transaction_capabilities.hpp"
 
 #include <cstddef>
@@ -31,6 +32,9 @@ struct TransactionResponse {
 [[nodiscard]] TransactionEnvelope build_transaction_envelope(
     const DraftSnapshot& draft, TransactionMode mode, std::string_view idempotency_key,
     const TransactionCapabilities& capabilities);
+
+[[nodiscard]] TransactionEnvelope build_transaction_v2_operations(
+    const DraftSnapshot& draft, const ConfigSnapshot& snapshot);
 
 [[nodiscard]] TransactionResponse parse_transaction_response(
     long status_code, std::string_view payload, TransactionMode mode,

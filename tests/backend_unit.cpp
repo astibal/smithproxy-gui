@@ -1047,6 +1047,41 @@ int main() {
     assert(build_transaction_envelope(
         transaction_draft, TransactionMode::Commit, "invalid", ready_transaction).error_code ==
         "transaction.unavailable");
+
+    ConfigSnapshot transaction_snapshot;
+    transaction_snapshot.revision = transaction_draft.base_revision;
+    transaction_snapshot.addresses.push_back({
+        .id = "address-0",
+        .name = "office",
+        .type = "cidr",
+        .value = "192.0.2.0/24",
+    });
+    auto v2_draft = transaction_draft;
+    v2_draft.changes = {
+        {"policy.[0].action", std::string("reject")},
+        {"address_objects.[0].value", std::string("198.51.100.0/24")},
+    };
+    const auto v2_envelope = build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(v2_envelope.body);
+    assert(nlohmann::json::parse(*v2_envelope.body) == nlohmann::json::array({
+        {
+            {"op", "set"},
+            {"path", "policy.[0].action"},
+            {"value", {{"type", "string"}, {"data", "reject"}}},
+        },
+        {
+            {"op", "set"},
+            {"path", "address_objects.office.cidr"},
+            {"value", {{"type", "string"}, {"data", "198.51.100.0/24"}}},
+        },
+    }));
+    auto stale_snapshot = transaction_snapshot;
+    stale_snapshot.revision = "sha256:" + std::string(64U, '9');
+    assert(!build_transaction_v2_operations(v2_draft, stale_snapshot).body);
+    v2_draft.changes = {{"address_objects.[0].name", std::string("renamed")}};
+    assert(build_transaction_v2_operations(v2_draft, transaction_snapshot).error_code ==
+           "transaction.invalid_draft");
+
     auto oversized_transaction = ready_transaction;
     oversized_transaction.maximum_request_bytes = 64U;
     assert(build_transaction_envelope(
