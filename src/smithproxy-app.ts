@@ -13,6 +13,7 @@ import {
   type DraftPreflight,
   type DraftScalar,
   type DraftSnapshot,
+  type DraftStructuralOperation,
   type DraftValidation,
 } from './api/draft-client';
 import type {
@@ -366,6 +367,7 @@ export class SmithproxyApp extends LitElement {
   @state() private configWriteAvailable = false;
   @state() private structuralDraftsAvailable = false;
   @state() private primitiveStructuralDraftsAvailable = false;
+  @state() private namedStructuralDraftsAvailable = false;
   @state() private draftAvailable = false;
   @state() private draftPreflightAvailable = false;
   @state() private jobsAvailable = false;
@@ -1380,11 +1382,13 @@ export class SmithproxyApp extends LitElement {
       const configWriteWasAvailable = this.configWriteAvailable;
       const structuralDraftsWereAvailable = this.structuralDraftsAvailable;
       const primitiveStructuralDraftsWereAvailable = this.primitiveStructuralDraftsAvailable;
+      const namedStructuralDraftsWereAvailable = this.namedStructuralDraftsAvailable;
       const draftPreflightWasAvailable = this.draftPreflightAvailable;
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
       const nextStructuralDraftsAvailable = capabilities.features.structuralDrafts;
       const nextPrimitiveStructuralDraftsAvailable = capabilities.features.primitiveStructuralDrafts;
+      const nextNamedStructuralDraftsAvailable = capabilities.features.namedStructuralDrafts;
       const nextDraftAvailable = capabilities.features.drafts;
       const nextDraftPreflightAvailable = capabilities.features.draftPreflight;
       const configurationCapabilitiesChanged =
@@ -1392,6 +1396,7 @@ export class SmithproxyApp extends LitElement {
         nextConfigWriteAvailable !== configWriteWasAvailable ||
         nextStructuralDraftsAvailable !== structuralDraftsWereAvailable ||
         nextPrimitiveStructuralDraftsAvailable !== primitiveStructuralDraftsWereAvailable ||
+        nextNamedStructuralDraftsAvailable !== namedStructuralDraftsWereAvailable ||
         nextDraftAvailable !== draftWasAvailable ||
         nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
@@ -1400,6 +1405,7 @@ export class SmithproxyApp extends LitElement {
       this.configWriteAvailable = nextConfigWriteAvailable;
       this.structuralDraftsAvailable = nextStructuralDraftsAvailable;
       this.primitiveStructuralDraftsAvailable = nextPrimitiveStructuralDraftsAvailable;
+      this.namedStructuralDraftsAvailable = nextNamedStructuralDraftsAvailable;
       this.draftAvailable = nextDraftAvailable;
       this.draftPreflightAvailable = nextDraftPreflightAvailable;
       if (configurationCapabilitiesChanged) this.configurationAccessEpoch += 1;
@@ -1439,6 +1445,7 @@ export class SmithproxyApp extends LitElement {
       this.configWriteAvailable = false;
       this.structuralDraftsAvailable = false;
       this.primitiveStructuralDraftsAvailable = false;
+      this.namedStructuralDraftsAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
       this.updateMonitoringCapabilities(undefined);
@@ -3075,6 +3082,9 @@ export class SmithproxyApp extends LitElement {
 
   private structuralTransactionsAvailable(entry: DrawerEntry): boolean {
     return this.structuralDraftsAvailable ||
+      (this.namedStructuralDraftsAvailable &&
+        (entry.kind === 'profile' || entry.kind === 'profile-create' ||
+         entry.kind === 'authority' || entry.kind === 'authority-create')) ||
       (this.primitiveStructuralDraftsAvailable &&
         (entry.kind === 'address' || entry.kind === 'port' || entry.kind === 'protocol' ||
          entry.kind === 'address-create' || entry.kind === 'port-create' ||
@@ -3083,6 +3093,20 @@ export class SmithproxyApp extends LitElement {
 
   private primitiveTransactionsAvailable(): boolean {
     return this.structuralDraftsAvailable || this.primitiveStructuralDraftsAvailable;
+  }
+
+  private namedTransactionsAvailable(): boolean {
+    return this.structuralDraftsAvailable || this.namedStructuralDraftsAvailable;
+  }
+
+  private structuralOperationTransactionsAvailable(operation: DraftStructuralOperation): boolean {
+    if (['address_objects', 'port_objects', 'proto_objects'].includes(operation.collection)) {
+      return this.primitiveTransactionsAvailable();
+    }
+    if ([...Object.values(profileCreateCollections), 'tls_ca'].includes(operation.collection)) {
+      return this.namedTransactionsAvailable();
+    }
+    return this.structuralDraftsAvailable;
   }
 
   private uniquePrimitiveCopyName(
@@ -3160,7 +3184,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewProfile(origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable) return;
+    if (!this.namedTransactionsAvailable()) return;
     const localId = `create-profile-${crypto.randomUUID()}`;
     this.profileCreateTypes.set(localId, 'routing');
     this.openObjectDrawer({kind: 'profile-create', id: localId, title: 'New profile'}, origin);
@@ -3175,7 +3199,7 @@ export class SmithproxyApp extends LitElement {
   private profileCloneBlocker(profile: ProfileObject): string | undefined {
     const type = this.profileType(profile);
     const prefix = this.profileOriginPrefixes().get(profile.id);
-    if (!this.structuralDraftsAvailable || !this.workspaceDraft || !type || !prefix) {
+    if (!this.namedTransactionsAvailable() || !this.workspaceDraft || !type || !prefix) {
       return 'Profile duplication requires a typed profile and reviewed structural transactions.';
     }
     const collection = profileCreateCollections[type];
@@ -3201,7 +3225,7 @@ export class SmithproxyApp extends LitElement {
           typeof operation.fields['name'] === 'string') names.add(operation.fields['name']);
     });
     for (let copy = 1; copy <= names.size + 2; copy += 1) {
-      const suffix = copy === 1 ? ' copy' : ` copy ${copy}`;
+      const suffix = copy === 1 ? '-copy' : `-copy-${copy}`;
       const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
       if (!names.has(candidate)) return candidate;
     }
@@ -3486,7 +3510,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewAuthority(origin?: HTMLElement): void {
-    if (!this.structuralDraftsAvailable) return;
+    if (!this.namedTransactionsAvailable()) return;
     const localId = `create-authority-${crypto.randomUUID()}`;
     this.openObjectDrawer({
       kind: 'authority-create', id: localId, title: 'New certificate authority',
@@ -3494,7 +3518,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private authorityCloneBlocker(authority: CertificateAuthoritySummary): string | undefined {
-    if (!this.structuralDraftsAvailable || !this.workspaceDraft ||
+    if (!this.namedTransactionsAvailable() || !this.workspaceDraft ||
         !this.originPrefix({kind: 'authority', id: authority.id, title: authority.name})) {
       return 'Certificate-authority duplication requires reviewed structural transactions.';
     }
@@ -3516,7 +3540,7 @@ export class SmithproxyApp extends LitElement {
           typeof operation.fields['name'] === 'string') names.add(operation.fields['name']);
     });
     for (let copy = 1; copy <= names.size + 2; copy += 1) {
-      const suffix = copy === 1 ? ' copy' : ` copy ${copy}`;
+      const suffix = copy === 1 ? '-copy' : `-copy-${copy}`;
       const candidate = `${sourceName.slice(0, Math.max(0, 128 - suffix.length))}${suffix}`;
       if (!names.has(candidate)) return candidate;
     }
@@ -4641,7 +4665,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveProfileCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    if (!this.namedTransactionsAvailable() || !this.draftClient || this.draftCommitting) return;
     const operation = this.pendingProfileCreate(entry);
     const element = <T extends HTMLInputElement | HTMLSelectElement>(field: string) =>
       this.renderRoot.querySelector<T>(`#profile-create-${field}-${entry.id}`);
@@ -4652,8 +4676,8 @@ export class SmithproxyApp extends LitElement {
     const name = nameInput.value.trim();
     const printable = (value: string, maximum: number, empty = false) =>
       (empty || value.length > 0) && value.length <= maximum && !/[\u0000-\u001f\u007f]/u.test(value);
-    if (!printable(name, 128)) {
-      this.drawerError = 'A printable profile name from 1 to 128 characters is required.';
+    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(name)) {
+      this.drawerError = 'A configuration-safe profile name is required.';
       return;
     }
     const collection = profileCreateCollections[type];
@@ -4927,7 +4951,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveAuthorityCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.structuralDraftsAvailable || !this.draftClient || this.draftCommitting) return;
+    if (!this.namedTransactionsAvailable() || !this.draftClient || this.draftCommitting) return;
     const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#authority-create-name-${entry.id}`);
     const pathInput = this.renderRoot.querySelector<HTMLInputElement>(`#authority-create-path-${entry.id}`);
     if (!nameInput || !pathInput) return;
@@ -4935,7 +4959,7 @@ export class SmithproxyApp extends LitElement {
     const path = pathInput.value.trim();
     const printable = (value: string, maximum: number) => value.length > 0 && value.length <= maximum &&
       !/[\u0000-\u001f\u007f]/u.test(value);
-    if (!printable(name, 128) || !printable(path, 1024)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(name) || !printable(path, 1024)) {
       this.drawerError = this.pendingAuthorityCreate(entry)
         ? 'Re-enter the write-only CA path before updating this pending authority.'
         : 'A printable unique name and CA path are required.';
@@ -6508,7 +6532,7 @@ export class SmithproxyApp extends LitElement {
                       operation.collection === 'content_profiles.content_rules' ||
                       operation.collection.endsWith('_signatures.flow'))) ? html`
                     <button class="secondary" type="button"
-                      ?disabled=${!this.structuralDraftsAvailable}
+                      ?disabled=${!this.structuralOperationTransactionsAvailable(operation)}
                       @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
                         operation.localId, event.currentTarget as HTMLElement,
                       )}>Edit</button>
@@ -8059,7 +8083,7 @@ export class SmithproxyApp extends LitElement {
                 @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>
                 New protocol
               </button>
-              <button class="primary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              <button class="primary" type="button" ?disabled=${!this.namedTransactionsAvailable()}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>
                 New profile
@@ -8247,7 +8271,7 @@ export class SmithproxyApp extends LitElement {
           <div class="section-head">
             <div><h3>Trust and signatures</h3><p>Paths and matcher expressions remain write-only</p></div>
             <div class="structural-buttons">
-              <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
+              <button class="secondary" type="button" ?disabled=${!this.namedTransactionsAvailable()}
                 @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
                 New certificate authority
               </button>
@@ -9508,8 +9532,8 @@ export class SmithproxyApp extends LitElement {
                   pendingSignatureFlows.filter(item => item.collection === 'detection_signatures.flow').length}</dd>
               </dl>
               <div class="reference-stack section" role="group" aria-label="Certificate authorities">
-                <button class="secondary" type="button" ?disabled=${!this.structuralDraftsAvailable}
-                  title=${this.structuralDraftsAvailable
+                <button class="secondary" type="button" ?disabled=${!this.namedTransactionsAvailable()}
+                  title=${this.namedTransactionsAvailable()
                     ? 'Add a certificate authority to the workspace draft'
                     : 'Requires reviewed structural transactions and stable entity IDs.'}
                   @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
@@ -10161,7 +10185,7 @@ export class SmithproxyApp extends LitElement {
     const name = String(field('name', ''));
     const type = String(field('type', 'cidr'));
     const value = String(field('value', ''));
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.primitiveTransactionsAvailable();
     return html`
       <div class="form-grid">
         <label for="address-create-name-${entry.id}">Name</label>
@@ -10190,7 +10214,7 @@ export class SmithproxyApp extends LitElement {
     const name = String(operation?.fields['name'] ?? prefill?.fields['name'] ?? '');
     const start = Number(operation?.fields['start'] ?? prefill?.fields['start'] ?? 0);
     const end = Number(operation?.fields['end'] ?? prefill?.fields['end'] ?? 65535);
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.primitiveTransactionsAvailable();
     return html`
       <div class="form-grid">
         <label for="port-create-name-${entry.id}">Name</label>
@@ -10217,7 +10241,7 @@ export class SmithproxyApp extends LitElement {
     const prefill = operation ? undefined : this.primitiveCreatePrefills.get(entry.id);
     const name = String(operation?.fields['name'] ?? prefill?.fields['name'] ?? '');
     const number = Number(operation?.fields['id'] ?? prefill?.fields['id'] ?? 6);
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.primitiveTransactionsAvailable();
     return html`
       <div class="form-grid">
         <label for="protocol-create-name-${entry.id}">Name</label>
@@ -10258,7 +10282,7 @@ export class SmithproxyApp extends LitElement {
       const value = field(name, fallback);
       return typeof value === 'string' && !value.startsWith('[redacted:') ? value : fallback;
     };
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.namedTransactionsAvailable();
     const booleanSelect = (id: string, label: string, value: boolean) => html`
       <label for="profile-create-${id}-${entry.id}">${label}</label>
       <select id="profile-create-${id}-${entry.id}" .value=${String(value)} ?disabled=${readOnly}>
@@ -11417,7 +11441,7 @@ export class SmithproxyApp extends LitElement {
   private renderCertificateAuthorityCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingAuthorityCreate(entry);
     const prefill = operation ? undefined : this.authorityCreatePrefills.get(entry.id);
-    const readOnly = !this.structuralDraftsAvailable;
+    const readOnly = !this.namedTransactionsAvailable();
     return html`
       <div class="form-grid">
         <label for="authority-create-name-${entry.id}">Name</label>

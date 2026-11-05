@@ -145,7 +145,7 @@ std::optional<std::string> transaction_config_path(
     return std::string(root) + "." + *name + "." + std::string(suffix);
 }
 
-std::optional<std::string> primitive_object_name(
+std::optional<std::string> named_object_name(
     const std::string_view collection, const std::string_view entity_id,
     const ConfigSnapshot& snapshot) {
     const auto find_name = [entity_id](const auto& objects) -> std::optional<std::string> {
@@ -158,12 +158,33 @@ std::optional<std::string> primitive_object_name(
     if (collection == "address_objects") return find_name(snapshot.addresses);
     if (collection == "port_objects") return find_name(snapshot.ports);
     if (collection == "proto_objects") return find_name(snapshot.protocols);
+    if (collection == "tls_ca" && snapshot.security_assets) {
+        return find_name(snapshot.security_assets->certificate_authorities);
+    }
+    const auto found = std::find_if(snapshot.profiles.begin(), snapshot.profiles.end(),
+        [collection, entity_id](const auto& profile) {
+            if (profile.id != entity_id) return false;
+            if (collection == "routing") return profile.routing.has_value();
+            if (collection == "tls_profiles") return profile.tls.has_value();
+            if (collection == "content_profiles") return profile.content.has_value();
+            if (collection == "ssh_profiles") return profile.ssh.has_value();
+            if (collection == "script_profiles") return profile.script.has_value();
+            if (collection == "auth_profiles") return profile.authentication.has_value();
+            if (collection == "detection_profiles") return profile.detection.has_value();
+            if (collection == "alg_dns_profiles") return profile.dns.has_value();
+            return false;
+        });
+    if (found != snapshot.profiles.end()) return found->name;
     return std::nullopt;
 }
 
-bool primitive_collection(const std::string_view collection) {
-    return collection == "address_objects" || collection == "port_objects" ||
-           collection == "proto_objects";
+bool named_collection(const std::string_view collection) {
+    constexpr std::array collections{
+        "address_objects", "port_objects", "proto_objects", "routing", "tls_profiles",
+        "content_profiles", "ssh_profiles", "script_profiles", "auth_profiles",
+        "detection_profiles", "alg_dns_profiles", "tls_ca",
+    };
+    return std::find(collections.begin(), collections.end(), collection) != collections.end();
 }
 
 bool valid_config_group_name(const std::string_view name) {
@@ -176,9 +197,9 @@ bool valid_config_group_name(const std::string_view name) {
     });
 }
 
-bool append_primitive_create(
+bool append_named_create(
     nlohmann::json& operations, const DraftCreateOperation& create) {
-    if (!primitive_collection(create.collection) || create.parent_id ||
+    if (!named_collection(create.collection) || create.parent_id ||
         create.position.kind != DraftPositionKind::Last) {
         return false;
     }
@@ -400,9 +421,9 @@ TransactionEnvelope build_transaction_v2_operations(
         const auto valid = std::visit([&](const auto& item) {
             using Operation = std::decay_t<decltype(item)>;
             if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
-                return append_primitive_create(operations, item);
+                return append_named_create(operations, item);
             } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
-                const auto name = primitive_object_name(item.collection, item.entity_id, snapshot);
+                const auto name = named_object_name(item.collection, item.entity_id, snapshot);
                 if (!name) return false;
                 operations.push_back({
                     {"op", "remove"},

@@ -1132,6 +1132,50 @@ int main() {
     assert(build_transaction_v2_operations(v2_draft, transaction_snapshot).error_code ==
            "transaction.invalid_draft");
 
+    ConfigProfile detection_profile;
+    detection_profile.id = "detection-0";
+    detection_profile.name = "baseline-detection";
+    detection_profile.type = "detection";
+    detection_profile.detection = ConfigDetectionProfile{
+        .mode = 1U,
+        .engines_enabled = true,
+        .knowledge_base_enabled = false,
+    };
+    transaction_snapshot.profiles.push_back(std::move(detection_profile));
+    v2_draft.structural_operations = {
+        DraftCreateOperation{
+            .local_id = "create-detection-1",
+            .collection = "detection_profiles",
+            .client_id = "new-detection",
+            .parent_id = std::nullopt,
+            .position = {DraftPositionKind::Last, std::nullopt},
+            .fields = {
+                {"name", std::string("strict-detection")},
+                {"mode", std::int64_t{2}},
+            },
+        },
+        DraftDeleteOperation{
+            .local_id = "delete-detection-1",
+            .collection = "detection_profiles",
+            .entity_id = "detection-0",
+        },
+    };
+    const auto named_envelope = build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(named_envelope.body);
+    assert(nlohmann::json::parse(*named_envelope.body) == nlohmann::json::array({
+        {{"op", "add"}, {"path", "detection_profiles"}, {"name", "strict-detection"}},
+        {
+            {"op", "set"},
+            {"path", "detection_profiles.strict-detection.mode"},
+            {"value", {{"type", "int"}, {"data", 2}}},
+        },
+        {
+            {"op", "remove"},
+            {"path", "detection_profiles"},
+            {"entries", nlohmann::json::array({"baseline-detection"})},
+        },
+    }));
+
     auto oversized_transaction = ready_transaction;
     oversized_transaction.maximum_request_bytes = 64U;
     assert(build_transaction_envelope(

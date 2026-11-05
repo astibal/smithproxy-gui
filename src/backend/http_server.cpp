@@ -1173,6 +1173,12 @@ private:
             draft.base_revision && *status.config_snapshot.revision == *draft.base_revision &&
             supports_collection("address_objects") && supports_collection("port_objects") &&
             supports_collection("proto_objects");
+        const bool named_structural_drafts = primitive_structural_drafts &&
+            supports_collection("routing") && supports_collection("tls_profiles") &&
+            supports_collection("content_profiles") && supports_collection("ssh_profiles") &&
+            supports_collection("script_profiles") && supports_collection("auth_profiles") &&
+            supports_collection("detection_profiles") &&
+            supports_collection("alg_dns_profiles") && supports_collection("tls_ca");
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
@@ -1182,6 +1188,8 @@ private:
                     ",\"structural_drafts\":" + (structural_drafts ? "true" : "false") +
                     ",\"primitive_structural_drafts\":" +
                     (primitive_structural_drafts ? "true" : "false") +
+                    ",\"named_structural_drafts\":" +
+                    (named_structural_drafts ? "true" : "false") +
                     ",\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"draft_preflight\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":" + (monitoring ? "true" : "false") +

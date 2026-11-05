@@ -1076,6 +1076,15 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
             {"address_objects", false, false, "builtin:v2"},
             {"port_objects", false, false, "builtin:v2"},
             {"proto_objects", false, false, "builtin:v2"},
+            {"routing", false, false, "builtin:v2"},
+            {"tls_profiles", false, false, "builtin:v2"},
+            {"content_profiles", false, false, "builtin:v2"},
+            {"ssh_profiles", false, false, "builtin:v2"},
+            {"script_profiles", false, false, "builtin:v2"},
+            {"auth_profiles", false, false, "builtin:v2"},
+            {"detection_profiles", false, false, "builtin:v2"},
+            {"alg_dns_profiles", false, false, "builtin:v2"},
+            {"tls_ca", false, false, "builtin:v2"},
         };
         capabilities.wire_version = 2U;
         return capabilities;

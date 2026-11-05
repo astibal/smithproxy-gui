@@ -104,6 +104,8 @@ type MockState = {
   validationReady?: boolean;
   commitReady?: boolean;
   structuralDraftsReady?: boolean;
+  primitiveStructuralDraftsReady?: boolean;
+  namedStructuralDraftsReady?: boolean;
   secondPolicy?: boolean;
   unusedPrimitives?: boolean;
   unusedProfile?: boolean;
@@ -204,6 +206,13 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       config_write: Boolean(state.commitReady) && configurationFeature('config_write'),
       structural_drafts: Boolean(state.structuralDraftsReady && state.commitReady) &&
         configurationFeature('config_write'),
+      primitive_structural_drafts: Boolean(
+        (state.primitiveStructuralDraftsReady || state.namedStructuralDraftsReady ||
+         state.structuralDraftsReady) && state.commitReady,
+      ) && configurationFeature('config_write'),
+      named_structural_drafts: Boolean(
+        (state.namedStructuralDraftsReady || state.structuralDraftsReady) && state.commitReady,
+      ) && configurationFeature('config_write'),
       drafts: configurationFeature('drafts'),
       draft_preflight: configurationFeature('draft_preflight'),
       jobs: monitoringFeature('jobs'),
@@ -2247,7 +2256,7 @@ test('creates and reopens an address object through a structural drawer', async 
     smithproxy: 'ready',
     validationReady: true,
     commitReady: true,
-    structuralDraftsReady: true,
+    primitiveStructuralDraftsReady: true,
     structuralMutationRequests: [],
   };
   await mockSystemApi(page, state, true);
@@ -2366,6 +2375,26 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
   await expect(editor.getByLabel('First port')).toHaveValue('8443');
   await expect(editor.getByLabel('Last port')).toHaveValue('8444');
   await expectNoWcagViolations(page);
+});
+
+test('enables named profile editors without exposing ordered structural operations', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    namedStructuralDraftsReady: true,
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await expect(page.getByRole('button', {name: 'New address'})).toBeEnabled();
+  await expect(page.getByRole('button', {name: 'New profile'})).toBeEnabled();
+  await page.getByRole('button', {name: 'New profile'}).click();
+  const editor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(editor.getByLabel('Name')).toBeEditable();
+  await expect(editor.getByLabel('Profile type')).toBeEnabled();
+  await editor.getByRole('button', {name: 'Cancel'}).click();
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'New policy'})).toBeDisabled();
 });
 
 test('creates complete typed routing detection DNS and authentication profiles', async ({page}) => {

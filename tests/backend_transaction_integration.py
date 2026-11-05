@@ -187,6 +187,7 @@ def main() -> int:
             assert capabilities["features"]["config_write"] is True
             assert capabilities["features"]["structural_drafts"] is False
             assert capabilities["features"]["primitive_structural_drafts"] is True
+            assert capabilities["features"]["named_structural_drafts"] is True
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
