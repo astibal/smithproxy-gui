@@ -177,6 +177,11 @@ draft-version check.
 System and Captures summary cards use the same pending values as their editors,
 show a pending badge, and state explicitly that Smithproxy runtime remains
 unchanged until a validated atomic commit.
+The GUI also keeps Smithproxy's real running-versus-saved state visible. An
+unsaved running configuration is a primary status even on narrow screens, and
+the System view compares the bounded running and saved revision identifiers.
+Persistence remains explicit; the GUI does not invent a save action until the
+authenticated Smithproxy API advertises one.
 The Policy inventory supports selecting the current filtered live rows and
 staging their enabled state, traffic action, or routing and inspection profile
 references in one optimistic workspace-draft mutation. NAT mode can be changed

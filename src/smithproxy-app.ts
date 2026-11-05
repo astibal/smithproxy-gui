@@ -8803,6 +8803,10 @@ export class SmithproxyApp extends LitElement {
     return value === null ? 'Never' : new Date(value).toLocaleString();
   }
 
+  private revisionLabel(value: string | null | undefined): string {
+    return value ? `${value.slice(0, 15)}…` : 'Not advertised';
+  }
+
   private uptimeLabel(): string {
     const milliseconds = this.systemStatus.uptimeMs;
     if (milliseconds === null) return 'Unknown';
@@ -9364,6 +9368,20 @@ export class SmithproxyApp extends LitElement {
           Configuration cards include pending workspace draft values. Smithproxy runtime remains unchanged until a validated atomic commit.
         </div>` : nothing}
         <div class="system-grid">
+          <article class="domain-card">
+            <header>
+              <div><h3>Running configuration</h3><p>Runtime state compared with the last explicit save</p></div>
+              <span class="runtime-state ${this.snapshot?.unsaved ? 'warning' : this.snapshot ? 'success' : 'warning'}">
+                ● ${this.snapshot ? this.snapshot.unsaved ? 'Unsaved' : 'Saved' : 'Unknown'}
+              </span>
+            </header>
+            <dl>
+              <dt>Running revision</dt><dd title=${this.snapshot?.revision ?? ''}>${this.revisionLabel(this.snapshot?.revision)}</dd>
+              <dt>Saved revision</dt><dd title=${this.snapshot?.savedRevision ?? ''}>${this.revisionLabel(this.snapshot?.savedRevision)}</dd>
+              <dt>Persistence</dt><dd>${this.snapshot?.unsaved
+                ? 'Explicit Smithproxy save required' : this.snapshot ? 'Matches saved configuration' : 'Unavailable'}</dd>
+            </dl>
+          </article>
           <article class="domain-card">
             <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
             <dl>
@@ -12506,6 +12524,13 @@ export class SmithproxyApp extends LitElement {
           </div>
         </main>
         <footer class="statusbar" aria-label="System status">
+          ${this.snapshot?.unsaved ? html`
+            <button class="status-action system-state warning" type="button"
+              title="Running configuration differs from the last explicit Smithproxy save"
+              @click=${() => { this.activeSection = 'System'; }}>
+              ● Running config: Unsaved
+            </button>
+          ` : nothing}
           <span class="system-state ${this.systemStatus.core === 'online' ? 'success' : this.systemStatus.core === 'offline' ? 'danger' : 'warning'}">
             ● Core: ${displayState(this.systemStatus.core)}
           </span>
@@ -12544,7 +12569,7 @@ export class SmithproxyApp extends LitElement {
           </span>
           <span class="status-secondary system-state ${this.gatewayStatus().tone}"
             title=${this.gatewayStatus().detail}>● Gateway: ${this.gatewayStatus().label}</span>
-          <span class="status-secondary ${this.snapshot?.unsaved ? 'draft' : ''}"
+          <span class="status-secondary"
             title=${this.snapshot?.savedRevision
               ? `Saved revision ${this.snapshot.savedRevision}`
               : 'Saved revision is not advertised'}>

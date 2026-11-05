@@ -70,6 +70,7 @@ type MockState = {
   configFetches?: number;
   configFailuresRemaining?: number;
   configSnapshotDelayMs?: number;
+  unsavedConfig?: boolean;
   draftRequests?: number;
   draftLoadDelayMs?: number;
   conflictNextDraftWrite?: boolean;
@@ -754,8 +755,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       }
       await route.fulfill({json: {
       state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: now(),
-      last_success_at_unix_ms: now(), view: 'runtime', revision: null,
-      saved_revision: null, unsaved: false,
+      last_success_at_unix_ms: now(), view: 'runtime',
+      revision: state.unsavedConfig ? `sha256:${'2'.repeat(64)}` : null,
+      saved_revision: state.unsavedConfig ? `sha256:${'1'.repeat(64)}` : null,
+      unsaved: state.unsavedConfig ?? false,
       policies: [{
         id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
         source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
@@ -5598,6 +5601,24 @@ test('keeps a dated timestamp visible on every mobile log row', async ({page}) =
       );
     }
   }
+});
+
+test('keeps an unsaved running configuration visible on mobile', async ({page}) => {
+  await page.setViewportSize({width: 360, height: 740});
+  await mockSystemApi(page, {smithproxy: 'ready', unsavedConfig: true}, true);
+  await page.goto('/');
+
+  const unsaved = page.getByRole('button', {name: '● Running config: Unsaved'});
+  await expect(unsaved).toBeVisible();
+  await unsaved.click();
+
+  const card = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Running configuration'}),
+  });
+  await expect(card).toContainText('Unsaved');
+  await expect(card).toContainText('Explicit Smithproxy save required');
+  await expect(card.getByTitle(`sha256:${'2'.repeat(64)}`)).toHaveText('sha256:22222222…');
+  await expect(card.getByTitle(`sha256:${'1'.repeat(64)}`)).toHaveText('sha256:11111111…');
 });
 
 test('exposes network, object, and system vertical slices', async ({page}) => {
