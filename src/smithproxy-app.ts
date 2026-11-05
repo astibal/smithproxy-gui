@@ -836,11 +836,13 @@ export class SmithproxyApp extends LitElement {
       .metric-grid { grid-template-columns: 1fr; }
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
-      .event-row { grid-template-columns: 110px 66px minmax(120px, 1fr); }
+      .event-row { grid-template-columns: minmax(110px, 1fr) 72px; }
+      .event-row > strong { grid-column: 1 / -1; }
       .incident-row { grid-template-columns: minmax(100px, .7fr) minmax(140px, 1fr); }
       .incident-duration, .incident-time { display: none; }
-      .audit-row { grid-template-columns: 72px minmax(0, 1fr); }
-      .audit-row .event-time, .audit-request { display: none; }
+      .audit-row { grid-template-columns: minmax(110px, 1fr) 82px; }
+      .audit-operation { grid-column: 1 / -1; }
+      .audit-request { display: none; }
       .job-row { grid-template-columns: 1fr; gap: 7px; }
       .draft-row { grid-template-columns: 1fr; gap: 5px; }
       .preflight-grid { grid-template-columns: 1fr; }

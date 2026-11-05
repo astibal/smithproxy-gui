@@ -5580,6 +5580,26 @@ test('filters structured job failures without exposing job identifiers', async (
   await expect(page.getByText('sha256:', {exact: false})).toHaveCount(0);
 });
 
+test('keeps a dated timestamp visible on every mobile log row', async ({page}) => {
+  await page.setViewportSize({width: 360, height: 740});
+  await mockSystemApi(page, {smithproxy: 'ready'});
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Logs', exact: true}).click();
+
+  for (const listName of ['Operational events', 'Management audit']) {
+    const rows = page.getByRole('list', {name: listName}).getByRole('listitem');
+    await expect(rows).not.toHaveCount(0);
+    for (let index = 0; index < await rows.count(); index += 1) {
+      const timestamp = rows.nth(index).locator('time');
+      await expect(timestamp).toBeVisible();
+      await expect(timestamp).not.toHaveText('');
+      await expect(timestamp).toHaveAttribute(
+        'datetime', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u,
+      );
+    }
+  }
+});
+
 test('exposes network, object, and system vertical slices', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');

@@ -286,7 +286,7 @@ Structural creates, deletes, and moves use the same before/after presentation,
 so the operator can review existence and ordering changes before validation.
 When the core advertises `structural_drafts`, the Objects and Policy views enable
 typed right-side creation drawers for address, port, protocol, policy, routing,
-TLS, detection, DNS ALG, authentication, content, SSH, and script entries.
+TLS, detection, DNS ALG, content, SSH, and script entries.
 They reject duplicate identities and invalid ranges locally, store ordered create
 operations under optimistic draft concurrency, and reopen pending items from draft
 review. A policy can be placed first, last, or immediately before an existing stable
@@ -313,28 +313,18 @@ the object or profile they reference. Ordered create and move operations must li
 be removed before their pending position anchor; the browser and GUI core enforce the
 same fail-closed dependency. A pending object/profile rename is similarly
 protected until every cascaded draft reference to its new name has been removed.
-Stable routing, TLS, detection, content, SSH, DNS, script, and authentication
+Stable routing, TLS, detection, content, SSH, DNS, and script
 profiles use the same confirmed deletion path and cannot be deleted while referenced.
-New routing, TLS, detection, DNS ALG, authentication, content, SSH, and script profiles
+New routing, TLS, detection, DNS ALG, content, SSH, and script profiles
 submit complete typed payloads, reject duplicate names and invalid bounded values
 locally, and reopen from draft review under stable optimistic identifiers. Sensitive
 session filters, host-key paths, and script paths are cleared after acceptance and
 redacted from every draft response. Updating such a pending create requires explicit
-write-only re-entry. Stable and pending-created authentication profiles expose identity
-mappings through a nested write-only editor. Compatible profiles created earlier in the
-same draft can be selected as identity bindings. Accepted mappings are cleared locally,
-redacted from every draft response, and require complete re-entry before a pending
-authentication create can be updated. The GUI core retains their dependency metadata
-privately so a referenced pending profile cannot be removed through a direct API call.
-For the live snapshot it resolves binding names inside the trusted core, exposes only
-aggregate reverse-reference counts, and erases the private names before serialization;
-profiles used only by redacted identity mappings therefore remain protected from deletion.
-Workspace drafts expose a complete effective reverse index as a bounded opaque-ID/count
-summary. Pending identity replacements and authentication-profile deletes replace their
-live sources in that index, so valid atomic cleanup is not blocked while hidden deletion
-conflicts remain protected after reload. If the live revision cannot be aligned, the GUI
-falls back to the conservative live counts. A target profile cannot be renamed while an
-effective redacted mapping still references it; replace or clear the complete mapping first.
+write-only re-entry. Obsolete authentication profiles and their profile-level identity
+mappings are parsed defensively for legacy snapshots but are not displayed, created,
+referenced, or edited. Identity matching will return only with a reviewed policy-level
+model. The trusted core keeps legacy reverse-reference metadata private so hidden old
+references cannot make cleanup unsafe.
 Content profiles expose nested creation, confirmed deletion, and first/before/last
 ordering for stable content rules. New write-only match and replacement expressions
 are cleared from the editor after the GUI core accepts them and must be re-entered
