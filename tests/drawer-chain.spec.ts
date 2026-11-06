@@ -4830,8 +4830,9 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(incidentTimeline).toContainText('No control-plane incident was observed');
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   const health = page.getByRole('region', {name: 'Operational health matrix'});
-  await expect(health.getByRole('heading', {name: 'Control plane'})).toBeVisible();
-  await expect(health.getByRole('heading', {name: 'TLS cache'})).toBeVisible();
+  const healthTable = health.getByRole('table', {name: 'Operational subsystem health'});
+  await expect(healthTable.getByRole('row').filter({hasText: 'Control plane'})).toContainText('Ready · Fresh');
+  await expect(healthTable.getByRole('row').filter({hasText: 'TLS cache'})).toContainText('Ready · Fresh');
   const analysis = page.getByLabel('Probe latency analysis');
   await expect(analysis.getByText('11 ms', {exact: true})).toBeVisible();
   await expect(analysis.getByText('12 ms', {exact: true})).toHaveCount(2);
@@ -5021,34 +5022,23 @@ test('retries capability discovery before recovering configuration access', asyn
   expect(state.authSessionRequests).toBeGreaterThanOrEqual(2);
 });
 
-test('summarizes the live configuration on the dashboard and opens real inventory views', async ({page}) => {
+test('offers compact configuration shortcuts on the operational dashboard', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
 
-  const inventory = page.getByRole('region', {name: 'Live configuration inventory'});
-  await expect(inventory).toContainText('Real values from the authenticated Smithproxy API');
-  const policies = inventory.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Policies'}),
-  });
-  await expect(policies).toContainText('Total1');
-  await expect(policies).toContainText('Enabled1');
-  const objects = inventory.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Reusable objects'}),
-  });
-  await expect(objects).toContainText('Total4');
-  await expect(objects).toContainText('Addresses2');
-  const profiles = inventory.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Profiles'}),
-  });
-  await expect(profiles).toContainText('Total8');
-  await expect(profiles).toContainText('Profile types8');
+  const inventory = page.getByRole('region', {name: 'Configuration workspace'});
+  await expect(inventory).toContainText('Running config saved · No draft changes');
+  const shortcuts = inventory.getByRole('table', {name: 'Configuration workspace shortcuts'});
+  await expect(shortcuts.getByRole('row')).toHaveCount(5);
+  await expect(inventory.getByText('Total', {exact: true})).toHaveCount(0);
+  await expectNoWcagViolations(page);
 
-  await objects.getByRole('button', {name: 'Open objects'}).click();
+  await shortcuts.getByRole('button', {name: 'Open objects'}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'All objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toContainText('office');
 
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
-  await profiles.getByRole('button', {name: 'Open profiles'}).click();
+  await shortcuts.getByRole('button', {name: 'Open profiles'}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Profiles and routing'})).toContainText('inspect');
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCount(0);
@@ -5867,6 +5857,8 @@ test('keeps an unsaved running configuration visible on mobile', async ({page}) 
 
   const unsaved = page.getByRole('button', {name: '● Running config: Unsaved'});
   await expect(unsaved).toBeVisible();
+  await expect(page.getByRole('region', {name: 'Configuration workspace'}))
+    .toContainText('Running config unsaved');
   await unsaved.click();
 
   const card = page.getByRole('article').filter({
@@ -6664,7 +6656,7 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
 
   await expect(page.locator('link[data-saslik-theme]')).toHaveAttribute('href', '/saslik-theme.css');
   await expect(page.locator('script[data-app="smithproxy-gui"]')).toHaveAttribute('src', '/saslik-theme.js');
-  const inventory = page.getByRole('region', {name: 'Live configuration inventory'});
+  const inventory = page.getByRole('region', {name: 'Configuration workspace'});
   await expect(inventory).toBeVisible();
   await expect.poll(() => inventory.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect.poll(() => page.evaluate(() =>
