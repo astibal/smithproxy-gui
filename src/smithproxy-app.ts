@@ -4207,7 +4207,8 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async savePolicyCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.policyTransactionsAvailable() || !this.draftClient || this.draftCommitting) return;
+    if (!this.policyTransactionsAvailable() || !this.collectionPresent('policy') ||
+        !this.draftClient || this.draftCommitting) return;
     const input = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
       `#policy-create-${field}-${entry.id}`,
     );
@@ -4474,6 +4475,7 @@ export class SmithproxyApp extends LitElement {
     const kind = parent
       ? parent.collection === 'starttls_signatures' ? 'starttls' : 'detection'
       : this.signatureCreateKinds.get(entry.id);
+    if (!kind || !this.collectionPresent(`${kind}_signatures`)) return;
     const input = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
       `#signature-create-${field}-${entry.id}`,
     );
@@ -4649,7 +4651,8 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveAddressCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.primitiveTransactionsAvailable() || !this.draftClient || this.draftCommitting) return;
+    if (!this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects') ||
+        !this.draftClient || this.draftCommitting) return;
     const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#address-create-name-${entry.id}`);
     const typeInput = this.renderRoot.querySelector<HTMLSelectElement>(`#address-create-type-${entry.id}`);
     const valueInput = this.renderRoot.querySelector<HTMLInputElement>(`#address-create-value-${entry.id}`);
@@ -4740,6 +4743,7 @@ export class SmithproxyApp extends LitElement {
     if (!this.primitiveTransactionsAvailable() || !this.draftClient || this.draftCommitting ||
         (entry.kind !== 'port-create' && entry.kind !== 'protocol-create')) return;
     const port = entry.kind === 'port-create';
+    if (!this.collectionPresent(port ? 'port_objects' : 'proto_objects')) return;
     const prefix = port ? 'port-create' : 'protocol-create';
     const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#${prefix}-name-${entry.id}`);
     const firstInput = this.renderRoot.querySelector<HTMLInputElement>(
@@ -5109,7 +5113,8 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveAuthorityCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.namedTransactionsAvailable() || !this.draftClient || this.draftCommitting) return;
+    if (!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca') ||
+        !this.draftClient || this.draftCommitting) return;
     const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#authority-create-name-${entry.id}`);
     const pathInput = this.renderRoot.querySelector<HTMLInputElement>(`#authority-create-path-${entry.id}`);
     if (!nameInput || !pathInput) return;
@@ -10066,7 +10071,7 @@ export class SmithproxyApp extends LitElement {
       return Array.isArray(value) && value.every(item => typeof item === 'string')
         ? value as ReadonlyArray<string> : fallback;
     };
-    const readOnly = !this.policyTransactionsAvailable();
+    const readOnly = !this.policyTransactionsAvailable() || !this.collectionPresent('policy');
     const initialPosition = operation?.position ?? prefill?.position;
     const placement = initialPosition?.kind === 'before'
       ? `before:${initialPosition.reference ?? ''}`
@@ -10521,7 +10526,7 @@ export class SmithproxyApp extends LitElement {
     const name = String(field('name', ''));
     const type = String(field('type', 'cidr'));
     const value = String(field('value', ''));
-    const readOnly = !this.primitiveTransactionsAvailable();
+    const readOnly = !this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects');
     return html`
       <div class="form-grid">
         <label for="address-create-name-${entry.id}">Name</label>
@@ -10550,7 +10555,7 @@ export class SmithproxyApp extends LitElement {
     const name = String(operation?.fields['name'] ?? prefill?.fields['name'] ?? '');
     const start = Number(operation?.fields['start'] ?? prefill?.fields['start'] ?? 0);
     const end = Number(operation?.fields['end'] ?? prefill?.fields['end'] ?? 65535);
-    const readOnly = !this.primitiveTransactionsAvailable();
+    const readOnly = !this.primitiveTransactionsAvailable() || !this.collectionPresent('port_objects');
     return html`
       <div class="form-grid">
         <label for="port-create-name-${entry.id}">Name</label>
@@ -10577,7 +10582,7 @@ export class SmithproxyApp extends LitElement {
     const prefill = operation ? undefined : this.primitiveCreatePrefills.get(entry.id);
     const name = String(operation?.fields['name'] ?? prefill?.fields['name'] ?? '');
     const number = Number(operation?.fields['id'] ?? prefill?.fields['id'] ?? 6);
-    const readOnly = !this.primitiveTransactionsAvailable();
+    const readOnly = !this.primitiveTransactionsAvailable() || !this.collectionPresent('proto_objects');
     return html`
       <div class="form-grid">
         <label for="protocol-create-name-${entry.id}">Name</label>
@@ -11778,7 +11783,7 @@ export class SmithproxyApp extends LitElement {
   private renderCertificateAuthorityCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingAuthorityCreate(entry);
     const prefill = operation ? undefined : this.authorityCreatePrefills.get(entry.id);
-    const readOnly = !this.namedTransactionsAvailable();
+    const readOnly = !this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca');
     return html`
       <div class="form-grid">
         <label for="authority-create-name-${entry.id}">Name</label>
@@ -12153,7 +12158,8 @@ export class SmithproxyApp extends LitElement {
       ? operation.collection === 'starttls_signatures' ? 'starttls' : 'detection'
       : this.signatureCreateKinds.get(entry.id);
     if (!kind) return nothing;
-    const readOnly = !this.signatureTransactionsAvailable();
+    const readOnly = !this.signatureTransactionsAvailable() ||
+      !this.collectionPresent(`${kind}_signatures`);
     const parentField = (field: string): DraftScalar | undefined =>
       operation?.fields[field] ?? prefill?.fields[field];
     const flowField = (field: string): DraftScalar | undefined =>
