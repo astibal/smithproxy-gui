@@ -1426,6 +1426,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         return snapshot;
     }
     parsed.snapshot->captures = std::move(parsed_captures.captures);
+    parsed.snapshot->captures_present = true;
     auto parsed_security_assets = parse_config_security_assets(
         *authorities.body, *starttls.body, *detection_signatures.body);
     if (!parsed_security_assets.security_assets) {
@@ -1433,6 +1434,9 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         return snapshot;
     }
     parsed.snapshot->security_assets = std::move(parsed_security_assets.security_assets);
+    parsed.snapshot->tls_ca_present = true;
+    parsed.snapshot->starttls_signatures_present = true;
+    parsed.snapshot->detection_signatures_present = true;
     for (std::size_t index = 0; index < profile_categories.size(); ++index) {
         const auto& response = responses[index + 10U];
         const auto& [section, type] = profile_categories[index];

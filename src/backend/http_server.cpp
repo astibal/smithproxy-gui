@@ -534,7 +534,10 @@ bool structural_operation_supported(
     const ConfigSnapshot& snapshot) {
     if (capabilities.state != "ready") return false;
     const auto collection = draft_structural_collection(operation);
-    if ((collection == "script_profiles" && !snapshot.script_profiles_present) ||
+    if ((collection == "tls_ca" && !snapshot.tls_ca_present) ||
+        (collection == "starttls_signatures" && !snapshot.starttls_signatures_present) ||
+        (collection == "detection_signatures" && !snapshot.detection_signatures_present) ||
+        (collection == "script_profiles" && !snapshot.script_profiles_present) ||
         (collection == "auth_profiles" && !snapshot.auth_profiles_present)) {
         return false;
     }
@@ -1922,6 +1925,14 @@ private:
                     ",\"saved_revision\":" +
                     (snapshot.saved_revision ? json_string(*snapshot.saved_revision) : "null") +
                     ",\"unsaved\":" + (snapshot.unsaved ? "true" : "false") +
+                    ",\"captures_present\":" +
+                    (snapshot.captures_present ? "true" : "false") +
+                    ",\"tls_ca_present\":" +
+                    (snapshot.tls_ca_present ? "true" : "false") +
+                    ",\"starttls_signatures_present\":" +
+                    (snapshot.starttls_signatures_present ? "true" : "false") +
+                    ",\"detection_signatures_present\":" +
+                    (snapshot.detection_signatures_present ? "true" : "false") +
                     ",\"script_profiles_present\":" +
                     (snapshot.script_profiles_present ? "true" : "false") +
                     ",\"auth_profiles_present\":" +

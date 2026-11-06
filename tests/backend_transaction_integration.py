@@ -169,6 +169,9 @@ def main() -> int:
     TransactionSmithproxy.reject_next_prepare = False
     script_profiles = FakeSmithproxy.config_sections.pop("script_profiles")
     auth_profiles = FakeSmithproxy.config_sections.pop("auth_profiles")
+    captures = FakeSmithproxy.config_sections.pop("captures")
+    tls_ca = FakeSmithproxy.config_sections.pop("tls_ca")
+    detection_signatures = FakeSmithproxy.config_sections.pop("detection_signatures")
     content_rules = FakeSmithproxy.config_sections["content_profiles"]["safe-content"].pop(
         "content_rules")
 
@@ -214,6 +217,19 @@ def main() -> int:
             assert capabilities["features"]["content_rule_structural_drafts"] is True
             assert capabilities["features"]["signature_structural_drafts"] is True
 
+            status, _, body = request(port, "/api/v1/config/snapshot", headers=gateway_headers)
+            live_config = json.loads(body)
+            assert status == 200
+            assert live_config["state"] == "ready"
+            assert live_config["captures"] is None
+            assert live_config["captures_present"] is False
+            assert live_config["tls_ca_present"] is False
+            assert live_config["starttls_signatures_present"] is True
+            assert live_config["detection_signatures_present"] is False
+            assert live_config["security_assets"]["certificate_authority_count"] == 0
+            assert live_config["security_assets"]["starttls_signature_count"] == 1
+            assert live_config["security_assets"]["detection_signature_count"] == 0
+
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
             draft = json.loads(body)
@@ -239,6 +255,20 @@ def main() -> int:
             status, _, body = request(
                 port, "/api/v1/config/draft/operations", "POST",
                 headers=mutation_headers, body=json.dumps(unavailable_script_create))
+            assert status == 422
+            assert json.loads(body)["error"]["code"] == "draft.change_rejected"
+            unavailable_authority_create = {
+                "expected_version": draft["version"],
+                "operation": {
+                    "op": "create", "local_id": "create-ca-1",
+                    "collection": "tls_ca", "client_id": "audit-ca",
+                    "position": {"last": True},
+                    "fields": {"name": "audit-ca", "path": "/private/ca"},
+                },
+            }
+            status, _, body = request(
+                port, "/api/v1/config/draft/operations", "POST",
+                headers=mutation_headers, body=json.dumps(unavailable_authority_create))
             assert status == 422
             assert json.loads(body)["error"]["code"] == "draft.change_rejected"
             unavailable_rule_create = {
@@ -453,6 +483,9 @@ def main() -> int:
         assert gateway_secret not in output
     FakeSmithproxy.config_sections["script_profiles"] = script_profiles
     FakeSmithproxy.config_sections["auth_profiles"] = auth_profiles
+    FakeSmithproxy.config_sections["captures"] = captures
+    FakeSmithproxy.config_sections["tls_ca"] = tls_ca
+    FakeSmithproxy.config_sections["detection_signatures"] = detection_signatures
     FakeSmithproxy.config_sections["content_profiles"]["safe-content"][
         "content_rules"] = content_rules
     fake.shutdown()

@@ -9,6 +9,10 @@ const snapshot: ConfigSnapshot = {
   revision: 'fixture-1',
   savedRevision: 'fixture-1',
   unsaved: false,
+  capturesPresent: true,
+  tlsCaPresent: true,
+  starttlsSignaturesPresent: true,
+  detectionSignaturesPresent: true,
   scriptProfilesPresent: true,
   authProfilesPresent: true,
   policies: [

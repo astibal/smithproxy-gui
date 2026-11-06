@@ -71,6 +71,9 @@ type MockState = {
   configFailuresRemaining?: number;
   configSnapshotDelayMs?: number;
   configSnapshotState?: 'ready' | 'unavailable';
+  tlsCaPresent?: boolean;
+  starttlsSignaturesPresent?: boolean;
+  detectionSignaturesPresent?: boolean;
   scriptProfilesPresent?: boolean;
   contentRulesPresent?: boolean;
   unsavedConfig?: boolean;
@@ -774,6 +777,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       revision,
       saved_revision: savedRevision,
       unsaved: state.unsavedConfig ?? false,
+      captures_present: true,
+      tls_ca_present: state.tlsCaPresent ?? true,
+      starttls_signatures_present: state.starttlsSignaturesPresent ?? true,
+      detection_signatures_present: state.detectionSignaturesPresent ?? true,
       script_profiles_present: state.scriptProfilesPresent ?? true,
       auth_profiles_present: true,
       policies: [{
@@ -4235,6 +4242,20 @@ test('does not offer a first script profile when its config collection is absent
   const editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Profile type').getByRole('option', {name: 'Script'})).toHaveCount(0);
   await expect(editor.getByLabel('Profile type').getByRole('option')).toHaveCount(6);
+});
+
+test('does not offer first trust or signature entries when their collections are absent', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    namedStructuralDraftsReady: true, signatureStructuralDraftsReady: true,
+    tlsCaPresent: false, starttlsSignaturesPresent: false, detectionSignaturesPresent: false,
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await expect(page.getByRole('button', {name: 'New certificate authority'})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'New STARTTLS signature'})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'New detection signature'})).toBeDisabled();
 });
 
 test('does not offer a first content rule when its parent list is absent', async ({page}) => {

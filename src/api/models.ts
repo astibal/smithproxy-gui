@@ -372,6 +372,10 @@ export interface ConfigSnapshot {
   revision: string | null;
   savedRevision: string | null;
   unsaved: boolean;
+  capturesPresent: boolean;
+  tlsCaPresent: boolean;
+  starttlsSignaturesPresent: boolean;
+  detectionSignaturesPresent: boolean;
   scriptProfilesPresent: boolean;
   authProfilesPresent: boolean;
   policies: ReadonlyArray<PolicySummary>;

@@ -355,6 +355,10 @@ struct ConfigSnapshot {
     std::optional<std::string> revision;
     std::optional<std::string> saved_revision;
     bool unsaved{};
+    bool captures_present{};
+    bool tls_ca_present{};
+    bool starttls_signatures_present{};
+    bool detection_signatures_present{};
     bool script_profiles_present{};
     bool auth_profiles_present{};
     // Legacy multi-section reads synthesize index IDs and must keep this false.

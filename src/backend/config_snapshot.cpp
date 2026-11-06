@@ -373,17 +373,29 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     // Existing section parsers remain the single validation boundary. The
     // atomic endpoint carries the same config tree without the legacy
     // {"success": ...} transport envelope, so adapt it once here.
-    const auto envelope = Json{{"success", document["config"]}}.dump();
+    auto config = document["config"];
+    const auto captures_present = config.contains("captures");
+    const auto tls_ca_present = config.contains("tls_ca");
+    const auto starttls_signatures_present = config.contains("starttls_signatures");
+    const auto detection_signatures_present = config.contains("detection_signatures");
+
+    // Empty trust and signature collections are optional in valid Smithproxy
+    // configurations. Normalize only the parser input; the presence flags
+    // below retain the distinction needed to gate structural creation.
+    if (!tls_ca_present) config["tls_ca"] = Json::object();
+    if (!starttls_signatures_present) config["starttls_signatures"] = Json::array();
+    if (!detection_signatures_present) config["detection_signatures"] = Json::array();
+    const auto envelope = Json{{"success", config}}.dump();
     auto parsed = parse_config_snapshot(envelope, envelope, envelope, envelope);
     if (!parsed.snapshot) return parsed;
 
     auto settings = parse_config_settings(envelope);
     auto debug = parse_config_debug(envelope);
-    auto captures = parse_config_captures(envelope);
+    auto captures = captures_present ? parse_config_captures(envelope) : ConfigCapturesParseResult{};
     auto security = parse_config_security_assets(envelope, envelope, envelope);
     if (!settings.settings) return {std::nullopt, std::move(settings.error)};
     if (!debug.debug) return {std::nullopt, std::move(debug.error)};
-    if (!captures.captures) return {std::nullopt, std::move(captures.error)};
+    if (captures_present && !captures.captures) return {std::nullopt, std::move(captures.error)};
     if (!security.security_assets) return {std::nullopt, std::move(security.error)};
 
     constexpr std::array profile_categories{
@@ -421,6 +433,10 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     parsed.snapshot->revision = revision;
     parsed.snapshot->saved_revision = saved_revision;
     parsed.snapshot->unsaved = document["unsaved"].get<bool>();
+    parsed.snapshot->captures_present = captures_present;
+    parsed.snapshot->tls_ca_present = tls_ca_present;
+    parsed.snapshot->starttls_signatures_present = starttls_signatures_present;
+    parsed.snapshot->detection_signatures_present = detection_signatures_present;
     parsed.snapshot->script_profiles_present = document["config"].contains("script_profiles");
     parsed.snapshot->auth_profiles_present = document["config"].contains("auth_profiles");
     // Atomic snapshots bind every synthesized entity ID to one canonical

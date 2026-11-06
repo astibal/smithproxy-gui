@@ -8507,15 +8507,26 @@ export class SmithproxyApp extends LitElement {
           <div class="section-head">
             <div><h3>Trust and signatures</h3><p>Paths and matcher expressions remain write-only</p></div>
             <div class="structural-buttons">
-              <button class="secondary" type="button" ?disabled=${!this.namedTransactionsAvailable()}
+              <button class="secondary" type="button"
+                ?disabled=${!this.namedTransactionsAvailable() || !this.snapshot?.tlsCaPresent}
+                title=${!this.snapshot?.tlsCaPresent
+                  ? 'The tls_ca collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
                 New certificate authority
               </button>
-              <button class="secondary" type="button" ?disabled=${!this.signatureTransactionsAvailable()}
+              <button class="secondary" type="button"
+                ?disabled=${!this.signatureTransactionsAvailable() ||
+                  !this.snapshot?.starttlsSignaturesPresent}
+                title=${!this.snapshot?.starttlsSignaturesPresent
+                  ? 'The starttls_signatures collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'starttls', event.currentTarget as HTMLElement,
                 )}>New STARTTLS signature</button>
-              <button class="secondary" type="button" ?disabled=${!this.signatureTransactionsAvailable()}
+              <button class="secondary" type="button"
+                ?disabled=${!this.signatureTransactionsAvailable() ||
+                  !this.snapshot?.detectionSignaturesPresent}
+                title=${!this.snapshot?.detectionSignaturesPresent
+                  ? 'The detection_signatures collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'detection', event.currentTarget as HTMLElement,
                 )}>New detection signature</button>
