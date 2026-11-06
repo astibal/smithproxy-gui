@@ -1207,7 +1207,17 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await editor.getByRole('button', {name: 'office', exact: true}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit office'});
   await expect(addressEditor).toBeVisible();
-  await addressEditor.getByLabel('Address').fill('10.0.1.0/24');
+  await expect(addressEditor.locator('.address-insight')).toHaveText(
+    'IPv4 /24 · 256 addresses · 10.0.0.0 – 10.0.0.255',
+  );
+  await addressEditor.getByLabel('Address').fill('10.0.1.37/33');
+  await expect(addressEditor.locator('.address-insight')).toHaveText('Enter a valid IPv4 or IPv6 CIDR.');
+  await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(addressEditor.getByText(/require a valid IPv4 or IPv6 prefix/i)).toBeVisible();
+  await addressEditor.getByLabel('Address').fill('10.0.1.37/23');
+  await expect(addressEditor.locator('.address-insight')).toHaveText(
+    'IPv4 /23 · 512 addresses · 10.0.0.0 – 10.0.1.255',
+  );
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(addressEditor.getByText('Saved to draft')).toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
@@ -1239,7 +1249,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(preflight).toContainText('Smithproxy transaction schemas are not reviewed by this GUI core.');
   await expectNoWcagViolations(page);
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('address_objects.[0].value');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.0/24');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.37/23');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('routing.[0].dnat_lb_method');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('sticky-l4');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('detection_profiles.[0].mode');
@@ -1265,7 +1275,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   const addressDiff = page.getByRole('table', {name: 'Pending draft changes'})
     .getByRole('row').filter({hasText: 'address_objects.[0].value'});
   await expect(addressDiff.locator('.draft-transition-value')).toHaveText([
-    /Persistent\s*10\.0\.0\.0\/24/u, /Pending\s*10\.0\.1\.0\/24/u,
+    /Persistent\s*10\.0\.0\.0\/24/u, /Pending\s*10\.0\.1\.37\/23/u,
   ]);
   const authorityDiff = page.getByRole('table', {name: 'Pending draft changes'})
     .getByRole('row').filter({hasText: 'tls_ca.[0].path'});
@@ -3254,6 +3264,9 @@ test('links policy references to objects created earlier in the same draft', asy
   let addressEditor = page.getByRole('dialog', {name: 'Create address object'});
   await addressEditor.getByLabel('Name').fill('pending-branch');
   await addressEditor.getByLabel('Address', {exact: true}).fill('198.51.100.0/24');
+  await expect(addressEditor.locator('.address-insight')).toHaveText(
+    'IPv4 /24 · 256 addresses · 198.51.100.0 – 198.51.100.255',
+  );
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(addressEditor.getByText('Saved to draft')).toBeVisible();
   await addressEditor.getByRole('button', {name: 'Cancel'}).click();

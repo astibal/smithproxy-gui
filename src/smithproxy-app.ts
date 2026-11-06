@@ -50,6 +50,7 @@ import {
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {persistentConfigurationValues} from './config/persistent-values';
+import {describeCidr} from './config/cidr';
 import {
   buildDiagnosticsReport,
   serializeDiagnosticsReport,
@@ -447,6 +448,7 @@ export class SmithproxyApp extends LitElement {
   private drawerOrigins: HTMLElement[] = [];
   private readonly drawerInitialChanges = new Map<string, ReadonlyMap<string, DraftScalar>>();
   private readonly referencePreviewValues = new Map<string, string>();
+  private readonly addressPreviewValues = new Map<string, {type?: string; value?: string}>();
   private readonly contentRuleCreateParents = new Map<string, string>();
   private readonly signatureFlowCreateParents = new Map<string, string>();
   private readonly signatureCreateKinds = new Map<string, 'starttls' | 'detection'>();
@@ -620,6 +622,8 @@ export class SmithproxyApp extends LitElement {
     .collector-table { overflow-x: auto; margin-top: 14px; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 3px; color: var(--app-muted); }
     .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
+    .address-insight { padding: 9px 12px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
+    .address-insight[data-valid="false"] { border-left-color: var(--app-warning); background: var(--app-warning-bg); }
     .origin-note { padding: 9px 11px; border-left: 3px solid var(--app-warning); background: var(--app-warning-bg); color: var(--app-muted); font-size: 12px; }
     .origin-note strong { color: var(--app-text); }
     .origin-card { margin-top: 10px; padding: 12px; border: 1px solid color-mix(in srgb, var(--app-warning) 45%, var(--app-border)); border-radius: 2px; background: var(--app-warning-bg); }
@@ -3977,6 +3981,7 @@ export class SmithproxyApp extends LitElement {
       remainingDirty.delete(this.drawerKey(entry));
       this.drawerInitialChanges.delete(this.drawerKey(entry));
       this.clearReferencePreviews(entry);
+      this.addressPreviewValues.delete(this.drawerKey(entry));
       if (entry.kind === 'content-rule-create') this.contentRuleCreateParents.delete(entry.id);
       if (entry.kind === 'policy-create') this.policyCreatePrefills.delete(entry.id);
       if (entry.kind === 'address-create' || entry.kind === 'port-create' || entry.kind === 'protocol-create') {
@@ -4677,6 +4682,10 @@ export class SmithproxyApp extends LitElement {
         value.length === 0 || value.length > 1024 ||
         !addressTypes.has(type)) {
       this.drawerError = 'A configuration-safe name, type, and address value are required.';
+      return;
+    }
+    if (type === 'cidr' && !describeCidr(value)) {
+      this.drawerError = 'CIDR address objects require a valid IPv4 or IPv6 prefix.';
       return;
     }
     const duplicateLive = this.snapshot?.addresses.some(address =>
@@ -5817,6 +5826,10 @@ export class SmithproxyApp extends LitElement {
       if (normalizedName.length === 0 || normalizedName.length > 128 || value.value.trim().length === 0 ||
           !['cidr', 'fqdn'].includes(type.value)) {
         this.draftError = 'Name and address value are required.';
+        return undefined;
+      }
+      if (type.value === 'cidr' && !describeCidr(value.value)) {
+        this.draftError = 'CIDR address objects require a valid IPv4 or IPv6 prefix.';
         return undefined;
       }
       if (this.duplicateConfigurationName('address', entry.id, normalizedName)) {
@@ -10503,25 +10516,50 @@ export class SmithproxyApp extends LitElement {
         ${this.renderProfileReference(entry, inputId, type, persistent)}</div>`;
   }
 
+  private renderAddressInsight(id: string, type: string, value: string) {
+    const description = type === 'cidr' ? describeCidr(value) : undefined;
+    const message = description ?? (type === 'cidr' && value.trim().length > 0
+      ? 'Enter a valid IPv4 or IPv6 CIDR.' : '');
+    return html`<output id=${id} class="form-span address-insight" role="status" aria-live="polite"
+      ?hidden=${type !== 'cidr'} data-valid=${description ? 'true' : 'false'}>${message}</output>`;
+  }
+
+  private updateAddressPreview(entry: DrawerEntry, field: 'type' | 'value', event: Event): void {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+    const key = this.drawerKey(entry);
+    this.addressPreviewValues.set(key, {...this.addressPreviewValues.get(key), [field]: target.value});
+    this.requestUpdate();
+  }
+
   private renderAddressEditor(entry: DrawerEntry) {
     const address = this.snapshot?.addresses.find(item => item.id === entry.id);
     if (!address) return nothing;
     const index = this.snapshot?.addresses.findIndex(item => item.id === entry.id) ?? -1;
     const base = `address_objects.[${index}]`;
     const readOnly = !this.draftAvailable;
+    const preview = this.addressPreviewValues.get(this.drawerKey(entry));
+    const type = preview?.type ?? this.persistentValue(`${base}.type`, address.type);
+    const value = preview?.value ?? this.persistentValue(`${base}.value`, address.value);
+    const typeId = `address-type-${entry.id}`;
+    const valueId = `address-value-${entry.id}`;
+    const insightId = `address-insight-${entry.id}`;
     return html`
       <div class="form-grid">
         <label for="address-name-${entry.id}">Name</label>
         <input id="address-name-${entry.id}" .value=${this.persistentValue(`${base}.name`, address.name)}
           .readOnly=${this.originReadOnly(`${base}.name`, readOnly)} />
         <label for="address-type-${entry.id}">Type</label>
-        <select id="address-type-${entry.id}" .value=${this.persistentValue(`${base}.type`, address.type)}
+        <select id=${typeId} .value=${type}
+          @change=${(event: Event) => this.updateAddressPreview(entry, 'type', event)}
           ?disabled=${!address.typeEditable || this.originReadOnly(`${base}.type`, readOnly)}>
           <option value="cidr">CIDR</option><option value="fqdn">FQDN</option>
         </select>
-        <label for="address-value-${entry.id}">Address</label>
-        <input id="address-value-${entry.id}" .value=${this.persistentValue(`${base}.value`, address.value)}
+        <label for=${valueId}>Address</label>
+        <input id=${valueId} .value=${value} aria-describedby=${insightId}
+          @input=${(event: Event) => this.updateAddressPreview(entry, 'value', event)}
           .readOnly=${this.originReadOnly(`${base}.value`, readOnly)} />
+        ${this.renderAddressInsight(insightId, type, value)}
       </div>
       ${this.renderNamedRenameNotice(`${base}.name`)}
       ${this.renderObjectUsage(address)}
@@ -10541,21 +10579,28 @@ export class SmithproxyApp extends LitElement {
     const field = (name: string, fallback: DraftScalar): DraftScalar =>
       operation?.fields[name] ?? prefill?.fields[name] ?? fallback;
     const name = String(field('name', ''));
-    const type = String(field('type', 'cidr'));
-    const value = String(field('value', ''));
+    const preview = this.addressPreviewValues.get(this.drawerKey(entry));
+    const type = preview?.type ?? String(field('type', 'cidr'));
+    const value = preview?.value ?? String(field('value', ''));
     const readOnly = !this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects');
+    const typeId = `address-create-type-${entry.id}`;
+    const valueId = `address-create-value-${entry.id}`;
+    const insightId = `address-create-insight-${entry.id}`;
     return html`
       <div class="form-grid">
         <label for="address-create-name-${entry.id}">Name</label>
         <input id="address-create-name-${entry.id}" .value=${name} maxlength="128" required
           autocomplete="off" .readOnly=${readOnly} />
         <label for="address-create-type-${entry.id}">Type</label>
-        <select id="address-create-type-${entry.id}" .value=${type} ?disabled=${readOnly}>
+        <select id=${typeId} .value=${type} ?disabled=${readOnly}
+          @change=${(event: Event) => this.updateAddressPreview(entry, 'type', event)}>
           <option value="cidr">CIDR</option><option value="fqdn">FQDN</option>
         </select>
-        <label for="address-create-value-${entry.id}">Address</label>
-        <input id="address-create-value-${entry.id}" .value=${value} maxlength="1024" required
+        <label for=${valueId}>Address</label>
+        <input id=${valueId} .value=${value} maxlength="1024" required aria-describedby=${insightId}
+          @input=${(event: Event) => this.updateAddressPreview(entry, 'value', event)}
           autocomplete="off" .readOnly=${readOnly} />
+        ${this.renderAddressInsight(insightId, type, value)}
       </div>
       <div class="impact">
         The new object is retained only in the workspace draft until Smithproxy validates and commits the transaction.
