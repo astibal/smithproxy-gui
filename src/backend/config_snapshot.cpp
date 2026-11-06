@@ -397,6 +397,15 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
         std::pair{"routing", "routing"},
     };
     for (const auto& [section, type] : profile_categories) {
+        // These extension sections are absent from ordinary Smithproxy
+        // configurations until an operator creates their first entry. Their
+        // absence is the canonical empty collection, not a malformed atomic
+        // snapshot. Every native profile section remains mandatory.
+        if ((std::string_view{section} == "script_profiles" ||
+             std::string_view{section} == "auth_profiles") &&
+            !document["config"].contains(section)) {
+            continue;
+        }
         auto profiles = parse_config_profiles(envelope, section, type);
         if (!profiles.profiles) return {std::nullopt, std::move(profiles.error)};
         parsed.snapshot->profiles.insert(

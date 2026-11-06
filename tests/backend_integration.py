@@ -1548,6 +1548,35 @@ def main() -> int:
         assert diagnostic.returncode == 0
         assert secret not in diagnostic_output
         assert gateway_secret not in diagnostic_output
+
+        # Empty extension profile collections are normally absent from the
+        # running libconfig tree. The atomic state remains complete and usable
+        # without manufacturing those optional groups.
+        script_profiles = FakeSmithproxy.config_sections.pop("script_profiles")
+        auth_profiles = FakeSmithproxy.config_sections.pop("auth_profiles")
+        optional_port = free_port()
+        optional_sections = subprocess.Popen(
+            [binary, "--port", str(optional_port), "--assets", assets],
+            env=configured_environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            wait_for_state(optional_port, "ready")
+            optional_snapshot, _ = wait_for_config(optional_port, gateway_secret)
+            assert {profile["type"] for profile in optional_snapshot["profiles"]} == {
+                "detection", "content", "tls", "ssh", "routing",
+            }
+        finally:
+            optional_sections.send_signal(signal.SIGTERM)
+            optional_sections.wait(timeout=4)
+            FakeSmithproxy.config_sections["script_profiles"] = script_profiles
+            FakeSmithproxy.config_sections["auth_profiles"] = auth_profiles
+        optional_output = optional_sections.stdout.read() + optional_sections.stderr.read()
+        assert optional_sections.returncode == 0
+        assert secret not in optional_output
+        assert gateway_secret not in optional_output
     fake.shutdown()
     fake.server_close()
     fake_thread.join(timeout=2)
