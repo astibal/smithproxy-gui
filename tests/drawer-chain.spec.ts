@@ -1646,6 +1646,7 @@ test('removes a pending rename only after its draft reference changes', async ({
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'Review draft · 3'}).click();
   const renameRemove = page.getByRole('button', {
     name: 'Remove address_objects.[1].name from draft',
@@ -1761,6 +1762,7 @@ test('uses pending routing references for links and live previews', async ({page
     ],
   }, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
   await page.getByRole('dialog', {name: 'Edit Policy 1'})
