@@ -4269,6 +4269,22 @@ test('detects an external revision while preserving and blocking the active draf
   await expect(page.getByText('Draft: 1 changes')).toBeVisible();
 });
 
+test('loads the first live snapshot when an existing draft arrives first', async ({page}) => {
+  const draftRevision = `sha256:${'1'.repeat(64)}`;
+  const liveRevision = `sha256:${'2'.repeat(64)}`;
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, configSnapshotDelayMs: 300,
+    configRevision: liveRevision, savedConfigRevision: draftRevision, unsavedConfig: true,
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  }, true);
+
+  await page.goto('/');
+
+  await expect(page.getByText('Config: Ready')).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Review draft · 1 · live changed'})).toBeVisible();
+  await expect(page.locator('.statusbar')).not.toContainText('refresh paused');
+});
+
 test('recovers live configuration automatically after a transient API failure', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', configFetches: 0, configFailuresRemaining: 1,

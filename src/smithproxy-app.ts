@@ -1626,8 +1626,9 @@ export class SmithproxyApp extends LitElement {
       const snapshot = await this.configClient.loadSnapshot();
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       if (snapshot.state !== 'ready') throw new Error(snapshot.detail);
-      if (this.draftChangeCount > 0 || this.drawers.length > 0 || this.draftSaving ||
-          this.draftCommitting) {
+      const liveSnapshotLoaded = this.snapshot?.source === 'live';
+      if (liveSnapshotLoaded && (this.draftChangeCount > 0 || this.drawers.length > 0 ||
+          this.draftSaving || this.draftCommitting)) {
         this.configRefreshDeferred = true;
         if (snapshot.revision && this.snapshot?.revision && snapshot.revision !== this.snapshot.revision) {
           this.configRevisionDrift = true;
@@ -1641,7 +1642,14 @@ export class SmithproxyApp extends LitElement {
       this.restoreDrawerRoute();
       this.configError = undefined;
       this.configRefreshDeferred = false;
-      this.configRevisionDrift = false;
+      const draftBaseRevision = this.workspaceDraft?.baseRevision;
+      this.configRevisionDrift = this.draftChangeCount > 0 && draftBaseRevision !== null &&
+        draftBaseRevision !== undefined && snapshot.revision !== null &&
+        snapshot.revision !== draftBaseRevision;
+      if (this.configRevisionDrift) {
+        this.draftValidation = undefined;
+        this.draftCommitArmed = false;
+      }
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.configError = error instanceof Error ? error.message : 'Live configuration is unavailable.';
