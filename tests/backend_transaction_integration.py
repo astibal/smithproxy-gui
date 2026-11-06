@@ -347,7 +347,7 @@ def main() -> int:
                  "value": {"type": "string", "data": "203.0.113.0/24"}},
                 {"op": "set", "path": "policy.[0].action",
                  "value": {"type": "string", "data": "reject"}},
-                {"op": "set", "path": "address_objects.office.cidr",
+                {"op": "set", "path": "address_objects.office.value",
                  "value": {"type": "string", "data": "10.0.1.0/24"}},
                 {"op": "set", "path": "settings.certs_ca_key_password",
                  "value": {"type": "string", "data": PRIVATE_VALUE}},

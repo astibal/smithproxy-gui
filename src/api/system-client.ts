@@ -42,6 +42,7 @@ export interface SystemCapabilities {
     structuralDrafts: boolean;
     primitiveStructuralDrafts: boolean;
     namedStructuralDrafts: boolean;
+    namedRenames: boolean;
     policyStructuralDrafts: boolean;
     contentRuleStructuralDrafts: boolean;
     signatureStructuralDrafts: boolean;
@@ -381,6 +382,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const features = value.features;
   const primitiveStructuralDrafts = features.primitive_structural_drafts ?? false;
   const namedStructuralDrafts = features.named_structural_drafts ?? false;
+  const namedRenames = features.named_renames ?? false;
   const policyStructuralDrafts = features.policy_structural_drafts ?? false;
   const contentRuleStructuralDrafts = features.content_rule_structural_drafts ?? false;
   const signatureStructuralDrafts = features.signature_structural_drafts ?? false;
@@ -388,6 +390,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       typeof features.structural_drafts !== 'boolean' ||
       typeof primitiveStructuralDrafts !== 'boolean' ||
       typeof namedStructuralDrafts !== 'boolean' ||
+      typeof namedRenames !== 'boolean' ||
       typeof policyStructuralDrafts !== 'boolean' ||
       typeof contentRuleStructuralDrafts !== 'boolean' ||
       typeof signatureStructuralDrafts !== 'boolean' ||
@@ -412,6 +415,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       (features.structural_drafts && (!features.config_write || !features.drafts)) ||
       (primitiveStructuralDrafts && (!features.config_write || !features.drafts)) ||
       (namedStructuralDrafts && (!primitiveStructuralDrafts || !features.config_write || !features.drafts)) ||
+      (namedRenames && (!features.config_write || !features.drafts)) ||
       (policyStructuralDrafts && (!namedStructuralDrafts || !features.config_write || !features.drafts)) ||
       (contentRuleStructuralDrafts && (!policyStructuralDrafts || !features.config_write || !features.drafts)) ||
       (signatureStructuralDrafts && (!contentRuleStructuralDrafts || !features.config_write || !features.drafts)) ||
@@ -433,6 +437,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       structuralDrafts: features.structural_drafts,
       primitiveStructuralDrafts,
       namedStructuralDrafts,
+      namedRenames,
       policyStructuralDrafts,
       contentRuleStructuralDrafts,
       signatureStructuralDrafts,

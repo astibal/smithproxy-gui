@@ -1172,6 +1172,8 @@ private:
             ? status.transaction_capabilities.state
             : std::string{"unavailable"};
         const bool config_write = config_read && transaction_state == "ready";
+        const bool named_renames = config_write &&
+            status.transaction_capabilities.wire_version == 1U;
         const auto draft = draft_.snapshot();
         const bool structural_drafts = config_write && status.transaction_capabilities.wire_version == 1U &&
             status.config_snapshot.stable_entity_ids &&
@@ -1231,6 +1233,7 @@ private:
                     (primitive_structural_drafts ? "true" : "false") +
                     ",\"named_structural_drafts\":" +
                     (named_structural_drafts ? "true" : "false") +
+                    ",\"named_renames\":" + (named_renames ? "true" : "false") +
                     ",\"policy_structural_drafts\":" +
                     (policy_structural_drafts ? "true" : "false") +
                     ",\"content_rule_structural_drafts\":" +

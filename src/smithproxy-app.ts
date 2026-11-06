@@ -388,6 +388,7 @@ export class SmithproxyApp extends LitElement {
   @state() private structuralDraftsAvailable = false;
   @state() private primitiveStructuralDraftsAvailable = false;
   @state() private namedStructuralDraftsAvailable = false;
+  @state() private namedRenamesAvailable = false;
   @state() private policyStructuralDraftsAvailable = false;
   @state() private contentRuleStructuralDraftsAvailable = false;
   @state() private signatureStructuralDraftsAvailable = false;
@@ -1448,6 +1449,7 @@ export class SmithproxyApp extends LitElement {
       const structuralDraftsWereAvailable = this.structuralDraftsAvailable;
       const primitiveStructuralDraftsWereAvailable = this.primitiveStructuralDraftsAvailable;
       const namedStructuralDraftsWereAvailable = this.namedStructuralDraftsAvailable;
+      const namedRenamesWereAvailable = this.namedRenamesAvailable;
       const policyStructuralDraftsWereAvailable = this.policyStructuralDraftsAvailable;
       const contentRuleStructuralDraftsWereAvailable = this.contentRuleStructuralDraftsAvailable;
       const signatureStructuralDraftsWereAvailable = this.signatureStructuralDraftsAvailable;
@@ -1457,6 +1459,7 @@ export class SmithproxyApp extends LitElement {
       const nextStructuralDraftsAvailable = capabilities.features.structuralDrafts;
       const nextPrimitiveStructuralDraftsAvailable = capabilities.features.primitiveStructuralDrafts;
       const nextNamedStructuralDraftsAvailable = capabilities.features.namedStructuralDrafts;
+      const nextNamedRenamesAvailable = capabilities.features.namedRenames;
       const nextPolicyStructuralDraftsAvailable = capabilities.features.policyStructuralDrafts;
       const nextContentRuleStructuralDraftsAvailable = capabilities.features.contentRuleStructuralDrafts;
       const nextSignatureStructuralDraftsAvailable = capabilities.features.signatureStructuralDrafts;
@@ -1468,6 +1471,7 @@ export class SmithproxyApp extends LitElement {
         nextStructuralDraftsAvailable !== structuralDraftsWereAvailable ||
         nextPrimitiveStructuralDraftsAvailable !== primitiveStructuralDraftsWereAvailable ||
         nextNamedStructuralDraftsAvailable !== namedStructuralDraftsWereAvailable ||
+        nextNamedRenamesAvailable !== namedRenamesWereAvailable ||
         nextPolicyStructuralDraftsAvailable !== policyStructuralDraftsWereAvailable ||
         nextContentRuleStructuralDraftsAvailable !== contentRuleStructuralDraftsWereAvailable ||
         nextSignatureStructuralDraftsAvailable !== signatureStructuralDraftsWereAvailable ||
@@ -1480,6 +1484,7 @@ export class SmithproxyApp extends LitElement {
       this.structuralDraftsAvailable = nextStructuralDraftsAvailable;
       this.primitiveStructuralDraftsAvailable = nextPrimitiveStructuralDraftsAvailable;
       this.namedStructuralDraftsAvailable = nextNamedStructuralDraftsAvailable;
+      this.namedRenamesAvailable = nextNamedRenamesAvailable;
       this.policyStructuralDraftsAvailable = nextPolicyStructuralDraftsAvailable;
       this.contentRuleStructuralDraftsAvailable = nextContentRuleStructuralDraftsAvailable;
       this.signatureStructuralDraftsAvailable = nextSignatureStructuralDraftsAvailable;
@@ -1523,6 +1528,7 @@ export class SmithproxyApp extends LitElement {
       this.structuralDraftsAvailable = false;
       this.primitiveStructuralDraftsAvailable = false;
       this.namedStructuralDraftsAvailable = false;
+      this.namedRenamesAvailable = false;
       this.policyStructuralDraftsAvailable = false;
       this.contentRuleStructuralDraftsAvailable = false;
       this.signatureStructuralDraftsAvailable = false;
@@ -5388,7 +5394,9 @@ export class SmithproxyApp extends LitElement {
   }
 
   private originReadOnly(path: string, otherwiseReadOnly: boolean): boolean {
-    return otherwiseReadOnly || this.valueOrigin(path)?.editable === false;
+    const namedObjectKey = /^(?:address_objects|port_objects|proto_objects|routing|tls_profiles|content_profiles|ssh_profiles|script_profiles|detection_profiles|alg_dns_profiles|tls_ca)\.\[(?:0|[1-9][0-9]{0,3})\]\.name$/u;
+    return otherwiseReadOnly || (!this.namedRenamesAvailable && namedObjectKey.test(path)) ||
+      this.valueOrigin(path)?.editable === false;
   }
 
   private writableDraftChanges(changes: ReadonlyArray<DraftChange>): ReadonlyArray<DraftChange> | undefined {
@@ -9938,11 +9946,13 @@ export class SmithproxyApp extends LitElement {
 
   private renderContent() {
     if (!this.snapshot && ['Search', 'Draft', 'Policy', 'Objects'].includes(this.activeSection)) {
+      const detail = this.configError ?? this.capabilityError ??
+        'The authenticated API has not granted configuration read access.';
       return html`
         <div class="empty-state" role="status">
           <h2>Configuration unavailable</h2>
-          <p>The authenticated API has not granted configuration read access. No local or cached
-            configuration is displayed.</p>
+          <p>${detail}</p>
+          <p>No local or cached configuration is displayed.</p>
         </div>
       `;
     }

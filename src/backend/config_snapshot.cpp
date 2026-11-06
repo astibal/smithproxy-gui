@@ -197,22 +197,29 @@ bool parse_addresses(const Json& section, ConfigSnapshot& snapshot, std::string&
             return false;
         }
         std::string type;
+        std::string transaction_value_field;
         std::optional<std::string> address;
         if (*raw_type == "cidr" || *raw_type == "fqdn") {
             type = *raw_type;
+            transaction_value_field = "value";
             address = bounded_string(value, "value", maximum_value_length);
         } else if (*raw_type == "0") {
             type = "cidr";
+            transaction_value_field = "cidr";
             address = bounded_string(value, "cidr", maximum_value_length);
         } else if (*raw_type == "1") {
             type = "fqdn";
+            transaction_value_field = "fqdn";
             address = bounded_string(value, "fqdn", maximum_value_length);
         }
         if (!address || address->empty()) {
             error = "Smithproxy address object value is invalid";
             return false;
         }
-        snapshot.addresses.push_back({stable_id("address", index++), name, type, *address});
+        snapshot.addresses.push_back({
+            stable_id("address", index++), name, type, *address,
+            std::move(transaction_value_field),
+        });
     }
     return true;
 }

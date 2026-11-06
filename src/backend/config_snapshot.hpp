@@ -14,6 +14,10 @@ struct ConfigAddressObject {
     std::string name;
     std::string type;
     std::string value;
+    // Preserve the upstream libconfig leaf while presenting one normalized
+    // value to the browser. Current configs use "value"; legacy configs use
+    // a type-specific "cidr" or "fqdn" leaf.
+    std::string transaction_value_field;
 };
 
 struct ConfigPortObject {

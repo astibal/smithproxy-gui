@@ -1007,6 +1007,7 @@ int main() {
         .name = "office",
         .type = "cidr",
         .value = "192.0.2.0/24",
+        .transaction_value_field = "value",
     });
     auto v2_draft = transaction_draft;
     v2_draft.changes = {
@@ -1023,10 +1024,17 @@ int main() {
         },
         {
             {"op", "set"},
-            {"path", "address_objects.office.cidr"},
+            {"path", "address_objects.office.value"},
             {"value", {{"type", "string"}, {"data", "198.51.100.0/24"}}},
         },
     }));
+    auto legacy_transaction_snapshot = transaction_snapshot;
+    legacy_transaction_snapshot.addresses.front().transaction_value_field = "cidr";
+    const auto legacy_v2_envelope =
+        build_transaction_v2_operations(v2_draft, legacy_transaction_snapshot);
+    assert(legacy_v2_envelope.body);
+    assert(nlohmann::json::parse(*legacy_v2_envelope.body)[1]["path"] ==
+           "address_objects.office.cidr");
     auto stale_snapshot = transaction_snapshot;
     stale_snapshot.revision = "sha256:" + std::string(64U, '9');
     assert(!build_transaction_v2_operations(v2_draft, stale_snapshot).body);
@@ -1544,6 +1552,7 @@ int main() {
     assert(configuration.snapshot->policies.front().features == std::vector<std::string>{"sinkhole"});
     assert(configuration.snapshot->policies.front().sources == std::vector<std::string>{"office"});
     assert(configuration.snapshot->addresses.size() == 2U);
+    assert(configuration.snapshot->addresses.front().transaction_value_field == "value");
     assert(configuration.snapshot->ports.front().start == 443U);
     assert(configuration.snapshot->protocols.front().number == 6U);
     const auto invalid_protocol_zero = parse_config_snapshot(
@@ -1560,6 +1569,7 @@ int main() {
         R"({"success":{"proto_objects":{}}})");
     assert(legacy_address.snapshot);
     assert(legacy_address.snapshot->addresses.front().type == "cidr");
+    assert(legacy_address.snapshot->addresses.front().transaction_value_field == "cidr");
     assert(!parse_config_snapshot("{}", "{}", "{}", "{}").snapshot);
     assert(!parse_config_snapshot(
         R"({"success":{"policy":[]}})", R"({"success":{"address_objects":{}}})",

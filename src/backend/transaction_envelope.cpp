@@ -100,7 +100,7 @@ std::optional<std::string> transaction_config_path(
     if (root == "address_objects" && index < snapshot.addresses.size()) {
         name = snapshot.addresses[index].name;
         if (suffix == "name" || suffix == "type") return std::nullopt;
-        if (suffix == "value") suffix = snapshot.addresses[index].type;
+        if (suffix == "value") suffix = snapshot.addresses[index].transaction_value_field;
     } else if (root == "port_objects" && index < snapshot.ports.size()) {
         name = snapshot.ports[index].name;
         if (suffix == "name") return std::nullopt;
