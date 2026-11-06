@@ -16,7 +16,7 @@ import type {
   ValueOrigin,
 } from './models';
 import {httpStatusError} from './http-error';
-import {isConfigRevisionOrNull} from './revision';
+import {isConfigRevision, isConfigRevisionOrNull} from './revision';
 import {boundedJson} from './bounded-json';
 import {normalizeSameOriginPath} from '../security/deployment-path';
 
@@ -26,6 +26,13 @@ type MutableAddress = Omit<AddressObject, 'usedBy'> & {usedBy: Usage[]};
 type MutablePort = Omit<PortObject, 'usedBy'> & {usedBy: Usage[]};
 type MutableProtocol = Omit<ProtocolObject, 'usedBy'> & {usedBy: Usage[]};
 type MutableProfile = Omit<ProfileObject, 'usedBy'> & {usedBy: Usage[]};
+
+export interface ConfigSaveResult {
+  state: 'saved';
+  revision: string;
+  savedRevision: string;
+  changed: boolean;
+}
 
 const MAX_POLICIES = 4096;
 const MAX_OBJECTS = 4096;
@@ -104,6 +111,20 @@ const debugProvenanceFields = new Set([
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseConfigSave(value: unknown): ConfigSaveResult {
+  if (!isObject(value) || value.source !== 'gui-core' || value.state !== 'saved' ||
+      !isConfigRevision(value.revision) || value.saved_revision !== value.revision ||
+      value.unsaved !== false || typeof value.changed !== 'boolean') {
+    throw new Error('Invalid configuration save response.');
+  }
+  return {
+    state: 'saved',
+    revision: value.revision,
+    savedRevision: value.saved_revision,
+    changed: value.changed,
+  };
 }
 
 function provenancePathAllowed(path: string): boolean {
@@ -1132,6 +1153,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
 
 export class ApiConfigClient implements ConfigClient {
   readonly #endpoint: string;
+  readonly #saveEndpoint: string;
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
   readonly #pendingRequests = new Set<AbortController>();
@@ -1139,6 +1161,7 @@ export class ApiConfigClient implements ConfigClient {
   constructor(apiBase: string, fetchImplementation: typeof fetch = (input, init) => fetch(input, init), timeoutMs = 5000) {
     const base = normalizeSameOriginPath(apiBase, 'API base');
     this.#endpoint = base === '/' ? '/config/snapshot' : `${base}/config/snapshot`;
+    this.#saveEndpoint = base === '/' ? '/config/save' : `${base}/config/save`;
     this.#fetch = fetchImplementation;
     this.#timeoutMs = timeoutMs;
   }
@@ -1157,6 +1180,33 @@ export class ApiConfigClient implements ConfigClient {
       });
       if (!response.ok) throw httpStatusError(response, 'Configuration API');
       return parseConfigSnapshot(await boundedJson(response, MAX_RESPONSE_BYTES, 'Configuration'));
+    } finally {
+      globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
+    }
+  }
+
+  async saveConfiguration(expectedRevision: string): Promise<ConfigSaveResult> {
+    if (!isConfigRevision(expectedRevision)) throw new Error('Invalid configuration revision.');
+    const controller = new AbortController();
+    this.#pendingRequests.add(controller);
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
+    try {
+      const response = await this.#fetch(this.#saveEndpoint, {
+        method: 'POST',
+        body: JSON.stringify({expected_revision: expectedRevision}),
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Smithproxy-GUI-CSRF': '1',
+        },
+        redirect: 'error',
+        signal: controller.signal,
+      });
+      if (!response.ok) throw httpStatusError(response, 'Configuration save API');
+      return parseConfigSave(await boundedJson(response, MAX_RESPONSE_BYTES, 'Configuration save'));
     } finally {
       globalThis.clearTimeout(timeout);
       this.#pendingRequests.delete(controller);

@@ -15,7 +15,7 @@ function fixture(): DiagnosticsReportInput {
     capabilities: {
       bootstrapState: 'ready', checkedAtUnixMs: 1_700_000_000_000,
       lastSuccessAtUnixMs: 1_699_999_999_000, enabledFeatureCount: 12,
-      configRead: true, configWrite: false, drafts: true, draftPreflight: true,
+      configRead: true, configWrite: false, configSave: false, drafts: true, draftPreflight: true,
       jobs: true, eventsAvailable: true, alertsAvailable: true, auditAvailable: true, metrics: true,
       sessionActivity: true, tlsMonitoring: true, neighborMonitoring: true,
       interfaceMonitoring: true,
@@ -87,7 +87,7 @@ describe('diagnostics report', () => {
     expect(report.generatedAtUnixMs).toBe(0);
     expect(report.capabilities.checkedAtUnixMs).toBeNull();
     expect(report.capabilities.lastSuccessAtUnixMs).toBeNull();
-    expect(report.capabilities.enabledFeatureCount).toBe(13);
+    expect(report.capabilities.enabledFeatureCount).toBe(14);
     expect(report.operations.eventStreamConnectedAtUnixMs).toBeNull();
     expect(report.operations.eventStreamLastMessageAtUnixMs).toBeNull();
     expect(report.operations.eventStreamLastDisconnectAtUnixMs).toBeNull();

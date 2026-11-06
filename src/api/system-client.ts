@@ -39,6 +39,7 @@ export interface SystemCapabilities {
   features: {
     configRead: boolean;
     configWrite: boolean;
+    configSave: boolean;
     structuralDrafts: boolean;
     primitiveStructuralDrafts: boolean;
     namedStructuralDrafts: boolean;
@@ -380,6 +381,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const basePath = normalizeSameOriginPath(value.base_path, 'Capability base path');
   if (basePath !== value.base_path) throw new Error('Capability base path must be canonical.');
   const features = value.features;
+  const configSave = features.config_save ?? false;
   const primitiveStructuralDrafts = features.primitive_structural_drafts ?? false;
   const namedStructuralDrafts = features.named_structural_drafts ?? false;
   const namedRenames = features.named_renames ?? false;
@@ -387,6 +389,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const contentRuleStructuralDrafts = features.content_rule_structural_drafts ?? false;
   const signatureStructuralDrafts = features.signature_structural_drafts ?? false;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
+      typeof configSave !== 'boolean' ||
       typeof features.structural_drafts !== 'boolean' ||
       typeof primitiveStructuralDrafts !== 'boolean' ||
       typeof namedStructuralDrafts !== 'boolean' ||
@@ -409,7 +412,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
     throw new Error('Invalid transaction capability state.');
   }
   if ((!features.config_read &&
-       (features.config_write || features.drafts || features.draft_preflight)) ||
+       (features.config_write || configSave || features.drafts || features.draft_preflight)) ||
       (features.config_write && (!features.drafts || !features.draft_preflight ||
         transactionState !== 'ready')) ||
       (features.structural_drafts && (!features.config_write || !features.drafts)) ||
@@ -434,6 +437,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
     features: {
       configRead: features.config_read,
       configWrite: features.config_write,
+      configSave,
       structuralDrafts: features.structural_drafts,
       primitiveStructuralDrafts,
       namedStructuralDrafts,

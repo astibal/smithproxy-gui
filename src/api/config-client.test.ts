@@ -655,4 +655,25 @@ describe('ApiConfigClient', () => {
     expect(signal?.aborted).toBe(true);
     await expect(pending).rejects.toThrow('request cancelled');
   });
+
+  it('saves the exact running revision through the CSRF-protected endpoint', async () => {
+    const revision = '0123456789abcdef0123456789abcdef';
+    const fetcher = vi.fn(async () => response({
+      source: 'gui-core', state: 'saved', revision, saved_revision: revision,
+      unsaved: false, changed: true,
+    }));
+    const client = new ApiConfigClient('/ws001/smithproxy-gui/api/v1', fetcher);
+
+    await expect(client.saveConfiguration(revision)).resolves.toEqual({
+      state: 'saved', revision, savedRevision: revision, changed: true,
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/config/save',
+      expect.objectContaining({
+        method: 'POST', body: JSON.stringify({expected_revision: revision}),
+        credentials: 'same-origin', redirect: 'error',
+        headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+      }),
+    );
+  });
 });

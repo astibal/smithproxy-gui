@@ -22,6 +22,24 @@ enum class CommitPreparationResult {
 
 class CommitCoordinator {
 public:
+    class Reservation {
+    public:
+        Reservation() = default;
+        ~Reservation();
+
+        Reservation(const Reservation&) = delete;
+        Reservation& operator=(const Reservation&) = delete;
+        Reservation(Reservation&& other) noexcept;
+        Reservation& operator=(Reservation&& other) noexcept;
+
+        [[nodiscard]] explicit operator bool() const noexcept { return owner_ != nullptr; }
+
+    private:
+        friend class CommitCoordinator;
+        explicit Reservation(CommitCoordinator* owner) : owner_(owner) {}
+        CommitCoordinator* owner_{};
+    };
+
     class Lease {
     public:
         Lease() = default;
@@ -59,6 +77,8 @@ public:
     explicit CommitCoordinator(DraftStore& draft) : draft_(draft) {}
 
     [[nodiscard]] Lease begin(std::uint64_t expected_version);
+    // Reserves the same single-writer gate for a non-transactional persistence write.
+    [[nodiscard]] Reservation reserve();
 
     template <typename Mutation>
     DraftMutationResult mutate(Mutation&& mutation) {

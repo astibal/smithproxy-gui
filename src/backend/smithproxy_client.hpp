@@ -47,6 +47,13 @@ struct SmithproxyStatus {
     TransactionCapabilities transaction_capabilities;
 };
 
+struct ConfigSaveResponse {
+    std::string state{"invalid-response"};
+    std::optional<std::string> revision;
+    std::optional<std::string> saved_revision;
+    bool changed{};
+};
+
 class SmithproxyMonitor {
 public:
     explicit SmithproxyMonitor(
@@ -65,6 +72,8 @@ public:
     [[nodiscard]] TransactionResponse commit_transaction(
         const DraftSnapshot& draft, std::string_view idempotency_key) const;
     [[nodiscard]] bool note_config_committed(std::string_view committed_revision);
+    [[nodiscard]] bool note_config_saved(std::string_view revision);
+    [[nodiscard]] ConfigSaveResponse save_config(std::string_view expected_revision) const;
     [[nodiscard]] bool configured() const noexcept { return config_.has_value(); }
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 

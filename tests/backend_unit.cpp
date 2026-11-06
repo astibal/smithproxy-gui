@@ -413,6 +413,20 @@ int main() {
     assert(coordinated_draft.snapshot().base_revision == canonical_revision_b);
     assert(coordinated_draft.snapshot().changes.empty());
 
+    {
+        auto reservation = coordinator.reserve();
+        assert(reservation);
+        auto moved_reservation = std::move(reservation);
+        assert(moved_reservation);
+        assert(coordinator.busy());
+        assert(!coordinator.reserve());
+        assert(coordinator.begin(2U).result() == CommitPreparationResult::Busy);
+        assert(coordinator.mutate([&] {
+            return coordinated_draft.clear(2U);
+        }) == DraftMutationResult::Busy);
+    }
+    assert(!coordinator.busy());
+
     DraftStore structural_commit_draft{"structural-commit-draft", canonical_revision_a};
     CommitCoordinator structural_coordinator{structural_commit_draft};
     assert(structural_coordinator.mutate([&] {
@@ -818,7 +832,7 @@ int main() {
     const auto capability_payload = std::string(R"({"success":{
         "transaction_version":1,"operation_version":1,"stable_entity_ids":true,
         "operations":["set","create","delete","move"],
-        "maximum_operations":8192,"maximum_request_bytes":2097152,
+        "maximum_operations":8192,"maximum_request_bytes":2097152,"explicit_save":true,
         "collections":[
           {"id":"policy","ordered":true,"nested":false,"schema_revision":")") +
         policy_revision + R"("},
@@ -840,9 +854,16 @@ int main() {
     assert(ready_capabilities.state == "ready");
     assert(ready_capabilities.operations ==
            std::vector<std::string>({"create", "delete", "move", "set"}));
+    assert(ready_capabilities.explicit_save);
     assert(parse_transaction_capabilities("{}", reviewed_schemas).state == "incompatible");
     assert(parse_transaction_capabilities(
         R"({"success":{"transaction_version":2}})", reviewed_schemas).state == "incompatible");
+    auto invalid_save_capability = capability_payload;
+    const auto explicit_save_offset = invalid_save_capability.find("\"explicit_save\":true");
+    assert(explicit_save_offset != std::string::npos);
+    invalid_save_capability.replace(explicit_save_offset, 20U, "\"explicit_save\":\"yes\"");
+    assert(parse_transaction_capabilities(invalid_save_capability, reviewed_schemas).state ==
+           "incompatible");
     const auto duplicate_collection_payload = std::string(R"({"success":{
         "transaction_version":1,"operation_version":1,"stable_entity_ids":true,
         "operations":["set","create","delete","move"],

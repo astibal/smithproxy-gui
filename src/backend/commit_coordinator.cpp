@@ -5,6 +5,21 @@
 
 namespace smithproxy::gui {
 
+CommitCoordinator::Reservation::~Reservation() {
+    if (owner_ != nullptr) owner_->release(true);
+}
+
+CommitCoordinator::Reservation::Reservation(Reservation&& other) noexcept
+    : owner_(std::exchange(other.owner_, nullptr)) {}
+
+CommitCoordinator::Reservation& CommitCoordinator::Reservation::operator=(
+    Reservation&& other) noexcept {
+    if (this == &other) return *this;
+    if (owner_ != nullptr) owner_->release(true);
+    owner_ = std::exchange(other.owner_, nullptr);
+    return *this;
+}
+
 CommitCoordinator::Lease::Lease(
     CommitCoordinator* owner, const CommitPreparationResult result,
     DraftSnapshot draft, std::string idempotency_key)
@@ -64,6 +79,13 @@ CommitCoordinator::Lease CommitCoordinator::begin(const std::uint64_t expected_v
     }
     in_flight_ = true;
     return {this, CommitPreparationResult::Ready, std::move(draft), intent_->idempotency_key};
+}
+
+CommitCoordinator::Reservation CommitCoordinator::reserve() {
+    std::scoped_lock lock(mutex_);
+    if (in_flight_) return {};
+    in_flight_ = true;
+    return Reservation(this);
 }
 
 bool CommitCoordinator::busy() const {

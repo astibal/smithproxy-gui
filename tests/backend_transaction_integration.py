@@ -26,14 +26,55 @@ class TransactionSmithproxy(FakeSmithproxy):
     transactions = {}
     next_transaction = 1
     reject_next_prepare = False
+    saved_revision = BASE_REVISION
 
     def do_GET(self):
         if self.path == "/api/config/v2/capabilities":
             self.send_error(404)
             return
+        if self.path == "/api/config/state":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "state": "ready",
+                "revision": FakeSmithproxy.config_revision,
+                "saved_revision": TransactionSmithproxy.saved_revision,
+                "unsaved": FakeSmithproxy.config_revision != TransactionSmithproxy.saved_revision,
+                "capabilities": {"explicit_save": True},
+                "config": FakeSmithproxy.config_sections,
+            }).encode())
+            return
         super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/config/save":
+            if self.headers.get("X-API-Key") != "transaction-api-key-that-must-not-leak":
+                self.send_error(401)
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                document = json.loads(self.rfile.read(length))
+                expected_revision = document["params"]["expected_revision"]
+            except (KeyError, ValueError, json.JSONDecodeError):
+                self.send_error(400)
+                return
+            if expected_revision != FakeSmithproxy.config_revision:
+                self.send_error(409)
+                return
+            changed = TransactionSmithproxy.saved_revision != FakeSmithproxy.config_revision
+            TransactionSmithproxy.saved_revision = FakeSmithproxy.config_revision
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "state": "saved",
+                "revision": FakeSmithproxy.config_revision,
+                "saved_revision": TransactionSmithproxy.saved_revision,
+                "unsaved": False,
+                "changed": changed,
+            }).encode())
+            return
         if not self.path.startswith("/api/config/transaction/"):
             super().do_POST()
             return
@@ -167,6 +208,7 @@ def main() -> int:
     TransactionSmithproxy.transactions = {}
     TransactionSmithproxy.next_transaction = 1
     TransactionSmithproxy.reject_next_prepare = False
+    TransactionSmithproxy.saved_revision = BASE_REVISION
     script_profiles = FakeSmithproxy.config_sections.pop("script_profiles")
     auth_profiles = FakeSmithproxy.config_sections.pop("auth_profiles")
     captures = FakeSmithproxy.config_sections["captures"]
@@ -217,6 +259,7 @@ def main() -> int:
             gateway_headers = {"X-Smithproxy-GUI-Gateway": gateway_secret}
             capabilities = wait_for_ready_capability(port, gateway_headers)
             assert capabilities["features"]["config_write"] is True
+            assert capabilities["features"]["config_save"] is True
             assert capabilities["features"]["structural_drafts"] is False
             assert capabilities["features"]["primitive_structural_drafts"] is True
             assert capabilities["features"]["named_structural_drafts"] is True
@@ -489,14 +532,26 @@ def main() -> int:
             assert job["progress_percent"] == 100
             assert job["result"] == "Configuration snapshot synchronized"
 
+            status, _, body = request(
+                port, "/api/v1/config/save", "POST", headers=mutation_headers,
+                body=json.dumps({"expected_revision": COMMITTED_REVISION}))
+            saved = json.loads(body)
+            assert status == 200
+            assert saved == {
+                "source": "gui-core", "state": "saved",
+                "revision": COMMITTED_REVISION, "saved_revision": COMMITTED_REVISION,
+                "unsaved": False, "changed": True,
+            }
+
             status, _, audit_body = request(
                 port, "/api/v1/audit/recent", headers=gateway_headers)
             assert status == 200
             audits = json.loads(audit_body)["entries"]
-            assert [item["outcome"] for item in audits[-3:]] == [
-                "rejected", "succeeded", "succeeded"]
-            assert [item["operation"] for item in audits[-3:]] == [
-                "config.draft.validate", "config.draft.validate", "config.draft.commit"]
+            assert [item["outcome"] for item in audits[-4:]] == [
+                "rejected", "succeeded", "succeeded", "succeeded"]
+            assert [item["operation"] for item in audits[-4:]] == [
+                "config.draft.validate", "config.draft.validate", "config.draft.commit",
+                "config.save"]
             assert PRIVATE_VALUE.encode() not in audit_body
         finally:
             process.send_signal(signal.SIGTERM)

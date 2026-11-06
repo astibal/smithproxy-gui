@@ -96,6 +96,15 @@ TransactionResponse transaction_failure(std::string state) {
     };
 }
 
+ConfigSaveResponse config_save_failure(std::string state) {
+    return {
+        .state = std::move(state),
+        .revision = std::nullopt,
+        .saved_revision = std::nullopt,
+        .changed = false,
+    };
+}
+
 bool safe_issue_token(const std::string_view value) {
     return !value.empty() && value.size() <= 64U &&
            std::all_of(value.begin(), value.end(), [](const unsigned char character) {
@@ -347,6 +356,99 @@ bool SmithproxyMonitor::note_config_committed(const std::string_view committed_r
     }
     wakeup_.notify_all();
     return true;
+}
+
+bool SmithproxyMonitor::note_config_saved(const std::string_view revision) {
+    if (!config_ || !config_enabled_ || !is_config_revision(revision)) return false;
+    {
+        std::scoped_lock lock(mutex_);
+        minimum_config_observation_ = std::chrono::steady_clock::now();
+        status_.config_snapshot.state = "starting";
+        status_.config_snapshot.detail = "Refreshing configuration after an explicit save";
+        status_.config_snapshot.checked_at = std::chrono::system_clock::now();
+    }
+    {
+        std::scoped_lock lock(wakeup_mutex_);
+        config_refresh_requested_.store(true, std::memory_order_release);
+    }
+    wakeup_.notify_all();
+    return true;
+}
+
+ConfigSaveResponse SmithproxyMonitor::save_config(
+    const std::string_view expected_revision) const {
+    if (!config_ || !config_enabled_ || !is_config_revision(expected_revision)) return {};
+    const auto current = status();
+    if (!current.transaction_capabilities.explicit_save) {
+        return config_save_failure("unavailable");
+    }
+    if (!current.config_snapshot.revision ||
+        *current.config_snapshot.revision != expected_revision) {
+        return config_save_failure("conflict");
+    }
+
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if (!curl) return config_save_failure("unavailable");
+    curl_slist* raw_headers = nullptr;
+    const std::array header_values{
+        "X-API-Key: " + config_->api_key,
+        std::string{"Content-Type: application/json"},
+        std::string{"Accept: application/json"},
+        std::string{"Expect:"},
+    };
+    for (const auto& value : header_values) {
+        auto* updated = curl_slist_append(raw_headers, value.c_str());
+        if (!updated) {
+            curl_slist_free_all(raw_headers);
+            return config_save_failure("unavailable");
+        }
+        raw_headers = updated;
+    }
+    std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
+    const auto request = nlohmann::json{
+        {"params", {{"expected_revision", expected_revision}}},
+    }.dump();
+    ResponseBuffer response{.limit = 64U * 1024U, .body = {}, .exceeded = false};
+    configure_request(curl.get(), *config_, config_->api_url + "/api/config/save", headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
+    curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                     static_cast<curl_off_t>(request.size()));
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    if (curl_easy_perform(curl.get()) != CURLE_OK || response.exceeded) {
+        return config_save_failure("unavailable");
+    }
+    long status_code{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    if (status_code == 409L) return config_save_failure("conflict");
+    if (status_code == 422L) return config_save_failure("rejected");
+    if (status_code != 200L) {
+        return config_save_failure(status_code >= 500L ? "failed" : "invalid-response");
+    }
+
+    const auto document = nlohmann::json::parse(response.body, nullptr, false);
+    if (document.is_discarded() || !document.is_object() ||
+        document.value("state", "") != "saved" ||
+        !document.contains("revision") || !document["revision"].is_string() ||
+        !document.contains("saved_revision") || !document["saved_revision"].is_string() ||
+        !document.contains("unsaved") || document["unsaved"] != false ||
+        !document.contains("changed") || !document["changed"].is_boolean()) {
+        return {};
+    }
+    const auto revision = document["revision"].get<std::string>();
+    const auto saved_revision = document["saved_revision"].get<std::string>();
+    if (!is_config_revision(revision) || saved_revision != revision ||
+        revision != expected_revision) {
+        return {};
+    }
+    return {
+        .state = "saved",
+        .revision = revision,
+        .saved_revision = saved_revision,
+        .changed = document["changed"].get<bool>(),
+    };
 }
 
 TransactionResponse SmithproxyMonitor::execute_transaction(
@@ -1144,8 +1246,10 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
         const auto state_result = curl_easy_perform(state_curl.get());
         long state_status{};
         curl_easy_getinfo(state_curl.get(), CURLINFO_RESPONSE_CODE, &state_status);
+        const auto state_document = nlohmann::json::parse(state_response.body, nullptr, false);
         if (state_result != CURLE_OK || state_status != 200L || state_response.exceeded ||
-            !parse_config_state(state_response.body).snapshot) {
+            !parse_config_state(state_response.body).snapshot || state_document.is_discarded() ||
+            !state_document.is_object()) {
             capabilities.state = "not-advertised";
             capabilities.detail = "Smithproxy does not advertise atomic configuration transactions";
             return capabilities;
@@ -1174,6 +1278,17 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
             {"starttls_signatures.flow", true, true, "builtin:v2"},
             {"detection_signatures.flow", true, true, "builtin:v2"},
         };
+        if (state_document.contains("capabilities")) {
+            const auto& advertised = state_document["capabilities"];
+            if (!advertised.is_object() || !advertised.contains("explicit_save") ||
+                !advertised["explicit_save"].is_boolean()) {
+                capabilities.state = "incompatible";
+                capabilities.detail = "Smithproxy returned invalid configuration capabilities";
+                capabilities.collections.clear();
+                return capabilities;
+            }
+            capabilities.explicit_save = advertised["explicit_save"].get<bool>();
+        }
         capabilities.wire_version = 2U;
         return capabilities;
     }

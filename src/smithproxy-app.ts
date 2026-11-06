@@ -412,6 +412,7 @@ export class SmithproxyApp extends LitElement {
   @state() private focusMode = false;
   @state() private configReadAvailable = false;
   @state() private configWriteAvailable = false;
+  @state() private configSaveAvailable = false;
   @state() private structuralDraftsAvailable = false;
   @state() private primitiveStructuralDraftsAvailable = false;
   @state() private namedStructuralDraftsAvailable = false;
@@ -447,6 +448,9 @@ export class SmithproxyApp extends LitElement {
   @state() private configRefreshDeferred = false;
   @state() private configRefreshInFlight = false;
   @state() private configRevisionDrift = false;
+  @state() private configSaveArmed = false;
+  @state() private configSaving = false;
+  @state() private configSaveError: string | undefined;
   @state() private searchQuery = '';
   @state() private authIdentityEditors = new Map<string, AuthIdentityEditorState>();
 
@@ -466,6 +470,7 @@ export class SmithproxyApp extends LitElement {
   private closeEventStream: (() => void) | undefined;
   private eventStreamDegradedTimer: number | undefined;
   private nextConfigRefreshAt = 0;
+  private configSaveArmTimer: number | undefined;
   private drawerHistoryDepth = 0;
   private drawerHistoryNavigationPending = false;
   private drawerOrigins: HTMLElement[] = [];
@@ -1005,6 +1010,7 @@ export class SmithproxyApp extends LitElement {
     this.systemClient?.cancelPendingRequests();
     this.configClient?.cancelPendingRequests();
     this.draftClient?.cancelPendingRequests();
+    if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
@@ -1443,6 +1449,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private clearPrivilegedConfigurationState(): void {
+    this.systemClient?.cancelPendingRequests();
     this.configClient?.cancelPendingRequests();
     if (this.snapshot?.source === 'live') this.snapshot = undefined;
     this.clearDraftSessionState();
@@ -1450,6 +1457,11 @@ export class SmithproxyApp extends LitElement {
     this.configRefreshDeferred = false;
     this.configRevisionDrift = false;
     this.configError = undefined;
+    this.configSaving = false;
+    this.configSaveArmed = false;
+    if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
+    this.configSaveArmTimer = undefined;
+    this.configSaveError = undefined;
     this.searchQuery = '';
     if (this.activeSection === 'Search') this.activeSection = 'Dashboard';
   }
@@ -1497,7 +1509,7 @@ export class SmithproxyApp extends LitElement {
       if (capabilitiesResult.status === 'rejected') throw capabilitiesResult.reason;
       const capabilities = capabilitiesResult.value;
       const privilegedConfiguration = capabilities.features.configRead ||
-        capabilities.features.configWrite || capabilities.features.drafts ||
+        capabilities.features.configWrite || capabilities.features.configSave || capabilities.features.drafts ||
         capabilities.features.draftPreflight;
       if (privilegedConfiguration &&
           (sessionResult.status !== 'fulfilled' || sessionResult.value.mode !== 'gateway' ||
@@ -1515,6 +1527,7 @@ export class SmithproxyApp extends LitElement {
       const draftWasAvailable = this.draftAvailable;
       const configReadWasAvailable = this.configReadAvailable;
       const configWriteWasAvailable = this.configWriteAvailable;
+      const configSaveWasAvailable = this.configSaveAvailable;
       const structuralDraftsWereAvailable = this.structuralDraftsAvailable;
       const primitiveStructuralDraftsWereAvailable = this.primitiveStructuralDraftsAvailable;
       const namedStructuralDraftsWereAvailable = this.namedStructuralDraftsAvailable;
@@ -1525,6 +1538,7 @@ export class SmithproxyApp extends LitElement {
       const draftPreflightWasAvailable = this.draftPreflightAvailable;
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
+      const nextConfigSaveAvailable = capabilities.features.configSave;
       const nextStructuralDraftsAvailable = capabilities.features.structuralDrafts;
       const nextPrimitiveStructuralDraftsAvailable = capabilities.features.primitiveStructuralDrafts;
       const nextNamedStructuralDraftsAvailable = capabilities.features.namedStructuralDrafts;
@@ -1537,6 +1551,7 @@ export class SmithproxyApp extends LitElement {
       const configurationCapabilitiesChanged =
         nextConfigReadAvailable !== configReadWasAvailable ||
         nextConfigWriteAvailable !== configWriteWasAvailable ||
+        nextConfigSaveAvailable !== configSaveWasAvailable ||
         nextStructuralDraftsAvailable !== structuralDraftsWereAvailable ||
         nextPrimitiveStructuralDraftsAvailable !== primitiveStructuralDraftsWereAvailable ||
         nextNamedStructuralDraftsAvailable !== namedStructuralDraftsWereAvailable ||
@@ -1550,6 +1565,13 @@ export class SmithproxyApp extends LitElement {
       this.transactionCapabilityState = capabilities.transactionState;
       this.configReadAvailable = nextConfigReadAvailable;
       this.configWriteAvailable = nextConfigWriteAvailable;
+      this.configSaveAvailable = nextConfigSaveAvailable;
+      if (configSaveWasAvailable && !nextConfigSaveAvailable) {
+        this.configSaveArmed = false;
+        if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
+        this.configSaveArmTimer = undefined;
+        this.configSaveError = undefined;
+      }
       this.structuralDraftsAvailable = nextStructuralDraftsAvailable;
       this.primitiveStructuralDraftsAvailable = nextPrimitiveStructuralDraftsAvailable;
       this.namedStructuralDraftsAvailable = nextNamedStructuralDraftsAvailable;
@@ -1584,6 +1606,7 @@ export class SmithproxyApp extends LitElement {
       this.capabilityError = undefined;
     } catch (error) {
       const configurationWasAvailable = this.configReadAvailable || this.configWriteAvailable ||
+        this.configSaveAvailable ||
         this.draftAvailable || this.draftPreflightAvailable;
       this.apiVersion = 'unavailable';
       this.transactionCapabilityState = 'unavailable';
@@ -1594,6 +1617,9 @@ export class SmithproxyApp extends LitElement {
       }
       this.configRefreshDeferred = false;
       this.configWriteAvailable = false;
+      this.configSaveAvailable = false;
+      this.configSaveArmed = false;
+      this.configSaveError = undefined;
       this.structuralDraftsAvailable = false;
       this.primitiveStructuralDraftsAvailable = false;
       this.namedStructuralDraftsAvailable = false;
@@ -1638,6 +1664,11 @@ export class SmithproxyApp extends LitElement {
         this.configError = undefined;
         return;
       }
+      if (snapshot.revision !== this.snapshot?.revision || !snapshot.unsaved) {
+        this.configSaveArmed = false;
+        if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
+        this.configSaveArmTimer = undefined;
+      }
       this.snapshot = snapshot;
       this.restoreDrawerRoute();
       this.configError = undefined;
@@ -1664,6 +1695,42 @@ export class SmithproxyApp extends LitElement {
     if (this.configReadAvailable) await this.refreshConfiguration(true);
   }
 
+  private async saveRunningConfiguration(): Promise<void> {
+    const snapshot = this.snapshot;
+    if (!this.configSaveAvailable || !this.configClient || !snapshot?.revision ||
+        !snapshot.unsaved || this.configSaving || this.draftCommitting) return;
+    if (!this.configSaveArmed) {
+      this.configSaveArmed = true;
+      this.configSaveError = undefined;
+      if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
+      this.configSaveArmTimer = window.setTimeout(() => {
+        this.configSaveArmTimer = undefined;
+        this.configSaveArmed = false;
+      }, 10_000);
+      return;
+    }
+    const expectedRevision = snapshot.revision;
+    const accessEpoch = this.configurationAccessEpoch;
+    this.configSaving = true;
+    this.configSaveArmed = false;
+    if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
+    this.configSaveArmTimer = undefined;
+    this.configSaveError = undefined;
+    try {
+      const saved = await this.configClient.saveConfiguration(expectedRevision);
+      if (!this.configurationAccessIsCurrent(accessEpoch) || this.snapshot?.revision !== expectedRevision) return;
+      this.snapshot = {...this.snapshot, unsaved: false, savedRevision: saved.savedRevision};
+      this.nextConfigRefreshAt = 0;
+      await this.refreshConfiguration(true);
+    } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      this.configSaveError = error instanceof Error ? error.message : 'Running configuration could not be saved.';
+      this.nextCapabilityRefreshAt = 0;
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.configSaving = false;
+    }
+  }
+
   private systemStatusTitle(): string {
     const checked = this.systemStatus.checkedAtUnixMs === null
       ? 'not checked yet'
@@ -1673,7 +1740,7 @@ export class SmithproxyApp extends LitElement {
 
   private enabledCapabilityCount(): number {
     return [
-      this.configReadAvailable, this.configWriteAvailable, this.draftAvailable,
+      this.configReadAvailable, this.configWriteAvailable, this.configSaveAvailable, this.draftAvailable,
       this.draftPreflightAvailable, this.jobsAvailable, this.eventsAvailable,
       this.alertsAvailable, this.auditAvailable, this.metricsAvailable,
       this.sessionActivityAvailable, this.tlsMonitoringAvailable,
@@ -1741,6 +1808,7 @@ export class SmithproxyApp extends LitElement {
         enabledFeatureCount: this.enabledCapabilityCount(),
         configRead: this.configReadAvailable,
         configWrite: this.configWriteAvailable,
+        configSave: this.configSaveAvailable,
         drafts: this.draftAvailable,
         draftPreflight: this.draftPreflightAvailable,
         jobs: this.jobsAvailable,
@@ -9744,6 +9812,24 @@ export class SmithproxyApp extends LitElement {
               <dt>Persistence</dt><dd>${this.snapshot?.unsaved
                 ? 'Explicit Smithproxy save required' : this.snapshot ? 'Matches saved configuration' : 'Unavailable'}</dd>
             </dl>
+            ${this.snapshot?.unsaved ? html`
+              <div class="structural-action">
+                <button class=${this.configSaveArmed ? 'danger' : 'primary'} type="button"
+                  ?disabled=${!this.configSaveAvailable || this.configSaving || this.draftCommitting}
+                  title=${this.configSaveAvailable
+                    ? 'Persist the current running revision as the startup configuration.'
+                    : 'Smithproxy does not advertise the reviewed explicit-save capability.'}
+                  @click=${() => { void this.saveRunningConfiguration(); }}>
+                  ${this.configSaving ? 'Saving…' : this.configSaveArmed ? 'Confirm save to startup' : 'Save running config'}
+                </button>
+                <small>${this.configSaveArmed
+                  ? 'This persists the current running revision. Workspace draft changes are not included.'
+                  : this.configSaveAvailable
+                  ? 'Requires a second click; saves only the running revision.'
+                  : 'Explicit save is not advertised by this Smithproxy runtime.'}</small>
+              </div>
+              ${this.configSaveError ? html`<div class="metrics-message danger" role="alert">${this.configSaveError}</div>` : nothing}
+            ` : nothing}
           </article>
           <article class="domain-card">
             <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
@@ -9765,7 +9851,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Last check</dt><dd>${this.timeLabel(this.capabilityCheckedAtUnixMs)}</dd>
               <dt>Last valid contract</dt><dd>${this.timeLabel(this.capabilityLastSuccessAtUnixMs)}</dd>
               <dt>API contract</dt><dd>${this.apiVersion}</dd>
-              <dt>Enabled surfaces</dt><dd>${enabledCapabilityCount} / 13</dd>
+              <dt>Enabled surfaces</dt><dd>${enabledCapabilityCount} / 14</dd>
               <dt>Refresh cadence</dt><dd>30 seconds · connectivity-triggered</dd>
             </dl>
             ${this.capabilityError ? html`<p role="status">${this.capabilityError}</p>` : nothing}
@@ -9807,6 +9893,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Configuration read</dt><dd>${this.configReadAvailable ? 'Available' : 'Blocked'}</dd>
               <dt>Shared draft</dt><dd>${this.draftAvailable ? 'Available' : 'Blocked'}</dd>
               <dt>Atomic commit</dt><dd>${this.configWriteAvailable ? 'Available' : 'Blocked'}</dd>
+              <dt>Explicit save</dt><dd>${this.configSaveAvailable ? 'Available' : 'Not advertised'}</dd>
               <dt>Upstream transaction</dt><dd>${this.transactionCapabilityState === 'not-advertised' ? 'Not advertised' :
                 this.transactionCapabilityState === 'review-required' ? 'Schema review required' :
                 this.transactionCapabilityState === 'ready' ? 'Reviewed contract ready' :
@@ -13152,6 +13239,11 @@ export class SmithproxyApp extends LitElement {
                   aria-current=${this.activeSection === item ? 'page' : nothing}
                   aria-expanded=${item === 'Objects' ? String(this.objectNavigationExpanded) : nothing}
                   title=${item} @click=${() => {
+                    if (item !== 'System') {
+                      this.configSaveArmed = false;
+                      if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
+                      this.configSaveArmTimer = undefined;
+                    }
                     if (item === 'Objects') {
                       const wasActive = this.activeSection === 'Objects';
                       this.activeSection = 'Objects';

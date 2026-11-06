@@ -32,6 +32,7 @@ export interface DiagnosticsReportInput {
     enabledFeatureCount: number;
     configRead: boolean;
     configWrite: boolean;
+    configSave: boolean;
     drafts: boolean;
     draftPreflight: boolean;
     jobs: boolean;
@@ -135,9 +136,10 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
         ? null : safeInteger(input.capabilities.checkedAtUnixMs),
       lastSuccessAtUnixMs: input.capabilities.lastSuccessAtUnixMs === null
         ? null : safeInteger(input.capabilities.lastSuccessAtUnixMs),
-      enabledFeatureCount: Math.min(13, requiredInteger(input.capabilities.enabledFeatureCount)),
+      enabledFeatureCount: Math.min(14, requiredInteger(input.capabilities.enabledFeatureCount)),
       configRead: input.capabilities.configRead,
       configWrite: input.capabilities.configWrite,
+      configSave: input.capabilities.configSave,
       drafts: input.capabilities.drafts,
       draftPreflight: input.capabilities.draftPreflight,
       jobs: input.capabilities.jobs,

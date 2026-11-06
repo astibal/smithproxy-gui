@@ -166,6 +166,7 @@ DELETE /api/v1/config/drafts/{draft-id}
 POST   /api/v1/config/drafts/{draft-id}/validate
 GET    /api/v1/config/drafts/{draft-id}/impact
 POST   /api/v1/config/drafts/{draft-id}/commit
+POST   /api/v1/config/save
 ```
 
 Mutace draftu používá stabilní schema identifikátory a typované operace. Formát
@@ -240,6 +241,15 @@ the browser.
 This store cannot mutate Smithproxy configuration by itself;
 mutation is possible only through the separate capability-gated atomic commit
 endpoint.
+
+Explicit running-config persistence is a separate capability-gated operation.
+The browser sends only the currently displayed canonical revision to
+`POST /api/v1/config/save`; the GUI core forwards it to the reviewed Smithproxy
+save endpoint while holding the same local single-writer reservation used by
+commit. The action requires a second operator click, the trusted gateway and
+same-origin CSRF boundary. It never includes workspace draft changes. Smithproxy
+must explicitly advertise support; absence of that flag keeps the control
+disabled and the GUI never discovers support by attempting a mutating request.
 
 When the draft is empty, the core binds it to the latest verified configuration
 revision. Changing that binding increments the draft version, so a browser that

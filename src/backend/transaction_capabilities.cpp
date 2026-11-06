@@ -94,6 +94,11 @@ TransactionCapabilities parse_transaction_capabilities(
     }
     result.operations.assign(operations.begin(), operations.end());
 
+    if (success.contains("explicit_save") && !success["explicit_save"].is_boolean()) {
+        return incompatible();
+    }
+    result.explicit_save = success.value("explicit_save", false);
+
     std::set<std::string, std::less<>> collection_ids;
     bool requires_review = false;
     for (const auto& collection : success["collections"]) {

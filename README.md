@@ -180,8 +180,11 @@ unchanged until a validated atomic commit.
 The GUI also keeps Smithproxy's real running-versus-saved state visible. An
 unsaved running configuration is a primary status even on narrow screens, and
 the System view compares the bounded running and saved revision identifiers.
-Persistence remains explicit; the GUI does not invent a save action until the
-authenticated Smithproxy API advertises one.
+Persistence remains explicit. When the authenticated Smithproxy API advertises
+the reviewed save capability, the System view offers a two-click action bound
+to the exact displayed running revision. It persists only running state, never
+uncommitted workspace draft changes, and shares the single-writer gate with
+atomic commits. Without that capability the action remains disabled.
 The atomic configuration-state endpoint is sampled every five seconds, while
 legacy multi-request snapshots retain their conservative 30-second cadence.
 If another browser or CLI changes the canonical revision during an active

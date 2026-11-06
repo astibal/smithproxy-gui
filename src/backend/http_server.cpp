@@ -10,6 +10,7 @@
 #include "operational_alerts.hpp"
 #include "operational_event_store.hpp"
 #include "path.hpp"
+#include "revision.hpp"
 
 #include <lmhttpd.hpp>
 #include <microhttpd.h>
@@ -267,6 +268,7 @@ MutationAuditMetadata mutation_audit_metadata(
     }
     else if (relative == "/api/v1/config/draft/validate") metadata.operation = "config.draft.validate";
     else if (relative == "/api/v1/config/draft/commit") metadata.operation = "config.draft.commit";
+    else if (relative == "/api/v1/config/save") metadata.operation = "config.save";
     else return metadata;
 
     const auto document = nlohmann::json::parse(body, nullptr, false);
@@ -707,7 +709,8 @@ private:
             *relative != "/api/v1/config/draft/operations/remove" &&
             *relative != "/api/v1/config/draft/clear" &&
             *relative != "/api/v1/config/draft/validate" &&
-            *relative != "/api/v1/config/draft/commit") {
+            *relative != "/api/v1/config/draft/commit" &&
+            *relative != "/api/v1/config/save") {
             return relative->starts_with("/api/")
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
                 : Response{405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
@@ -718,8 +721,54 @@ private:
         if (!same_origin_mutation(connection)) {
             return {403, "application/json; charset=utf-8", "{\"error\":\"same-origin CSRF check failed\"}"};
         }
-        bind_empty_draft_revision();
         const auto document = nlohmann::json::parse(body, nullptr, false);
+        if (*relative == "/api/v1/config/save") {
+            if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
+                !document.contains("expected_revision") ||
+                !document["expected_revision"].is_string() ||
+                !is_config_revision(document["expected_revision"].get<std::string>())) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid configuration save request\"}"};
+            }
+            const auto status = monitor_.status();
+            if (!status.transaction_capabilities.explicit_save) {
+                return {503, "application/json; charset=utf-8",
+                        "{\"error\":\"configuration save unavailable\"}"};
+            }
+            auto reservation = commit_coordinator_.reserve();
+            if (!reservation) {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"configuration write in progress\"}"};
+            }
+            const auto expected = document["expected_revision"].get<std::string>();
+            const auto saved = monitor_.save_config(expected);
+            if (saved.state == "conflict") {
+                return {409, "application/json; charset=utf-8",
+                        "{\"error\":\"configuration revision conflict\"}"};
+            }
+            if (saved.state == "rejected") {
+                return {422, "application/json; charset=utf-8",
+                        "{\"error\":\"configuration save rejected\"}"};
+            }
+            if (saved.state == "unavailable") {
+                return {503, "application/json; charset=utf-8",
+                        "{\"error\":\"configuration save unavailable\"}"};
+            }
+            if (saved.state != "saved" || !saved.revision || !saved.saved_revision) {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"configuration save failed\"}"};
+            }
+            (void)monitor_.note_config_saved(*saved.revision);
+            return {200, "application/json; charset=utf-8", nlohmann::json{
+                {"source", "gui-core"},
+                {"state", "saved"},
+                {"revision", *saved.revision},
+                {"saved_revision", *saved.saved_revision},
+                {"unsaved", false},
+                {"changed", saved.changed},
+            }.dump()};
+        }
+        bind_empty_draft_revision();
         if (*relative == "/api/v1/config/draft/commit") {
             if (document.is_discarded() || !document.is_object() || document.size() != 1U ||
                 !document.contains("expected_version") ||
@@ -1245,6 +1294,8 @@ private:
                     ",\"config_transaction_state\":" + json_string(transaction_state) +
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":" + (config_write ? "true" : "false") +
+                    ",\"config_save\":" +
+                    (config_read && status.transaction_capabilities.explicit_save ? "true" : "false") +
                     ",\"structural_drafts\":" + (structural_drafts ? "true" : "false") +
                     ",\"primitive_structural_drafts\":" +
                     (primitive_structural_drafts ? "true" : "false") +

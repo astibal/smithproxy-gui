@@ -137,6 +137,8 @@ type MockState = {
   }>;
   validationReady?: boolean;
   commitReady?: boolean;
+  configSaveReady?: boolean;
+  configSaveRequests?: Array<{expectedRevision: string; csrf: string | null}>;
   structuralDraftsReady?: boolean;
   primitiveStructuralDraftsReady?: boolean;
   namedStructuralDraftsReady?: boolean;
@@ -253,6 +255,7 @@ async function mockSystemApi(
     const featureFlags = {
       config_read: configuration,
       config_write: Boolean(state.commitReady) && configurationFeature('config_write'),
+      config_save: Boolean(state.configSaveReady) && configuration,
       structural_drafts: Boolean(state.structuralDraftsReady && state.commitReady) &&
         configurationFeature('config_write'),
       primitive_structural_drafts: Boolean(
@@ -790,6 +793,25 @@ async function mockSystemApi(
     await route.fulfill({json: draft});
   });
   if (configRead) {
+    await page.route('**/api/v1/config/save', async route => {
+      const request = route.request();
+      const body = request.postDataJSON() as {expected_revision?: unknown};
+      state.configSaveRequests ??= [];
+      state.configSaveRequests.push({
+        expectedRevision: String(body.expected_revision ?? ''),
+        csrf: request.headers()['x-smithproxy-gui-csrf'] ?? null,
+      });
+      if (!state.configSaveReady || body.expected_revision !== state.configRevision) {
+        await route.fulfill({status: state.configSaveReady ? 409 : 503, json: {error: 'save unavailable'}});
+        return;
+      }
+      state.savedConfigRevision = state.configRevision;
+      state.unsavedConfig = false;
+      await route.fulfill({json: {
+        source: 'gui-core', state: 'saved', revision: state.configRevision,
+        saved_revision: state.configRevision, unsaved: false, changed: true,
+      }});
+    });
     await page.route('**/api/v1/config/snapshot', async route => {
       state.configFetches = (state.configFetches ?? 0) + 1;
       if ((state.configFailuresRemaining ?? 0) > 0) {
@@ -5749,7 +5771,7 @@ test('rejects an incoherent privileged capability graph before protected request
     has: page.getByRole('heading', {name: 'Capability bootstrap'}),
   });
   await expect(capabilityCard).toContainText('Unavailable');
-  await expect(capabilityCard).toContainText('Enabled surfaces0 / 13');
+  await expect(capabilityCard).toContainText('Enabled surfaces0 / 14');
   await expect(capabilityCard).toContainText('Inconsistent privileged capabilities.');
   expect(protectedRequests).toEqual([]);
 });
@@ -6003,6 +6025,31 @@ test('keeps an unsaved running configuration visible on mobile', async ({page}) 
   await expect(card.getByTitle(`sha256:${'1'.repeat(64)}`)).toHaveText('sha256:11111111…');
 });
 
+test('persists the exact running revision only after explicit confirmation', async ({page}) => {
+  const runningRevision = `sha256:${'2'.repeat(64)}`;
+  const state: MockState = {
+    smithproxy: 'ready', configSaveReady: true, unsavedConfig: true,
+    configRevision: runningRevision, savedConfigRevision: `sha256:${'1'.repeat(64)}`,
+    configSaveRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+
+  const card = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Running configuration'}),
+  });
+  await card.getByRole('button', {name: 'Save running config'}).click();
+  await expect(card.getByRole('button', {name: 'Confirm save to startup'})).toBeVisible();
+  expect(state.configSaveRequests).toEqual([]);
+
+  await card.getByRole('button', {name: 'Confirm save to startup'}).click();
+  await expect(card).toContainText('Saved');
+  expect(state.configSaveRequests).toEqual([{
+    expectedRevision: runningRevision, csrf: '1',
+  }]);
+});
+
 test('exposes network, object, and system vertical slices', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
@@ -6125,7 +6172,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   });
   await expect(capabilityCard).toContainText('Ready');
   await expect(capabilityCard).toContainText('API contractv1');
-  await expect(capabilityCard).toContainText('Enabled surfaces12 / 13');
+  await expect(capabilityCard).toContainText('Enabled surfaces12 / 14');
   await expect(capabilityCard).toContainText('30 seconds · connectivity-triggered');
   const jobsCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Backend jobs'}),

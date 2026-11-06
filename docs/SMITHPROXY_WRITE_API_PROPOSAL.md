@@ -35,6 +35,7 @@ GET /api/config/v2/capabilities
     "operations": ["set", "create", "delete", "move"],
     "maximum_operations": 4096,
     "maximum_request_bytes": 1048576,
+    "explicit_save": true,
     "collections": [
       {"id": "policy", "ordered": true, "nested": false, "schema_revision": "sha256:..."},
       {"id": "address_objects", "ordered": false, "nested": false, "schema_revision": "sha256:..."},
@@ -51,6 +52,29 @@ browser receives only normalized GUI-core feature flags; it never calls this
 Smithproxy endpoint or sees the Smithproxy credential. Capability discovery is
 advisory and every transaction request is still checked again under the
 configuration lock.
+
+`explicit_save` advertises the separately reviewed `POST /api/config/save`
+surface. Its absence or `false` keeps persistence unavailable in the GUI. The
+GUI never probes a mutating endpoint to discover support.
+
+## Explicit running-config persistence
+
+```text
+POST /api/config/save
+Authorization: existing Smithproxy API authentication
+Content-Type: application/json
+```
+
+```json
+{"params":{"expected_revision":"0123456789abcdef0123456789abcdef"}}
+```
+
+The save enters the same single-writer gate as transactions and CLI writes,
+compares the exact running revision under that gate, writes the startup file,
+and then advances the saved revision. A stale revision returns HTTP 409. A
+successful response contains only `revision`, `saved_revision`, `unsaved`, and
+whether a file write was needed. The operation is idempotent when the advertised
+running revision is already saved.
 
 ## Canonical snapshot revision
 

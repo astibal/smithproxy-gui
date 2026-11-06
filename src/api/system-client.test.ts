@@ -27,7 +27,7 @@ describe('SystemClient', () => {
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',
       config_transaction_state: 'not-advertised',
       features: {
-        config_read: false, config_write: false, structural_drafts: false,
+        config_read: false, config_write: false, config_save: false, structural_drafts: false,
         primitive_structural_drafts: false,
         named_structural_drafts: false,
         named_renames: false,
@@ -45,7 +45,7 @@ describe('SystemClient', () => {
 
     await expect(client.capabilities()).resolves.toMatchObject({
       apiVersion: 'v1', smithproxyState: 'unconfigured', transactionState: 'not-advertised',
-      features: {configWrite: false, structuralDrafts: false, primitiveStructuralDrafts: false,
+      features: {configWrite: false, configSave: false, structuralDrafts: false, primitiveStructuralDrafts: false,
         namedStructuralDrafts: false,
         namedRenames: false,
         policyStructuralDrafts: false,
