@@ -10569,8 +10569,8 @@ export class SmithproxyApp extends LitElement {
     const description = type === 'cidr' ? describeCidr(value) : undefined;
     const message = description ?? (type === 'cidr' && value.trim().length > 0
       ? 'Enter a valid IPv4 or IPv6 CIDR.' : '');
-    return html`<output id=${id} class="form-span address-insight" role="status" aria-live="polite"
-      ?hidden=${type !== 'cidr'} data-valid=${description ? 'true' : 'false'}>${message}</output>`;
+    return html`<p id=${id} class="form-span address-insight" aria-live="polite"
+      ?hidden=${type !== 'cidr'} data-valid=${description ? 'true' : 'false'}>${message}</p>`;
   }
 
   private updateAddressPreview(entry: DrawerEntry, field: 'type' | 'value', event: Event): void {
@@ -10774,7 +10774,9 @@ export class SmithproxyApp extends LitElement {
             }
           }}>
           ${this.availableProfileCreateTypes().map(availableType => html`
-            <option value=${availableType}>${profileCreateLabels[availableType]}</option>
+            <option value=${availableType} ?selected=${availableType === type}>
+              ${profileCreateLabels[availableType]}
+            </option>
           `)}
         </select>
         <label for="profile-create-name-${entry.id}">Name</label>
