@@ -875,6 +875,8 @@ export class SmithproxyApp extends LitElement {
     .reference { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); cursor: pointer; }
     .reference-main { display: flex; min-width: 0; gap: 8px; align-items: center; }
     .reference-kind { flex: 0 0 auto; padding: 2px 5px; border: 1px solid var(--app-border); border-radius: 2px; color: var(--app-muted); font: 10px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .04em; }
+    .address-kind { display: inline-flex; gap: 5px; align-items: center; color: var(--app-muted); font: 11px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .04em; text-transform: uppercase; }
+    .address-kind-symbol { width: 1.2em; color: var(--app-accent); text-align: center; }
     .reference-advisory { display: flex; min-width: 0; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 10px; border-left: 2px solid var(--app-warning); background: var(--app-warning-bg); color: var(--app-warning); }
     .reference-advisory strong { overflow-wrap: anywhere; color: var(--app-text); }
     .reference-advisory small { flex: 0 0 auto; color: inherit; }
@@ -3278,6 +3280,16 @@ export class SmithproxyApp extends LitElement {
     return index < 0
       ? address.type
       : this.presentedValue(`address_objects.[${index}].type`, address.type) as AddressObject['type'];
+  }
+
+  private addressTypeLabel(type: AddressObject['type']): string {
+    return type === 'fqdn' ? 'FQDN' : 'CIDR';
+  }
+
+  private renderAddressType(type: AddressObject['type']) {
+    return html`<span class="address-kind"><span class="address-kind-symbol" aria-hidden="true">${
+      type === 'fqdn' ? '@' : '▦'
+    }</span>${this.addressTypeLabel(type)}</span>`;
   }
 
   private objectViewLabel(): string {
@@ -8716,7 +8728,7 @@ export class SmithproxyApp extends LitElement {
               const base = `address_objects.[${index}]`;
               return html`<button class="row object-row" type="button"
                 @click=${(event: MouseEvent) => this.openAddress(address.id, event.currentTarget as HTMLElement)}>
-                <strong>${name}</strong><span class="action">${type}</span><span class="object-value">${value}</span>
+                <strong>${name}</strong><span>${this.renderAddressType(type)}</span><span class="object-value">${value}</span>
                 <span class="row-meta">
                   <span title=${usage.pendingCount > 0 ? 'Includes pending draft references' : nothing}>${usage.label}</span>
                   ${this.renderPendingBadge('address', address.id)}${this.renderOverlayBadge(`${base}.`, overlayCounts)}
@@ -8726,7 +8738,9 @@ export class SmithproxyApp extends LitElement {
             ${pendingAddressRows.map(({operation, usage}) => html`<button class="row object-row" type="button"
               @click=${(event: MouseEvent) => openPending(operation, event.currentTarget as HTMLElement)}>
               <strong>${fieldText(operation, 'name', 'New address object')}</strong>
-              <span class="action">${fieldText(operation, 'type', 'address')}</span>
+              <span>${fieldText(operation, 'type') === 'cidr' || fieldText(operation, 'type') === 'fqdn'
+                ? this.renderAddressType(fieldText(operation, 'type') as AddressObject['type'])
+                : 'Address'}</span>
               <span class="object-value">${fieldText(operation, 'value')}</span>
               <span class="row-meta"><span>${usage}</span><span class="pending-badge"
                 title="This address object is a pending structural create">Pending create</span></span>
@@ -10703,6 +10717,22 @@ export class SmithproxyApp extends LitElement {
       .filter(name => name.length > 0).sort((left, right) => left.localeCompare(right));
   }
 
+  private referenceListOptionLabel(kind: 'address' | 'port', name: string): string {
+    if (kind === 'port') return name;
+    if (name === 'any') return '* IPv4 · any';
+    if (name === 'any6') return '* IPv6 · any6';
+    const live = this.snapshot?.addresses.find(item => this.addressDisplayName(item) === name);
+    if (live) {
+      const type = this.addressDisplayType(live);
+      return `${type === 'fqdn' ? '@' : '▦'} ${this.addressTypeLabel(type)} · ${name}`;
+    }
+    const pending = this.pendingNamedCreate(['address_objects'], name);
+    const type = pending?.fields['type'];
+    return type === 'cidr' || type === 'fqdn'
+      ? `${type === 'fqdn' ? '@' : '▦'} ${this.addressTypeLabel(type)} · ${name} · pending`
+      : name;
+  }
+
   private setReferenceList(entry: DrawerEntry, inputId: string, values: ReadonlyArray<string>): void {
     if (!this.drawerEditing(entry)) return;
     const key = this.drawerKey(entry);
@@ -10753,7 +10783,7 @@ export class SmithproxyApp extends LitElement {
         <select id=${selectId} aria-label=${`Select value to add to ${label}`}
           data-structural-control="true" ?disabled=${readOnly || available.length === 0}>
           <option value="">${available.length === 0 ? 'No more values available' : 'Select a value…'}</option>
-          ${available.map(name => html`<option value=${name}>${name}</option>`)}
+          ${available.map(name => html`<option value=${name}>${this.referenceListOptionLabel(kind, name)}</option>`)}
         </select>
         <button class="secondary" type="button" data-edit-control="true" aria-label=${`Add to ${label}`}
           title=${`Add to ${label}`} ?disabled=${readOnly || available.length === 0}
@@ -10797,8 +10827,8 @@ export class SmithproxyApp extends LitElement {
         <button class="reference" type="button"
           aria-description=${`${this.addressDisplayType(reference).toUpperCase()} address object`}
           @click=${(event: MouseEvent) => this.openAddress(reference.id, event.currentTarget as HTMLElement)}>
-          <span class="reference-main"><span>${name}</span><span class="reference-kind" aria-hidden="true">
-            ${this.addressDisplayType(reference).toUpperCase()}
+          <span class="reference-main"><span>${name}</span><span aria-hidden="true">
+            ${this.renderAddressType(this.addressDisplayType(reference))}
           </span></span><span aria-hidden="true">→</span>
         </button>
       ` : pending ? html`
@@ -10810,8 +10840,8 @@ export class SmithproxyApp extends LitElement {
             pending.localId, event.currentTarget as HTMLElement,
           )}>
           <span class="reference-main"><span>${name} <small>pending draft</small></span>
-            ${typeof pendingType === 'string' ? html`<span class="reference-kind" aria-hidden="true">
-              ${pendingType.toUpperCase()}
+            ${pendingType === 'cidr' || pendingType === 'fqdn' ? html`<span aria-hidden="true">
+              ${this.renderAddressType(pendingType)}
             </span>` : nothing}
           </span><span aria-hidden="true">→</span>
         </button>

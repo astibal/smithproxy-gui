@@ -1810,6 +1810,10 @@ test('selects only known policy references while editing', async ({page}) => {
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   const sources = editor.getByRole('group', {name: 'Sources', exact: true});
   await expect(sources.getByRole('button', {name: 'office', exact: true})).toBeVisible();
+  await expect(sources.getByLabel('Select value to add to Sources').locator('option[value="internet"]'))
+    .toHaveText('@ FQDN · internet');
+  await expect(sources.getByLabel('Select value to add to Sources').locator('option[value="any6"]'))
+    .toHaveText('* IPv6 · any6');
   await expect(sources.getByLabel('Select value to add to Sources')
     .locator('option[value="possible-expression"]')).toHaveCount(0);
   await setReferenceList(editor, 'Sources', ['any', 'internet']);
