@@ -3547,6 +3547,7 @@ test('deletes an unused stable profile and blocks referenced profiles', async ({
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   await profiles.getByRole('button', {name: /unused-detection detection/i}).click();
@@ -3582,6 +3583,7 @@ test('blocks profile deletion for redacted authentication identity references', 
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   const profileRow = profiles.getByRole('button', {name: /unused-detection detection/i});
@@ -3619,6 +3621,7 @@ test('blocks profile deletion for redacted identity references in the workspace 
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   const profileRow = profiles.getByRole('button', {name: /unused-detection detection/i});
@@ -3648,6 +3651,7 @@ test('uses effective redacted identity references for pending profile deletion',
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   const profileRow = profiles.getByRole('button', {name: /unused-detection detection/i});
