@@ -4834,6 +4834,22 @@ test('does not fabricate configuration without configuration API access', async 
   expect(protectedRequests).toEqual([]);
 });
 
+test('retries capability discovery before recovering configuration access', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: false,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Configuration unavailable'})).toBeVisible();
+
+  state.gatewayAuthenticated = true;
+  await page.getByRole('button', {name: 'Retry access'}).click();
+  await expect(page.getByRole('heading', {name: 'Configuration unavailable'})).not.toBeVisible();
+  await expect(page.getByRole('button', {name: /Policy 1 office/i})).toBeVisible();
+  expect(state.authSessionRequests).toBeGreaterThanOrEqual(2);
+});
+
 test('summarizes the live configuration on the dashboard and opens real inventory views', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');

@@ -1581,6 +1581,11 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private async retryConfigurationAccess(): Promise<void> {
+    await this.loadCapabilities();
+    if (this.configReadAvailable) await this.refreshConfiguration(true);
+  }
+
   private systemStatusTitle(): string {
     const checked = this.systemStatus.checkedAtUnixMs === null
       ? 'not checked yet'
@@ -9962,6 +9967,12 @@ export class SmithproxyApp extends LitElement {
           <h2>Configuration unavailable</h2>
           <p>${detail}</p>
           <p>No local or cached configuration is displayed.</p>
+          <button class="secondary" type="button"
+            ?disabled=${this.capabilityBootstrapState === 'refreshing' || this.configRefreshInFlight}
+            @click=${() => { void this.retryConfigurationAccess(); }}>
+            ${this.capabilityBootstrapState === 'refreshing' || this.configRefreshInFlight
+              ? 'Retrying…' : 'Retry access'}
+          </button>
         </div>
       `;
     }
