@@ -176,6 +176,8 @@ export interface ProfileObject {
 }
 
 export interface SystemSettings {
+  presentGroups: ReadonlyArray<'cli' | 'web_rating' | 'admin' | 'tuning' | 'socks' |
+    'http_connect' | 'http_api' | 'webhook'>;
   acceptTproxy: boolean;
   acceptRedirect: boolean;
   acceptSocks: boolean;

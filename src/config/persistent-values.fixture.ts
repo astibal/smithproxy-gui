@@ -216,6 +216,9 @@ const snapshot: ConfigSnapshot = {
     },
   ],
   settings: {
+    presentGroups: [
+      'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
+    ],
     acceptTproxy: true, acceptRedirect: true, acceptSocks: true,
     acceptHttpConnect: true, acceptApi: true,
     policyFailOpen: false, accessRequestFailOpen: false,

@@ -939,6 +939,13 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !std::all_of(allowed_ips->begin(), allowed_ips->end(), valid_name)) {
         return {std::nullopt, "Smithproxy returned invalid network address settings"};
     }
+    std::vector<std::string> present_groups;
+    constexpr std::array optional_groups{
+        "cli", "web_rating", "admin", "tuning", "socks", "http_connect", "http_api", "webhook",
+    };
+    for (const auto* group : optional_groups) {
+        if (value->contains(group)) present_groups.emplace_back(group);
+    }
     return {ConfigSystemSettings{
                 *accept_tproxy, *accept_redirect, *accept_socks, *accept_http_connect, *accept_api,
                 *extended_local_destination_protection,
@@ -971,6 +978,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !webhook_bind_interface->empty(), *webhook_api_override, *webhook_ping_interval,
                 *webhook_neighbor_update_interval, *webhook_neighbor_tag_refresh_age,
                 *webhook_task_debug, *webhook_task_debug_dump,
+                std::move(present_groups),
             }, {}};
 }
 

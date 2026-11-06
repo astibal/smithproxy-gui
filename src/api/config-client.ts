@@ -612,13 +612,22 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     const nameservers = stringArray(value.settings.nameservers, 'nameserver');
     const udpQuickPorts = stringArray(value.settings.auxiliary.udp_quick_ports, 'UDP quick port');
     const allowedIps = stringArray(value.settings.http_api.allowed_ips, 'API allowed IP');
+    const settingsGroups = new Set<string>([
+      'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
+    ]);
+    const presentGroups = boundedArray(
+      value.settings.present_groups, 'present settings groups', settingsGroups.size,
+    ).map(group => safeString(group, 'settings group', 32));
     if (udpQuickPorts.some(port => !/^\d{1,5}$/u.test(port) || Number(port) > 65535) ||
         value.settings.nameserver_count !== nameservers.length ||
         value.settings.auxiliary.udp_quick_port_count !== udpQuickPorts.length ||
-        value.settings.http_api.allowed_ip_count !== allowedIps.length) {
+        value.settings.http_api.allowed_ip_count !== allowedIps.length ||
+        presentGroups.some(group => !settingsGroups.has(group)) ||
+        new Set(presentGroups).size !== presentGroups.length) {
       throw new Error('Invalid system address or quick-port collection.');
     }
     settings = {
+      presentGroups: presentGroups as SystemSettings['presentGroups'],
       acceptTproxy: safeBoolean(value.settings.accept_tproxy, 'TPROXY listener state'),
       acceptRedirect: safeBoolean(value.settings.accept_redirect, 'REDIRECT listener state'),
       acceptSocks: safeBoolean(value.settings.accept_socks, 'SOCKS listener state'),

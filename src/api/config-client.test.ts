@@ -96,6 +96,9 @@ const liveSnapshot = {
     },
   ],
   settings: {
+    present_groups: [
+      'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
+    ],
     accept_tproxy: true, accept_redirect: true, accept_socks: false,
     accept_http_connect: true, accept_api: true,
     extended_local_destination_protection: true,
@@ -201,6 +204,9 @@ describe('ApiConfigClient', () => {
     const snapshot = await client.loadSnapshot();
 
     expect(snapshot).toMatchObject({source: 'live', state: 'ready', revision: null});
+    expect(snapshot.settings?.presentGroups).toEqual([
+      'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
+    ]);
     expect(snapshot.presentCollections).toContain('script_profiles');
     expect(parseConfigSnapshot({
       ...liveSnapshot,
@@ -221,6 +227,10 @@ describe('ApiConfigClient', () => {
     expect(snapshot.addresses[0]?.usedBy).toEqual([
       {id: 'policy-0', kind: 'policy', name: 'Policy 1'},
     ]);
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      settings: {...liveSnapshot.settings, present_groups: ['http_api', 'http_api']},
+    })).toThrow('Invalid system address or quick-port collection.');
     expect(snapshot.addresses.map(item => item.typeEditable)).toEqual([true, false]);
     expect(snapshot.ports[0]).toMatchObject({start: 443, end: 443});
     expect(snapshot.ports[0]?.usedBy).toEqual([

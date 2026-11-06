@@ -76,6 +76,7 @@ type MockState = {
   detectionSignaturesPresent?: boolean;
   scriptProfilesPresent?: boolean;
   absentCollections?: ReadonlyArray<string>;
+  absentSettingsGroups?: ReadonlyArray<string>;
   contentRulesPresent?: boolean;
   captureEditable?: boolean;
   unsavedConfig?: boolean;
@@ -919,6 +920,9 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         }] : []),
       ],
       settings: {
+        present_groups: [
+          'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
+        ].filter(group => !state.absentSettingsGroups?.includes(group)),
         accept_tproxy: true, accept_redirect: true, accept_socks: false,
         accept_http_connect: true, accept_api: true,
         extended_local_destination_protection: true,
@@ -6019,6 +6023,38 @@ test('projects pending listener settings into Network and opens their real edito
   await expect(editor.getByLabel('TLS workers', {exact: true})).toHaveValue('8');
   await expect(editor.getByLabel('SOCKS listener')).toHaveValue('true');
   await expect(editor.getByLabel('Require SOCKS authentication')).toHaveValue('true');
+});
+
+test('keeps absent nested settings groups visible but read-only', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    absentSettingsGroups: ['cli', 'tuning', 'http_api', 'webhook'],
+    draftMutationBatches: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  const trafficCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Traffic admission'}),
+  });
+  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+
+  await expect(editor.getByText(/Defaults are shown for absent settings groups/i)).toContainText(
+    'cli, tuning, http_api, webhook',
+  );
+  await expect(editor.getByLabel('Plaintext port')).not.toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('CLI port', {exact: true})).toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('Initial host buffer (bytes)')).toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('API port')).toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('HTTP API keys', {exact: true})).toBeDisabled();
+  await expect(editor.getByLabel('Webhook', {exact: true})).toBeDisabled();
+
+  await editor.getByLabel('Policy failure').selectOption('true');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches).toEqual([[
+    {path: 'settings.policy_fail_open', value: true},
+  ]]);
 });
 
 test('preserves legacy worker values while enforcing pinned worker semantics', async ({page}) => {

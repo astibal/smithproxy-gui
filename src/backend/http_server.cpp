@@ -1689,7 +1689,8 @@ private:
         std::string settings{"null"};
         if (snapshot.settings) {
             const auto& value = *snapshot.settings;
-            settings = "{\"accept_tproxy\":" + std::string(value.accept_tproxy ? "true" : "false") +
+            settings = "{\"present_groups\":" + string_array_json(value.present_groups) +
+                       ",\"accept_tproxy\":" + std::string(value.accept_tproxy ? "true" : "false") +
                        ",\"accept_redirect\":" + (value.accept_redirect ? "true" : "false") +
                        ",\"accept_socks\":" + (value.accept_socks ? "true" : "false") +
                        ",\"accept_http_connect\":" + (value.accept_http_connect ? "true" : "false") +

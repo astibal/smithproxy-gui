@@ -276,6 +276,9 @@ struct ConfigSystemSettings {
     std::uint64_t webhook_neighbor_tag_refresh_age{};
     bool webhook_task_debug{};
     bool webhook_task_debug_dump{};
+    // Optional libconfig groups which are present in the running tree. Values
+    // from absent groups are defaults for display and cannot be updated with Set.
+    std::vector<std::string> present_groups;
 };
 
 struct ConfigDebugSettings {

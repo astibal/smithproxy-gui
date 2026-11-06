@@ -1717,6 +1717,9 @@ int main() {
     assert(settings.settings->certificate_password_configured);
     assert(settings.settings->cli_password_configured);
     assert(settings.settings->web_rating_key_configured);
+    assert(settings.settings->present_groups == std::vector<std::string>({
+        "cli", "web_rating", "socks", "http_api", "webhook",
+    }));
     assert(settings.settings->socks_async_dns);
     assert(settings.settings->dtls_port == 50444U);
     assert(settings.settings->socks_port == 1081U);
@@ -1742,6 +1745,8 @@ int main() {
     assert(!proxy_security_settings.settings->extended_local_destination_protection);
     assert(proxy_security_settings.settings->socks_proxy_authorization);
     assert(proxy_security_settings.settings->http_connect_proxy_authorization);
+    assert(proxy_security_settings.settings->present_groups ==
+           std::vector<std::string>({"socks", "http_connect"}));
     assert(!parse_config_settings(
         R"({"success":{"settings":{"http_connect":"invalid"}}})").settings);
     const auto tuning_settings = parse_config_settings(

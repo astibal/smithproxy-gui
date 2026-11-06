@@ -3213,6 +3213,19 @@ export class SmithproxyApp extends LitElement {
     return this.snapshot?.presentCollections.includes(collection) === true;
   }
 
+  private settingsPathAvailable(path: string): boolean {
+    const settings = this.snapshot?.settings;
+    if (!settings) return false;
+    const relative = path.startsWith('settings.') ? path.slice('settings.'.length) : path;
+    const group = relative.split('.', 1)[0] ?? '';
+    const optionalGroups = new Set([
+      'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
+    ]);
+    return !optionalGroups.has(group) || settings.presentGroups.includes(
+      group as (typeof settings.presentGroups)[number],
+    );
+  }
+
   private profileCreateTypeAvailable(type: ProfileCreateType): boolean {
     return visibleProfileCreateTypes.has(type) && this.collectionPresent(profileCreateCollections[type]);
   }
@@ -6404,7 +6417,7 @@ export class SmithproxyApp extends LitElement {
         changes.push({path: `debug.log.${override.name}`, value: input.value});
       }
     }
-    return changes;
+    return changes.filter(change => this.settingsPathAvailable(change.path));
   }
 
   private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
@@ -11459,7 +11472,28 @@ export class SmithproxyApp extends LitElement {
     const scalar = <T extends ConfigScalar>(path: string, fallback: T): T => this.persistentValue(path, fallback);
     const strings = (path: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
       this.persistentListValue(path, fallback, 'string');
-    const locked = (path: string): boolean => this.originReadOnly(path, disabled);
+    const locked = (path: string): boolean => this.originReadOnly(
+      path, disabled || !this.settingsPathAvailable(path),
+    );
+    const writeOnlyPaths: ReadonlyMap<string, string> = new Map([
+      ['payload-directory', 'settings.write_payload_dir'], ['log-file', 'settings.log_file'],
+      ['tls-key-log-file', 'settings.sslkeylog_file'], ['syslog-server', 'settings.syslog_server'],
+      ['cli-password', 'settings.cli.enable_password'], ['certificates-path', 'settings.certs_path'],
+      ['certificate-password', 'settings.certs_ca_key_password'],
+      ['certificate-transparency-log', 'settings.certs_ctlog'],
+      ['ca-bundle-path', 'settings.ca_bundle_path'], ['ca-bundle-file', 'settings.ca_bundle_file'],
+      ['admin-group', 'settings.admin.group'], ['messages-directory', 'settings.messages_dir'],
+      ['payload-prefix', 'settings.write_payload_file_prefix'],
+      ['payload-suffix', 'settings.write_payload_file_suffix'],
+      ['web-rating-key', 'settings.web_rating.wot_key'],
+      ['api-bind-address', 'settings.http_api.bind_address'],
+      ['api-bind-interface', 'settings.http_api.bind_interface'],
+      ['webhook-url', 'settings.webhook.url'], ['webhook-sift-url', 'settings.webhook.sift_url'],
+      ['webhook-sift-tenant', 'settings.webhook.sift_tenant_id'],
+      ['webhook-sift-instance', 'settings.webhook.sift_instance_id'],
+      ['webhook-host-id', 'settings.webhook.hostid'],
+      ['webhook-bind-interface', 'settings.webhook.bind_interface'],
+    ]);
     const booleanField = (id: string, label: string, value: boolean) => html`
       <label for="settings-${id}">${label}</label>
       ${this.renderBooleanSelect(
@@ -11486,20 +11520,30 @@ export class SmithproxyApp extends LitElement {
     `;
     const writeOnlyField = (
       id: string, label: string, configured: boolean, secret = false,
-    ) => html`
+    ) => {
+      const fieldLocked = locked(writeOnlyPaths.get(id)!);
+      return html`
       <label for="settings-write-${id}-mode">${label}</label>
       <div class="write-only-control">
-        <select id="settings-write-${id}-mode" ?disabled=${disabled}>
+        <select id="settings-write-${id}-mode" ?disabled=${fieldLocked}>
           <option value="unchanged">${configured ? 'Keep configured value' : 'Keep empty'}</option>
           <option value="replace">Replace</option>
           <option value="clear">Clear</option>
         </select>
         <input id="settings-write-${id}-value" type=${secret ? 'password' : 'text'}
           aria-label="${label} replacement" placeholder="New value (write-only)"
-          autocomplete=${secret ? 'new-password' : 'off'} .readOnly=${disabled} />
+          autocomplete=${secret ? 'new-password' : 'off'} .readOnly=${fieldLocked} />
       </div>
     `;
+    };
+    const missingGroups = [
+      'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
+    ].filter(group => !settings.presentGroups.includes(group as (typeof settings.presentGroups)[number]));
     return html`
+      ${missingGroups.length > 0 ? html`<div class="privacy-note section">
+        Defaults are shown for absent settings groups. Their fields stay read-only until the running
+        configuration contains: ${missingGroups.join(', ')}.
+      </div>` : nothing}
       <div class="form-grid wide-form-grid">
         ${booleanField('accept-tproxy', 'TPROXY listener', settings.acceptTproxy)}
         ${booleanField('accept-redirect', 'REDIRECT listener', settings.acceptRedirect)}
@@ -11618,14 +11662,14 @@ export class SmithproxyApp extends LitElement {
           placeholder="192.0.2.53, resolver.example" .readOnly=${locked('settings.nameservers')} />
         <label for="settings-api-keys-mode">HTTP API keys</label>
         <div class="write-only-control">
-          <select id="settings-api-keys-mode" ?disabled=${disabled}>
+          <select id="settings-api-keys-mode" ?disabled=${locked('settings.http_api.keys')}>
             <option value="unchanged">Keep ${settings.httpApi.keyCount} configured key${settings.httpApi.keyCount === 1 ? '' : 's'}</option>
             <option value="replace">Replace all</option>
             <option value="clear">Clear all</option>
           </select>
           <input id="settings-api-keys-value" type="password" autocomplete="new-password"
             aria-label="HTTP API keys replacement" placeholder='["new-key", "overlap-key"]'
-            .readOnly=${disabled} />
+            .readOnly=${locked('settings.http_api.keys')} />
         </div>
         <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
         <input id="settings-api-allowed-ips"
