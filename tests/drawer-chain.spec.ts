@@ -6733,6 +6733,7 @@ test('searches the complete readable configuration without unsafe markup', async
   const results = page.getByRole('group', {name: 'Search results'});
   await expect(results.getByRole('button')).toHaveCount(1);
   await expect(results.getByText('office', {exact: true})).toBeVisible();
+  await expect(results.getByRole('button')).toContainText('▦ CIDR · 10.0.0.0/24');
   await results.getByRole('button').click();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
   await page.keyboard.press('Escape');
@@ -6862,6 +6863,7 @@ test('finds pending structural creates without indexing write-only values', asyn
   await search.fill('pending-branch');
   const address = results.getByRole('button').filter({hasText: 'pending-branch'});
   await expect(address).toContainText('Address');
+  await expect(address).toContainText('▦ CIDR');
   await expect(address).toContainText('pending draft');
   await address.click();
   let editor = page.getByRole('dialog', {name: 'Create address object'});

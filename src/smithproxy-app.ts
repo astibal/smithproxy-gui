@@ -8167,7 +8167,8 @@ export class SmithproxyApp extends LitElement {
       let values: Array<string | number> = [];
       if (operation.collection === 'address_objects') {
         kind = 'Address';
-        detail = `${fieldText(operation, 'type') || 'address'} · ${pending}`;
+        const type = fieldText(operation, 'type');
+        detail = `${type === 'fqdn' ? '@ FQDN' : type === 'cidr' ? '▦ CIDR' : 'Address'} · ${pending}`;
         values = safeValues(operation, ['name', 'type', 'value'], ['address', pending]);
       } else if (operation.collection === 'port_objects') {
         kind = 'Port';
@@ -8374,7 +8375,11 @@ export class SmithproxyApp extends LitElement {
           <div class="table" role="group" aria-label="Search results">
             <div class="row object-row heading" aria-hidden="true"><span>Name</span><span>Kind</span><span>Match context</span><span></span></div>
             ${policies.map(result => row('Policy', result.name, result.action, origin => this.openPolicy(result.item, origin)))}
-            ${addresses.map(result => row('Address', result.name, `${result.type} · ${result.value}`, origin => this.openAddress(result.item.id, origin)))}
+            ${addresses.map(result => row(
+              'Address', result.name,
+              `${result.type === 'fqdn' ? '@ FQDN' : '▦ CIDR'} · ${result.value}`,
+              origin => this.openAddress(result.item.id, origin),
+            ))}
             ${ports.map(result => row('Port', result.name, result.start === result.end ? String(result.start) : `${result.start}–${result.end}`, origin => this.openPort(result.item.id, origin)))}
             ${protocols.map(result => row('Protocol', result.name, String(result.number), origin => this.openProtocol(result.item.id, origin)))}
             ${profiles.map(result => row('Profile', result.name, result.item.type, origin => this.openProfile(result.item.id, origin)))}
