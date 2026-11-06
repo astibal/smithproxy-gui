@@ -71,6 +71,7 @@ type MockState = {
   configFailuresRemaining?: number;
   configSnapshotDelayMs?: number;
   configSnapshotState?: 'ready' | 'unavailable';
+  scriptProfilesPresent?: boolean;
   unsavedConfig?: boolean;
   configRevision?: string | null;
   savedConfigRevision?: string | null;
@@ -772,6 +773,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       revision,
       saved_revision: savedRevision,
       unsaved: state.unsavedConfig ?? false,
+      script_profiles_present: state.scriptProfilesPresent ?? true,
+      auth_profiles_present: true,
       policies: [{
         id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
         source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
@@ -4215,6 +4218,20 @@ test('keeps unsupported named-key edits read-only without blocking real object f
   await expect(editor.getByLabel('Type')).toBeEnabled();
   await expect(editor.getByLabel('Address')).toBeEditable();
   await expect(editor).toContainText('Renaming this existing object is not available');
+});
+
+test('does not offer a first script profile when its config collection is absent', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    namedStructuralDraftsReady: true, scriptProfilesPresent: false,
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('button', {name: 'New profile'}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(editor.getByLabel('Profile type').getByRole('option', {name: 'Script'})).toHaveCount(0);
+  await expect(editor.getByLabel('Profile type').getByRole('option')).toHaveCount(6);
 });
 
 test('walks reverse dependencies through nested editors', async ({page}) => {

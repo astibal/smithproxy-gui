@@ -9,6 +9,8 @@ const snapshot: ConfigSnapshot = {
   revision: 'fixture-1',
   savedRevision: 'fixture-1',
   unsaved: false,
+  scriptProfilesPresent: true,
+  authProfilesPresent: true,
   policies: [
     {
       id: 'policy-office',

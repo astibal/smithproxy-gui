@@ -421,6 +421,8 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     parsed.snapshot->revision = revision;
     parsed.snapshot->saved_revision = saved_revision;
     parsed.snapshot->unsaved = document["unsaved"].get<bool>();
+    parsed.snapshot->script_profiles_present = document["config"].contains("script_profiles");
+    parsed.snapshot->auth_profiles_present = document["config"].contains("auth_profiles");
     // Atomic snapshots bind every synthesized entity ID to one canonical
     // revision. They remain safe transaction handles until that revision
     // changes, unlike IDs assembled from legacy multi-request reads.

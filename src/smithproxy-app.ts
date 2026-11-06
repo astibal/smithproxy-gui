@@ -3205,6 +3205,12 @@ export class SmithproxyApp extends LitElement {
     return this.structuralDraftsAvailable || this.namedStructuralDraftsAvailable;
   }
 
+  private profileCreateTypeAvailable(type: ProfileCreateType): boolean {
+    if (!visibleProfileCreateTypes.has(type)) return false;
+    if (type === 'script') return this.snapshot?.scriptProfilesPresent === true;
+    return true;
+  }
+
   private policyTransactionsAvailable(): boolean {
     return this.structuralDraftsAvailable || this.policyStructuralDraftsAvailable;
   }
@@ -4811,7 +4817,8 @@ export class SmithproxyApp extends LitElement {
       this.renderRoot.querySelector<T>(`#profile-create-${field}-${entry.id}`);
     const typeInput = element<HTMLSelectElement>('type');
     const nameInput = element<HTMLInputElement>('name');
-    if (!typeInput || !nameInput || !visibleProfileCreateTypes.has(typeInput.value as ProfileCreateType)) return;
+    if (!typeInput || !nameInput ||
+        !this.profileCreateTypeAvailable(typeInput.value as ProfileCreateType)) return;
     const type = typeInput.value as ProfileCreateType;
     const name = nameInput.value.trim();
     const printable = (value: string, maximum: number, empty = false) =>
@@ -10606,7 +10613,7 @@ export class SmithproxyApp extends LitElement {
           ?disabled=${readOnly || operation !== undefined || prefill !== undefined}
           @change=${(event: Event) => {
             const value = (event.currentTarget as HTMLSelectElement).value as ProfileCreateType;
-            if (visibleProfileCreateTypes.has(value)) {
+            if (this.profileCreateTypeAvailable(value)) {
               const name = this.renderRoot.querySelector<HTMLInputElement>(
                 `#profile-create-name-${entry.id}`,
               )?.value ?? '';
@@ -10626,7 +10633,8 @@ export class SmithproxyApp extends LitElement {
           <option value="dns">DNS ALG</option>
           <option value="content">Content</option>
           <option value="ssh">SSH</option>
-          <option value="script">Script</option>
+          ${this.snapshot?.scriptProfilesPresent
+            ? html`<option value="script">Script</option>` : nothing}
         </select>
         <label for="profile-create-name-${entry.id}">Name</label>
         <input id="profile-create-name-${entry.id}" .value=${String(field('name', ''))}

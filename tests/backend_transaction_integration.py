@@ -167,6 +167,8 @@ def main() -> int:
     TransactionSmithproxy.transactions = {}
     TransactionSmithproxy.next_transaction = 1
     TransactionSmithproxy.reject_next_prepare = False
+    script_profiles = FakeSmithproxy.config_sections.pop("script_profiles")
+    auth_profiles = FakeSmithproxy.config_sections.pop("auth_profiles")
 
     fake_port = free_port()
     fake = http.server.ThreadingHTTPServer(("127.0.0.1", fake_port), TransactionSmithproxy)
@@ -205,6 +207,7 @@ def main() -> int:
             assert capabilities["features"]["structural_drafts"] is False
             assert capabilities["features"]["primitive_structural_drafts"] is True
             assert capabilities["features"]["named_structural_drafts"] is True
+            assert capabilities["features"]["named_renames"] is False
             assert capabilities["features"]["policy_structural_drafts"] is True
             assert capabilities["features"]["content_rule_structural_drafts"] is True
             assert capabilities["features"]["signature_structural_drafts"] is True
@@ -222,6 +225,20 @@ def main() -> int:
                 "X-Smithproxy-GUI-CSRF": "1",
                 "Content-Type": "application/json",
             }
+            unavailable_script_create = {
+                "expected_version": draft["version"],
+                "operation": {
+                    "op": "create", "local_id": "create-script-1",
+                    "collection": "script_profiles", "client_id": "audit-script",
+                    "position": {"last": True},
+                    "fields": {"name": "audit-script", "type": "0"},
+                },
+            }
+            status, _, body = request(
+                port, "/api/v1/config/draft/operations", "POST",
+                headers=mutation_headers, body=json.dumps(unavailable_script_create))
+            assert status == 422
+            assert json.loads(body)["error"]["code"] == "draft.change_rejected"
             status, _, body = request(
                 port, "/api/v1/config/draft/changes", "POST",
                 headers=mutation_headers,
@@ -409,15 +426,16 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=2)
-            fake.shutdown()
-            fake.server_close()
-            fake_thread.join(timeout=2)
-
         output = process.stdout.read() + process.stderr.read()
         assert process.returncode == 0
         assert PRIVATE_VALUE not in output
         assert api_key not in output
         assert gateway_secret not in output
+    FakeSmithproxy.config_sections["script_profiles"] = script_profiles
+    FakeSmithproxy.config_sections["auth_profiles"] = auth_profiles
+    fake.shutdown()
+    fake.server_close()
+    fake_thread.join(timeout=2)
     return 0
 
 

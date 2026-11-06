@@ -530,9 +530,14 @@ nlohmann::json draft_position_json(const DraftPosition& position) {
 }
 
 bool structural_operation_supported(
-    const DraftStructuralOperation& operation, const TransactionCapabilities& capabilities) {
+    const DraftStructuralOperation& operation, const TransactionCapabilities& capabilities,
+    const ConfigSnapshot& snapshot) {
     if (capabilities.state != "ready") return false;
     const auto collection = draft_structural_collection(operation);
+    if ((collection == "script_profiles" && !snapshot.script_profiles_present) ||
+        (collection == "auth_profiles" && !snapshot.auth_profiles_present)) {
+        return false;
+    }
     const auto found = std::find_if(
         capabilities.collections.begin(), capabilities.collections.end(),
         [collection](const auto& item) { return item.id == collection; });
@@ -913,7 +918,7 @@ private:
                 return {503, "application/json; charset=utf-8",
                         "{\"error\":\"structural draft unavailable\"}"};
             }
-            if (!structural_operation_supported(*operation, capabilities)) {
+            if (!structural_operation_supported(*operation, capabilities, status.config_snapshot)) {
                 return {422, "application/json; charset=utf-8",
                         "{\"error\":\"draft change rejected\"}"};
             }
@@ -964,7 +969,8 @@ private:
                         "{\"error\":\"structural draft unavailable\"}"};
             }
             if (!std::all_of(operations.begin(), operations.end(), [&](const auto& operation) {
-                    return structural_operation_supported(operation, capabilities);
+                    return structural_operation_supported(
+                        operation, capabilities, status.config_snapshot);
                 })) {
                 return {422, "application/json; charset=utf-8",
                         "{\"error\":\"draft change rejected\"}"};
@@ -1904,6 +1910,10 @@ private:
                     ",\"saved_revision\":" +
                     (snapshot.saved_revision ? json_string(*snapshot.saved_revision) : "null") +
                     ",\"unsaved\":" + (snapshot.unsaved ? "true" : "false") +
+                    ",\"script_profiles_present\":" +
+                    (snapshot.script_profiles_present ? "true" : "false") +
+                    ",\"auth_profiles_present\":" +
+                    (snapshot.auth_profiles_present ? "true" : "false") +
                     ",\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +

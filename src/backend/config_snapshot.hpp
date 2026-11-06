@@ -354,6 +354,8 @@ struct ConfigSnapshot {
     std::optional<std::string> revision;
     std::optional<std::string> saved_revision;
     bool unsaved{};
+    bool script_profiles_present{};
+    bool auth_profiles_present{};
     // Legacy multi-section reads synthesize index IDs and must keep this false.
     bool stable_entity_ids{};
     // Local monotonic time prevents a late pre-commit fetch from rebinding the draft.

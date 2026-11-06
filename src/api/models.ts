@@ -371,6 +371,8 @@ export interface ConfigSnapshot {
   revision: string | null;
   savedRevision: string | null;
   unsaved: boolean;
+  scriptProfilesPresent: boolean;
+  authProfilesPresent: boolean;
   policies: ReadonlyArray<PolicySummary>;
   addresses: ReadonlyArray<AddressObject>;
   ports: ReadonlyArray<PortObject>;

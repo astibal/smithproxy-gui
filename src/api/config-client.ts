@@ -1089,6 +1089,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     revision: value.revision as string | null,
     savedRevision: value.saved_revision as string | null,
     unsaved: value.unsaved,
+    scriptProfilesPresent: value.script_profiles_present === true,
+    authProfilesPresent: value.auth_profiles_present === true,
     policies,
     addresses,
     ports,

@@ -10,6 +10,8 @@ const liveSnapshot = {
   revision: null,
   saved_revision: null,
   unsaved: false,
+  script_profiles_present: true,
+  auth_profiles_present: true,
   policies: [{
     id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
     source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
@@ -195,6 +197,7 @@ describe('ApiConfigClient', () => {
     const snapshot = await client.loadSnapshot();
 
     expect(snapshot).toMatchObject({source: 'live', state: 'ready', revision: null});
+    expect(snapshot).toMatchObject({scriptProfilesPresent: true, authProfilesPresent: true});
     expect(parseConfigSnapshot({
       ...liveSnapshot,
       revision: '89afe0b0ccaad050ce7fca8f78661c35',

@@ -1445,6 +1445,11 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
             parsed.snapshot->profiles.end(),
             std::make_move_iterator(profiles.profiles->begin()),
             std::make_move_iterator(profiles.profiles->end()));
+        if (std::string_view{section} == "script_profiles") {
+            parsed.snapshot->script_profiles_present = true;
+        } else if (std::string_view{section} == "auth_profiles") {
+            parsed.snapshot->auth_profiles_present = true;
+        }
     }
     finalize_private_profile_references(parsed.snapshot->profiles);
     parsed.snapshot->checked_at = snapshot.checked_at;
