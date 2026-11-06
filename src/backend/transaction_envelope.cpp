@@ -1,5 +1,6 @@
 #include "transaction_envelope.hpp"
 
+#include "config_group_name.hpp"
 #include "draft_operation.hpp"
 #include "draft_schema.hpp"
 #include "revision.hpp"
@@ -188,16 +189,6 @@ bool named_collection(const std::string_view collection) {
         "detection_profiles", "alg_dns_profiles", "tls_ca",
     };
     return std::find(collections.begin(), collections.end(), collection) != collections.end();
-}
-
-bool valid_config_group_name(const std::string_view name) {
-    if (name.empty() ||
-        !(std::isalpha(static_cast<unsigned char>(name.front())) || name.front() == '_')) {
-        return false;
-    }
-    return std::all_of(name.begin() + 1, name.end(), [](const unsigned char character) {
-        return std::isalnum(character) || character == '_' || character == '-';
-    });
 }
 
 bool append_named_create(

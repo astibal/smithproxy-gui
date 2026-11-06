@@ -1,5 +1,7 @@
 #include "draft_schema.hpp"
 
+#include "config_group_name.hpp"
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -71,6 +73,11 @@ bool printable(const std::string_view value, const std::size_t maximum, const bo
 bool bounded_text(const DraftScalar& value, const std::size_t maximum, const bool empty = false) {
     const auto* item = text(value);
     return item != nullptr && printable(*item, maximum, empty);
+}
+
+bool config_group_name(const DraftScalar& value) {
+    const auto* item = text(value);
+    return item != nullptr && valid_config_group_name(*item);
 }
 
 bool opaque_text(const DraftScalar& value, const std::size_t maximum, const bool empty = false) {
@@ -180,7 +187,7 @@ Result validate_tls(const std::string_view field, const DraftScalar& value) {
         std::string_view{"failed_certcheck_replacement"},
         std::string_view{"failed_certcheck_override"}, std::string_view{"sslkeylog"},
     };
-    if (field == "name") return valid(bounded_text(value, 128U));
+    if (field == "name") return valid(config_group_name(value));
     if (one_of(field, booleans)) return valid(boolean(value));
     if (field == "ocsp_mode" || field == "ocsp_stapling_mode") {
         return valid(bounded_integer(value, 0, 2));
@@ -218,7 +225,7 @@ Result validate_content(const std::string_view field, const DraftScalar& value) 
         std::string_view{"ja4_tls_ch_ignore_sni"}, std::string_view{"ja4_tls_sh"},
         std::string_view{"ja4_http"},
     };
-    if (field == "name") return valid(bounded_text(value, 128U));
+    if (field == "name") return valid(config_group_name(value));
     if (one_of(field, booleans)) return valid(boolean(value));
     if (field == "write_format") return valid(enumerated(value, {"smcap", "pcap", "pcap_single"}));
     if (field == "rules_session_filter") return valid(opaque_text(value, 65536U, true));
@@ -248,23 +255,23 @@ Result validate_signature(const std::string_view field, const DraftScalar& value
 Result validate_indexed(const std::string_view path, const DraftScalar& value) {
     if (const auto field = indexed_suffix(path, "policy")) return validate_policy(*field, value);
     if (const auto field = indexed_suffix(path, "address_objects")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "type") return valid(enumerated(value, {"cidr", "fqdn"}));
         if (*field == "value") return valid(bounded_text(value, 1024U));
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "port_objects")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "start" || *field == "end") return valid(bounded_integer(value, 0, 65535));
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "proto_objects")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "id") return valid(bounded_integer(value, 1, 255));
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "routing")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "dnat_address" || *field == "dnat_port") return valid(string_list(value));
         if (*field == "dnat_lb_method") return valid(enumerated(value, {"round-robin", "sticky-l3", "sticky-l4"}));
         if (*field == "rewrite_sni" || *field == "rewrite_sni_to") return valid(bounded_text(value, 1024U, true));
@@ -273,7 +280,7 @@ Result validate_indexed(const std::string_view path, const DraftScalar& value) {
     if (const auto field = indexed_suffix(path, "tls_profiles")) return validate_tls(*field, value);
     if (const auto field = indexed_suffix(path, "content_profiles")) return validate_content(*field, value);
     if (const auto field = indexed_suffix(path, "ssh_profiles")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "hostkey_policy") return valid(enumerated(value, {"insecure", "accept-new", "strict"}));
         if (*field == "host_key") return valid(bounded_text(value, 1024U, true));
         constexpr std::array actions{
@@ -286,26 +293,26 @@ Result validate_indexed(const std::string_view path, const DraftScalar& value) {
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "script_profiles")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "type") return valid(enumerated(value, {"-1", "0", "1"}));
         if (*field == "script-file") return valid(bounded_text(value, 1024U, true));
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "detection_profiles")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "mode") return valid(bounded_integer(value, 0, 2));
         if (*field == "engines_enabled" || *field == "kb_enabled") return valid(boolean(value));
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "alg_dns_profiles")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "match_request_id" || *field == "randomize_id" || *field == "cached_responses") {
             return valid(boolean(value));
         }
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "tls_ca")) {
-        if (*field == "name") return valid(bounded_text(value, 128U));
+        if (*field == "name") return valid(config_group_name(value));
         if (*field == "path") return valid(bounded_text(value, 1024U, true));
         return Result::UnknownPath;
     }

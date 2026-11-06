@@ -53,6 +53,7 @@ import {
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {persistentConfigurationValues} from './config/persistent-values';
 import {describeCidr} from './config/cidr';
+import {isConfigGroupName} from './config/config-name';
 import {describeFqdn, parseFqdn} from './config/fqdn';
 import {referenceNameSummary} from './config/reference-summary';
 import {
@@ -4915,7 +4916,7 @@ export class SmithproxyApp extends LitElement {
     const type = typeInput?.value ?? '';
     const value = valueInput?.value.trim() ?? '';
     const addressTypes = new Set(['cidr', 'fqdn']);
-    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(name) ||
+    if (!isConfigGroupName(name) ||
         value.length === 0 || value.length > 1024 ||
         !addressTypes.has(type)) {
       this.drawerError = 'A configuration-safe name, type, and address value are required.';
@@ -5020,7 +5021,7 @@ export class SmithproxyApp extends LitElement {
     const first = firstInput.valueAsNumber;
     const end = endInput?.valueAsNumber;
     const maximum = port ? 65535 : 255;
-    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(name) ||
+    if (!isConfigGroupName(name) ||
         !Number.isInteger(first) || first < (port ? 0 : 1) || first > maximum ||
         (port && (!Number.isInteger(end) || end! < first || end! > maximum))) {
       this.drawerError = port
@@ -5101,7 +5102,7 @@ export class SmithproxyApp extends LitElement {
     const name = nameInput.value.trim();
     const printable = (value: string, maximum: number, empty = false) =>
       (empty || value.length > 0) && value.length <= maximum && !/[\u0000-\u001f\u007f]/u.test(value);
-    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(name)) {
+    if (!isConfigGroupName(name)) {
       this.drawerError = 'A configuration-safe profile name is required.';
       return;
     }
@@ -5385,7 +5386,7 @@ export class SmithproxyApp extends LitElement {
     const path = pathInput.value.trim();
     const printable = (value: string, maximum: number) => value.length > 0 && value.length <= maximum &&
       !/[\u0000-\u001f\u007f]/u.test(value);
-    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(name) || !printable(path, 1024)) {
+    if (!isConfigGroupName(name) || !printable(path, 1024)) {
       this.drawerError = this.pendingAuthorityCreate(entry)
         ? 'Re-enter the write-only CA path before updating this pending authority.'
         : 'A printable unique name and CA path are required.';
@@ -5959,9 +5960,14 @@ export class SmithproxyApp extends LitElement {
       if (index < 0 || !name || !mode || !input ||
           !['unchanged', 'replace', 'clear'].includes(mode.value)) return undefined;
       const normalizedName = name.value.trim();
+      const currentName = this.persistentValue(`tls_ca.[${index}].name`, authorities[index]!.name);
       if (normalizedName.length === 0 || normalizedName.length > 128 ||
           /[\u0000-\u001f\u007f]/u.test(normalizedName)) {
         this.draftError = 'A certificate authority name up to 128 characters is required.';
+        return undefined;
+      }
+      if (!isConfigGroupName(normalizedName)) {
+        this.draftError = 'A configuration-safe certificate authority name is required.';
         return undefined;
       }
       const replacement = input.value;
@@ -6069,6 +6075,10 @@ export class SmithproxyApp extends LitElement {
         this.draftError = 'Name and address value are required.';
         return undefined;
       }
+      if (!isConfigGroupName(normalizedName)) {
+        this.draftError = 'A configuration-safe address object name is required.';
+        return undefined;
+      }
       if (type.value === 'cidr' && !describeCidr(value.value)) {
         this.draftError = 'CIDR address objects require a valid IPv4 or IPv6 prefix.';
         return undefined;
@@ -6104,6 +6114,10 @@ export class SmithproxyApp extends LitElement {
         this.draftError = 'Name and a valid port range from 0 to 65535 are required.';
         return undefined;
       }
+      if (!isConfigGroupName(normalizedName)) {
+        this.draftError = 'A configuration-safe port object name is required.';
+        return undefined;
+      }
       if (this.duplicateConfigurationName('port', entry.id, normalizedName)) {
         this.draftError = 'Port object names must be unique.';
         return undefined;
@@ -6128,6 +6142,10 @@ export class SmithproxyApp extends LitElement {
         this.draftError = 'Name and a valid IP protocol number from 1 to 255 are required.';
         return undefined;
       }
+      if (!isConfigGroupName(normalizedName)) {
+        this.draftError = 'A configuration-safe protocol object name is required.';
+        return undefined;
+      }
       if (this.duplicateConfigurationName('protocol', entry.id, normalizedName)) {
         this.draftError = 'Protocol object names must be unique.';
         return undefined;
@@ -6149,6 +6167,10 @@ export class SmithproxyApp extends LitElement {
       if (!prefix) return undefined;
       const normalizedName = name.value.trim();
       const currentName = this.persistentValue(`${prefix}name`, profile.name);
+      if (!isConfigGroupName(normalizedName)) {
+        this.draftError = 'A configuration-safe profile name is required.';
+        return undefined;
+      }
       if (this.duplicateConfigurationName('profile', entry.id, normalizedName)) {
         this.draftError = 'Profile names must be unique within their configuration section.';
         return undefined;

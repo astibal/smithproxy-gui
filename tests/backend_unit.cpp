@@ -749,6 +749,18 @@ int main() {
     assert(validate_draft_schema({
         "address_objects.[0].type", std::string("subnet"),
     }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
+        "address_objects.[0].name", std::string("office_net-4"),
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "address_objects.[0].name", std::string("office network"),
+    }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
+        "tls_profiles.[0].name", std::string("4invalid"),
+    }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
+        "policy.[0].name", std::string("Office traffic policy"),
+    }) == DraftSchemaResult::Valid);
     const auto parsed_identities = parse_draft_scalar(nlohmann::json::array({
         {{"name", "alice"}, {"tls_profile", "inspect"}},
         {{"name", "bob"}, {"content_profile", "capture"}},

@@ -1476,6 +1476,12 @@ test('renames referenced configuration entities atomically across pending refere
   const addresses = page.getByRole('group', {name: 'Address objects'});
   await addresses.getByRole('button').filter({hasText: 'internet'}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit internet'});
+  await addressEditor.getByLabel('Name').fill('public internet');
+  await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(addressEditor.getByText(
+    'A configuration-safe address object name is required.',
+  )).toBeVisible();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
   await addressEditor.getByLabel('Name').fill('office');
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(addressEditor.getByText('Address object names must be unique.')).toBeVisible();
