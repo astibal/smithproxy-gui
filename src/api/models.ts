@@ -122,6 +122,7 @@ export interface ContentProfileDetails {
   ja4TlsServerHello: boolean;
   ja4Http: boolean;
   sessionFilterConfigured: boolean;
+  rulesPresent: boolean;
   ruleCount: number;
   rules: ReadonlyArray<ContentRuleSummary>;
 }

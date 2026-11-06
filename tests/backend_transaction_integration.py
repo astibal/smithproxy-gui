@@ -169,6 +169,8 @@ def main() -> int:
     TransactionSmithproxy.reject_next_prepare = False
     script_profiles = FakeSmithproxy.config_sections.pop("script_profiles")
     auth_profiles = FakeSmithproxy.config_sections.pop("auth_profiles")
+    content_rules = FakeSmithproxy.config_sections["content_profiles"]["safe-content"].pop(
+        "content_rules")
 
     fake_port = free_port()
     fake = http.server.ThreadingHTTPServer(("127.0.0.1", fake_port), TransactionSmithproxy)
@@ -237,6 +239,24 @@ def main() -> int:
             status, _, body = request(
                 port, "/api/v1/config/draft/operations", "POST",
                 headers=mutation_headers, body=json.dumps(unavailable_script_create))
+            assert status == 422
+            assert json.loads(body)["error"]["code"] == "draft.change_rejected"
+            unavailable_rule_create = {
+                "expected_version": draft["version"],
+                "operation": {
+                    "op": "create", "local_id": "create-content-rule-1",
+                    "collection": "content_profiles.content_rules",
+                    "client_id": "new-content-rule", "parent_id": "content-0",
+                    "position": {"last": True},
+                    "fields": {
+                        "match": "request", "replace": "", "fill_length": False,
+                        "replace_each_nth": 0,
+                    },
+                },
+            }
+            status, _, body = request(
+                port, "/api/v1/config/draft/operations", "POST",
+                headers=mutation_headers, body=json.dumps(unavailable_rule_create))
             assert status == 422
             assert json.loads(body)["error"]["code"] == "draft.change_rejected"
             status, _, body = request(
@@ -433,6 +453,8 @@ def main() -> int:
         assert gateway_secret not in output
     FakeSmithproxy.config_sections["script_profiles"] = script_profiles
     FakeSmithproxy.config_sections["auth_profiles"] = auth_profiles
+    FakeSmithproxy.config_sections["content_profiles"]["safe-content"][
+        "content_rules"] = content_rules
     fake.shutdown()
     fake.server_close()
     fake_thread.join(timeout=2)

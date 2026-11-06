@@ -100,6 +100,7 @@ struct ConfigContentProfile {
     bool ja4_tls_server_hello{};
     bool ja4_http{};
     bool session_filter_configured{};
+    bool rules_present{};
     std::uint64_t rule_count{};
     std::vector<ConfigContentRule> rules;
 };

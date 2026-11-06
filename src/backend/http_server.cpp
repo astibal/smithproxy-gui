@@ -545,7 +545,17 @@ bool structural_operation_supported(
     return std::visit([&](const auto& item) {
         using Operation = std::decay_t<decltype(item)>;
         if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
-            return found->nested == item.parent_id.has_value();
+            if (found->nested != item.parent_id.has_value()) return false;
+            if (collection == "content_profiles.content_rules") {
+                if (!item.parent_id) return false;
+                const auto parent = std::find_if(
+                    snapshot.profiles.begin(), snapshot.profiles.end(), [&](const auto& profile) {
+                        return profile.id == *item.parent_id && profile.content &&
+                               profile.content->rules_present;
+                    });
+                return parent != snapshot.profiles.end();
+            }
+            return true;
         } else if constexpr (std::is_same_v<Operation, DraftMoveOperation>) {
             return found->ordered;
         } else {
@@ -1620,6 +1630,8 @@ private:
                             ",\"ja4_http\":" + (content.ja4_http ? "true" : "false") +
                             ",\"session_filter_configured\":" +
                             (content.session_filter_configured ? "true" : "false") +
+                            ",\"rules_present\":" +
+                            (content.rules_present ? "true" : "false") +
                             ",\"rule_count\":" + std::to_string(content.rule_count) +
                             ",\"rules\":" + rules + "}";
             }

@@ -158,7 +158,8 @@ const snapshot: ConfigSnapshot = {
       content: {
         writePayload: false, writeFormat: 'pcap_single', webhookEnabled: false,
         webhookLocksTraffic: false, ja4TlsClientHello: true, ja4TlsClientHelloIgnoresSni: true,
-        ja4TlsServerHello: false, ja4Http: true, sessionFilterConfigured: true, ruleCount: 2,
+        ja4TlsServerHello: false, ja4Http: true, sessionFilterConfigured: true,
+        rulesPresent: true, ruleCount: 2,
         rules: [
           {id: 'content-rule-0-0', matchConfigured: true, replacementConfigured: true,
            replacementHasValue: false, fillLength: true, replaceEachNth: 0},

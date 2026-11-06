@@ -78,7 +78,7 @@ const liveSnapshot = {
         write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
         webhook_locks_traffic: true, ja4_tls_client_hello: true,
         ja4_tls_client_hello_ignores_sni: true, ja4_tls_server_hello: false,
-        ja4_http: true, session_filter_configured: true, rule_count: 2,
+        ja4_http: true, session_filter_configured: true, rules_present: true, rule_count: 2,
         rules: [
           {id: 'content-rule-0-0', match_configured: true, replacement_configured: true,
            replacement_has_value: false, fill_length: true, replace_each_nth: 0},

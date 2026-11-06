@@ -72,6 +72,7 @@ type MockState = {
   configSnapshotDelayMs?: number;
   configSnapshotState?: 'ready' | 'unavailable';
   scriptProfilesPresent?: boolean;
+  contentRulesPresent?: boolean;
   unsavedConfig?: boolean;
   configRevision?: string | null;
   savedConfigRevision?: string | null;
@@ -863,8 +864,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
             write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
             webhook_locks_traffic: false, ja4_tls_client_hello: true,
             ja4_tls_client_hello_ignores_sni: false, ja4_tls_server_hello: true,
-            ja4_http: false, session_filter_configured: true, rule_count: 2,
-            rules: [
+            ja4_http: false, session_filter_configured: true,
+            rules_present: state.contentRulesPresent ?? true,
+            rule_count: state.contentRulesPresent === false ? 0 : 2,
+            rules: state.contentRulesPresent === false ? [] : [
               {id: 'content-rule-0-0', match_configured: true, replacement_configured: true,
                replacement_has_value: false, fill_length: true, replace_each_nth: 0},
               {id: 'content-rule-0-1', match_configured: true, replacement_configured: true,
@@ -4232,6 +4235,23 @@ test('does not offer a first script profile when its config collection is absent
   const editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Profile type').getByRole('option', {name: 'Script'})).toHaveCount(0);
   await expect(editor.getByLabel('Profile type').getByRole('option')).toHaveCount(6);
+});
+
+test('does not offer a first content rule when its parent list is absent', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    contentRuleStructuralDraftsReady: true, contentRulesPresent: false,
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /capture content/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit capture'});
+  await expect(editor.getByRole('button', {name: 'New content rule'})).toBeDisabled();
+  await expect(editor.getByRole('button', {name: 'New content rule'})).toHaveAttribute(
+    'title', 'This profile has no content_rules collection in the live configuration.',
+  );
 });
 
 test('walks reverse dependencies through nested editors', async ({page}) => {

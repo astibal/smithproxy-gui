@@ -3574,7 +3574,7 @@ export class SmithproxyApp extends LitElement {
 
   private openNewContentRule(profileId: string, origin?: HTMLElement): void {
     if (!this.contentRuleTransactionsAvailable() ||
-        !this.snapshot?.profiles.some(item => item.id === profileId && item.content !== null)) return;
+        !this.snapshot?.profiles.some(item => item.id === profileId && item.content?.rulesPresent)) return;
     const localId = `create-content-rule-${crypto.randomUUID()}`;
     this.contentRuleCreateParents.set(localId, profileId);
     this.openObjectDrawer({kind: 'content-rule-create', id: localId, title: 'New content rule'}, origin);
@@ -11252,8 +11252,10 @@ export class SmithproxyApp extends LitElement {
           <label>Content rules</label>
           <div class="reference-stack" role="group" aria-label="Content rules">
             <button class="secondary" type="button"
-              ?disabled=${!this.contentRuleTransactionsAvailable()}
-              title=${this.contentRuleTransactionsAvailable()
+              ?disabled=${!this.contentRuleTransactionsAvailable() || !content.rulesPresent}
+              title=${!content.rulesPresent
+                ? 'This profile has no content_rules collection in the live configuration.'
+                : this.contentRuleTransactionsAvailable()
                 ? 'Add a content rule to the workspace draft'
                 : 'Requires reviewed structural transactions and stable entity IDs.'}
               @click=${(event: MouseEvent) => this.openNewContentRule(

@@ -590,7 +590,7 @@ ConfigProfileParseResult parse_config_profiles(
             content = ConfigContentProfile{
                 *write_payload, write_format->empty() ? "pcap_single" : *write_format,
                 *webhook, *webhook_lock, *ja4_client, *ja4_ignore_sni, *ja4_server, *ja4_http,
-                !session_filter->empty(), rules.size(), std::move(rules),
+                !session_filter->empty(), configured_rules != profile.end(), rules.size(), std::move(rules),
             };
         } else if (type == "ssh") {
             const auto host_key = bounded_string(profile, "host_key", maximum_value_length);

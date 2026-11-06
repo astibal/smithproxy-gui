@@ -455,6 +455,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       });
       const ruleCount = safeInteger(item.content.rule_count, 'content rule count', MAX_REFERENCES);
       if (ruleCount !== rules.length) throw new Error('Invalid content rule count.');
+      const rulesPresent = safeBoolean(item.content.rules_present, 'content rules collection state');
+      if (!rulesPresent && rules.length !== 0) throw new Error('Invalid content rules collection state.');
       content = {
         writePayload: safeBoolean(item.content.write_payload, 'content payload state'),
         writeFormat: writeFormat as 'smcap' | 'pcap' | 'pcap_single',
@@ -469,6 +471,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         sessionFilterConfigured: safeBoolean(
           item.content.session_filter_configured, 'content session-filter state',
         ),
+        rulesPresent,
         ruleCount,
         rules,
       };
