@@ -555,9 +555,9 @@ export class SmithproxyApp extends LitElement {
     nav button[aria-current='page'] + .nav-badge { border-color: color-mix(in srgb, var(--app-brand) 55%, var(--app-border)); color: var(--app-text); }
     .nav-expand { position: absolute; right: 34px; rotate: 0deg; transition: rotate 120ms ease; }
     .object-nav-toggle[aria-expanded='true'] .nav-expand { rotate: 90deg; }
-    .object-subnav { display: grid; gap: 2px; margin: 2px 0 6px 25px; padding-left: 8px; border-left: 1px solid var(--app-border); }
+    .object-subnav { display: grid; gap: 2px; margin: 2px 0 6px 16px; padding-left: 7px; border-left: 1px solid var(--app-border); }
     .object-subnav[hidden] { display: none; }
-    .object-subnav button { grid-template-columns: 14px minmax(0, 1fr); padding: 7px 8px; border-radius: 2px; font-size: 12px; }
+    .object-subnav button { grid-template-columns: 14px minmax(0, 1fr); padding: 8px; border-radius: 2px; font-size: 13px; }
     .object-subnav button[aria-current='page'] { box-shadow: none; color: var(--app-text); }
 
     .main { display: grid; grid-template-rows: 58px minmax(0, 1fr); min-width: 0; min-height: 0; }
@@ -579,8 +579,8 @@ export class SmithproxyApp extends LitElement {
     .inventory-stat span { display: block; margin-top: 1px; color: var(--app-muted); font-size: 11px; letter-spacing: .025em; text-transform: uppercase; }
     .inventory-stat.success strong { color: var(--app-success); }
     .inventory-stat.warning strong { color: var(--app-warning); }
-    .inventory-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
-    .inventory-tabs button { padding: 6px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: transparent; color: var(--app-muted); cursor: pointer; }
+    .inventory-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; }
+    .inventory-tabs button { min-height: 38px; padding: 8px 14px; border: 1px solid var(--app-border); border-radius: 3px; background: transparent; color: var(--app-muted); font-size: 13px; cursor: pointer; }
     .inventory-tabs button:hover { background: var(--app-raised); color: var(--app-text); }
     .inventory-tabs button[aria-pressed='true'] { border-color: var(--app-brand); background: var(--app-raised); color: var(--app-text); }
     .inventory-tabs small { color: var(--app-muted); font-variant-numeric: tabular-nums; }
@@ -589,8 +589,9 @@ export class SmithproxyApp extends LitElement {
     .structural-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .structural-action small { color: var(--app-muted); }
     .list-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 0 0 12px; }
+    .object-create-button { width: 42px; height: 38px; padding: 0; font-size: 22px; line-height: 1; }
     .list-filter { display: grid; min-width: 150px; gap: 4px; color: var(--app-muted); font-size: 12px; }
-    .list-filter:first-child { flex: 1 1 260px; }
+    .list-filters > .list-filter:first-of-type { flex: 1 1 260px; }
     .list-filter input, .list-filter select { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
     .list-filter-summary { align-self: center; color: var(--app-muted); font-size: 12px; white-space: nowrap; }
     .policy-bulk-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--app-border); background: var(--app-raised); }
@@ -8428,44 +8429,6 @@ export class SmithproxyApp extends LitElement {
       <div class="content" tabindex="0">
         <div class="section-head">
           <div><h2>${this.objectViewLabel()}</h2><p>Reusable values, trust roots, and traffic signatures</p></div>
-          <div class="structural-action object-structural-action" ?hidden=${this.objectKindFilter === 'security'}>
-            <div class="structural-buttons">
-              <button class="primary" type="button" ?hidden=${!kindMatches('address')}
-                ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects')}
-                aria-describedby="new-object-blocker"
-                @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>
-                New address
-              </button>
-              <button class="primary" type="button" ?hidden=${!kindMatches('port')}
-                ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('port_objects')}
-                aria-describedby="new-object-blocker"
-                @click=${(event: MouseEvent) => this.openNewPort(event.currentTarget as HTMLElement)}>
-                New port
-              </button>
-              <button class="primary" type="button" ?hidden=${!kindMatches('protocol')}
-                ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('proto_objects')}
-                aria-describedby="new-object-blocker"
-                @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>
-                New protocol
-              </button>
-              <button class="primary" type="button" ?hidden=${!kindMatches('profile')}
-                ?disabled=${!this.namedTransactionsAvailable() || this.availableProfileCreateTypes().length === 0}
-                aria-describedby="new-object-blocker"
-                @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>
-                New profile
-              </button>
-            </div>
-            <small id="new-object-blocker">${this.primitiveTransactionsAvailable()
-              ? 'Primitive objects use atomic Smithproxy transactions; other object types remain capability-gated.'
-              : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
-          </div>
-        </div>
-        <div class="inventory-summary" aria-label="Configuration object inventory summary"
-          ?hidden=${this.objectKindFilter !== 'all'}>
-          <div class="inventory-stat"><strong>${((this.snapshot?.addresses.length ?? 0) + pendingAddresses.length).toLocaleString()}</strong><span>Addresses</span></div>
-          <div class="inventory-stat"><strong>${((this.snapshot?.ports.length ?? 0) + pendingPorts.length).toLocaleString()}</strong><span>Ports</span></div>
-          <div class="inventory-stat"><strong>${((this.snapshot?.protocols.length ?? 0) + pendingProtocols.length).toLocaleString()}</strong><span>Protocols</span></div>
-          <div class="inventory-stat"><strong>${(liveProfileCount + pendingProfileCount).toLocaleString()}</strong><span>Profiles and routing</span></div>
         </div>
         <div class="inventory-tabs" role="group" aria-label="Configuration object categories">
           ${([
@@ -8488,6 +8451,43 @@ export class SmithproxyApp extends LitElement {
           `)}
         </div>
         <div class="list-filters" role="search" aria-label="Filter configuration objects">
+          ${this.objectKindFilter === 'address' ? html`
+            <button class="primary object-create-button" type="button" aria-label="New address"
+              title=${!this.primitiveTransactionsAvailable()
+                ? 'Requires reviewed structural transactions and stable entity IDs.'
+                : !this.collectionPresent('address_objects')
+                  ? 'The address object collection is not advertised by Smithproxy.'
+                  : 'Create a new address object'}
+              ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects')}
+              @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>+</button>
+          ` : this.objectKindFilter === 'port' ? html`
+            <button class="primary object-create-button" type="button" aria-label="New port"
+              title=${!this.primitiveTransactionsAvailable()
+                ? 'Requires reviewed structural transactions and stable entity IDs.'
+                : !this.collectionPresent('port_objects')
+                  ? 'The port object collection is not advertised by Smithproxy.'
+                  : 'Create a new port object'}
+              ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('port_objects')}
+              @click=${(event: MouseEvent) => this.openNewPort(event.currentTarget as HTMLElement)}>+</button>
+          ` : this.objectKindFilter === 'protocol' ? html`
+            <button class="primary object-create-button" type="button" aria-label="New protocol"
+              title=${!this.primitiveTransactionsAvailable()
+                ? 'Requires reviewed structural transactions and stable entity IDs.'
+                : !this.collectionPresent('proto_objects')
+                  ? 'The protocol object collection is not advertised by Smithproxy.'
+                  : 'Create a new protocol object'}
+              ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('proto_objects')}
+              @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>+</button>
+          ` : this.objectKindFilter === 'profile' ? html`
+            <button class="primary object-create-button" type="button" aria-label="New profile"
+              title=${!this.namedTransactionsAvailable()
+                ? 'Requires reviewed named-object transactions and stable entity IDs.'
+                : this.availableProfileCreateTypes().length === 0
+                  ? 'No creatable profile collection is advertised by Smithproxy.'
+                  : 'Create a new profile'}
+              ?disabled=${!this.namedTransactionsAvailable() || this.availableProfileCreateTypes().length === 0}
+              @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>+</button>
+          ` : nothing}
           <label class="list-filter">Name, value, or type
             <input type="search" aria-label="Filter object list" .value=${this.objectListQuery}
               @input=${(event: Event) => {

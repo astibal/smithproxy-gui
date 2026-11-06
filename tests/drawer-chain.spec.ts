@@ -49,6 +49,14 @@ async function applySaslikVisualTheme(page: Page, theme: SaslikVisualTheme): Pro
   }, {palette, mode, tokens: saslikVisualThemes[theme]});
 }
 
+async function selectObjectCategory(
+  page: Page,
+  category: 'Address objects' | 'Port objects' | 'Protocol objects' | 'Profiles and routing',
+): Promise<void> {
+  await page.getByRole('group', {name: 'Object categories', exact: true})
+    .getByRole('button', {name: category, exact: true}).click();
+}
+
 type MockState = {
   smithproxy: 'ready' | 'unreachable';
   gatewayMode?: 'gateway' | 'disabled';
@@ -2369,6 +2377,7 @@ test('creates and reopens an address object through a structural drawer', async 
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Address objects');
   const create = page.getByRole('button', {name: 'New address'});
   await expect(create).toBeEnabled();
   await create.click();
@@ -2419,6 +2428,7 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
+  await selectObjectCategory(page, 'Port objects');
   await page.getByRole('button', {name: 'New port'}).click();
   let editor = page.getByRole('dialog', {name: 'Create port object'});
   await editor.getByLabel('Name').fill('https');
@@ -2437,6 +2447,7 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
   await expect(editor.getByText('Saved to draft')).toBeVisible();
   await editor.getByRole('button', {name: 'Cancel'}).click();
 
+  await selectObjectCategory(page, 'Protocol objects');
   await page.getByRole('button', {name: 'New protocol'}).click();
   editor = page.getByRole('dialog', {name: 'Create protocol object'});
   await editor.getByLabel('Name').fill('branch-tcp');
@@ -2492,7 +2503,10 @@ test('enables named profile editors without exposing ordered structural operatio
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
+  await expect(page.getByRole('button', {name: /^New (address|port|protocol|profile)$/u})).toHaveCount(0);
+  await selectObjectCategory(page, 'Address objects');
   await expect(page.getByRole('button', {name: 'New address'})).toBeEnabled();
+  await selectObjectCategory(page, 'Profiles and routing');
   await expect(page.getByRole('button', {name: 'New profile'})).toBeEnabled();
   await page.getByRole('button', {name: 'New profile'}).click();
   const editor = page.getByRole('dialog', {name: 'Create profile'});
@@ -2519,6 +2533,7 @@ test('creates complete typed routing detection and DNS profiles', async ({page})
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
+  await selectObjectCategory(page, 'Profiles and routing');
   await page.getByRole('button', {name: 'New profile'}).click();
   let editor = page.getByRole('dialog', {name: 'Create profile'});
   await editor.getByLabel('Name').fill('branch-route');
@@ -2603,6 +2618,7 @@ test('creates sensitive content SSH and script profiles without reflecting write
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
+  await selectObjectCategory(page, 'Profiles and routing');
   await page.getByRole('button', {name: 'New profile'}).click();
   let editor = page.getByRole('dialog', {name: 'Create profile'});
   await editor.getByLabel('Profile type').selectOption('content');
@@ -2696,6 +2712,7 @@ test('creates a complete fail-closed TLS profile with a redacted SNI bypass list
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
   await page.getByRole('button', {name: 'New profile'}).click();
   let editor = page.getByRole('dialog', {name: 'Create profile'});
   await editor.getByLabel('Profile type').selectOption('tls');
@@ -3341,6 +3358,7 @@ test('links policy references to objects created earlier in the same draft', asy
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Address objects');
   await page.getByRole('button', {name: 'New address'}).click();
   let addressEditor = page.getByRole('dialog', {name: 'Create address object'});
   await addressEditor.getByLabel('Name').fill('pending-branch');
@@ -4342,6 +4360,7 @@ test('does not offer a first script profile when its config collection is absent
   }, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
   await page.getByRole('button', {name: 'New profile'}).click();
 
   const editor = page.getByRole('dialog', {name: 'Create profile'});
@@ -4372,8 +4391,11 @@ test('keeps missing ordinary collections empty without offering impossible first
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
+  await selectObjectCategory(page, 'Address objects');
   await expect(page.getByRole('button', {name: 'New address'})).toBeEnabled();
+  await selectObjectCategory(page, 'Port objects');
   await expect(page.getByRole('button', {name: 'New port'})).toBeDisabled();
+  await selectObjectCategory(page, 'Profiles and routing');
   await page.getByRole('button', {name: 'New profile'}).click();
   const types = page.getByRole('dialog', {name: 'Create profile'}).getByLabel('Profile type');
   await expect(types.getByRole('option', {name: 'Routing'})).toHaveCount(0);
@@ -5949,10 +5971,18 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expectNoWcagViolations(page);
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Address objects');
   await expect(page.getByRole('button', {name: 'New address'})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'New address'})).toHaveAttribute(
+    'title', 'Requires reviewed structural transactions and stable entity IDs.',
+  );
+  await selectObjectCategory(page, 'Port objects');
   await expect(page.getByRole('button', {name: 'New port'})).toBeDisabled();
+  await selectObjectCategory(page, 'Protocol objects');
   await expect(page.getByRole('button', {name: 'New protocol'})).toBeDisabled();
-  await expect(page.getByText('Requires reviewed structural transactions and stable entity IDs.')).toBeVisible();
+  await page.getByRole('group', {name: 'Configuration object categories'})
+    .getByRole('button', {name: /^All /u}).click();
+  await expect(page.getByRole('button', {name: /^New (address|port|protocol|profile)$/u})).toHaveCount(0);
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Protocol objects'})).toBeVisible();
