@@ -5960,7 +5960,6 @@ export class SmithproxyApp extends LitElement {
       if (index < 0 || !name || !mode || !input ||
           !['unchanged', 'replace', 'clear'].includes(mode.value)) return undefined;
       const normalizedName = name.value.trim();
-      const currentName = this.persistentValue(`tls_ca.[${index}].name`, authorities[index]!.name);
       if (normalizedName.length === 0 || normalizedName.length > 128 ||
           /[\u0000-\u001f\u007f]/u.test(normalizedName)) {
         this.draftError = 'A certificate authority name up to 128 characters is required.';
