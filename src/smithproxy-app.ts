@@ -51,6 +51,7 @@ import {
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {persistentConfigurationValues} from './config/persistent-values';
 import {describeCidr} from './config/cidr';
+import {referenceNameSummary} from './config/reference-summary';
 import {
   buildDiagnosticsReport,
   serializeDiagnosticsReport,
@@ -7426,8 +7427,8 @@ export class SmithproxyApp extends LitElement {
                     <strong>${text('name', 'New policy')}</strong>
                     <small aria-hidden="true">${rowValues(row).profiles}</small>
                   </span>
-                  <span>${this.referenceNameSummary(list('src'))}</span>
-                  <span>${this.referenceNameSummary(list('dst'))}</span>
+                  <span>${referenceNameSummary(list('src'))}</span>
+                  <span>${referenceNameSummary(list('dst'))}</span>
                   <span class=${`action-badge ${actionTone(text('action', 'unknown'))}`}>
                     ${text('action', 'unknown')}
                   </span>
@@ -7477,8 +7478,8 @@ export class SmithproxyApp extends LitElement {
                   <strong>${name}</strong>
                   <small aria-hidden="true">${profiles}</small>
                 </span>
-                <span>${this.referenceNameSummary(sources)}</span>
-                <span>${this.referenceNameSummary(destinations)}</span>
+                <span>${referenceNameSummary(sources)}</span>
+                <span>${referenceNameSummary(destinations)}</span>
                 <span class=${`action-badge ${actionTone(action)}`}>${action}</span>
                 <span class="row-meta">
                   <span class="status ${enabled ? '' : 'disabled'}">${enabled ? 'Enabled' : 'Disabled'}</span>
@@ -8109,12 +8110,6 @@ export class SmithproxyApp extends LitElement {
             ${capturesMatch ? row('Captures', 'Capture settings', 'Local and remote capture', origin => this.openSystemDrawer('captures', origin)) : nothing}
           </div>`}
       </div>`;
-  }
-
-  private referenceNameSummary(names: ReadonlyArray<string>): string {
-    if (names.length === 0) return 'None';
-    const [first, ...rest] = names;
-    return `${first!}${rest.length > 0 ? ` +${rest.length}` : ''}`;
   }
 
   private renderObjects() {

@@ -1072,6 +1072,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await action.selectOption('reject');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText('Saved to draft')).toBeVisible();
+  const updatedPolicyRow = page.getByRole('button', {name: /Office outbound office internet, backup reject/i});
+  await expect(updatedPolicyRow).toContainText('internet, backup');
+  await expect(updatedPolicyRow).not.toContainText('internet +1');
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await expect(page.getByText('Config: Ready')).toBeVisible();
   await editor.getByRole('button', {name: /tcp/i}).click();
