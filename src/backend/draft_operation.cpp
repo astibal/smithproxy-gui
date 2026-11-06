@@ -1,11 +1,11 @@
 #include "draft_operation.hpp"
 
+#include "ascii.hpp"
 #include "draft_schema.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cctype>
 #include <type_traits>
 
 namespace smithproxy::gui {
@@ -50,39 +50,39 @@ const CollectionSchema* collection_schema(const std::string_view id) {
 
 bool valid_local_identifier(const std::string_view value) {
     if (value.empty() || value.size() > 64U ||
-        !std::isalnum(static_cast<unsigned char>(value.front()))) {
+        !ascii_alphanumeric(static_cast<unsigned char>(value.front()))) {
         return false;
     }
     return std::all_of(value.begin(), value.end(), [](const unsigned char character) {
-        return std::isalnum(character) || character == '.' || character == '_' || character == '-';
+        return ascii_alphanumeric(character) || character == '.' || character == '_' || character == '-';
     });
 }
 
 bool valid_collection(const std::string_view value) {
     if (value.empty() || value.size() > 96U ||
-        !std::islower(static_cast<unsigned char>(value.front()))) {
+        !ascii_lower(static_cast<unsigned char>(value.front()))) {
         return false;
     }
     return std::all_of(value.begin(), value.end(), [](const unsigned char character) {
-        return std::islower(character) || std::isdigit(character) || character == '_' || character == '.';
+        return ascii_lower(character) || ascii_digit(character) || character == '_' || character == '.';
     });
 }
 
 bool valid_entity_identifier(const std::string_view value) {
     if (value.empty() || value.size() > 256U) return false;
     return std::all_of(value.begin(), value.end(), [](const unsigned char character) {
-        return std::isalnum(character) || character == ':' || character == '.' ||
+        return ascii_alphanumeric(character) || character == ':' || character == '.' ||
                character == '_' || character == '-';
     });
 }
 
 bool valid_field_name(const std::string_view value) {
     if (value.empty() || value.size() > 96U ||
-        !std::islower(static_cast<unsigned char>(value.front()))) {
+        !ascii_lower(static_cast<unsigned char>(value.front()))) {
         return false;
     }
     return std::all_of(value.begin(), value.end(), [](const unsigned char character) {
-        return std::islower(character) || std::isdigit(character) || character == '_' || character == '-';
+        return ascii_lower(character) || ascii_digit(character) || character == '_' || character == '-';
     });
 }
 

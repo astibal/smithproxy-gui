@@ -162,6 +162,18 @@ int main() {
     });
     assert(parsed_create);
     assert(std::get<DraftCreateOperation>(*parsed_create).fields == create_address.fields);
+    auto non_ascii_local_id = create_address;
+    non_ascii_local_id.local_id = "create-address-á";
+    assert(!valid_draft_structural_operation(non_ascii_local_id));
+    auto non_ascii_client_id = create_address;
+    non_ascii_client_id.client_id = "new-office-ť";
+    assert(!valid_draft_structural_operation(non_ascii_client_id));
+    assert(!valid_draft_structural_operation(DraftDeleteOperation{
+        .local_id = "delete-address-1",
+        .collection = "address_objects",
+        .entity_id = "cfg:address:kancelář",
+    }));
+    assert(!draft_structural_field_path("address_objects", "náme"));
     const auto parsed_auth_create = parse_draft_structural_operation(nlohmann::json{
         {"op", "create"}, {"local_id", "create-auth-1"},
         {"collection", "auth_profiles"}, {"client_id", "new-auth-profile"},
