@@ -5726,7 +5726,7 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toContainText('Ready · Stale');
   await expect(page.getByRole('region', {name: 'Interface synchronization'})).toContainText('Ready · Stale');
-  await expect(page.getByLabel('Network listeners').getByText('Last known')).toHaveCount(2);
+  await expect(page.getByRole('region', {name: 'Listener workload'}).getByText('Last known')).toHaveCount(2);
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Session activity'})).toContainText('Ready · Stale');
@@ -5883,7 +5883,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.goto('/');
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
-  await expect(page.getByRole('heading', {name: 'Listener workload'})).toBeVisible();
+  await expect(page.getByRole('heading', {level: 2, name: 'Network activity'})).toBeVisible();
   const configuredListeners = page.getByRole('region', {name: 'Configured network listeners'});
   const listenerConfig = configuredListeners.getByRole('table', {
     name: 'Configured listener ports and workers',
@@ -5897,8 +5897,24 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const neighborhood = page.getByRole('region', {name: 'Neighborhood activity'});
   await expect(neighborhood.getByText('8', {exact: true})).toBeVisible();
   await expect(neighborhood.getByText(/hostnames, tags, labels, and per-endpoint timelines remain/i)).toBeVisible();
-  await expect(page.getByRole('heading', {name: 'tcp'})).toBeVisible();
-  await expect(page.getByLabel('Network listeners').getByText('3', {exact: true})).toBeVisible();
+  const workload = page.getByRole('table', {name: 'Runtime listener workload'});
+  const workloadRows = workload.getByRole('row');
+  await expect(workloadRows.nth(1).getByRole('cell')).toHaveText([
+    'tcp', 'Active', '2', '3', '12', '1.02 kB', '2.05 kB',
+  ]);
+  await expect(workloadRows.nth(2).getByRole('cell')).toHaveText([
+    'tls', 'Active', '1', '1', '7', '512 B', '256 B',
+  ]);
+  await expect(page.locator(
+    'section[aria-label="Neighborhood activity"] ~ section[aria-label="Listener workload"]',
+  )).toBeVisible();
+  await expect(page.locator(
+    'section[aria-label="Listener workload"] ~ section[aria-label="Interface synchronization"]',
+  )).toBeVisible();
+  await expect(page.locator(
+    'section[aria-label="Interface synchronization"] ~ section[aria-label="Configured network listeners"]',
+  )).toBeVisible();
+  await expectNoWcagViolations(page);
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await expect(page.getByRole('button', {name: 'New address'})).toBeDisabled();

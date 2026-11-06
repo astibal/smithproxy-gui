@@ -59,6 +59,7 @@ import {
 } from './diagnostics/report';
 import {classifyFreshness, freshnessLabel, type FreshnessState} from './monitoring/freshness';
 import {probeIncidents} from './monitoring/incidents';
+import {orderListenerWorkloads} from './monitoring/listener-order';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
 import {DrawerStore, MAXIMUM_DRAWER_DEPTH, type DrawerEntry} from './state/drawer-store';
 import {
@@ -639,6 +640,8 @@ export class SmithproxyApp extends LitElement {
     .listener-table th:first-child, .listener-table td:first-child { text-align: left; }
     .listener-table th { color: var(--app-muted); font-size: 12px; font-weight: 600; }
     .listener-table tbody tr:last-child td { border-bottom: 0; }
+    .listener-table tr.listener-idle td { color: var(--app-muted); }
+    .listener-table tr.listener-unused { opacity: .62; }
     .listener-name { font-weight: 650; }
     .collector-table { overflow-x: auto; margin-top: 14px; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 3px; color: var(--app-muted); }
@@ -8759,35 +8762,43 @@ export class SmithproxyApp extends LitElement {
     const presentation = this.collectorPresentation(
       metrics.state, metrics.lastSuccessAtUnixMs, 5_000,
     );
+    const listeners = orderListenerWorkloads(metrics.listeners);
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
-          <div><h2>Listener workload</h2><p>Runtime view of Smithproxy network entry points</p></div>
+          <div><h2>Network activity</h2><p>Neighborhood, listener workload, and interface synchronization</p></div>
         </div>
-        ${this.renderNetworkConfiguration()}
-        ${this.renderInterfaceSummary()}
         ${this.renderNeighborSummary()}
         ${this.renderCollectorNotice(presentation, metrics.detail, metrics.lastSuccessAtUnixMs)}
-        <div class="card-grid" aria-label="Network listeners">
-          ${metrics.listeners.map(listener => {
-            const listenerActive = presentation.current && listener.workers > 0;
-            const listenerState = !presentation.current ? 'Last known' : listenerActive ? 'Running' : 'Idle';
-            return html`
-              <article class="domain-card">
-                <header>
-                  <div><h3>${listener.name}</h3><p>${listener.workers} worker${listener.workers === 1 ? '' : 's'}</p></div>
-                  <span class="status ${listenerActive ? '' : 'disabled'}">${listenerState}</span>
-                </header>
-                <dl>
-                  <dt>Active sessions</dt><dd>${listener.sessionsActive.toLocaleString()}</dd>
-                  <dt>Total sessions</dt><dd>${listener.sessionsTotal.toLocaleString()}</dd>
-                  <dt>Traffic up</dt><dd>${this.formatBytes(listener.bytesUp)}</dd>
-                  <dt>Traffic down</dt><dd>${this.formatBytes(listener.bytesDown)}</dd>
-                </dl>
-              </article>`;
-          })}
-          ${metrics.listeners.length === 0 ? html`<div class="metrics-message">No listener samples are available yet.</div>` : nothing}
-        </div>
+        <section class="runtime-summary" aria-label="Listener workload">
+          <div class="runtime-heading">
+            <div><h3>Listener workload</h3><p>Active workloads first; unused listeners remain visible at the bottom</p></div>
+            <span class="runtime-state ${presentation.tone}" title=${metrics.detail}>● ${presentation.label}</span>
+          </div>
+          ${listeners.length > 0 ? html`
+            <div class="table network-config-table" tabindex="0">
+              <table class="listener-table" aria-label="Runtime listener workload">
+                <thead><tr><th>Listener</th><th>State</th><th>Workers</th><th>Active</th><th>Total</th>
+                  <th>Upload</th><th>Download</th></tr></thead>
+                <tbody>${listeners.map(listener => {
+                  const active = presentation.current && listener.sessionsActive > 0;
+                  const state = !presentation.current ? 'Last known' : active ? 'Active' : 'Idle';
+                  return html`<tr class=${listener.workers === 0 ? 'listener-unused' :
+                    listener.sessionsActive === 0 ? 'listener-idle' : ''}>
+                    <td class="listener-name">${listener.name}</td>
+                    <td><span class="status ${active ? '' : 'disabled'}">${state}</span></td>
+                    <td>${listener.workers.toLocaleString()}</td>
+                    <td>${listener.sessionsActive.toLocaleString()}</td>
+                    <td>${listener.sessionsTotal.toLocaleString()}</td>
+                    <td>${this.formatBytes(listener.bytesUp)}</td><td>${this.formatBytes(listener.bytesDown)}</td>
+                  </tr>`;
+                })}</tbody>
+              </table>
+            </div>
+          ` : html`<div class="metrics-message">No listener samples are available yet.</div>`}
+        </section>
+        ${this.renderInterfaceSummary()}
+        ${this.renderNetworkConfiguration()}
       </div>
     `;
   }
