@@ -1985,7 +1985,7 @@ test('shows pending policy and object values in their configuration lists', asyn
     .getByRole('button', {name: /Pending policy Policy reject/i})).toBeVisible();
   await search.fill('pending.example');
   await expect(page.getByRole('group', {name: 'Search results'})
-    .getByRole('button', {name: /pending-office Address fqdn · pending.example/i})).toBeVisible();
+    .getByRole('button', {name: /pending-office Address @ FQDN · pending.example/i})).toBeVisible();
 });
 
 test('shows and reopens structural creates from primary policy and object lists', async ({page}) => {
