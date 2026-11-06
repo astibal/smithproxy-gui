@@ -1051,6 +1051,11 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(editor.getByRole('heading', {name: 'Identity and outcome'})).toBeVisible();
   await expect(editor.getByRole('heading', {name: 'Traffic match'})).toBeVisible();
   await expect(editor.getByRole('heading', {name: 'Inspection pipeline'})).toBeAttached();
+  const inspection = editor.locator('section[aria-labelledby^="policy-inspection-"]');
+  await expect(inspection.locator('label')).toHaveText([
+    'TLS profile', 'Content profile', 'Detection profile', 'Routing profile',
+    'SSH profile', 'DNS ALG profile', 'Script profile',
+  ]);
   await editor.getByRole('button', {name: 'internet', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
   await page.keyboard.press('Escape');

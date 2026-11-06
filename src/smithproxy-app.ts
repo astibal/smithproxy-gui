@@ -189,10 +189,10 @@ const profileCreateLabels: Readonly<Record<ProfileCreateType, string>> = {
 };
 
 const policyProfileAssignments = [
-  {kind: 'routing', field: 'routing', property: 'routing', label: 'Routing'},
   {kind: 'tls', field: 'tls_profile', property: 'tlsProfile', label: 'TLS'},
-  {kind: 'detection', field: 'detection_profile', property: 'detectionProfile', label: 'Detection'},
   {kind: 'content', field: 'content_profile', property: 'contentProfile', label: 'Content'},
+  {kind: 'detection', field: 'detection_profile', property: 'detectionProfile', label: 'Detection'},
+  {kind: 'routing', field: 'routing', property: 'routing', label: 'Routing'},
   {kind: 'ssh', field: 'ssh_profile', property: 'sshProfile', label: 'SSH'},
   {kind: 'authentication', field: 'auth_profile', property: 'authProfile', label: 'Authentication'},
   {kind: 'dns', field: 'alg_dns_profile', property: 'dnsProfile', label: 'DNS ALG'},
@@ -7168,8 +7168,8 @@ export class SmithproxyApp extends LitElement {
           sourcePorts: list('sport'), destinations: list('dst'), destinationPorts: list('dport'),
           action: text('action', 'unknown'), enabled: row.operation.fields['disabled'] !== true,
           profiles: profileSummary([
-            ['Route', text('routing')], ['TLS', text('tls_profile')],
-            ['Detect', text('detection_profile')], ['Content', text('content_profile')],
+            ['TLS', text('tls_profile')], ['Content', text('content_profile')],
+            ['Detect', text('detection_profile')], ['Route', text('routing')],
             ['SSH', text('ssh_profile')], ['DNS', text('alg_dns_profile')],
             ['Script', text('script_profile')],
           ]),
@@ -7189,10 +7189,10 @@ export class SmithproxyApp extends LitElement {
         action: this.presentedValue(`${base}.action`, policy.action),
         enabled: !this.presentedValue(`${base}.disabled`, !policy.enabled),
         profiles: profileSummary([
-          ['Route', this.presentedValue(`${base}.routing`, policy.routing)],
           ['TLS', this.presentedValue(`${base}.tls_profile`, policy.tlsProfile)],
-          ['Detect', this.presentedValue(`${base}.detection_profile`, policy.detectionProfile)],
           ['Content', this.presentedValue(`${base}.content_profile`, policy.contentProfile)],
+          ['Detect', this.presentedValue(`${base}.detection_profile`, policy.detectionProfile)],
+          ['Route', this.presentedValue(`${base}.routing`, policy.routing)],
           ['SSH', this.presentedValue(`${base}.ssh_profile`, policy.sshProfile)],
           ['DNS', this.presentedValue(`${base}.alg_dns_profile`, policy.dnsProfile)],
           ['Script', this.presentedValue(`${base}.script_profile`, policy.scriptProfile)],
@@ -10193,9 +10193,9 @@ export class SmithproxyApp extends LitElement {
           ${this.renderPortReferences(entry, `policy-create-destination-ports-${entry.id}`, destinationPorts)}
         </div>
         ${referenceField('tls', 'TLS profile', 'tls', 'tls_profile')}
-        ${referenceField('routing', 'Routing profile', 'routing', 'routing')}
-        ${referenceField('detection', 'Detection profile', 'detection', 'detection_profile')}
         ${referenceField('content', 'Content profile', 'content', 'content_profile')}
+        ${referenceField('detection', 'Detection profile', 'detection', 'detection_profile')}
+        ${referenceField('routing', 'Routing profile', 'routing', 'routing')}
         ${referenceField('ssh', 'SSH profile', 'ssh', 'ssh_profile')}
         ${referenceField('dns', 'DNS ALG profile', 'dns', 'alg_dns_profile')}
         ${referenceField('script', 'Script profile', 'script', 'script_profile')}
@@ -10384,9 +10384,9 @@ export class SmithproxyApp extends LitElement {
         </div>
         <div class="form-grid wide-form-grid">
           ${this.renderPolicyProfileField(entry, 'tls', 'TLS profile', 'tls', policy.tlsProfile, liveReadOnly)}
-          ${this.renderPolicyProfileField(entry, 'routing', 'Routing profile', 'routing', policy.routing, liveReadOnly)}
-          ${this.renderPolicyProfileField(entry, 'detection', 'Detection profile', 'detection', policy.detectionProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'content', 'Content profile', 'content', policy.contentProfile, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'detection', 'Detection profile', 'detection', policy.detectionProfile, liveReadOnly)}
+          ${this.renderPolicyProfileField(entry, 'routing', 'Routing profile', 'routing', policy.routing, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'ssh', 'SSH profile', 'ssh', policy.sshProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'dns', 'DNS ALG profile', 'dns', policy.dnsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'script', 'Script profile', 'script', policy.scriptProfile, liveReadOnly)}
