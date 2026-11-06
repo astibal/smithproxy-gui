@@ -92,6 +92,7 @@ type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavai
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 type PolicyStatusFilter = 'all' | 'enabled' | 'disabled';
 type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile' | 'security';
+type ObjectSectionKind = Exclude<ObjectKindFilter, 'all'>;
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
 
@@ -398,6 +399,9 @@ export class SmithproxyApp extends LitElement {
   @state() private objectListQuery = '';
   @state() private objectKindFilter: ObjectKindFilter = 'all';
   @state() private objectNavigationExpanded = false;
+  @state() private expandedObjectSections = new Set<ObjectSectionKind>([
+    'address', 'port', 'protocol', 'profile', 'security',
+  ]);
   @state() private objectUsageFilter: ObjectUsageFilter = 'all';
   @state() private objectBulkMessage: string | undefined;
   @state() private objectBulkDeleteConfirmation: string | undefined;
@@ -708,8 +712,17 @@ export class SmithproxyApp extends LitElement {
     .domain-card dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
     .object-row { grid-template-columns: minmax(150px, 1.2fr) 110px minmax(180px, 1fr) 90px; }
     .object-value { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
-    .object-section + .object-section { margin-top: 24px; }
-    .object-section h3 { margin: 0 0 9px; font-size: 15px; }
+    .object-section { border: 1px solid var(--app-border); background: var(--app-surface); }
+    .object-section + .object-section { margin-top: 12px; }
+    .object-section > summary { display: flex; gap: 12px; align-items: center; padding: 11px 13px; }
+    .object-section > summary::before { content: '›'; color: var(--app-muted); font-size: 18px; line-height: 1; rotate: 0deg; transition: rotate 120ms ease; }
+    .object-section[open] > summary::before { rotate: 90deg; }
+    .object-section > summary:hover { background: var(--app-raised); }
+    .object-section[open] > summary { border-bottom: 1px solid var(--app-border); }
+    .object-section > summary h3 { flex: 1; margin: 0; font-size: 15px; }
+    .object-section > summary small { color: var(--app-muted); font-variant-numeric: tabular-nums; }
+    .object-section > .table { border: 0; }
+    .object-section-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 10px 12px; }
     .system-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; }
     .system-grid .domain-card dl { grid-template-columns: minmax(110px, .6fr) minmax(150px, 1fr); }
     .system-grid .domain-card dd { overflow-wrap: anywhere; }
@@ -8438,6 +8451,15 @@ export class SmithproxyApp extends LitElement {
       : bulkDeleteEntries.length === 0
         ? 'No visible unused configuration object is available for deletion.' : undefined;
     const filtersActive = query.length > 0 || this.objectKindFilter !== 'all' || this.objectUsageFilter !== 'all';
+    const sectionOpen = (kind: ObjectSectionKind) =>
+      filtersActive || this.objectKindFilter !== 'all' || this.expandedObjectSections.has(kind);
+    const rememberSectionState = (kind: ObjectSectionKind, event: Event) => {
+      if (filtersActive || this.objectKindFilter !== 'all') return;
+      const expanded = new Set(this.expandedObjectSections);
+      if ((event.currentTarget as HTMLDetailsElement).open) expanded.add(kind);
+      else expanded.delete(kind);
+      this.expandedObjectSections = expanded;
+    };
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -8555,9 +8577,10 @@ export class SmithproxyApp extends LitElement {
         ${visibleCount === 0 ? html`
           <div class="metrics-message" role="status">No configuration objects match the current filters.</div>
         ` : nothing}
-        <section class="object-section"
+        <details class="object-section" ?open=${sectionOpen('address')}
+          @toggle=${(event: Event) => rememberSectionState('address', event)}
           ?hidden=${!kindMatches('address') || (filtersActive && addressRows.length + pendingAddressRows.length === 0)}>
-          <h3>Address objects</h3>
+          <summary><h3>Address objects</h3><small>${addressRows.length + pendingAddressRows.length}</small></summary>
           <div class="table" role="group" aria-label="Address objects">
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
@@ -8582,10 +8605,11 @@ export class SmithproxyApp extends LitElement {
                 title="This address object is a pending structural create">Pending create</span></span>
             </button>`)}
           </div>
-        </section>
-        <section class="object-section"
+        </details>
+        <details class="object-section" ?open=${sectionOpen('port')}
+          @toggle=${(event: Event) => rememberSectionState('port', event)}
           ?hidden=${!kindMatches('port') || (filtersActive && portRows.length + pendingPortRows.length === 0)}>
-          <h3>Port objects</h3>
+          <summary><h3>Port objects</h3><small>${portRows.length + pendingPortRows.length}</small></summary>
           <div class="table" role="group" aria-label="Port objects">
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
@@ -8616,10 +8640,11 @@ export class SmithproxyApp extends LitElement {
               </button>`;
             })}
           </div>
-        </section>
-        <section class="object-section"
+        </details>
+        <details class="object-section" ?open=${sectionOpen('protocol')}
+          @toggle=${(event: Event) => rememberSectionState('protocol', event)}
           ?hidden=${!kindMatches('protocol') || (filtersActive && protocolRows.length + pendingProtocolRows.length === 0)}>
-          <h3>Protocol objects</h3>
+          <summary><h3>Protocol objects</h3><small>${protocolRows.length + pendingProtocolRows.length}</small></summary>
           <div class="table" role="group" aria-label="Protocol objects">
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value</span><span>Uses</span>
@@ -8643,10 +8668,11 @@ export class SmithproxyApp extends LitElement {
                 title="This protocol object is a pending structural create">Pending create</span></span>
             </button>`)}
           </div>
-        </section>
-        <section class="object-section"
+        </details>
+        <details class="object-section" ?open=${sectionOpen('profile')}
+          @toggle=${(event: Event) => rememberSectionState('profile', event)}
           ?hidden=${!kindMatches('profile') || (filtersActive && profileRows.length + pendingProfileRows.length === 0)}>
-          <h3>Profiles and routing</h3>
+          <summary><h3>Profiles and routing</h3><small>${profileRows.length + pendingProfileRows.length}</small></summary>
           <div class="table" role="group" aria-label="Profiles and routing">
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value exposure</span><span>Uses</span>
@@ -8669,14 +8695,16 @@ export class SmithproxyApp extends LitElement {
               <span>${usage}</span>
             </button>`)}
           </div>
-        </section>
-        <section class="object-section"
+        </details>
+        <details class="object-section" ?open=${sectionOpen('security')}
+          @toggle=${(event: Event) => rememberSectionState('security', event)}
           ?hidden=${!kindMatches('security') || !securityFilterAvailable ||
             (filtersActive && authorityRows.length + pendingAuthorityRows.length +
               signatureRows.length + pendingSignatureRows.length === 0)}>
-          <div class="section-head">
-            <div><h3>Trust and signatures</h3><p>Paths and matcher expressions remain write-only</p></div>
-            <div class="structural-buttons">
+          <summary><h3>Trust and signatures</h3>
+            <small>${authorityRows.length + pendingAuthorityRows.length +
+              signatureRows.length + pendingSignatureRows.length}</small></summary>
+          <div class="object-section-actions">
               <button class="secondary" type="button"
                 ?disabled=${!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca')}
                 title=${!this.collectionPresent('tls_ca')
@@ -8700,7 +8728,6 @@ export class SmithproxyApp extends LitElement {
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'detection', event.currentTarget as HTMLElement,
                 )}>New detection signature</button>
-            </div>
           </div>
           <div class="table" role="group" aria-label="Trust and signatures">
             <div class="row object-row heading" aria-hidden="true">
@@ -8741,7 +8768,7 @@ export class SmithproxyApp extends LitElement {
                 <span class="pending-badge">Pending create</span>
               </button>`)}
           </div>
-        </section>
+        </details>
       </div>
     `;
   }

@@ -1487,6 +1487,32 @@ test('navigates object categories as dedicated views', async ({page}) => {
   await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
 });
 
+test('collapses all-object sections and reopens filtered results', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  const addressSection = page.locator('details.object-section').filter({
+    has: page.getByRole('heading', {level: 3, name: 'Address objects'}),
+  });
+  const addresses = page.getByRole('group', {name: 'Address objects'});
+  await expect(addressSection).toHaveAttribute('open', '');
+  await addressSection.locator('summary').click();
+  await expect(addressSection).not.toHaveAttribute('open', '');
+  await expect(addresses).not.toBeVisible();
+
+  const query = page.getByRole('searchbox', {name: 'Filter object list'});
+  await query.fill('office');
+  await expect(addressSection).toHaveAttribute('open', '');
+  await expect(addresses).toContainText('office');
+
+  await query.clear();
+  await expect(addressSection).not.toHaveAttribute('open', '');
+  await addressSection.locator('summary').click();
+  await expect(addresses).toBeVisible();
+  await expectNoWcagViolations(page);
+});
+
 test('rejects an entity rename when an affected reference is augment-owned', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, namedRenamesReady: true,
