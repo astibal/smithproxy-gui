@@ -1434,9 +1434,12 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         return snapshot;
     }
     parsed.snapshot->security_assets = std::move(parsed_security_assets.security_assets);
-    parsed.snapshot->tls_ca_present = true;
-    parsed.snapshot->starttls_signatures_present = true;
-    parsed.snapshot->detection_signatures_present = true;
+    parsed.snapshot->present_collections = {
+        "policy", "address_objects", "port_objects", "proto_objects",
+        "detection_profiles", "content_profiles", "tls_ca", "tls_profiles",
+        "ssh_profiles", "alg_dns_profiles", "routing", "starttls_signatures",
+        "detection_signatures", "script_profiles", "auth_profiles",
+    };
     for (std::size_t index = 0; index < profile_categories.size(); ++index) {
         const auto& response = responses[index + 10U];
         const auto& [section, type] = profile_categories[index];
@@ -1449,11 +1452,6 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
             parsed.snapshot->profiles.end(),
             std::make_move_iterator(profiles.profiles->begin()),
             std::make_move_iterator(profiles.profiles->end()));
-        if (std::string_view{section} == "script_profiles") {
-            parsed.snapshot->script_profiles_present = true;
-        } else if (std::string_view{section} == "auth_profiles") {
-            parsed.snapshot->auth_profiles_present = true;
-        }
     }
     finalize_private_profile_references(parsed.snapshot->profiles);
     parsed.snapshot->checked_at = snapshot.checked_at;

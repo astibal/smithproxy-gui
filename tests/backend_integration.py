@@ -1568,8 +1568,8 @@ def main() -> int:
             assert {profile["type"] for profile in optional_snapshot["profiles"]} == {
                 "detection", "content", "tls", "ssh", "routing",
             }
-            assert optional_snapshot["script_profiles_present"] is False
-            assert optional_snapshot["auth_profiles_present"] is False
+            assert "script_profiles" not in optional_snapshot["present_collections"]
+            assert "auth_profiles" not in optional_snapshot["present_collections"]
         finally:
             optional_sections.send_signal(signal.SIGTERM)
             optional_sections.wait(timeout=4)

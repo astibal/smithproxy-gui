@@ -374,17 +374,37 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     // atomic endpoint carries the same config tree without the legacy
     // {"success": ...} transport envelope, so adapt it once here.
     auto config = document["config"];
+    constexpr std::array collection_shapes{
+        std::pair{"policy", Json::value_t::array},
+        std::pair{"address_objects", Json::value_t::object},
+        std::pair{"port_objects", Json::value_t::object},
+        std::pair{"proto_objects", Json::value_t::object},
+        std::pair{"detection_profiles", Json::value_t::object},
+        std::pair{"content_profiles", Json::value_t::object},
+        std::pair{"tls_ca", Json::value_t::object},
+        std::pair{"tls_profiles", Json::value_t::object},
+        std::pair{"ssh_profiles", Json::value_t::object},
+        std::pair{"alg_dns_profiles", Json::value_t::object},
+        std::pair{"routing", Json::value_t::object},
+        std::pair{"starttls_signatures", Json::value_t::array},
+        std::pair{"detection_signatures", Json::value_t::array},
+        std::pair{"script_profiles", Json::value_t::object},
+        std::pair{"auth_profiles", Json::value_t::object},
+    };
+    std::vector<std::string> present_collections;
+    present_collections.reserve(collection_shapes.size());
+    for (const auto& [name, shape] : collection_shapes) {
+        if (config.contains(name)) {
+            present_collections.emplace_back(name);
+        } else {
+            config[name] = shape == Json::value_t::array ? Json::array() : Json::object();
+        }
+    }
     const auto captures_present = config.contains("captures");
-    const auto tls_ca_present = config.contains("tls_ca");
-    const auto starttls_signatures_present = config.contains("starttls_signatures");
-    const auto detection_signatures_present = config.contains("detection_signatures");
 
-    // Empty trust and signature collections are optional in valid Smithproxy
-    // configurations. Normalize only the parser input; the presence flags
-    // below retain the distinction needed to gate structural creation.
-    if (!tls_ca_present) config["tls_ca"] = Json::object();
-    if (!starttls_signatures_present) config["starttls_signatures"] = Json::array();
-    if (!detection_signatures_present) config["detection_signatures"] = Json::array();
+    // Empty collections are optional in valid Smithproxy configurations.
+    // Normalize only the parser input; presence remains available below for
+    // capability gating because Add cannot create a missing parent collection.
     const auto envelope = Json{{"success", config}}.dump();
     auto parsed = parse_config_snapshot(envelope, envelope, envelope, envelope);
     if (!parsed.snapshot) return parsed;
@@ -409,15 +429,6 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
         std::pair{"routing", "routing"},
     };
     for (const auto& [section, type] : profile_categories) {
-        // These extension sections are absent from ordinary Smithproxy
-        // configurations until an operator creates their first entry. Their
-        // absence is the canonical empty collection, not a malformed atomic
-        // snapshot. Every native profile section remains mandatory.
-        if ((std::string_view{section} == "script_profiles" ||
-             std::string_view{section} == "auth_profiles") &&
-            !document["config"].contains(section)) {
-            continue;
-        }
         auto profiles = parse_config_profiles(envelope, section, type);
         if (!profiles.profiles) return {std::nullopt, std::move(profiles.error)};
         parsed.snapshot->profiles.insert(
@@ -434,11 +445,7 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     parsed.snapshot->saved_revision = saved_revision;
     parsed.snapshot->unsaved = document["unsaved"].get<bool>();
     parsed.snapshot->captures_present = captures_present;
-    parsed.snapshot->tls_ca_present = tls_ca_present;
-    parsed.snapshot->starttls_signatures_present = starttls_signatures_present;
-    parsed.snapshot->detection_signatures_present = detection_signatures_present;
-    parsed.snapshot->script_profiles_present = document["config"].contains("script_profiles");
-    parsed.snapshot->auth_profiles_present = document["config"].contains("auth_profiles");
+    parsed.snapshot->present_collections = std::move(present_collections);
     // Atomic snapshots bind every synthesized entity ID to one canonical
     // revision. They remain safe transaction handles until that revision
     // changes, unlike IDs assembled from legacy multi-request reads.

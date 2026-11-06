@@ -1082,6 +1082,18 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
   if (!value.augment_support && valueOrigins.length !== 0) {
     throw new Error('Unexpected provenance without augment support.');
   }
+  const allowedCollections = new Set([
+    'policy', 'address_objects', 'port_objects', 'proto_objects', 'detection_profiles',
+    'content_profiles', 'tls_ca', 'tls_profiles', 'ssh_profiles', 'alg_dns_profiles',
+    'routing', 'starttls_signatures', 'detection_signatures', 'script_profiles', 'auth_profiles',
+  ]);
+  const presentCollections = boundedArray(
+    value.present_collections, 'present configuration collections', allowedCollections.size,
+  ).map(item => safeString(item, 'configuration collection', 64));
+  if (new Set(presentCollections).size !== presentCollections.length ||
+      presentCollections.some(item => !allowedCollections.has(item))) {
+    throw new Error('Invalid present configuration collections.');
+  }
 
   return {
     source: 'live',
@@ -1093,11 +1105,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     savedRevision: value.saved_revision as string | null,
     unsaved: value.unsaved,
     capturesPresent: value.captures_present === true,
-    tlsCaPresent: value.tls_ca_present === true,
-    starttlsSignaturesPresent: value.starttls_signatures_present === true,
-    detectionSignaturesPresent: value.detection_signatures_present === true,
-    scriptProfilesPresent: value.script_profiles_present === true,
-    authProfilesPresent: value.auth_profiles_present === true,
+    presentCollections,
     policies,
     addresses,
     ports,

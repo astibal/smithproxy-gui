@@ -373,11 +373,7 @@ export interface ConfigSnapshot {
   savedRevision: string | null;
   unsaved: boolean;
   capturesPresent: boolean;
-  tlsCaPresent: boolean;
-  starttlsSignaturesPresent: boolean;
-  detectionSignaturesPresent: boolean;
-  scriptProfilesPresent: boolean;
-  authProfilesPresent: boolean;
+  presentCollections: ReadonlyArray<string>;
   policies: ReadonlyArray<PolicySummary>;
   addresses: ReadonlyArray<AddressObject>;
   ports: ReadonlyArray<PortObject>;

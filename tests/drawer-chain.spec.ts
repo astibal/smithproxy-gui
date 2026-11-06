@@ -75,6 +75,7 @@ type MockState = {
   starttlsSignaturesPresent?: boolean;
   detectionSignaturesPresent?: boolean;
   scriptProfilesPresent?: boolean;
+  absentCollections?: ReadonlyArray<string>;
   contentRulesPresent?: boolean;
   unsavedConfig?: boolean;
   configRevision?: string | null;
@@ -778,11 +779,15 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       saved_revision: savedRevision,
       unsaved: state.unsavedConfig ?? false,
       captures_present: true,
-      tls_ca_present: state.tlsCaPresent ?? true,
-      starttls_signatures_present: state.starttlsSignaturesPresent ?? true,
-      detection_signatures_present: state.detectionSignaturesPresent ?? true,
-      script_profiles_present: state.scriptProfilesPresent ?? true,
-      auth_profiles_present: true,
+      present_collections: [
+        'policy', 'address_objects', 'port_objects', 'proto_objects', 'detection_profiles',
+        'content_profiles', 'tls_ca', 'tls_profiles', 'ssh_profiles', 'alg_dns_profiles',
+        'routing', 'starttls_signatures', 'detection_signatures', 'script_profiles', 'auth_profiles',
+      ].filter(collection => !(state.absentCollections ?? []).includes(collection) &&
+        !(collection === 'script_profiles' && state.scriptProfilesPresent === false) &&
+        !(collection === 'tls_ca' && state.tlsCaPresent === false) &&
+        !(collection === 'starttls_signatures' && state.starttlsSignaturesPresent === false) &&
+        !(collection === 'detection_signatures' && state.detectionSignaturesPresent === false)),
       policies: [{
         id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
         source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
@@ -4256,6 +4261,24 @@ test('does not offer first trust or signature entries when their collections are
   await expect(page.getByRole('button', {name: 'New certificate authority'})).toBeDisabled();
   await expect(page.getByRole('button', {name: 'New STARTTLS signature'})).toBeDisabled();
   await expect(page.getByRole('button', {name: 'New detection signature'})).toBeDisabled();
+});
+
+test('keeps missing ordinary collections empty without offering impossible first entries', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    primitiveStructuralDraftsReady: true, namedStructuralDraftsReady: true,
+    absentCollections: ['port_objects', 'routing', 'tls_profiles'],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await expect(page.getByRole('button', {name: 'New address'})).toBeEnabled();
+  await expect(page.getByRole('button', {name: 'New port'})).toBeDisabled();
+  await page.getByRole('button', {name: 'New profile'}).click();
+  const types = page.getByRole('dialog', {name: 'Create profile'}).getByLabel('Profile type');
+  await expect(types.getByRole('option', {name: 'Routing'})).toHaveCount(0);
+  await expect(types.getByRole('option', {name: 'TLS'})).toHaveCount(0);
+  await expect(types.getByRole('option', {name: 'Detection'})).toHaveCount(1);
 });
 
 test('does not offer a first content rule when its parent list is absent', async ({page}) => {

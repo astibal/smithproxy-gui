@@ -356,11 +356,7 @@ struct ConfigSnapshot {
     std::optional<std::string> saved_revision;
     bool unsaved{};
     bool captures_present{};
-    bool tls_ca_present{};
-    bool starttls_signatures_present{};
-    bool detection_signatures_present{};
-    bool script_profiles_present{};
-    bool auth_profiles_present{};
+    std::vector<std::string> present_collections;
     // Legacy multi-section reads synthesize index IDs and must keep this false.
     bool stable_entity_ids{};
     // Local monotonic time prevents a late pre-commit fetch from rebinding the draft.

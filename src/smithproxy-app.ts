@@ -182,6 +182,10 @@ const profileCreateCollections: Readonly<Record<ProfileCreateType, DraftCreateOp
   ssh: 'ssh_profiles',
   script: 'script_profiles',
 };
+const profileCreateLabels: Readonly<Record<ProfileCreateType, string>> = {
+  routing: 'Routing', tls: 'TLS', detection: 'Detection', dns: 'DNS ALG',
+  authentication: 'Authentication', content: 'Content', ssh: 'SSH', script: 'Script',
+};
 
 const policyProfileAssignments = [
   {kind: 'routing', field: 'routing', property: 'routing', label: 'Routing'},
@@ -3149,7 +3153,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewAddress(origin?: HTMLElement): void {
-    if (!this.primitiveTransactionsAvailable()) return;
+    if (!this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects')) return;
     const localId = `create-address-${crypto.randomUUID()}`;
     this.openObjectDrawer({
       kind: 'address-create', id: localId, title: 'New address object',
@@ -3157,13 +3161,13 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewPort(origin?: HTMLElement): void {
-    if (!this.primitiveTransactionsAvailable()) return;
+    if (!this.primitiveTransactionsAvailable() || !this.collectionPresent('port_objects')) return;
     const localId = `create-port-${crypto.randomUUID()}`;
     this.openObjectDrawer({kind: 'port-create', id: localId, title: 'New port object'}, origin);
   }
 
   private openNewProtocol(origin?: HTMLElement): void {
-    if (!this.primitiveTransactionsAvailable()) return;
+    if (!this.primitiveTransactionsAvailable() || !this.collectionPresent('proto_objects')) return;
     const localId = `create-protocol-${crypto.randomUUID()}`;
     this.openObjectDrawer({kind: 'protocol-create', id: localId, title: 'New protocol object'}, origin);
   }
@@ -3205,10 +3209,16 @@ export class SmithproxyApp extends LitElement {
     return this.structuralDraftsAvailable || this.namedStructuralDraftsAvailable;
   }
 
+  private collectionPresent(collection: string): boolean {
+    return this.snapshot?.presentCollections.includes(collection) === true;
+  }
+
   private profileCreateTypeAvailable(type: ProfileCreateType): boolean {
-    if (!visibleProfileCreateTypes.has(type)) return false;
-    if (type === 'script') return this.snapshot?.scriptProfilesPresent === true;
-    return true;
+    return visibleProfileCreateTypes.has(type) && this.collectionPresent(profileCreateCollections[type]);
+  }
+
+  private availableProfileCreateTypes(): ReadonlyArray<ProfileCreateType> {
+    return [...supportedProfileCreateTypes].filter(type => this.profileCreateTypeAvailable(type));
   }
 
   private policyTransactionsAvailable(): boolean {
@@ -3329,9 +3339,10 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewProfile(origin?: HTMLElement): void {
-    if (!this.namedTransactionsAvailable()) return;
+    const type = this.availableProfileCreateTypes()[0];
+    if (!this.namedTransactionsAvailable() || !type) return;
     const localId = `create-profile-${crypto.randomUUID()}`;
-    this.profileCreateTypes.set(localId, 'routing');
+    this.profileCreateTypes.set(localId, type);
     this.openObjectDrawer({kind: 'profile-create', id: localId, title: 'New profile'}, origin);
   }
 
@@ -3497,7 +3508,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewPolicy(origin?: HTMLElement): void {
-    if (!this.policyTransactionsAvailable()) return;
+    if (!this.policyTransactionsAvailable() || !this.collectionPresent('policy')) return;
     const localId = `create-policy-${crypto.randomUUID()}`;
     this.openObjectDrawer({kind: 'policy-create', id: localId, title: 'New policy'}, origin);
   }
@@ -3656,7 +3667,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewAuthority(origin?: HTMLElement): void {
-    if (!this.namedTransactionsAvailable()) return;
+    if (!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca')) return;
     const localId = `create-authority-${crypto.randomUUID()}`;
     this.openObjectDrawer({
       kind: 'authority-create', id: localId, title: 'New certificate authority',
@@ -3717,7 +3728,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewSignature(kind: 'starttls' | 'detection', origin?: HTMLElement): void {
-    if (!this.signatureTransactionsAvailable()) return;
+    if (!this.signatureTransactionsAvailable() || !this.collectionPresent(`${kind}_signatures`)) return;
     const localId = `create-signature-${crypto.randomUUID()}`;
     this.signatureCreateKinds.set(localId, kind);
     this.signatureCreateFlowIds.set(localId, `create-sigflow-${crypto.randomUUID()}`);
@@ -7202,12 +7213,15 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div><h2>Policies</h2><p>Traffic decisions and inspection behavior</p></div>
           <div class="structural-action">
-            <button class="primary" type="button" ?disabled=${!this.policyTransactionsAvailable()}
+            <button class="primary" type="button"
+              ?disabled=${!this.policyTransactionsAvailable() || !this.collectionPresent('policy')}
               aria-describedby="new-policy-blocker"
               @click=${(event: MouseEvent) => this.openNewPolicy(event.currentTarget as HTMLElement)}>
               New policy
             </button>
-            <small id="new-policy-blocker">${this.policyTransactionsAvailable()
+            <small id="new-policy-blocker">${!this.collectionPresent('policy')
+              ? 'The policy collection is absent from the running configuration.'
+              : this.policyTransactionsAvailable()
               ? 'Creates an ordered operation in the shared workspace draft.'
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
@@ -8278,22 +8292,26 @@ export class SmithproxyApp extends LitElement {
           <div><h2>Configuration objects</h2><p>Reusable values, trust roots, and traffic signatures</p></div>
           <div class="structural-action object-structural-action">
             <div class="structural-buttons">
-              <button class="primary" type="button" ?disabled=${!this.primitiveTransactionsAvailable()}
+              <button class="primary" type="button"
+                ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects')}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>
                 New address
               </button>
-              <button class="primary" type="button" ?disabled=${!this.primitiveTransactionsAvailable()}
+              <button class="primary" type="button"
+                ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('port_objects')}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewPort(event.currentTarget as HTMLElement)}>
                 New port
               </button>
-              <button class="primary" type="button" ?disabled=${!this.primitiveTransactionsAvailable()}
+              <button class="primary" type="button"
+                ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('proto_objects')}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>
                 New protocol
               </button>
-              <button class="primary" type="button" ?disabled=${!this.namedTransactionsAvailable()}
+              <button class="primary" type="button"
+                ?disabled=${!this.namedTransactionsAvailable() || this.availableProfileCreateTypes().length === 0}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>
                 New profile
@@ -8508,24 +8526,24 @@ export class SmithproxyApp extends LitElement {
             <div><h3>Trust and signatures</h3><p>Paths and matcher expressions remain write-only</p></div>
             <div class="structural-buttons">
               <button class="secondary" type="button"
-                ?disabled=${!this.namedTransactionsAvailable() || !this.snapshot?.tlsCaPresent}
-                title=${!this.snapshot?.tlsCaPresent
+                ?disabled=${!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca')}
+                title=${!this.collectionPresent('tls_ca')
                   ? 'The tls_ca collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
                 New certificate authority
               </button>
               <button class="secondary" type="button"
                 ?disabled=${!this.signatureTransactionsAvailable() ||
-                  !this.snapshot?.starttlsSignaturesPresent}
-                title=${!this.snapshot?.starttlsSignaturesPresent
+                  !this.collectionPresent('starttls_signatures')}
+                title=${!this.collectionPresent('starttls_signatures')
                   ? 'The starttls_signatures collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'starttls', event.currentTarget as HTMLElement,
                 )}>New STARTTLS signature</button>
               <button class="secondary" type="button"
                 ?disabled=${!this.signatureTransactionsAvailable() ||
-                  !this.snapshot?.detectionSignaturesPresent}
-                title=${!this.snapshot?.detectionSignaturesPresent
+                  !this.collectionPresent('detection_signatures')}
+                title=${!this.collectionPresent('detection_signatures')
                   ? 'The detection_signatures collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'detection', event.currentTarget as HTMLElement,
@@ -9797,8 +9815,9 @@ export class SmithproxyApp extends LitElement {
                   pendingSignatureFlows.filter(item => item.collection === 'detection_signatures.flow').length}</dd>
               </dl>
               <div class="reference-stack section" role="group" aria-label="Certificate authorities">
-                <button class="secondary" type="button" ?disabled=${!this.namedTransactionsAvailable()}
-                  title=${this.namedTransactionsAvailable()
+                <button class="secondary" type="button"
+                  ?disabled=${!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca')}
+                  title=${this.namedTransactionsAvailable() && this.collectionPresent('tls_ca')
                     ? 'Add a certificate authority to the workspace draft'
                     : 'Requires reviewed structural transactions and stable entity IDs.'}
                   @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
@@ -10638,14 +10657,9 @@ export class SmithproxyApp extends LitElement {
               });
             }
           }}>
-          <option value="routing">Routing</option>
-          <option value="tls">TLS</option>
-          <option value="detection">Detection</option>
-          <option value="dns">DNS ALG</option>
-          <option value="content">Content</option>
-          <option value="ssh">SSH</option>
-          ${this.snapshot?.scriptProfilesPresent
-            ? html`<option value="script">Script</option>` : nothing}
+          ${this.availableProfileCreateTypes().map(availableType => html`
+            <option value=${availableType}>${profileCreateLabels[availableType]}</option>
+          `)}
         </select>
         <label for="profile-create-name-${entry.id}">Name</label>
         <input id="profile-create-name-${entry.id}" .value=${String(field('name', ''))}

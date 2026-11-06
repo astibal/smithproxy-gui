@@ -534,11 +534,9 @@ bool structural_operation_supported(
     const ConfigSnapshot& snapshot) {
     if (capabilities.state != "ready") return false;
     const auto collection = draft_structural_collection(operation);
-    if ((collection == "tls_ca" && !snapshot.tls_ca_present) ||
-        (collection == "starttls_signatures" && !snapshot.starttls_signatures_present) ||
-        (collection == "detection_signatures" && !snapshot.detection_signatures_present) ||
-        (collection == "script_profiles" && !snapshot.script_profiles_present) ||
-        (collection == "auth_profiles" && !snapshot.auth_profiles_present)) {
+    const auto top_level = collection.substr(0U, collection.find('.'));
+    if (std::find(snapshot.present_collections.begin(), snapshot.present_collections.end(), top_level) ==
+        snapshot.present_collections.end()) {
         return false;
     }
     const auto found = std::find_if(
@@ -1914,6 +1912,12 @@ private:
                               std::to_string(value.detection_flow_step_count) +
                               ",\"signatures\":" + signatures + "}";
         }
+        std::string present_collections{"["};
+        for (std::size_t index = 0; index < snapshot.present_collections.size(); ++index) {
+            if (index != 0U) present_collections += ',';
+            present_collections += json_string(snapshot.present_collections[index]);
+        }
+        present_collections += ']';
 
         return {200, "application/json; charset=utf-8",
                 "{\"state\":" + json_string(snapshot.state) +
@@ -1927,16 +1931,7 @@ private:
                     ",\"unsaved\":" + (snapshot.unsaved ? "true" : "false") +
                     ",\"captures_present\":" +
                     (snapshot.captures_present ? "true" : "false") +
-                    ",\"tls_ca_present\":" +
-                    (snapshot.tls_ca_present ? "true" : "false") +
-                    ",\"starttls_signatures_present\":" +
-                    (snapshot.starttls_signatures_present ? "true" : "false") +
-                    ",\"detection_signatures_present\":" +
-                    (snapshot.detection_signatures_present ? "true" : "false") +
-                    ",\"script_profiles_present\":" +
-                    (snapshot.script_profiles_present ? "true" : "false") +
-                    ",\"auth_profiles_present\":" +
-                    (snapshot.auth_profiles_present ? "true" : "false") +
+                    ",\"present_collections\":" + present_collections +
                     ",\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +

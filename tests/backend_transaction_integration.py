@@ -172,6 +172,13 @@ def main() -> int:
     captures = FakeSmithproxy.config_sections.pop("captures")
     tls_ca = FakeSmithproxy.config_sections.pop("tls_ca")
     detection_signatures = FakeSmithproxy.config_sections.pop("detection_signatures")
+    port_objects = FakeSmithproxy.config_sections.pop("port_objects")
+    proto_objects = FakeSmithproxy.config_sections.pop("proto_objects")
+    detection_profiles = FakeSmithproxy.config_sections.pop("detection_profiles")
+    tls_profiles = FakeSmithproxy.config_sections.pop("tls_profiles")
+    ssh_profiles = FakeSmithproxy.config_sections.pop("ssh_profiles")
+    dns_profiles = FakeSmithproxy.config_sections.pop("alg_dns_profiles")
+    routing = FakeSmithproxy.config_sections.pop("routing")
     content_rules = FakeSmithproxy.config_sections["content_profiles"]["safe-content"].pop(
         "content_rules")
 
@@ -223,12 +230,16 @@ def main() -> int:
             assert live_config["state"] == "ready"
             assert live_config["captures"] is None
             assert live_config["captures_present"] is False
-            assert live_config["tls_ca_present"] is False
-            assert live_config["starttls_signatures_present"] is True
-            assert live_config["detection_signatures_present"] is False
             assert live_config["security_assets"]["certificate_authority_count"] == 0
             assert live_config["security_assets"]["starttls_signature_count"] == 1
             assert live_config["security_assets"]["detection_signature_count"] == 0
+            assert "address_objects" in live_config["present_collections"]
+            assert "tls_ca" not in live_config["present_collections"]
+            assert "starttls_signatures" in live_config["present_collections"]
+            assert "detection_signatures" not in live_config["present_collections"]
+            assert "port_objects" not in live_config["present_collections"]
+            assert live_config["ports"] == []
+            assert live_config["protocols"] == []
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
@@ -269,6 +280,20 @@ def main() -> int:
             status, _, body = request(
                 port, "/api/v1/config/draft/operations", "POST",
                 headers=mutation_headers, body=json.dumps(unavailable_authority_create))
+            assert status == 422
+            assert json.loads(body)["error"]["code"] == "draft.change_rejected"
+            unavailable_port_create = {
+                "expected_version": draft["version"],
+                "operation": {
+                    "op": "create", "local_id": "create-port-1",
+                    "collection": "port_objects", "client_id": "audit-port",
+                    "position": {"last": True},
+                    "fields": {"name": "audit-port", "start": 8443, "end": 8443},
+                },
+            }
+            status, _, body = request(
+                port, "/api/v1/config/draft/operations", "POST",
+                headers=mutation_headers, body=json.dumps(unavailable_port_create))
             assert status == 422
             assert json.loads(body)["error"]["code"] == "draft.change_rejected"
             unavailable_rule_create = {
@@ -486,6 +511,13 @@ def main() -> int:
     FakeSmithproxy.config_sections["captures"] = captures
     FakeSmithproxy.config_sections["tls_ca"] = tls_ca
     FakeSmithproxy.config_sections["detection_signatures"] = detection_signatures
+    FakeSmithproxy.config_sections["port_objects"] = port_objects
+    FakeSmithproxy.config_sections["proto_objects"] = proto_objects
+    FakeSmithproxy.config_sections["detection_profiles"] = detection_profiles
+    FakeSmithproxy.config_sections["tls_profiles"] = tls_profiles
+    FakeSmithproxy.config_sections["ssh_profiles"] = ssh_profiles
+    FakeSmithproxy.config_sections["alg_dns_profiles"] = dns_profiles
+    FakeSmithproxy.config_sections["routing"] = routing
     FakeSmithproxy.config_sections["content_profiles"]["safe-content"][
         "content_rules"] = content_rules
     fake.shutdown()
