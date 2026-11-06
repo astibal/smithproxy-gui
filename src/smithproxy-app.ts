@@ -93,6 +93,19 @@ type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile' | 's
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
 
+const objectNavigation: ReadonlyArray<{
+  kind: ObjectKindFilter;
+  label: string;
+  icon: string;
+}> = [
+  {kind: 'all', label: 'All objects', icon: '◇'},
+  {kind: 'address', label: 'Address objects', icon: '@'},
+  {kind: 'port', label: 'Port objects', icon: ':'},
+  {kind: 'protocol', label: 'Protocol objects', icon: '#'},
+  {kind: 'profile', label: 'Profiles and routing', icon: '≋'},
+  {kind: 'security', label: 'Trust and signatures', icon: '⌁'},
+];
+
 interface CollectorPresentation {
   label: string;
   tone: StatusTone;
@@ -381,6 +394,7 @@ export class SmithproxyApp extends LitElement {
   @state() private policyBulkDeleteConfirmation: string | undefined;
   @state() private objectListQuery = '';
   @state() private objectKindFilter: ObjectKindFilter = 'all';
+  @state() private objectNavigationExpanded = false;
   @state() private objectUsageFilter: ObjectUsageFilter = 'all';
   @state() private objectBulkMessage: string | undefined;
   @state() private objectBulkDeleteConfirmation: string | undefined;
@@ -536,6 +550,12 @@ export class SmithproxyApp extends LitElement {
     .nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .nav-badge { position: absolute; top: 50%; right: 10px; min-width: 20px; padding: 1px 5px; translate: 0 -50%; border: 1px solid var(--app-border); border-radius: 9px; color: var(--app-muted); font-size: 10px; font-variant-numeric: tabular-nums; pointer-events: none; text-align: center; }
     nav button[aria-current='page'] + .nav-badge { border-color: color-mix(in srgb, var(--app-brand) 55%, var(--app-border)); color: var(--app-text); }
+    .nav-expand { position: absolute; right: 34px; rotate: 0deg; transition: rotate 120ms ease; }
+    .object-nav-toggle[aria-expanded='true'] .nav-expand { rotate: 90deg; }
+    .object-subnav { display: grid; gap: 2px; margin: 2px 0 6px 25px; padding-left: 8px; border-left: 1px solid var(--app-border); }
+    .object-subnav[hidden] { display: none; }
+    .object-subnav button { grid-template-columns: 14px minmax(0, 1fr); padding: 7px 8px; border-radius: 2px; font-size: 12px; }
+    .object-subnav button[aria-current='page'] { box-shadow: none; color: var(--app-text); }
 
     .main { display: grid; grid-template-rows: 58px minmax(0, 1fr); min-width: 0; min-height: 0; }
     .topbar { display: flex; gap: 16px; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--app-border); background: color-mix(in srgb, var(--app-surface) 88%, transparent); }
@@ -872,6 +892,11 @@ export class SmithproxyApp extends LitElement {
       nav { display: flex; }
       nav button { width: 42px; padding: 8px; }
       .nav-badge { display: none; }
+      .object-nav-item { display: flex; }
+      .nav-expand { display: none; }
+      .object-subnav { display: flex; margin: 0; padding: 0; border-left: 0; }
+      .object-subnav button { width: 42px; padding: 8px; }
+      .object-subnav .nav-label { display: none; }
       .main { grid-row: 2; grid-template-rows: 94px minmax(0, 1fr); }
       .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto; gap: 5px 8px; padding: 8px 12px; }
       .section-head { align-items: start; }
@@ -3126,6 +3151,18 @@ export class SmithproxyApp extends LitElement {
     return index < 0
       ? address.type
       : this.presentedValue(`address_objects.[${index}].type`, address.type) as AddressObject['type'];
+  }
+
+  private objectViewLabel(): string {
+    return objectNavigation.find(item => item.kind === this.objectKindFilter)?.label ?? 'Objects';
+  }
+
+  private selectObjectView(kind: ObjectKindFilter): void {
+    this.activeSection = 'Objects';
+    this.objectKindFilter = kind;
+    this.objectNavigationExpanded = true;
+    this.objectBulkMessage = undefined;
+    this.objectBulkDeleteConfirmation = undefined;
   }
 
   private portDisplayName(port: PortObject): string {
@@ -8325,28 +8362,28 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
-          <div><h2>Configuration objects</h2><p>Reusable values, trust roots, and traffic signatures</p></div>
-          <div class="structural-action object-structural-action">
+          <div><h2>${this.objectViewLabel()}</h2><p>Reusable values, trust roots, and traffic signatures</p></div>
+          <div class="structural-action object-structural-action" ?hidden=${this.objectKindFilter === 'security'}>
             <div class="structural-buttons">
-              <button class="primary" type="button"
+              <button class="primary" type="button" ?hidden=${!kindMatches('address')}
                 ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects')}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>
                 New address
               </button>
-              <button class="primary" type="button"
+              <button class="primary" type="button" ?hidden=${!kindMatches('port')}
                 ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('port_objects')}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewPort(event.currentTarget as HTMLElement)}>
                 New port
               </button>
-              <button class="primary" type="button"
+              <button class="primary" type="button" ?hidden=${!kindMatches('protocol')}
                 ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('proto_objects')}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>
                 New protocol
               </button>
-              <button class="primary" type="button"
+              <button class="primary" type="button" ?hidden=${!kindMatches('profile')}
                 ?disabled=${!this.namedTransactionsAvailable() || this.availableProfileCreateTypes().length === 0}
                 aria-describedby="new-object-blocker"
                 @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>
@@ -8358,7 +8395,8 @@ export class SmithproxyApp extends LitElement {
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
         </div>
-        <div class="inventory-summary" aria-label="Configuration object inventory summary">
+        <div class="inventory-summary" aria-label="Configuration object inventory summary"
+          ?hidden=${this.objectKindFilter !== 'all'}>
           <div class="inventory-stat"><strong>${((this.snapshot?.addresses.length ?? 0) + pendingAddresses.length).toLocaleString()}</strong><span>Addresses</span></div>
           <div class="inventory-stat"><strong>${((this.snapshot?.ports.length ?? 0) + pendingPorts.length).toLocaleString()}</strong><span>Ports</span></div>
           <div class="inventory-stat"><strong>${((this.snapshot?.protocols.length ?? 0) + pendingProtocols.length).toLocaleString()}</strong><span>Protocols</span></div>
@@ -9225,7 +9263,10 @@ export class SmithproxyApp extends LitElement {
     const authorities = snapshot.securityAssets?.certificateAuthorityCount;
     const signatures = snapshot.securityAssets === null ? undefined :
       snapshot.securityAssets.starttlsSignatureCount + snapshot.securityAssets.detectionSignatureCount;
-    const open = (section: 'Objects' | 'Policy' | 'System') => { this.activeSection = section; };
+    const open = (section: 'Objects' | 'Policy' | 'System', objectKind: ObjectKindFilter = 'all') => {
+      if (section === 'Objects') this.selectObjectView(objectKind);
+      else this.activeSection = section;
+    };
     return html`
       <section class="monitor-panel" aria-label="Live configuration inventory">
         <div class="runtime-heading">
@@ -9258,7 +9299,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Profile types</dt><dd>${profileTypes.toLocaleString()}</dd>
               <dt>Unused</dt><dd>${unusedProfiles.toLocaleString()}</dd>
             </dl>
-            <button class="secondary" type="button" @click=${() => open('Objects')}>Open profiles</button>
+            <button class="secondary" type="button" @click=${() => open('Objects', 'profile')}>Open profiles</button>
           </article>
           <article class="domain-card">
             <header><div><h3>Trust and signatures</h3><p>TLS authorities and detection rules</p></div></header>
@@ -12866,27 +12907,54 @@ export class SmithproxyApp extends LitElement {
       if (item === 'System') return activeJobCount > 0 ? activeJobCount.toLocaleString() : undefined;
       return undefined;
     };
+    const sectionTitle = this.activeSection === 'Objects' ? this.objectViewLabel() : this.activeSection;
     return html`
       <div class="shell" @keydown=${this.handleKeydown}>
         <aside class="sidebar">
           <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
           <nav aria-label="Primary navigation">
             ${navigation.map((item, index) => html`
-              <div class="nav-item">
-                <button type="button" aria-current=${this.activeSection === item ? 'page' : nothing}
-                  title=${item} @click=${() => { this.activeSection = item; }}>
+              <div class="nav-item ${item === 'Objects' ? 'object-nav-item' : ''}">
+                <button type="button" class=${item === 'Objects' ? 'object-nav-toggle' : nothing}
+                  aria-current=${this.activeSection === item ? 'page' : nothing}
+                  aria-expanded=${item === 'Objects' ? String(this.objectNavigationExpanded) : nothing}
+                  title=${item} @click=${() => {
+                    if (item === 'Objects') {
+                      const wasActive = this.activeSection === 'Objects';
+                      this.activeSection = 'Objects';
+                      this.objectNavigationExpanded = wasActive ? !this.objectNavigationExpanded : true;
+                    } else {
+                      this.activeSection = item;
+                      this.objectNavigationExpanded = false;
+                    }
+                  }}>
                   <span class="nav-icon" aria-hidden="true">${['⌂', '⌁', '◇', '≣', '⌁', '≡', '⚙'][index]}</span>
                   <span class="nav-label">${item}</span>
+                  ${item === 'Objects' ? html`<span class="nav-expand" aria-hidden="true">›</span>` : nothing}
                 </button>
                 ${navigationBadge(item)
                   ? html`<span class="nav-badge" aria-hidden="true">${navigationBadge(item)}</span>` : nothing}
+                ${item === 'Objects' ? html`
+                  <div class="object-subnav" role="group" aria-label="Object categories"
+                    ?hidden=${!this.objectNavigationExpanded}>
+                    ${objectNavigation.map(category => html`
+                      <button type="button"
+                        aria-current=${this.activeSection === 'Objects' && this.objectKindFilter === category.kind
+                          ? 'page' : nothing}
+                        title=${category.label} @click=${() => this.selectObjectView(category.kind)}>
+                        <span class="nav-icon" aria-hidden="true">${category.icon}</span>
+                        <span class="nav-label">${category.label}</span>
+                      </button>
+                    `)}
+                  </div>
+                ` : nothing}
               </div>
             `)}
           </nav>
         </aside>
         <main class="main">
           <header class="topbar">
-            <h1>${this.activeSection}</h1>
+            <h1>${sectionTitle}</h1>
             <p>${sectionDescriptions[this.activeSection] ?? 'Smithproxy management'}</p>
             ${this.snapshot?.source === 'live' && this.draftChangeCount > 0 ? html`
               <button class="secondary ${this.configRevisionDrift ? 'draft' : ''}" type="button"

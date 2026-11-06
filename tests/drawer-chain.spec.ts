@@ -1396,6 +1396,36 @@ test('renames referenced configuration entities atomically across pending refere
   await expect(page.getByText('Draft: 10 changes')).toBeVisible();
 });
 
+test('navigates object categories as dedicated views', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  const objects = page.getByRole('button', {name: 'Objects', exact: true});
+  await objects.click();
+  await expect(objects).toHaveAttribute('aria-expanded', 'true');
+  const categories = page.getByRole('group', {name: 'Object categories', exact: true});
+  await expect(categories).toBeVisible();
+
+  await categories.getByRole('button', {name: 'Address objects'}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'Address objects'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Port objects'})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'New address'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'New port'})).toHaveCount(0);
+  await expectNoWcagViolations(page);
+
+  await categories.getByRole('button', {name: 'Profiles and routing'}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Profiles and routing'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'New profile'})).toBeVisible();
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await expect(objects).toHaveAttribute('aria-expanded', 'false');
+  await objects.click();
+  await expect(objects).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
+});
+
 test('rejects an entity rename when an affected reference is augment-owned', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, namedRenamesReady: true,
@@ -5014,8 +5044,14 @@ test('summarizes the live configuration on the dashboard and opens real inventor
   await expect(profiles).toContainText('Profile types8');
 
   await objects.getByRole('button', {name: 'Open objects'}).click();
-  await expect(page.getByRole('heading', {name: 'Configuration objects'})).toBeVisible();
+  await expect(page.getByRole('heading', {level: 1, name: 'All objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toContainText('office');
+
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
+  await profiles.getByRole('button', {name: 'Open profiles'}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Profiles and routing'})).toContainText('inspect');
+  await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCount(0);
 });
 
 test('filters real and pending policies by text, status, and action', async ({page}) => {
@@ -6633,6 +6669,10 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await expect(page.getByRole('searchbox', {name: 'Filter object list'})).toBeVisible();
+  const objectCategories = page.getByRole('group', {name: 'Object categories', exact: true});
+  await expect(objectCategories).toBeVisible();
+  await objectCategories.getByRole('button', {name: 'Address objects'}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'Address objects'})).toBeVisible();
   await expect.poll(() => page.evaluate(() =>
     document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
