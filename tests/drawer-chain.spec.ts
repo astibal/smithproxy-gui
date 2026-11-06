@@ -1158,7 +1158,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await editor.getByRole('button', {name: 'internet', exact: true}).click();
   const fqdnEditor = page.getByRole('dialog', {name: 'Edit internet'});
   await expect(fqdnEditor).toBeVisible();
-  await expect(fqdnEditor.locator('.address-insight')).toContainText('best-effort syntax and DNS check');
+  await expect(fqdnEditor.locator('.address-insight')).toContainText('best-effort DNS check');
   await fqdnEditor.getByRole('button', {name: 'Evaluate'}).click();
   await expect(fqdnEditor.locator('.address-insight')).toContainText(
     'example.test resolves to 192.0.2.10, 2001:db8::10.',
@@ -1431,7 +1431,7 @@ test('discards a late FQDN evaluation after its nested editor closes', async ({p
 
   await policyEditor.getByRole('button', {name: 'internet', exact: true}).click();
   const reopened = page.getByRole('dialog', {name: 'Edit internet'});
-  await expect(reopened.locator('.address-insight')).toContainText('best-effort syntax and DNS check');
+  await expect(reopened.locator('.address-insight')).toContainText('best-effort DNS check');
   await expect(reopened.locator('.address-insight')).not.toContainText('resolves to');
 });
 
@@ -2504,7 +2504,16 @@ test('creates and reopens an address object through a structural drawer', async 
   expect(state.structuralMutationRequests).toEqual([]);
 
   await editor.getByLabel('Name').fill('branch-office');
+  await editor.getByLabel('Type').selectOption('fqdn');
+  await editor.getByLabel('Address', {exact: true}).fill('bad..example');
+  await expect(editor.locator('.address-insight')).toContainText('Enter a valid ASCII DNS host name');
+  await expect(editor.getByRole('button', {name: 'Evaluate'})).toBeDisabled();
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('FQDN address objects require a valid ASCII DNS host name.')).toBeVisible();
+  expect(state.structuralMutationRequests).toEqual([]);
+
   await editor.getByLabel('Type').selectOption('cidr');
+  await editor.getByLabel('Address', {exact: true}).fill('192.0.2.0/24');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText('Saved to draft')).toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);

@@ -53,6 +53,12 @@ available for orchestration. A non-loopback listener is rejected at startup
 unless gateway authentication is configured. Configuration reads and mutations
 always require an authenticated gateway, including on loopback.
 
+Best-effort DNS evaluation uses the same authenticated gateway boundary. It
+accepts only bounded ASCII DNS host names, rejects IP literals, returns at most
+16 unique addresses, and never connects to a resolved target. The lookup is an
+operator aid from the GUI-core host, not evidence of Smithproxy runtime DNS
+visibility, and it never changes the workspace draft.
+
 The bounded session diagnostic reveals only whether gateway mode is configured
 and whether the current request passed it. Browser code cross-checks that result
 with every privileged configuration capability refresh and disables all config

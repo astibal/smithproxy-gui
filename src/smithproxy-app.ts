@@ -53,6 +53,7 @@ import {
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {persistentConfigurationValues} from './config/persistent-values';
 import {describeCidr} from './config/cidr';
+import {describeFqdn, parseFqdn} from './config/fqdn';
 import {referenceNameSummary} from './config/reference-summary';
 import {
   buildDiagnosticsReport,
@@ -4924,6 +4925,10 @@ export class SmithproxyApp extends LitElement {
       this.drawerError = 'CIDR address objects require a valid IPv4 or IPv6 prefix.';
       return;
     }
+    if (type === 'fqdn' && !parseFqdn(value)) {
+      this.drawerError = 'FQDN address objects require a valid ASCII DNS host name.';
+      return;
+    }
     const duplicateLive = this.snapshot?.addresses.some(address =>
       address.name === name || this.addressDisplayName(address) === name);
     const duplicateDraft = this.workspaceDraft?.structuralOperations.some(operation =>
@@ -6066,6 +6071,10 @@ export class SmithproxyApp extends LitElement {
       }
       if (type.value === 'cidr' && !describeCidr(value.value)) {
         this.draftError = 'CIDR address objects require a valid IPv4 or IPv6 prefix.';
+        return undefined;
+      }
+      if (type.value === 'fqdn' && !parseFqdn(value.value)) {
+        this.draftError = 'FQDN address objects require a valid ASCII DNS host name.';
         return undefined;
       }
       if (this.duplicateConfigurationName('address', entry.id, normalizedName)) {
@@ -10903,7 +10912,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async evaluateFqdn(entry: DrawerEntry, value: string): Promise<void> {
-    const name = value.trim();
+    const name = parseFqdn(value)?.normalized ?? '';
     const key = this.drawerKey(entry);
     if (!this.systemClient || name.length === 0) return;
     this.fqdnEvaluations = new Map(this.fqdnEvaluations).set(key, {
@@ -10930,27 +10939,30 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderAddressInsight(id: string, type: string, value: string, entry: DrawerEntry) {
-    const description = type === 'cidr' ? describeCidr(value) : undefined;
+    const cidrDescription = type === 'cidr' ? describeCidr(value) : undefined;
     if (type === 'cidr') {
-      const message = description ?? (value.trim().length > 0
+      const message = cidrDescription ?? (value.trim().length > 0
         ? 'Enter a valid IPv4 or IPv6 CIDR.' : 'Enter an IPv4 or IPv6 CIDR.');
       return html`<p id=${id} class="form-span address-insight" aria-live="polite"
-        data-valid=${description ? 'true' : 'false'}><span>${message}</span></p>`;
+        data-valid=${cidrDescription ? 'true' : 'false'}><span>${message}</span></p>`;
     }
     const name = value.trim();
+    const fqdnDescription = describeFqdn(value);
+    const normalized = parseFqdn(value)?.normalized;
     const evaluation = this.fqdnEvaluations.get(this.drawerKey(entry));
-    const current = evaluation?.name === name ? evaluation : undefined;
+    const current = evaluation?.name === normalized ? evaluation : undefined;
     const message = name.length === 0 ? 'Enter a DNS host name.'
+      : !fqdnDescription ? 'Enter a valid ASCII DNS host name, not an IP address.'
       : current?.pending ? `Resolving ${name}…`
       : current?.error ? current.error
       : current?.state === 'resolved' ? `${name} resolves to ${current.addresses.join(', ')}.`
       : current?.state === 'not-found' ? `${name} did not return an IPv4 or IPv6 address.`
-      : 'Resolve this name from the GUI core host as a best-effort syntax and DNS check.';
+      : `${fqdnDescription}. Evaluate it from the GUI core host as a best-effort DNS check.`;
     return html`<div id=${id} class="form-span address-insight" aria-live="polite"
       data-valid=${current?.state === 'resolved' && !current.error ? 'true' : 'false'}>
       <span>${message}</span>
       <button type="button" class="secondary"
-        ?disabled=${name.length === 0 || current?.pending === true}
+        ?disabled=${!fqdnDescription || current?.pending === true}
         @click=${() => { void this.evaluateFqdn(entry, value); }}>
         ${current?.pending ? 'Evaluating…' : 'Evaluate'}
       </button>
