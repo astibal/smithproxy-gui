@@ -756,6 +756,9 @@ int main() {
         "address_objects.[0].name", std::string("office network"),
     }) == DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({
+        "address_objects.[0].name", std::string("kancelář"),
+    }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
         "tls_profiles.[0].name", std::string("4invalid"),
     }) == DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({
