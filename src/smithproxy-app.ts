@@ -923,7 +923,7 @@ export class SmithproxyApp extends LitElement {
     }
 
     @media (max-width: 620px) {
-      .shell { grid-template: 52px minmax(0, 1fr) 30px / minmax(0, 1fr); }
+      .shell { grid-template: 52px minmax(0, 1fr) 36px / minmax(0, 1fr); }
       .sidebar { grid-row: 1; display: flex; align-items: center; overflow-x: auto; padding: 6px 8px; border-right: 0; border-bottom: 1px solid var(--app-border); }
       .brand { margin: 0 10px 0 0; }
       nav { display: flex; }
@@ -954,8 +954,16 @@ export class SmithproxyApp extends LitElement {
       .form-grid label:not(:first-child) { margin-top: 10px; }
       .editor-section-head { display: block; }
       .editor-section-head p { margin-top: 2px; text-align: left; }
-      .statusbar { grid-row: 3; }
-      .status-secondary { display: none; }
+      .statusbar {
+        grid-row: 3;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+        scroll-snap-type: inline proximity;
+      }
+      .statusbar > * { flex: 0 0 auto; scroll-snap-align: start; }
+      .statusbar .spacer { display: none; }
+      .status-secondary { display: inline-flex; }
       .metric-grid { grid-template-columns: 1fr; }
       .inventory-summary { grid-template-columns: repeat(2, minmax(100px, 1fr)); }
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
@@ -13312,7 +13320,8 @@ export class SmithproxyApp extends LitElement {
             ${this.drawers.map((entry, index) => this.renderDrawer(entry, index))}
           </div>
         </main>
-        <footer class="statusbar" aria-label="System status">
+        <footer class="statusbar" aria-label="System status" tabindex="0"
+          aria-description="On narrow screens, scroll horizontally to inspect every status.">
           ${this.snapshot?.unsaved ? html`
             <button class="status-action system-state warning" type="button"
               title="Running configuration differs from the last explicit Smithproxy save"

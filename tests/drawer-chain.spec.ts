@@ -6850,6 +6850,12 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
   await expect.poll(() => inventory.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect.poll(() => page.evaluate(() =>
     document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Alerts: Clear');
+  await expect(statusbar).toContainText('Config: Ready');
+  await expect.poll(() => statusbar.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+  await statusbar.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+  await expect.poll(() => statusbar.evaluate(element => element.scrollLeft > 0)).toBe(true);
   const search = page.getByRole('searchbox', {name: 'Search'});
   await expect(search).toBeVisible();
   await search.fill('office');
