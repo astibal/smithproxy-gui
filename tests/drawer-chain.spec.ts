@@ -1701,7 +1701,7 @@ test('rehydrates pending scalar and reference values when an editor is reopened'
     .getByRole('button', {name: 'https', exact: true})).toBeVisible();
 });
 
-test('previews known and unresolved policy references while editing', async ({page}) => {
+test('selects only known policy references while editing', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
@@ -1716,12 +1716,14 @@ test('previews known and unresolved policy references while editing', async ({pa
   await expect(sources.getByRole('button', {name: 'internet', exact: true})).toBeVisible();
 
   const protocol = editor.getByLabel('Protocol');
-  await protocol.fill('custom-protocol');
-  await expect(protocol.locator('..').locator('.reference-advisory')).toContainText(
-    'custom-protocolLiteral or unresolved',
-  );
-  await protocol.fill('tcp');
+  await expect(protocol.locator('option[value="custom-protocol"]')).toHaveCount(0);
+  await protocol.selectOption('tcp');
   await expect(protocol.locator('..').getByRole('button', {name: 'tcp', exact: true})).toBeVisible();
+
+  const detection = editor.getByLabel('Detection profile');
+  await expect(detection.locator('option[value="possible-profile"]')).toHaveCount(0);
+  await detection.selectOption('detect');
+  await expect(detection.locator('..').getByRole('button', {name: 'detect', exact: true})).toBeVisible();
 });
 
 test('uses pending routing references for links and live previews', async ({page}) => {
@@ -3682,7 +3684,7 @@ test('blocks deletion when a new policy references the object in the same draft'
   await page.getByRole('button', {name: 'New policy'}).click();
   const policyEditor = page.getByRole('dialog', {name: 'Create policy'});
   await policyEditor.getByLabel('Name').fill('pending-profile-reference');
-  await policyEditor.getByLabel('Detection profile').fill('unused-detection');
+  await policyEditor.getByLabel('Detection profile').selectOption('unused-detection');
   await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(policyEditor.getByText('Saved to draft')).toBeVisible();
   await policyEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -3715,7 +3717,7 @@ test('blocks deletion when a pending policy edit adds the reference', async ({pa
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /Policy 1.*accept/i}).click();
   const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
-  await policyEditor.getByLabel('Detection profile').fill('unused-detection');
+  await policyEditor.getByLabel('Detection profile').selectOption('unused-detection');
   await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(policyEditor.getByText('Saved to draft')).toBeVisible();
   await policyEditor.getByRole('button', {name: 'Cancel'}).click();

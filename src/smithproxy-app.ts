@@ -188,6 +188,7 @@ const captureBooleanFields = [
 
 type ProfileCreateType =
   'routing' | 'tls' | 'detection' | 'dns' | 'authentication' | 'content' | 'ssh' | 'script';
+type PolicyReferenceKind = 'protocol' | ProfileCreateType;
 
 const profileCreateCollections: Readonly<Record<ProfileCreateType, DraftCreateOperation['collection']>> = {
   routing: 'routing',
@@ -4026,7 +4027,8 @@ export class SmithproxyApp extends LitElement {
     if (!this.dirtyDrawerKeys.has(key)) {
       this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
     }
-    if (target instanceof HTMLInputElement && target.dataset.referencePreview === 'true') {
+    if ((target instanceof HTMLInputElement || target instanceof HTMLSelectElement) &&
+        target.dataset.referencePreview === 'true') {
       this.referencePreviewValues.set(`${key}|${target.id}`, target.value);
       this.requestUpdate();
     }
@@ -10210,13 +10212,12 @@ export class SmithproxyApp extends LitElement {
     const placement = initialPosition?.kind === 'before'
       ? `before:${initialPosition.reference ?? ''}`
       : initialPosition?.kind ?? 'last';
-    const referenceField = (id: string, label: string, type: string, field: string) => {
+    const referenceField = (id: string, label: string, type: PolicyReferenceKind, field: string) => {
       const inputId = `policy-create-${id}-${entry.id}`;
       const value = text(field);
-      return html`<label for=${inputId}>${label}</label>
-        <div class="reference-edit"><input id=${inputId} .value=${value} data-reference-preview="true"
-          maxlength="128" .readOnly=${readOnly} />
-          ${this.renderProfileReference(entry, inputId, type, value)}</div>`;
+      return html`<label for=${inputId}>${label}</label>${this.renderSingleReferenceEditor(
+        entry, inputId, label, type, value, readOnly, true,
+      )}`;
     };
     const sources = list('src', ['any']);
     const destinations = list('dst', ['any']);
@@ -10275,11 +10276,10 @@ export class SmithproxyApp extends LitElement {
           <option value="reject">Reject (legacy)</option>
         </select>
         <label for="policy-create-protocol-${entry.id}">Protocol</label>
-        <div class="reference-edit">
-          <input id="policy-create-protocol-${entry.id}" .value=${text('proto', 'tcp')}
-            data-reference-preview="true" maxlength="128" required .readOnly=${readOnly} />
-          ${this.renderProtocolReference(entry, `policy-create-protocol-${entry.id}`, text('proto', 'tcp'))}
-        </div>
+        ${this.renderSingleReferenceEditor(
+          entry, `policy-create-protocol-${entry.id}`, 'Protocol', 'protocol', text('proto', 'tcp'), readOnly,
+          false,
+        )}
         <span class="form-label">Source ports</span>
         ${this.renderReferenceListEditor(
           entry, `policy-create-source-ports-${entry.id}`, 'Source ports', 'port', sourcePorts, readOnly,
@@ -10453,10 +10453,10 @@ export class SmithproxyApp extends LitElement {
             this.originReadOnly(`${policyBase}.dst`, liveReadOnly),
           )}
           <label for="policy-protocol-${entry.id}">Protocol</label>
-          <div class="reference-edit"><input id="policy-protocol-${entry.id}" .value=${protocolValue}
-            data-reference-preview="true"
-            .readOnly=${this.originReadOnly(`${policyBase}.proto`, liveReadOnly)} />
-            ${this.renderProtocolReference(entry, `policy-protocol-${entry.id}`, protocol?.name ?? protocolValue)}</div>
+          ${this.renderSingleReferenceEditor(
+            entry, `policy-protocol-${entry.id}`, 'Protocol', 'protocol', protocol?.name ?? protocolValue,
+            this.originReadOnly(`${policyBase}.proto`, liveReadOnly), false,
+          )}
           <span class="form-label">Source ports</span>
           ${this.renderReferenceListEditor(
             entry, `policy-source-ports-${entry.id}`, 'Source ports', 'port', sourcePortValues,
@@ -10660,6 +10660,60 @@ export class SmithproxyApp extends LitElement {
     })}</div>`;
   }
 
+  private singleReferenceOptions(kind: PolicyReferenceKind): ReadonlyArray<string> {
+    if (kind === 'protocol') {
+      const live = (this.snapshot?.protocols ?? []).map(item => this.protocolDisplayName(item));
+      const pending = (this.workspaceDraft?.structuralOperations ?? [])
+        .filter((operation): operation is DraftCreateOperation =>
+          operation.op === 'create' && operation.collection === 'proto_objects')
+        .map(operation => operation.fields['name'])
+        .filter((name): name is string => typeof name === 'string');
+      return [...new Set([...live, ...pending])]
+        .filter(name => name.length > 0).sort((left, right) => left.localeCompare(right));
+    }
+
+    const live = (this.snapshot?.profiles ?? [])
+      .filter(profile => profile.type === kind)
+      .map(profile => this.profileDisplayName(profile));
+    const collection = profileCreateCollections[kind];
+    const pending = (this.workspaceDraft?.structuralOperations ?? [])
+      .filter((operation): operation is DraftCreateOperation =>
+        operation.op === 'create' && operation.collection === collection)
+      .map(operation => operation.fields['name'])
+      .filter((name): name is string => typeof name === 'string');
+    return [...new Set([...live, ...pending])]
+      .filter(name => name.length > 0).sort((left, right) => left.localeCompare(right));
+  }
+
+  private renderSingleReferenceEditor(
+    entry: DrawerEntry,
+    inputId: string,
+    label: string,
+    kind: PolicyReferenceKind,
+    fallback: string,
+    readOnly: boolean,
+    allowEmpty: boolean,
+  ) {
+    const current = this.previewReferenceNames(entry, inputId, [fallback])[0] ?? '';
+    const options = this.singleReferenceOptions(kind);
+    const unresolved = current.length > 0 && !options.includes(current);
+    return html`<div class="reference-edit">
+      <select id=${inputId} aria-label=${label} data-reference-preview="true"
+        ?disabled=${readOnly} ?required=${!allowEmpty}>
+        ${allowEmpty
+          ? html`<option value="" .selected=${current.length === 0}>None</option>`
+          : html`<option value="" disabled .selected=${current.length === 0}>Select a protocol…</option>`}
+        ${unresolved
+          ? html`<option value=${current} .selected=${true}>Legacy or unresolved: ${current}</option>`
+          : nothing}
+        ${options.map(name => html`<option value=${name} .selected=${current === name}>${name}</option>`)}
+      </select>
+      ${kind === 'protocol'
+        ? this.renderProtocolReference(entry, inputId, current)
+        : this.renderProfileReference(entry, inputId, kind, current)}
+    </div>`;
+  }
+
   private renderProtocolReference(entry: DrawerEntry, inputId: string, fallback: string) {
     const name = this.previewReferenceNames(entry, inputId, [fallback])[0] ?? '';
     if (name.length === 0) return nothing;
@@ -10689,7 +10743,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderPolicyProfileField(
-    entry: DrawerEntry, id: string, label: string, type: string, value: string, readOnly: boolean,
+    entry: DrawerEntry, id: string, label: string, type: PolicyReferenceKind, value: string, readOnly: boolean,
   ) {
     const policyIndex = this.snapshot?.policies.findIndex(item => item.id === entry.id) ?? -1;
     const fields: Readonly<Record<string, string>> = {
@@ -10699,10 +10753,10 @@ export class SmithproxyApp extends LitElement {
     const path = `policy.[${policyIndex}].${fields[id] ?? id}`;
     const persistent = this.persistentValue(path, value);
     const inputId = `policy-${id}-${entry.id}`;
-    return html`<label for="policy-${id}-${entry.id}">${label}</label>
-      <div class="reference-edit"><input id=${inputId} .value=${persistent} data-reference-preview="true"
-        .readOnly=${this.originReadOnly(path, readOnly)} />
-        ${this.renderProfileReference(entry, inputId, type, persistent)}</div>`;
+    return html`<label for=${inputId}>${label}</label>${this.renderSingleReferenceEditor(
+      entry, inputId, label, type, persistent,
+      this.originReadOnly(path, readOnly), true,
+    )}`;
   }
 
   private renderAddressInsight(id: string, type: string, value: string) {
