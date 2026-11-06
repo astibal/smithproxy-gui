@@ -285,7 +285,7 @@ export interface CaptureSettings {
   remote: {
     enabled: boolean;
     tunnelType: 'gre';
-    greFormat: 'traffic' | 'pcapng';
+    greFormat: 'traffic' | 'pcapng' | 'spq1';
     destinationConfigured: boolean;
     ttl: number;
     bindInterfaceConfigured: boolean;

@@ -207,6 +207,13 @@ describe('ApiConfigClient', () => {
       revision: '89afe0b0ccaad050ce7fca8f78661c35',
       saved_revision: '89afe0b0ccaad050ce7fca8f78661c35',
     }).revision).toBe('89afe0b0ccaad050ce7fca8f78661c35');
+    expect(parseConfigSnapshot({
+      ...liveSnapshot,
+      captures: {
+        ...liveSnapshot.captures,
+        remote: {...liveSnapshot.captures.remote, gre_format: 'spq1'},
+      },
+    }).captures?.remote.greFormat).toBe('spq1');
     expect(snapshot.policies[0]).toMatchObject({
       protocol: 'tcp', action: 'accept',
       sources: [{id: 'address-0', name: 'office'}],

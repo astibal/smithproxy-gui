@@ -1094,7 +1094,8 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
     if (!local_enabled || !local_dir || !local_prefix || !local_suffix || !local_format ||
         (*local_format != "pcap_single" && *local_format != "pcap" && *local_format != "smcap") ||
         !local_quota || !remote_enabled || !tunnel_type || *tunnel_type != "gre" || !gre_format ||
-        (*gre_format != "traffic" && *gre_format != "pcapng") || !destination || !ttl ||
+        (*gre_format != "traffic" && *gre_format != "pcapng" && *gre_format != "spq1") ||
+        !destination || !ttl ||
         !bind_interface || !checksums) {
         return {std::nullopt, "Smithproxy returned invalid capture setting fields"};
     }

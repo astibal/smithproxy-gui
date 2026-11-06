@@ -1836,6 +1836,11 @@ int main() {
     assert(!partial_captures.captures->remote_enabled);
     assert(partial_captures.captures->remote_tunnel_type == "gre");
     assert(partial_captures.captures->remote_gre_format == "traffic");
+
+    const auto legacy_captures = parse_config_captures(
+        R"({"success":{"captures":{"remote":{"gre_format":"spq1"}}}})");
+    assert(legacy_captures.captures);
+    assert(legacy_captures.captures->remote_gre_format == "spq1");
     assert(partial_captures.captures->remote_destination_configured);
     assert(partial_captures.captures->remote_ttl == 1U);
     const auto boundary_captures = parse_config_captures(

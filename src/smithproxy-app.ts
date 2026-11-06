@@ -6425,7 +6425,7 @@ export class SmithproxyApp extends LitElement {
     if (!format || !tunnelType || !greFormat || !quota || !ttl ||
         !['pcap_single', 'pcap', 'smcap'].includes(format.value) ||
         tunnelType.value !== 'gre' ||
-        !['traffic', 'pcapng'].includes(greFormat.value) ||
+        !['traffic', 'pcapng', 'spq1'].includes(greFormat.value) ||
         !Number.isSafeInteger(quotaValue) || quotaValue < 0 || quotaValue > Number.MAX_SAFE_INTEGER ||
         !Number.isInteger(ttlValue) || ttlValue < 0 || ttlValue > 255) {
       this.draftError = 'Capture format, quota, or tunnel TTL is invalid.';
@@ -11747,6 +11747,7 @@ export class SmithproxyApp extends LitElement {
         <select id="captures-gre-format" .value=${scalar('captures.remote.gre_format', captures.remote.greFormat)}
           ?disabled=${locked('captures.remote.gre_format')}>
           <option value="traffic">Traffic</option><option value="pcapng">PCAPNG</option>
+          <option value="spq1">SPQ1 (legacy)</option>
         </select>
         <label for="captures-remote-ttl">Tunnel TTL</label>
         <input id="captures-remote-ttl" type="number" min="0" max="255"

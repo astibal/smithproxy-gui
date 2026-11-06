@@ -881,7 +881,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     const tunnelType = safeString(value.captures.remote.tunnel_type, 'remote capture tunnel', 16);
     const greFormat = safeString(value.captures.remote.gre_format, 'remote capture format', 16);
     if (!['pcap_single', 'pcap', 'smcap'].includes(localFormat) || tunnelType !== 'gre' ||
-        !['traffic', 'pcapng'].includes(greFormat)) {
+        !['traffic', 'pcapng', 'spq1'].includes(greFormat)) {
       throw new Error('Invalid capture format.');
     }
     captures = {
@@ -905,7 +905,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       remote: {
         enabled: safeBoolean(value.captures.remote.enabled, 'remote capture state'),
         tunnelType: 'gre',
-        greFormat: greFormat as 'traffic' | 'pcapng',
+        greFormat: greFormat as 'traffic' | 'pcapng' | 'spq1',
         destinationConfigured: safeBoolean(
           value.captures.remote.destination_configured, 'remote capture destination state',
         ),
