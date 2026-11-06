@@ -1197,6 +1197,15 @@ def main() -> int:
                     ],
                 }),
             ), 400, "draft.change_rejected")
+            assert_error_response(request(
+                configured_port, "/api/v1/config/draft/changes", "POST",
+                headers=mutation_headers,
+                body=json.dumps({
+                    "expected_version": 2,
+                    "path": "policy.[0].auth_profile",
+                    "value": "private-auth",
+                }),
+            ), 400, "draft.change_rejected")
             status, _, body = request(
                 configured_port, "/api/v1/config/draft", headers=gateway_headers)
             assert status == 200

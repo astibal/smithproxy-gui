@@ -159,8 +159,8 @@ Result validate_policy(const std::string_view field, const DraftScalar& value) {
     constexpr std::array references{
         std::string_view{"routing"}, std::string_view{"tls_profile"},
         std::string_view{"ssh_profile"}, std::string_view{"detection_profile"},
-        std::string_view{"content_profile"}, std::string_view{"auth_profile"},
-        std::string_view{"alg_dns_profile"}, std::string_view{"script_profile"},
+        std::string_view{"content_profile"}, std::string_view{"alg_dns_profile"},
+        std::string_view{"script_profile"},
     };
     if (one_of(field, references)) return valid(bounded_text(value, 128U, true));
     return Result::UnknownPath;

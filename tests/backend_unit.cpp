@@ -683,6 +683,9 @@ int main() {
         "auth_profiles.[0].authenticate", true,
     }) == DraftSchemaResult::UnknownPath);
     assert(validate_draft_schema({
+        "policy.[0].auth_profile", std::string("legacy-auth"),
+    }) == DraftSchemaResult::UnknownPath);
+    assert(validate_draft_schema({
         "auth_profiles.[0].identities", DraftAuthIdentities{{
             .name = "integration_user", .detection_profile = "detect",
             .content_profile = "capture", .tls_profile = "inspect",

@@ -1006,6 +1006,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  const policySummary = page.getByLabel('Policy inventory summary');
+  await expect(policySummary.getByText('Total policies')).toBeVisible();
+  await expect(policySummary.getByText('Enabled', {exact: true})).toBeVisible();
   const policyRow = page.getByRole('button', {name: /Policy 1 office internet accept/i});
   await expect(policyRow).toBeVisible();
   await expect(policyRow).toContainText('tcp · any → https');
@@ -1737,7 +1740,7 @@ test('shows and reopens structural creates from primary policy and object lists'
         name: 'pending-policy', disabled: false, proto: 'pending-protocol', src: ['pending-address'],
         sport: [], dst: ['internet'], dport: ['pending-port'], features: [], action: 'accept', nat: '',
         routing: 'pending-routing', tls_profile: '', ssh_profile: '', detection_profile: '',
-        content_profile: '', auth_profile: '', alg_dns_profile: '', script_profile: '',
+        content_profile: '', alg_dns_profile: '', script_profile: '',
       },
     }, {
       op: 'create', local_id: 'list-address', client_id: 'list-address',
@@ -1798,7 +1801,7 @@ test('renders pending policy creates and moves in effective draft order', async 
   const policyFields = (name: string) => ({
     name, disabled: false, proto: 'tcp', src: ['office'], sport: [], dst: ['internet'], dport: [],
     features: [], action: 'accept', nat: '', routing: '', tls_profile: '', ssh_profile: '',
-    detection_profile: '', content_profile: '', auth_profile: '', alg_dns_profile: '', script_profile: '',
+    detection_profile: '', content_profile: '', alg_dns_profile: '', script_profile: '',
   });
   await mockSystemApi(page, {
     smithproxy: 'ready', validationReady: true, commitReady: true, structuralDraftsReady: true,
@@ -1838,7 +1841,7 @@ test('projects ordered draft operations in request order', async ({page}) => {
   const fields = (name: string) => ({
     name, disabled: false, proto: 'tcp', src: ['office'], sport: [], dst: ['internet'], dport: [],
     features: [], action: 'accept', nat: '', routing: '', tls_profile: '', ssh_profile: '',
-    detection_profile: '', content_profile: '', auth_profile: '', alg_dns_profile: '', script_profile: '',
+    detection_profile: '', content_profile: '', alg_dns_profile: '', script_profile: '',
   });
   await mockSystemApi(page, {
     smithproxy: 'ready', structuralDraftsReady: true, secondPolicy: true,
@@ -1875,7 +1878,7 @@ test('chains ordered creates and moves through earlier client identifiers', asyn
         name: 'pending-anchor', disabled: false, proto: 'tcp', src: ['office'], sport: [],
         dst: ['internet'], dport: [], features: [], action: 'accept', nat: '', routing: '',
         tls_profile: '', ssh_profile: '', detection_profile: '', content_profile: '',
-        auth_profile: '', alg_dns_profile: '', script_profile: '',
+        alg_dns_profile: '', script_profile: '',
       },
     }, {
       op: 'create', local_id: 'chain-policy-later', client_id: 'chain-policy-later', collection: 'policy',
@@ -1884,7 +1887,7 @@ test('chains ordered creates and moves through earlier client identifiers', asyn
         name: 'pending-later', disabled: false, proto: 'tcp', src: ['office'], sport: [],
         dst: ['internet'], dport: [], features: [], action: 'accept', nat: '', routing: '',
         tls_profile: '', ssh_profile: '', detection_profile: '', content_profile: '',
-        auth_profile: '', alg_dns_profile: '', script_profile: '',
+        alg_dns_profile: '', script_profile: '',
       },
     }, {
       op: 'create', local_id: 'chain-rule', client_id: 'chain-rule',
@@ -2155,7 +2158,7 @@ test('removes pending create operations only after their draft dependents', asyn
         name: 'pending-policy', disabled: false, proto: 'tcp', src: ['pending-office'],
         sport: [], dst: ['internet'], dport: [], features: [], action: 'accept', nat: '',
         routing: '', tls_profile: '', ssh_profile: '', detection_profile: '',
-        content_profile: '', auth_profile: '', alg_dns_profile: '', script_profile: '',
+        content_profile: '', alg_dns_profile: '', script_profile: '',
       },
     }],
   };
@@ -2195,7 +2198,7 @@ test('blocks removal of pending ordered anchors until position dependents are re
         name: 'pending-anchor', disabled: false, proto: 'tcp', src: ['office'], sport: [],
         dst: ['internet'], dport: [], features: [], action: 'accept', nat: '', routing: '',
         tls_profile: '', ssh_profile: '', detection_profile: '', content_profile: '',
-        auth_profile: '', alg_dns_profile: '', script_profile: '',
+        alg_dns_profile: '', script_profile: '',
       },
     }, {
       op: 'move', local_id: 'ordered-dependent', collection: 'policy',
@@ -2951,7 +2954,7 @@ test('duplicates a real policy into an explicit draft create without baking augm
         src: ['office'], sport: ['any'], dst: ['internet'], dport: ['https'],
         features: [], action: 'deny', nat: 'auto', routing: 'main', tls_profile: 'inspect',
         ssh_profile: 'default-ssh', detection_profile: 'detect', content_profile: 'capture',
-        auth_profile: '', alg_dns_profile: 'resolver', script_profile: 'audit',
+        alg_dns_profile: 'resolver', script_profile: 'audit',
       },
     },
     csrf: '1',
@@ -4953,7 +4956,7 @@ test('moves selected live policies last in one atomic batch while preserving the
         name: 'Pending policy', disabled: false, proto: 'tcp', src: ['office'], sport: [],
         dst: ['internet'], dport: [], features: [], action: 'accept', nat: 'auto', routing: '',
         tls_profile: '', ssh_profile: '', detection_profile: '', content_profile: '',
-        auth_profile: '', alg_dns_profile: '', script_profile: '',
+        alg_dns_profile: '', script_profile: '',
       },
     }],
   };

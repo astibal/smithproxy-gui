@@ -69,6 +69,17 @@ import {
 } from './state/system-status';
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
+const sectionDescriptions: Readonly<Record<string, string>> = {
+  Dashboard: 'Control plane and configuration readiness',
+  Network: 'Listeners, interfaces, and runtime reachability',
+  Objects: 'Reusable configuration, profiles, and trust assets',
+  Policy: 'Ordered traffic decisions and inspection behavior',
+  Monitoring: 'Runtime activity, health, and capacity',
+  Logs: 'Operational events and administrative audit',
+  System: 'Runtime settings, persistence, and backend jobs',
+  Search: 'Configuration search results',
+  Draft: 'Review, validate, and commit pending operations',
+};
 const policyActions = ['accept', 'deny', 'reject'] as const;
 const policyNatModes = ['auto', 'none'] as const;
 const policyFeatures = ['sink-left', 'sink-right', 'sink-all', 'statistics', 'access-request'] as const;
@@ -509,9 +520,14 @@ export class SmithproxyApp extends LitElement {
     .brand { display: flex; gap: 10px; align-items: center; margin: 0 8px 24px; font-weight: 700; }
     .brand-mark { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 4px; background: var(--app-brand); color: var(--app-on-brand); }
     nav { display: grid; gap: 4px; }
-    nav button { width: 100%; padding: 10px 12px; border: 0; border-radius: 3px; background: transparent; color: var(--app-muted); text-align: left; cursor: pointer; }
+    .nav-item { position: relative; min-width: 0; }
+    nav button { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 7px; align-items: center; width: 100%; padding: 10px 42px 10px 12px; border: 0; border-radius: 3px; background: transparent; color: var(--app-muted); text-align: left; cursor: pointer; }
     nav button:hover { background: var(--app-raised); color: var(--app-text); }
     nav button[aria-current='page'] { background: var(--app-raised); color: var(--app-text); box-shadow: inset 3px 0 var(--app-brand); }
+    .nav-icon { color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-align: center; }
+    .nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nav-badge { position: absolute; top: 50%; right: 10px; min-width: 20px; padding: 1px 5px; translate: 0 -50%; border: 1px solid var(--app-border); border-radius: 9px; color: var(--app-muted); font-size: 10px; font-variant-numeric: tabular-nums; pointer-events: none; text-align: center; }
+    nav button[aria-current='page'] + .nav-badge { border-color: color-mix(in srgb, var(--app-brand) 55%, var(--app-border)); color: var(--app-text); }
 
     .main { display: grid; grid-template-rows: 58px minmax(0, 1fr); min-width: 0; min-height: 0; }
     .topbar { display: flex; gap: 16px; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--app-border); background: color-mix(in srgb, var(--app-surface) 88%, transparent); }
@@ -526,6 +542,17 @@ export class SmithproxyApp extends LitElement {
     .section-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; margin-bottom: 16px; }
     .section-head h2 { margin: 0 0 3px; font-size: 20px; }
     .section-head p { margin: 0; color: var(--app-muted); }
+    .inventory-summary { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 1px; margin: 0 0 14px; border: 1px solid var(--app-border); background: var(--app-border); }
+    .inventory-stat { min-width: 0; padding: 10px 12px; background: var(--app-surface); }
+    .inventory-stat strong { display: block; overflow: hidden; font-size: 18px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+    .inventory-stat span { display: block; margin-top: 1px; color: var(--app-muted); font-size: 11px; letter-spacing: .025em; text-transform: uppercase; }
+    .inventory-stat.success strong { color: var(--app-success); }
+    .inventory-stat.warning strong { color: var(--app-warning); }
+    .inventory-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+    .inventory-tabs button { padding: 6px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: transparent; color: var(--app-muted); cursor: pointer; }
+    .inventory-tabs button:hover { background: var(--app-raised); color: var(--app-text); }
+    .inventory-tabs button[aria-pressed='true'] { border-color: var(--app-brand); background: var(--app-raised); color: var(--app-text); }
+    .inventory-tabs small { color: var(--app-muted); font-variant-numeric: tabular-nums; }
     .structural-action { display: grid; max-width: 260px; gap: 4px; justify-items: end; text-align: right; }
     .object-structural-action { max-width: 520px; }
     .structural-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
@@ -801,6 +828,7 @@ export class SmithproxyApp extends LitElement {
       .policy-row-main { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
       .policy-row-main > :nth-child(3), .policy-row-main > :nth-child(5), .policy-row-main > :nth-child(6) { display: none; }
       .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+      .inventory-summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
       .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .35fr) minmax(220px, 1fr); max-width: 920px; }
@@ -814,6 +842,7 @@ export class SmithproxyApp extends LitElement {
       .brand { margin: 0 10px 0 0; }
       nav { display: flex; }
       nav button { width: 42px; padding: 8px; }
+      .nav-badge { display: none; }
       .main { grid-row: 2; grid-template-rows: 94px minmax(0, 1fr); }
       .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto; gap: 5px 8px; padding: 8px 12px; }
       .section-head { align-items: start; }
@@ -835,6 +864,7 @@ export class SmithproxyApp extends LitElement {
       .statusbar { grid-row: 3; }
       .status-secondary { display: none; }
       .metric-grid { grid-template-columns: 1fr; }
+      .inventory-summary { grid-template-columns: repeat(2, minmax(100px, 1fr)); }
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
       .event-row { grid-template-columns: minmax(110px, 1fr) 72px; }
@@ -3497,7 +3527,6 @@ export class SmithproxyApp extends LitElement {
       ssh_profile: this.persistentValue(`${base}.ssh_profile`, policy.sshProfile),
       detection_profile: this.persistentValue(`${base}.detection_profile`, policy.detectionProfile),
       content_profile: this.persistentValue(`${base}.content_profile`, policy.contentProfile),
-      auth_profile: '',
       alg_dns_profile: this.persistentValue(`${base}.alg_dns_profile`, policy.dnsProfile),
       script_profile: this.persistentValue(`${base}.script_profile`, policy.scriptProfile),
     };
@@ -4223,7 +4252,6 @@ export class SmithproxyApp extends LitElement {
       ssh_profile: referenceValues.get('ssh')!,
       detection_profile: referenceValues.get('detection')!,
       content_profile: referenceValues.get('content')!,
-      auth_profile: '',
       alg_dns_profile: referenceValues.get('dns')!,
       script_profile: referenceValues.get('script')!,
     };
@@ -7069,6 +7097,9 @@ export class SmithproxyApp extends LitElement {
       return statusMatches && actionMatches && queryMatches;
     });
     const actions = [...new Set(policyRows.map(row => rowValues(row).action))].sort();
+    const enabledPolicyCount = policyRows.filter(row => rowValues(row).enabled).length;
+    const pendingPolicyCount = policyRows.filter(row => row.kind === 'create').length;
+    const augmentedPolicyCount = [...overlayCounts.keys()].filter(path => path.startsWith('policy.[')).length;
     const bulkFields: ReadonlyArray<PolicyBulkField> = [
       'disabled', 'action', 'nat', 'features', ...policyProfileAssignments.map(item => item.field),
     ];
@@ -7107,6 +7138,15 @@ export class SmithproxyApp extends LitElement {
             <small id="new-policy-blocker">${this.policyTransactionsAvailable()
               ? 'Creates an ordered operation in the shared workspace draft.'
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
+          </div>
+        </div>
+        <div class="inventory-summary" aria-label="Policy inventory summary">
+          <div class="inventory-stat"><strong>${policyRows.length.toLocaleString()}</strong><span>Total policies</span></div>
+          <div class="inventory-stat success"><strong>${enabledPolicyCount.toLocaleString()}</strong><span>Enabled</span></div>
+          <div class="inventory-stat"><strong>${(policyRows.length - enabledPolicyCount).toLocaleString()}</strong><span>Disabled</span></div>
+          <div class="inventory-stat ${pendingPolicyCount > 0 ? 'warning' : ''}">
+            <strong>${pendingPolicyCount.toLocaleString()} · ${augmentedPolicyCount.toLocaleString()}</strong>
+            <span>Pending · augmented</span>
           </div>
         </div>
         <div class="list-filters" role="search" aria-label="Filter policies">
@@ -8182,6 +8222,32 @@ export class SmithproxyApp extends LitElement {
               ? 'Primitive objects use atomic Smithproxy transactions; other object types remain capability-gated.'
               : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
           </div>
+        </div>
+        <div class="inventory-summary" aria-label="Configuration object inventory summary">
+          <div class="inventory-stat"><strong>${((this.snapshot?.addresses.length ?? 0) + pendingAddresses.length).toLocaleString()}</strong><span>Addresses</span></div>
+          <div class="inventory-stat"><strong>${((this.snapshot?.ports.length ?? 0) + pendingPorts.length).toLocaleString()}</strong><span>Ports</span></div>
+          <div class="inventory-stat"><strong>${((this.snapshot?.protocols.length ?? 0) + pendingProtocols.length).toLocaleString()}</strong><span>Protocols</span></div>
+          <div class="inventory-stat"><strong>${(liveProfileCount + pendingProfileCount).toLocaleString()}</strong><span>Profiles and routing</span></div>
+        </div>
+        <div class="inventory-tabs" role="group" aria-label="Configuration object categories">
+          ${([
+            ['all', 'All', totalCount],
+            ['address', 'Addresses', (this.snapshot?.addresses.length ?? 0) + pendingAddresses.length],
+            ['port', 'Ports', (this.snapshot?.ports.length ?? 0) + pendingPorts.length],
+            ['protocol', 'Protocols', (this.snapshot?.protocols.length ?? 0) + pendingProtocols.length],
+            ['profile', 'Profiles', liveProfileCount + pendingProfileCount],
+            ['security', 'Trust and signatures',
+              (this.snapshot?.securityAssets?.certificateAuthorities.length ?? 0) +
+              (this.snapshot?.securityAssets?.signatures.length ?? 0) +
+              pendingAuthorities.length + pendingSignatures.length],
+          ] as const).map(([kind, label, count]) => html`
+            <button type="button" aria-pressed=${this.objectKindFilter === kind}
+              @click=${() => {
+                this.objectKindFilter = kind;
+                this.objectBulkMessage = undefined;
+                this.objectBulkDeleteConfirmation = undefined;
+              }}>${label} <small>${count.toLocaleString()}</small></button>
+          `)}
         </div>
         <div class="list-filters" role="search" aria-label="Filter configuration objects">
           <label class="list-filter">Name, value, or type
@@ -12492,23 +12558,42 @@ export class SmithproxyApp extends LitElement {
     const failedJobCount = this.backendJobs.jobs.filter(job => job.state === 'failed').length;
     const jobTone = this.jobsError ? 'danger' : !this.jobsAvailable ? 'warning' :
       activeJobCount > 0 ? 'warning' : failedJobCount > 0 ? 'danger' : 'success';
+    const profileCount = this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0;
+    const objectCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
+      (this.snapshot?.protocols.length ?? 0) + profileCount +
+      (this.snapshot?.securityAssets?.certificateAuthorities.length ?? 0) +
+      (this.snapshot?.securityAssets?.signatures.length ?? 0);
+    const navigationBadge = (item: string): string | undefined => {
+      if (item === 'Objects') return this.snapshot ? objectCount.toLocaleString() : undefined;
+      if (item === 'Policy') return this.snapshot ? this.snapshot.policies.length.toLocaleString() : undefined;
+      if (item === 'Monitoring') return activeAlertCount > 0 ? activeAlertCount.toLocaleString() : undefined;
+      if (item === 'Logs') return this.operationalEvents.events.length > 0
+        ? this.operationalEvents.events.length.toLocaleString() : undefined;
+      if (item === 'System') return activeJobCount > 0 ? activeJobCount.toLocaleString() : undefined;
+      return undefined;
+    };
     return html`
       <div class="shell" @keydown=${this.handleKeydown}>
         <aside class="sidebar">
           <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
           <nav aria-label="Primary navigation">
             ${navigation.map((item, index) => html`
-              <button type="button" aria-current=${this.activeSection === item ? 'page' : nothing} title=${item} @click=${() => { this.activeSection = item; }}>
-                <span class="nav-icon" aria-hidden="true">${['⌂', '⌁', '◇', '≣', '⌁', '≡', '⚙'][index]}</span>
-                <span class="nav-label">${item}</span>
-              </button>
+              <div class="nav-item">
+                <button type="button" aria-current=${this.activeSection === item ? 'page' : nothing}
+                  title=${item} @click=${() => { this.activeSection = item; }}>
+                  <span class="nav-icon" aria-hidden="true">${['⌂', '⌁', '◇', '≣', '⌁', '≡', '⚙'][index]}</span>
+                  <span class="nav-label">${item}</span>
+                </button>
+                ${navigationBadge(item)
+                  ? html`<span class="nav-badge" aria-hidden="true">${navigationBadge(item)}</span>` : nothing}
+              </div>
             `)}
           </nav>
         </aside>
         <main class="main">
           <header class="topbar">
             <h1>${this.activeSection}</h1>
-            <p>${this.runtime?.mode === 'embedded' ? 'Saslik Tools' : 'Smithproxy management'}</p>
+            <p>${sectionDescriptions[this.activeSection] ?? 'Smithproxy management'}</p>
             ${this.snapshot?.source === 'live' && this.draftChangeCount > 0 ? html`
               <button class="secondary ${this.configRevisionDrift ? 'draft' : ''}" type="button"
                 ?disabled=${this.drawers.length > 0}
