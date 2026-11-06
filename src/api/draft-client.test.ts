@@ -440,6 +440,45 @@ describe('DraftClient', () => {
     }));
   });
 
+  it('reports a bounded upstream transaction issue without exposing response internals', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: {
+        code: 'config.validation_rejected',
+        message: 'transaction validation rejected',
+        request_id: 'abc123-7',
+        retryable: false,
+        fields: [],
+        details: {
+          code: 'duplicate_entry',
+          detail: 'Duplicate entry.',
+          path: 'address_objects',
+          operation: 2,
+        },
+      },
+    }), {
+      status: 422,
+      headers: {'Content-Type': 'application/json', 'X-Request-ID': 'abc123-7'},
+    }));
+    const client = new DraftClient('/api/v1', fetcher);
+
+    await expect(client.validate(7)).rejects.toThrow(
+      'transaction validation rejected: Duplicate entry ' +
+      '(address_objects · operation 3). Request abc123-7.',
+    );
+  });
+
+  it('falls back to the status-only error for malformed upstream issue details', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      error: {
+        message: 'transaction validation rejected',
+        details: {code: 'duplicate_entry', detail: 'secret\nvalue'},
+      },
+    }, 422));
+    const client = new DraftClient('/api/v1', fetcher);
+
+    await expect(client.validate(7)).rejects.toThrow('Draft API returned HTTP 422.');
+  });
+
   it('commits only an optimistic draft version and validates the commit receipt', async () => {
     const previousRevision = `sha256:${'1'.repeat(64)}`;
     const revision = `sha256:${'2'.repeat(64)}`;

@@ -558,6 +558,10 @@ TransactionResponse terminal_response(std::string state) {
         .validated_operations = 0U,
         .warning_count = 0U,
         .restart = "unknown",
+        .issue_code = std::nullopt,
+        .issue_path = std::nullopt,
+        .issue_detail = std::nullopt,
+        .issue_operation = std::nullopt,
     };
 }
 
@@ -839,6 +843,10 @@ TransactionResponse parse_transaction_response(
             .validated_operations = validated,
             .warning_count = success["warnings"].size(),
             .restart = restart,
+            .issue_code = std::nullopt,
+            .issue_path = std::nullopt,
+            .issue_detail = std::nullopt,
+            .issue_operation = std::nullopt,
         };
     }
 

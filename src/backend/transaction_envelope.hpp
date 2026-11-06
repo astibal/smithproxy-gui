@@ -25,6 +25,10 @@ struct TransactionResponse {
     std::size_t validated_operations{};
     std::size_t warning_count{};
     std::string restart{"unknown"};
+    std::optional<std::string> issue_code;
+    std::optional<std::string> issue_path;
+    std::optional<std::string> issue_detail;
+    std::optional<std::size_t> issue_operation;
 };
 
 [[nodiscard]] std::optional<std::string> generate_transaction_idempotency_key() noexcept;

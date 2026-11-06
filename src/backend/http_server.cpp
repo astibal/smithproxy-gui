@@ -216,6 +216,21 @@ std::string error_code(const std::string_view message) {
     return "request.failed";
 }
 
+std::string transaction_error_body(
+    const std::string_view message, const TransactionResponse& transaction) {
+    nlohmann::json body{{"error", message}};
+    if (!transaction.issue_code || !transaction.issue_detail) return body.dump();
+
+    nlohmann::json issue{
+        {"code", *transaction.issue_code},
+        {"detail", *transaction.issue_detail},
+    };
+    if (transaction.issue_path) issue["path"] = *transaction.issue_path;
+    if (transaction.issue_operation) issue["operation"] = *transaction.issue_operation;
+    body["upstream_issue"] = std::move(issue);
+    return body.dump();
+}
+
 bool safe_audit_target(const std::string_view path) {
     if (path.empty() || path.size() > 512U) return false;
     return std::all_of(path.begin(), path.end(), [](const unsigned char character) {
@@ -730,7 +745,7 @@ private:
             if (transaction.state == "rejected") {
                 lease.release(false);
                 return {422, "application/json; charset=utf-8",
-                        "{\"error\":\"transaction commit rejected\"}"};
+                        transaction_error_body("transaction commit rejected", transaction)};
             }
             if (transaction.state == "authorization-failed") {
                 lease.release(false);
@@ -800,7 +815,7 @@ private:
             }
             if (validation.state == "rejected") {
                 return {422, "application/json; charset=utf-8",
-                        "{\"error\":\"transaction validation rejected\"}"};
+                        transaction_error_body("transaction validation rejected", validation)};
             }
             if (validation.state == "unavailable") {
                 return {503, "application/json; charset=utf-8",
@@ -2208,6 +2223,10 @@ private:
             const auto legacy = nlohmann::json::parse(response.body, nullptr, false);
             if (legacy.is_object() && legacy.contains("error") && legacy["error"].is_string()) {
                 const auto message = legacy["error"].get<std::string>();
+                const auto details = legacy.contains("upstream_issue") &&
+                                             legacy["upstream_issue"].is_object()
+                    ? legacy["upstream_issue"]
+                    : nlohmann::json::object();
                 response.content_type = "application/json; charset=utf-8";
                 response.body = nlohmann::json{{"error", {
                     {"code", error_code(message)},
@@ -2215,7 +2234,7 @@ private:
                     {"request_id", state.request_id},
                     {"retryable", false},
                     {"fields", nlohmann::json::array()},
-                    {"details", nlohmann::json::object()},
+                    {"details", details},
                 }}}.dump();
             }
         }

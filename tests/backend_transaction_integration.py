@@ -25,6 +25,7 @@ class TransactionSmithproxy(FakeSmithproxy):
     request_lock = threading.Lock()
     transactions = {}
     next_transaction = 1
+    reject_next_prepare = False
 
     def do_GET(self):
         if self.path == "/api/config/v2/capabilities":
@@ -68,6 +69,21 @@ class TransactionSmithproxy(FakeSmithproxy):
             operations = params.get("operations")
             if token not in TransactionSmithproxy.transactions or not isinstance(operations, list):
                 self.send_error(404)
+                return
+            if TransactionSmithproxy.reject_next_prepare:
+                TransactionSmithproxy.reject_next_prepare = False
+                self.send_response(422)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "state": "error",
+                    "error": {
+                        "code": "duplicate_entry",
+                        "detail": f"Entry already exists: {PRIVATE_VALUE}",
+                        "path": "address_objects",
+                        "operation": 0,
+                    },
+                }).encode())
                 return
             TransactionSmithproxy.transactions[token] = operations
             response = {
@@ -150,6 +166,7 @@ def main() -> int:
     TransactionSmithproxy.requests = []
     TransactionSmithproxy.transactions = {}
     TransactionSmithproxy.next_transaction = 1
+    TransactionSmithproxy.reject_next_prepare = False
 
     fake_port = free_port()
     fake = http.server.ThreadingHTTPServer(("127.0.0.1", fake_port), TransactionSmithproxy)
@@ -266,6 +283,23 @@ def main() -> int:
             assert len(mutated["structural_operations"]) == 5
             assert b"private signature matcher" not in body
 
+            TransactionSmithproxy.reject_next_prepare = True
+            status, _, body = request(
+                port, "/api/v1/config/draft/validate", "POST",
+                headers=mutation_headers,
+                body=json.dumps({"expected_version": mutated["version"]}),
+            )
+            rejected = json.loads(body)
+            assert status == 422
+            assert rejected["error"]["code"] == "config.validation_rejected"
+            assert rejected["error"]["details"] == {
+                "code": "duplicate_entry",
+                "detail": "Duplicate entry.",
+                "path": "address_objects",
+                "operation": 0,
+            }
+            assert PRIVATE_VALUE.encode() not in body
+
             status, _, body = request(
                 port, "/api/v1/config/draft/validate", "POST",
                 headers=mutation_headers,
@@ -302,8 +336,10 @@ def main() -> int:
             with TransactionSmithproxy.request_lock:
                 upstream_requests = list(TransactionSmithproxy.requests)
             assert [item["action"] for item in upstream_requests] == [
-                "begin", "prepare", "abort", "begin", "prepare", "commit"]
-            assert upstream_requests[1]["params"]["operations"] == [
+                "begin", "prepare", "abort",
+                "begin", "prepare", "abort",
+                "begin", "prepare", "commit"]
+            assert upstream_requests[4]["params"]["operations"] == [
                 {"op": "add", "path": "address_objects", "name": "branch"},
                 {"op": "set", "path": "address_objects.branch.type",
                  "value": {"type": "string", "data": "cidr"}},
@@ -339,7 +375,7 @@ def main() -> int:
                  "value": {"type": "string", "data": "private signature matcher"}},
                 {"op": "set", "path": "starttls_signatures.[1].flow.[0].type",
                  "value": {"type": "string", "data": "regex"}},
-            ], upstream_requests[1]["params"]["operations"]
+            ], upstream_requests[4]["params"]["operations"]
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
@@ -361,10 +397,10 @@ def main() -> int:
                 port, "/api/v1/audit/recent", headers=gateway_headers)
             assert status == 200
             audits = json.loads(audit_body)["entries"]
-            assert [item["outcome"] for item in audits[-2:]] == [
-                "succeeded", "succeeded"]
-            assert [item["operation"] for item in audits[-2:]] == [
-                "config.draft.validate", "config.draft.commit"]
+            assert [item["outcome"] for item in audits[-3:]] == [
+                "rejected", "succeeded", "succeeded"]
+            assert [item["operation"] for item in audits[-3:]] == [
+                "config.draft.validate", "config.draft.validate", "config.draft.commit"]
             assert PRIVATE_VALUE.encode() not in audit_body
         finally:
             process.send_signal(signal.SIGTERM)

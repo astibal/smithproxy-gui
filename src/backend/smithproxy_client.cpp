@@ -89,19 +89,91 @@ TransactionResponse transaction_failure(std::string state) {
         .validated_operations = 0U,
         .warning_count = 0U,
         .restart = "unknown",
+        .issue_code = std::nullopt,
+        .issue_path = std::nullopt,
+        .issue_detail = std::nullopt,
+        .issue_operation = std::nullopt,
     };
 }
 
-TransactionResponse transaction_http_failure(const long status_code) {
-    if (status_code == 401L || status_code == 403L) {
-        return transaction_failure("authorization-failed");
+bool safe_issue_token(const std::string_view value) {
+    return !value.empty() && value.size() <= 64U &&
+           std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+               return (character >= 'a' && character <= 'z') || character == '_';
+           });
+}
+
+bool safe_issue_path(const std::string_view value) {
+    return value.size() <= 512U &&
+           std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+               return (character >= 'a' && character <= 'z') ||
+                      (character >= 'A' && character <= 'Z') ||
+                      (character >= '0' && character <= '9') || character == '_' ||
+                      character == '-' || character == '.' || character == '[' ||
+                      character == ']';
+           });
+}
+
+bool safe_issue_detail(const std::string_view value) {
+    return !value.empty() && value.size() <= 512U &&
+           std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+               return character >= 0x20U && character != 0x7fU;
+           });
+}
+
+std::string issue_summary(const std::string_view code) {
+    std::string summary(code);
+    std::replace(summary.begin(), summary.end(), '_', ' ');
+    summary.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(summary.front())));
+    summary.push_back('.');
+    return summary;
+}
+
+TransactionResponse transaction_http_failure(
+    const long status_code, const std::optional<nlohmann::json>& document = std::nullopt) {
+    auto result = [&] {
+        if (status_code == 401L || status_code == 403L) {
+            return transaction_failure("authorization-failed");
+        }
+        if (status_code == 409L) return transaction_failure("conflict");
+        if (status_code == 400L || status_code == 404L || status_code == 422L) {
+            return transaction_failure("rejected");
+        }
+        if (status_code >= 500L && status_code < 600L) return transaction_failure("failed");
+        return transaction_failure("invalid-response");
+    }();
+
+    // The current transaction API returns one bounded, value-free issue. Keep
+    // it attached to terminal responses so the browser can identify the
+    // failing operation without exposing the candidate snapshot.
+    if (!document || !document->is_object() || !document->contains("error") ||
+        !(*document)["error"].is_object()) {
+        return result;
     }
-    if (status_code == 409L) return transaction_failure("conflict");
-    if (status_code == 400L || status_code == 404L || status_code == 422L) {
-        return transaction_failure("rejected");
+    const auto& error = (*document)["error"];
+    if (!error.contains("code") || !error["code"].is_string() ||
+        !error.contains("detail") || !error["detail"].is_string()) {
+        return result;
     }
-    if (status_code >= 500L && status_code < 600L) return transaction_failure("failed");
-    return transaction_failure("invalid-response");
+    const auto code = error["code"].get<std::string>();
+    const auto detail = error["detail"].get<std::string>();
+    if (!safe_issue_token(code) || !safe_issue_detail(detail)) return result;
+    result.issue_code = code;
+    // Details are intentionally derived from the machine code. An upstream
+    // validator may include an entry name or submitted write-only value in its
+    // prose, so that untrusted text never crosses the browser boundary.
+    result.issue_detail = issue_summary(code);
+    if (error.contains("path") && error["path"].is_string()) {
+        const auto path = error["path"].get<std::string>();
+        if (!safe_issue_path(path)) return transaction_failure(result.state);
+        if (!path.empty()) result.issue_path = path;
+    }
+    if (error.contains("operation") && error["operation"].is_number_unsigned()) {
+        const auto operation = error["operation"].get<std::uint64_t>();
+        if (operation >= 4096U) return transaction_failure(result.state);
+        result.issue_operation = static_cast<std::size_t>(operation);
+    }
+    return result;
 }
 
 bool valid_session_token(const std::string_view token) {
@@ -350,7 +422,7 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
 
         const auto begin = post(
             "/api/config/transaction/begin", {{"base_revision", *draft.base_revision}});
-        if (begin.status != 200L) return transaction_http_failure(begin.status);
+        if (begin.status != 200L) return transaction_http_failure(begin.status, begin.body);
         if (!begin.body || begin.body->value("state", "") != "open" ||
             !begin.body->contains("transaction") || !(*begin.body)["transaction"].is_string() ||
             begin.body->value("base_revision", "") != *draft.base_revision) {
@@ -367,7 +439,7 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
             {{"transaction", token}, {"operations", operations}});
         if (prepared.status != 200L) {
             abort();
-            return transaction_http_failure(prepared.status);
+            return transaction_http_failure(prepared.status, prepared.body);
         }
         if (!prepared.body || prepared.body->value("state", "") != "prepared" ||
             !prepared.body->contains("operation_count") ||
@@ -386,13 +458,17 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
                 .validated_operations = draft.operation_count(),
                 .warning_count = 0U,
                 .restart = "not-required",
+                .issue_code = std::nullopt,
+                .issue_path = std::nullopt,
+                .issue_detail = std::nullopt,
+                .issue_operation = std::nullopt,
             };
         }
 
         const auto committed = post(
             "/api/config/transaction/commit",
             {{"transaction", token}, {"description", "Smithproxy GUI commit"}});
-        if (committed.status != 200L) return transaction_http_failure(committed.status);
+        if (committed.status != 200L) return transaction_http_failure(committed.status, committed.body);
         if (!committed.body || committed.body->value("state", "") != "committed" ||
             !committed.body->contains("revision") || !(*committed.body)["revision"].is_string()) {
             return transaction_failure("invalid-response");
@@ -408,6 +484,10 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
             .validated_operations = draft.operation_count(),
             .warning_count = 0U,
             .restart = "not-required",
+            .issue_code = std::nullopt,
+            .issue_path = std::nullopt,
+            .issue_detail = std::nullopt,
+            .issue_operation = std::nullopt,
         };
     }
 

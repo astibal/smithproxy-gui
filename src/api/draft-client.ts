@@ -131,9 +131,47 @@ export interface DraftCommit {
 
 type JsonObject = Record<string, unknown>;
 const MAX_DRAFT_RESPONSE_BYTES = 8 * 1024 * 1024;
+const MAX_DRAFT_ERROR_BYTES = 64 * 1024;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function safeDiagnostic(value: unknown, maximum: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= maximum &&
+    !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+async function draftApiError(response: Response): Promise<Error> {
+  const fallback = httpStatusError(response, 'Draft API');
+  try {
+    const document = await boundedJson(response, MAX_DRAFT_ERROR_BYTES, 'Draft error');
+    if (!isObject(document) || !isObject(document['error'])) return fallback;
+    const error = document['error'];
+    if (!safeDiagnostic(error['message'], 256) || !isObject(error['details'])) return fallback;
+    const details = error['details'];
+    if (!safeDiagnostic(details['code'], 64) || !safeDiagnostic(details['detail'], 512)) {
+      return fallback;
+    }
+    const path = details['path'];
+    const operation = details['operation'];
+    if (path !== undefined && (!safeDiagnostic(path, 512) || !/^[A-Za-z0-9_.\[\]-]+$/u.test(path))) {
+      return fallback;
+    }
+    if (operation !== undefined &&
+        (!Number.isSafeInteger(operation) || Number(operation) < 0 || Number(operation) >= 4096)) {
+      return fallback;
+    }
+    const context = [
+      typeof path === 'string' ? path : undefined,
+      typeof operation === 'number' ? `operation ${operation + 1}` : undefined,
+    ].filter((item): item is string => item !== undefined).join(' · ');
+    const detail = String(details['detail']).replace(/\.$/u, '');
+    const reference = fallback.message.match(/ Request [0-9a-f-]+\.$/u)?.[0] ?? '';
+    return new Error(`${error['message']}: ${detail}${context ? ` (${context})` : ''}.${reference}`);
+  } catch {
+    return fallback;
+  }
 }
 
 function scalar(value: unknown): DraftScalar {
@@ -740,7 +778,7 @@ export class DraftClient {
         redirect: 'error',
         signal: controller.signal,
       });
-      if (!response.ok) throw httpStatusError(response, 'Draft API');
+      if (!response.ok) throw await draftApiError(response);
       return await boundedJson(response, MAX_DRAFT_RESPONSE_BYTES, 'Draft');
     } finally {
       globalThis.clearTimeout(timeout);
