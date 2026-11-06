@@ -58,6 +58,7 @@ const snapshot: ConfigSnapshot = {
       id: 'address-office-net',
       name: 'office-net',
       type: 'cidr',
+      typeEditable: true,
       value: '10.20.0.0/16',
       usedBy: [
         {id: 'policy-office', kind: 'policy', name: 'office'},
@@ -70,6 +71,7 @@ const snapshot: ConfigSnapshot = {
       id: 'address-guest-net',
       name: 'guest-net',
       type: 'cidr',
+      typeEditable: true,
       value: '10.80.0.0/16',
       usedBy: [{id: 'policy-guest', kind: 'policy', name: 'guest'}],
     },
@@ -77,6 +79,7 @@ const snapshot: ConfigSnapshot = {
       id: 'address-quarantine',
       name: 'quarantine-net',
       type: 'cidr',
+      typeEditable: true,
       value: '10.99.0.0/16',
       usedBy: [{id: 'policy-quarantine', kind: 'policy', name: 'quarantine'}],
     },

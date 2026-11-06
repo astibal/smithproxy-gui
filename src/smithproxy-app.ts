@@ -5399,6 +5399,15 @@ export class SmithproxyApp extends LitElement {
       this.valueOrigin(path)?.editable === false;
   }
 
+  private renderNamedRenameNotice(path: string) {
+    return this.originReadOnly(path, false) && this.valueOrigin(path)?.editable !== false
+      ? html`<div class="scope-note">
+        Renaming this existing object is not available through the current Smithproxy transaction
+        contract. Duplicate it with a new name and update its references instead.
+      </div>`
+      : nothing;
+  }
+
   private writableDraftChanges(changes: ReadonlyArray<DraftChange>): ReadonlyArray<DraftChange> | undefined {
     const changedLockedValue = changes.find(change => {
       const origin = this.valueOrigin(change.path);
@@ -10436,13 +10445,14 @@ export class SmithproxyApp extends LitElement {
           .readOnly=${this.originReadOnly(`${base}.name`, readOnly)} />
         <label for="address-type-${entry.id}">Type</label>
         <select id="address-type-${entry.id}" .value=${this.persistentValue(`${base}.type`, address.type)}
-          ?disabled=${this.originReadOnly(`${base}.type`, readOnly)}>
+          ?disabled=${!address.typeEditable || this.originReadOnly(`${base}.type`, readOnly)}>
           <option value="cidr">CIDR</option><option value="fqdn">FQDN</option>
         </select>
         <label for="address-value-${entry.id}">Address</label>
         <input id="address-value-${entry.id}" .value=${this.persistentValue(`${base}.value`, address.value)}
           .readOnly=${this.originReadOnly(`${base}.value`, readOnly)} />
       </div>
+      ${this.renderNamedRenameNotice(`${base}.name`)}
       ${this.renderObjectUsage(address)}
     `;
   }
@@ -10827,6 +10837,7 @@ export class SmithproxyApp extends LitElement {
           .value=${String(this.persistentValue(`${base}.end`, port.end))}
           .readOnly=${this.originReadOnly(`${base}.end`, readOnly)} />
       </div>
+      ${this.renderNamedRenameNotice(`${base}.name`)}
       ${this.renderObjectUsage(port)}
     `;
   }
@@ -10847,6 +10858,7 @@ export class SmithproxyApp extends LitElement {
           .value=${String(this.persistentValue(`${base}.id`, protocol.number))}
           .readOnly=${this.originReadOnly(`${base}.id`, readOnly)} />
       </div>
+      ${this.renderNamedRenameNotice(`${base}.name`)}
       ${this.renderObjectUsage(protocol)}
     `;
   }
@@ -11344,6 +11356,7 @@ export class SmithproxyApp extends LitElement {
           </button>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
+      ${prefix ? this.renderNamedRenameNotice(`${prefix}name`) : nothing}
       ${routing || tls || detection || content || ssh || dns || script || authentication ? nothing : html`<div class="privacy-note section">
         Profile values remain inside the GUI core until a typed, redacted editor is available.
       </div>`}
@@ -11708,6 +11721,7 @@ export class SmithproxyApp extends LitElement {
             placeholder="New absolute path (write-only)" autocomplete="off" .readOnly=${disabled} />
         </div>
       </div>
+      ${this.renderNamedRenameNotice(namePath)}
       <div class="privacy-note section">
         The current certificate-authority path stays inside the GUI core. Replacements are write-only.
       </div>

@@ -35,6 +35,7 @@ export interface AddressObject {
   id: string;
   name: string;
   type: 'cidr' | 'fqdn';
+  typeEditable: boolean;
   value: string;
   usedBy: ReadonlyArray<ConfigUsage>;
 }

@@ -109,6 +109,7 @@ type MockState = {
   structuralDraftsReady?: boolean;
   primitiveStructuralDraftsReady?: boolean;
   namedStructuralDraftsReady?: boolean;
+  namedRenamesReady?: boolean;
   policyStructuralDraftsReady?: boolean;
   contentRuleStructuralDraftsReady?: boolean;
   signatureStructuralDraftsReady?: boolean;
@@ -223,6 +224,8 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
          state.contentRuleStructuralDraftsReady || state.signatureStructuralDraftsReady ||
          state.structuralDraftsReady) && state.commitReady,
       ) && configurationFeature('config_write'),
+      named_renames: Boolean(state.namedRenamesReady ?? state.structuralDraftsReady) &&
+        Boolean(state.commitReady) && configurationFeature('config_write'),
       policy_structural_drafts: Boolean(
         (state.policyStructuralDraftsReady || state.contentRuleStructuralDraftsReady ||
          state.signatureStructuralDraftsReady ||
@@ -778,10 +781,10 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         detection_profile: '', content_profile: '', auth_profile: '', dns_profile: '', script_profile: '',
       }] : [])],
       addresses: [
-        {id: 'address-0', name: 'office', type: 'cidr', value: '10.0.0.0/24'},
+        {id: 'address-0', name: 'office', type: 'cidr', type_editable: true, value: '10.0.0.0/24'},
         {id: 'address-1', name: 'internet', type: 'fqdn', value: 'example.test'},
         ...(state.unusedPrimitives
-          ? [{id: 'address-2', name: 'unused-branch', type: 'cidr', value: '198.51.100.0/24'}]
+          ? [{id: 'address-2', name: 'unused-branch', type: 'cidr', type_editable: true, value: '198.51.100.0/24'}]
           : []),
       ],
       ports: [
@@ -1286,7 +1289,9 @@ test('saves only fields changed since the editor opened', async ({page}) => {
 });
 
 test('renames referenced configuration entities atomically across pending references', async ({page}) => {
-  const state: MockState = {smithproxy: 'ready', draftMutationBatches: []};
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, namedRenamesReady: true, draftMutationBatches: [],
+  };
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
@@ -1344,7 +1349,7 @@ test('renames referenced configuration entities atomically across pending refere
 
 test('rejects an entity rename when an affected reference is augment-owned', async ({page}) => {
   const state: MockState = {
-    smithproxy: 'ready',
+    smithproxy: 'ready', commitReady: true, namedRenamesReady: true,
     draftMutationBatches: [],
     valueOrigins: [{
       path: 'policy.[0].dst',
@@ -1374,7 +1379,7 @@ test('rejects an entity rename when an affected reference is augment-owned', asy
 
 test('renames an already pending entity without retaining an intermediate reference', async ({page}) => {
   const state: MockState = {
-    smithproxy: 'ready',
+    smithproxy: 'ready', commitReady: true, namedRenamesReady: true,
     draftMutationBatches: [],
     initialDraftChanges: [
       {path: 'address_objects.[1].name', value: 'public-internet'},
@@ -1435,7 +1440,7 @@ test('removes ordinary pending values when editors restore the live configuratio
 
 test('removes a pending rename and its cascaded references when restored', async ({page}) => {
   const state: MockState = {
-    smithproxy: 'ready',
+    smithproxy: 'ready', commitReady: true, namedRenamesReady: true,
     draftReconcileRequests: [],
     initialDraftChanges: [
       {path: 'address_objects.[1].name', value: 'public-internet'},
@@ -4188,6 +4193,23 @@ test('opens a policy and its referenced address object', async ({page}) => {
   await page.keyboard.press('Escape');
   await expect(addressEditor).not.toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
+});
+
+test('keeps unsupported named-key edits read-only without blocking real object fields', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    primitiveStructuralDraftsReady: true,
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('group', {name: 'Address objects'})
+    .getByRole('button', {name: /office cidr/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit office', includeHidden: true});
+  await expect(editor.getByLabel('Name')).toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('Type')).toBeEnabled();
+  await expect(editor.getByLabel('Address')).toBeEditable();
+  await expect(editor).toContainText('Renaming this existing object is not available');
 });
 
 test('walks reverse dependencies through nested editors', async ({page}) => {

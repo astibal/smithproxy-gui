@@ -19,7 +19,7 @@ const liveSnapshot = {
     dns_profile: '', script_profile: '',
   }],
   addresses: [
-    {id: 'address-0', name: 'office', type: 'cidr', value: '10.0.0.0/24'},
+    {id: 'address-0', name: 'office', type: 'cidr', type_editable: true, value: '10.0.0.0/24'},
     {id: 'address-1', name: 'internet', type: 'fqdn', value: 'example.test'},
   ],
   ports: [{id: 'port-0', name: 'https', start: 443, end: 443}],
@@ -207,6 +207,7 @@ describe('ApiConfigClient', () => {
     expect(snapshot.addresses[0]?.usedBy).toEqual([
       {id: 'policy-0', kind: 'policy', name: 'Policy 1'},
     ]);
+    expect(snapshot.addresses.map(item => item.typeEditable)).toEqual([true, false]);
     expect(snapshot.ports[0]).toMatchObject({start: 443, end: 443});
     expect(snapshot.ports[0]?.usedBy).toEqual([
       {id: 'policy-0', kind: 'policy', name: 'Policy 1'},

@@ -1035,6 +1035,15 @@ int main() {
     assert(legacy_v2_envelope.body);
     assert(nlohmann::json::parse(*legacy_v2_envelope.body)[1]["path"] ==
            "address_objects.office.cidr");
+    auto current_type_draft = transaction_draft;
+    current_type_draft.changes = {{"address_objects.[0].type", std::string("fqdn")}};
+    const auto current_type_envelope =
+        build_transaction_v2_operations(current_type_draft, transaction_snapshot);
+    assert(current_type_envelope.body);
+    assert(nlohmann::json::parse(*current_type_envelope.body)[0]["path"] ==
+           "address_objects.office.type");
+    assert(build_transaction_v2_operations(current_type_draft, legacy_transaction_snapshot).error_code ==
+           "transaction.invalid_draft");
     auto stale_snapshot = transaction_snapshot;
     stale_snapshot.revision = "sha256:" + std::string(64U, '9');
     assert(!build_transaction_v2_operations(v2_draft, stale_snapshot).body);

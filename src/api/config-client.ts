@@ -225,6 +225,7 @@ function parseAddress(value: unknown): MutableAddress {
     id: safeString(value.id, 'address ID', 128),
     name: safeString(value.name, 'address name', 128),
     type,
+    typeEditable: value.type_editable === true,
     value: safeString(value.value, 'address value'),
     usedBy: [],
   };

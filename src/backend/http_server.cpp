@@ -1483,6 +1483,8 @@ private:
             addresses += "{\"id\":" + json_string(address.id) +
                          ",\"name\":" + json_string(address.name) +
                          ",\"type\":" + json_string(address.type) +
+                         ",\"type_editable\":" +
+                         (address.transaction_value_field == "value" ? "true" : "false") +
                          ",\"value\":" + json_string(address.value) + "}";
         }
         addresses += ']';
