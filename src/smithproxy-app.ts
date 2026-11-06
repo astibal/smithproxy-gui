@@ -831,6 +831,17 @@ export class SmithproxyApp extends LitElement {
     .editor-section-head p { margin: 0; color: var(--app-muted); font-size: 12px; text-align: right; }
     .editor-section .form-grid { max-width: none; }
     .reference-stack { display: grid; gap: 7px; }
+    .reference-list-editor { display: grid; gap: 8px; }
+    .reference-list-values { display: grid; gap: 7px; }
+    .reference-list-row { display: grid; grid-template-columns: minmax(0, 1fr) 38px; gap: 7px; align-items: stretch; }
+    .reference-list-row .reference, .reference-list-row .reference-advisory { min-width: 0; }
+    .reference-list-remove { display: grid; place-items: center; padding: 0; border: 1px solid var(--app-border); border-radius: 3px; background: transparent; color: var(--app-muted); cursor: pointer; }
+    .reference-list-remove:hover:not(:disabled) { border-color: var(--app-danger); color: var(--app-danger); }
+    .reference-list-add { display: grid; grid-template-columns: minmax(0, 1fr) 38px; gap: 7px; }
+    .reference-list-add select { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
+    .reference-list-add button { padding: 0; font-size: 20px; line-height: 1; }
+    .reference-list-empty { padding: 10px 12px; border: 1px dashed var(--app-border); color: var(--app-muted); }
+    .form-label { align-self: center; color: var(--app-muted); }
     .reference-edit { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 7px; align-items: center; }
     .reference-edit .reference { width: auto; }
     .reference { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); cursor: pointer; }
@@ -10247,18 +10258,14 @@ export class SmithproxyApp extends LitElement {
           .checked=${Boolean(scalar('disabled', false)) === false} ?disabled=${readOnly} />
           Accept traffic for evaluation</label>
         <span></span><span></span>
-        <label for="policy-create-sources-${entry.id}">Sources</label>
-        <div class="reference-stack">
-          <input id="policy-create-sources-${entry.id}" .value=${sources.join(', ')}
-            data-reference-preview="true" .readOnly=${readOnly} />
-          ${this.renderAddressReferences(entry, `policy-create-sources-${entry.id}`, sources)}
-        </div>
-        <label for="policy-create-destinations-${entry.id}">Destinations</label>
-        <div class="reference-stack">
-          <input id="policy-create-destinations-${entry.id}" .value=${destinations.join(', ')}
-            data-reference-preview="true" .readOnly=${readOnly} />
-          ${this.renderAddressReferences(entry, `policy-create-destinations-${entry.id}`, destinations)}
-        </div>
+        <span class="form-label">Sources</span>
+        ${this.renderReferenceListEditor(
+          entry, `policy-create-sources-${entry.id}`, 'Sources', 'address', sources, readOnly,
+        )}
+        <span class="form-label">Destinations</span>
+        ${this.renderReferenceListEditor(
+          entry, `policy-create-destinations-${entry.id}`, 'Destinations', 'address', destinations, readOnly,
+        )}
         <label for="policy-create-action-${entry.id}">Action</label>
         <select id="policy-create-action-${entry.id}" .value=${actionValue} ?disabled=${readOnly}>
           ${legacyAction ? html`
@@ -10273,18 +10280,15 @@ export class SmithproxyApp extends LitElement {
             data-reference-preview="true" maxlength="128" required .readOnly=${readOnly} />
           ${this.renderProtocolReference(entry, `policy-create-protocol-${entry.id}`, text('proto', 'tcp'))}
         </div>
-        <label for="policy-create-source-ports-${entry.id}">Source ports</label>
-        <div class="reference-stack">
-          <input id="policy-create-source-ports-${entry.id}" .value=${sourcePorts.join(', ')}
-            data-reference-preview="true" .readOnly=${readOnly} />
-          ${this.renderPortReferences(entry, `policy-create-source-ports-${entry.id}`, sourcePorts)}
-        </div>
-        <label for="policy-create-destination-ports-${entry.id}">Destination ports</label>
-        <div class="reference-stack">
-          <input id="policy-create-destination-ports-${entry.id}" .value=${destinationPorts.join(', ')}
-            data-reference-preview="true" .readOnly=${readOnly} />
-          ${this.renderPortReferences(entry, `policy-create-destination-ports-${entry.id}`, destinationPorts)}
-        </div>
+        <span class="form-label">Source ports</span>
+        ${this.renderReferenceListEditor(
+          entry, `policy-create-source-ports-${entry.id}`, 'Source ports', 'port', sourcePorts, readOnly,
+        )}
+        <span class="form-label">Destination ports</span>
+        ${this.renderReferenceListEditor(
+          entry, `policy-create-destination-ports-${entry.id}`, 'Destination ports', 'port', destinationPorts,
+          readOnly,
+        )}
         ${referenceField('tls', 'TLS profile', 'tls', 'tls_profile')}
         ${referenceField('content', 'Content profile', 'content', 'content_profile')}
         ${referenceField('detection', 'Detection profile', 'detection', 'detection_profile')}
@@ -10438,35 +10442,31 @@ export class SmithproxyApp extends LitElement {
           <p>Address, protocol, and port selectors; empty lists mean any</p>
         </div>
         <div class="form-grid wide-form-grid">
-          <label for="policy-sources-${entry.id}">Sources</label>
-          <div class="reference-stack">
-            <input id="policy-sources-${entry.id}" .value=${sourceValues.join(', ')}
-              data-reference-preview="true"
-              .readOnly=${this.originReadOnly(`${policyBase}.src`, liveReadOnly)} />
-            ${this.renderAddressReferences(entry, `policy-sources-${entry.id}`, sourceValues)}
-          </div>
-          <label for="destination-${entry.id}">Destinations</label>
-          <div class="reference-stack">
-            <input id="destination-${entry.id}" .value=${destinationValues.join(', ')}
-              data-reference-preview="true"
-              .readOnly=${this.originReadOnly(`${policyBase}.dst`, liveReadOnly)} />
-            ${this.renderAddressReferences(entry, `destination-${entry.id}`, destinationValues)}
-          </div>
+          <span class="form-label">Sources</span>
+          ${this.renderReferenceListEditor(
+            entry, `policy-sources-${entry.id}`, 'Sources', 'address', sourceValues,
+            this.originReadOnly(`${policyBase}.src`, liveReadOnly),
+          )}
+          <span class="form-label">Destinations</span>
+          ${this.renderReferenceListEditor(
+            entry, `destination-${entry.id}`, 'Destinations', 'address', destinationValues,
+            this.originReadOnly(`${policyBase}.dst`, liveReadOnly),
+          )}
           <label for="policy-protocol-${entry.id}">Protocol</label>
           <div class="reference-edit"><input id="policy-protocol-${entry.id}" .value=${protocolValue}
             data-reference-preview="true"
             .readOnly=${this.originReadOnly(`${policyBase}.proto`, liveReadOnly)} />
             ${this.renderProtocolReference(entry, `policy-protocol-${entry.id}`, protocol?.name ?? protocolValue)}</div>
-          <label for="policy-source-ports-${entry.id}">Source ports</label>
-          <div class="reference-stack"><input id="policy-source-ports-${entry.id}"
-            .value=${sourcePortValues.join(', ')}
-            data-reference-preview="true"
-            .readOnly=${this.originReadOnly(`${policyBase}.sport`, liveReadOnly)} />${this.renderPortReferences(entry, `policy-source-ports-${entry.id}`, sourcePortValues)}</div>
-          <label for="policy-destination-ports-${entry.id}">Destination ports</label>
-          <div class="reference-stack"><input id="policy-destination-ports-${entry.id}"
-            .value=${destinationPortValues.join(', ')}
-            data-reference-preview="true"
-            .readOnly=${this.originReadOnly(`${policyBase}.dport`, liveReadOnly)} />${this.renderPortReferences(entry, `policy-destination-ports-${entry.id}`, destinationPortValues)}</div>
+          <span class="form-label">Source ports</span>
+          ${this.renderReferenceListEditor(
+            entry, `policy-source-ports-${entry.id}`, 'Source ports', 'port', sourcePortValues,
+            this.originReadOnly(`${policyBase}.sport`, liveReadOnly),
+          )}
+          <span class="form-label">Destination ports</span>
+          ${this.renderReferenceListEditor(
+            entry, `policy-destination-ports-${entry.id}`, 'Destination ports', 'port', destinationPortValues,
+            this.originReadOnly(`${policyBase}.dport`, liveReadOnly),
+          )}
         </div>
       </section>
 
@@ -10515,6 +10515,80 @@ export class SmithproxyApp extends LitElement {
       : current.split(',').map(value => value.trim()).filter(Boolean);
   }
 
+  private referenceListOptions(kind: 'address' | 'port'): ReadonlyArray<string> {
+    const live = kind === 'address'
+      ? (this.snapshot?.addresses ?? []).map(item => this.addressDisplayName(item))
+      : (this.snapshot?.ports ?? []).map(item => this.portDisplayName(item));
+    const collection = kind === 'address' ? 'address_objects' : 'port_objects';
+    const pending = (this.workspaceDraft?.structuralOperations ?? [])
+      .filter((operation): operation is DraftCreateOperation =>
+        operation.op === 'create' && operation.collection === collection)
+      .map(operation => operation.fields['name'])
+      .filter((name): name is string => typeof name === 'string');
+    const builtins = kind === 'address' ? ['any', 'any6'] : ['any'];
+    return [...new Set([...builtins, ...live, ...pending])]
+      .filter(name => name.length > 0).sort((left, right) => left.localeCompare(right));
+  }
+
+  private setReferenceList(entry: DrawerEntry, inputId: string, values: ReadonlyArray<string>): void {
+    if (!this.drawerEditing(entry)) return;
+    const key = this.drawerKey(entry);
+    this.referencePreviewValues.set(`${key}|${inputId}`, values.join(', '));
+    this.draftRemovalArmedKey = undefined;
+    this.structuralDeleteArmedKey = undefined;
+    if (!this.dirtyDrawerKeys.has(key)) this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
+    this.requestUpdate();
+  }
+
+  private addReferenceListValue(
+    entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>, selectId: string,
+  ): void {
+    const select = this.renderRoot.querySelector<HTMLSelectElement>(`#${selectId}`);
+    const value = select?.value ?? '';
+    if (value.length === 0) return;
+    const current = this.previewReferenceNames(entry, inputId, fallback);
+    if (!current.includes(value)) this.setReferenceList(entry, inputId, [...current, value]);
+  }
+
+  private renderReferenceListEditor(
+    entry: DrawerEntry,
+    inputId: string,
+    label: string,
+    kind: 'address' | 'port',
+    fallback: ReadonlyArray<string>,
+    readOnly: boolean,
+  ) {
+    const values = this.previewReferenceNames(entry, inputId, fallback);
+    const available = this.referenceListOptions(kind).filter(name => !values.includes(name));
+    const selectId = `${inputId}-add`;
+    return html`<div class="reference-list-editor" role="group" aria-label=${label}>
+      <input id=${inputId} type="hidden" .value=${values.join(', ')} />
+      <div class="reference-list-values">
+        ${values.length === 0 ? html`<span class="reference-list-empty">Any (empty selector)</span>` : values.map(name => html`
+          <div class="reference-list-row">
+            ${kind === 'address'
+              ? this.renderAddressReferences(entry, inputId, [name], false)
+              : this.renderPortReferences(entry, inputId, [name], false)}
+            <button class="reference-list-remove" type="button" data-edit-control="true"
+              aria-label=${`Remove ${name} from ${label}`} title=${`Remove ${name}`}
+              ?disabled=${readOnly}
+              @click=${() => this.setReferenceList(entry, inputId, values.filter(value => value !== name))}>×</button>
+          </div>
+        `)}
+      </div>
+      <div class="reference-list-add">
+        <select id=${selectId} aria-label=${`Select value to add to ${label}`}
+          data-structural-control="true" ?disabled=${readOnly || available.length === 0}>
+          <option value="">${available.length === 0 ? 'No more values available' : 'Select a value…'}</option>
+          ${available.map(name => html`<option value=${name}>${name}</option>`)}
+        </select>
+        <button class="secondary" type="button" data-edit-control="true" aria-label=${`Add to ${label}`}
+          title=${`Add to ${label}`} ?disabled=${readOnly || available.length === 0}
+          @click=${() => this.addReferenceListValue(entry, inputId, fallback, selectId)}>+</button>
+      </div>
+    </div>`;
+  }
+
   private renderReferenceAdvisory(name: string) {
     return html`<span class="reference-advisory">
       <strong>${name}</strong><small>Literal or unresolved</small>
@@ -10538,8 +10612,10 @@ export class SmithproxyApp extends LitElement {
     </button>`;
   }
 
-  private renderAddressReferences(entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>) {
-    const names = this.previewReferenceNames(entry, inputId, fallback);
+  private renderAddressReferences(
+    entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>, preview = true,
+  ) {
+    const names = preview ? this.previewReferenceNames(entry, inputId, fallback) : fallback;
     return html`${names.map(name => {
       const reference = this.snapshot?.addresses.find(item => this.addressDisplayName(item) === name);
       const pending = this.pendingNamedCreate(['address_objects'], name);
@@ -10570,8 +10646,10 @@ export class SmithproxyApp extends LitElement {
     })}`;
   }
 
-  private renderPortReferences(entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>) {
-    const names = this.previewReferenceNames(entry, inputId, fallback);
+  private renderPortReferences(
+    entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>, preview = true,
+  ) {
+    const names = preview ? this.previewReferenceNames(entry, inputId, fallback) : fallback;
     return html`<div class="reference-stack">${names.map(name => {
       const port = this.snapshot?.ports.find(item => this.portDisplayName(item) === name);
       const pending = this.pendingNamedCreate(['port_objects'], name);

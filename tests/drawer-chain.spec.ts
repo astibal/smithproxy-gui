@@ -57,6 +57,20 @@ async function selectObjectCategory(
     .getByRole('button', {name: category, exact: true}).click();
 }
 
+async function setReferenceList(
+  editor: Locator,
+  label: 'Sources' | 'Destinations' | 'Source ports' | 'Destination ports',
+  values: ReadonlyArray<string>,
+): Promise<void> {
+  const group = editor.getByRole('group', {name: label, exact: true});
+  const removeButtons = group.locator('.reference-list-remove');
+  while (await removeButtons.count() > 0) await removeButtons.first().click();
+  for (const value of values) {
+    await group.getByLabel(`Select value to add to ${label}`).selectOption(value);
+    await group.getByRole('button', {name: `Add to ${label}`}).click();
+  }
+}
+
 type MockState = {
   smithproxy: 'ready' | 'unreachable';
   gatewayMode?: 'gateway' | 'disabled';
@@ -1108,8 +1122,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await page.keyboard.press('Escape');
   await editor.getByLabel('Name').fill('Office outbound');
   await editor.locator('#policy-enabled-policy-0').uncheck();
-  await editor.getByLabel('Destinations').fill('internet, backup');
-  await editor.getByLabel('Source ports').fill('any, https');
+  await setReferenceList(editor, 'Destinations', ['office', 'internet']);
+  await setReferenceList(editor, 'Source ports', ['any', 'https']);
   const features = editor.getByRole('group', {name: 'Features'});
   await features.getByLabel('sink-all').check();
   await features.getByLabel('statistics').check();
@@ -1119,9 +1133,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await action.selectOption('reject');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText('Saved to draft')).toBeVisible();
-  const updatedPolicyRow = page.getByRole('button', {name: /Office outbound office internet, backup reject/i});
-  await expect(updatedPolicyRow).toContainText('internet, backup');
-  await expect(updatedPolicyRow).not.toContainText('internet +1');
+  const updatedPolicyRow = page.getByRole('button', {name: /Office outbound office office, internet reject/i});
+  await expect(updatedPolicyRow).toContainText('office, internet');
+  await expect(updatedPolicyRow).not.toContainText('office +1');
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await expect(page.getByText('Config: Ready')).toBeVisible();
   await editor.getByRole('button', {name: /tcp/i}).click();
@@ -1132,7 +1146,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(protocolEditor.getByText('Saved to draft')).toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await protocolEditor.getByRole('button', {name: 'Cancel'}).click();
-  await editor.getByLabel('Destination ports').locator('..')
+  await editor.getByRole('group', {name: 'Destination ports', exact: true})
     .getByRole('button', {name: 'https', exact: true}).click();
   const portEditor = page.getByRole('dialog', {name: 'Edit https'});
   await expect(portEditor).toBeVisible();
@@ -1259,7 +1273,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(internetEditor).not.toBeVisible();
   await expect(routingEditor).not.toBeVisible();
   await expect(editor).not.toHaveAttribute('inert', '');
-  await editor.getByRole('button', {name: 'office', exact: true}).click();
+  await editor.getByRole('group', {name: 'Sources', exact: true})
+    .getByRole('button', {name: 'office', exact: true}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit office'});
   await expect(addressEditor).toBeVisible();
   await expect(addressEditor.locator('.address-insight')).toHaveText(
@@ -1680,10 +1695,10 @@ test('rehydrates pending scalar and reference values when an editor is reopened'
   const editor = page.getByRole('dialog', {name: 'Edit Pending office policy'});
   await expect(editor.getByLabel('Name', {exact: true})).toHaveValue('Pending office policy');
   await expect(editor.getByLabel('Action')).toHaveValue('reject');
-  await expect(editor.getByLabel('Destinations')).toHaveValue('office');
-  await expect(editor.getByLabel('Source ports')).toHaveValue('https');
-  await expect(editor.getByLabel('Destinations').locator('..').getByRole('button', {name: /office/i})).toBeVisible();
-  await expect(editor.getByLabel('Source ports').locator('..').getByRole('button', {name: /https/i})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Destinations', exact: true})
+    .getByRole('button', {name: 'office', exact: true})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Source ports', exact: true})
+    .getByRole('button', {name: 'https', exact: true})).toBeVisible();
 });
 
 test('previews known and unresolved policy references while editing', async ({page}) => {
@@ -1693,12 +1708,12 @@ test('previews known and unresolved policy references while editing', async ({pa
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
 
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
-  const sources = editor.getByLabel('Sources');
-  await sources.fill('office, possible-expression');
-  await expect(sources.locator('..').getByRole('button', {name: 'office', exact: true})).toBeVisible();
-  await expect(sources.locator('..').locator('.reference-advisory')).toContainText(
-    'possible-expressionLiteral or unresolved',
-  );
+  const sources = editor.getByRole('group', {name: 'Sources', exact: true});
+  await expect(sources.getByRole('button', {name: 'office', exact: true})).toBeVisible();
+  await expect(sources.getByLabel('Select value to add to Sources')
+    .locator('option[value="possible-expression"]')).toHaveCount(0);
+  await setReferenceList(editor, 'Sources', ['any', 'internet']);
+  await expect(sources.getByRole('button', {name: 'internet', exact: true})).toBeVisible();
 
   const protocol = editor.getByLabel('Protocol');
   await protocol.fill('custom-protocol');
@@ -2153,6 +2168,7 @@ test('shows and reopens pending security rules and flow creates in context', asy
     }],
   }, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await expect(page.getByRole('status').filter({hasText: 'Configuration cards include pending'})).toBeVisible();
   const trust = page.getByRole('article').filter({
@@ -2776,6 +2792,7 @@ test('creates and deletes certificate authorities without exposing filesystem pa
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'System', exact: true}).click();
   const authorities = page.getByRole('group', {name: 'Certificate authorities'});
 
@@ -2835,6 +2852,7 @@ test('duplicates a certificate authority without exposing or copying its private
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'System', exact: true}).click();
   const authorities = page.getByRole('group', {name: 'Certificate authorities'});
   await authorities.getByRole('button', {name: /default revised · path configured/i}).click();
@@ -2942,6 +2960,7 @@ test('blocks signature duplication while its ordered flow has pending structural
     }],
   }, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'System', exact: true}).click();
   const trust = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Trust and signatures'}),
@@ -2973,9 +2992,10 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   await create.click();
 
   let editor = page.getByRole('dialog', {name: 'Create policy'});
-  await editor.getByLabel('Sources').fill('office');
-  await editor.getByLabel('Destinations').fill('internet');
-  await editor.getByRole('button', {name: /office/i}).click();
+  await setReferenceList(editor, 'Sources', ['office']);
+  await setReferenceList(editor, 'Destinations', ['internet']);
+  await editor.getByRole('group', {name: 'Sources', exact: true})
+    .getByRole('button', {name: 'office', exact: true}).click();
   const addressEditor = page.getByRole('dialog', {name: 'Edit office'});
   await expect(addressEditor).toBeVisible();
   await addressEditor.getByRole('button', {name: 'Cancel'}).click();
@@ -3016,8 +3036,8 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   await features.getByLabel('statistics').check();
   await features.getByLabel('access-request').check();
   await editor.getByLabel('Placement').selectOption({label: 'Before Policy 1'});
-  await editor.getByLabel('Sources').fill('');
-  await editor.getByLabel('Destinations').fill('');
+  await setReferenceList(editor, 'Sources', []);
+  await setReferenceList(editor, 'Destinations', []);
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText('Saved to draft')).toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
@@ -3374,8 +3394,8 @@ test('links policy references to objects created earlier in the same draft', asy
   await page.getByRole('button', {name: 'New policy'}).click();
   const policyEditor = page.getByRole('dialog', {name: 'Create policy'});
   await policyEditor.getByLabel('Name').fill('pending-branch-policy');
-  await policyEditor.getByLabel('Sources').fill('pending-branch');
-  await policyEditor.getByLabel('Destinations').fill('internet');
+  await setReferenceList(policyEditor, 'Sources', ['pending-branch']);
+  await setReferenceList(policyEditor, 'Destinations', ['internet']);
   const pendingReference = policyEditor.getByRole('button', {name: /pending-branch pending draft/u});
   await expect(pendingReference).toBeVisible();
   await pendingReference.click();
@@ -4525,9 +4545,10 @@ test('renders and protects augment-owned list overlay chains', async ({page}) =>
   ]);
   const sources = editor.locator('#policy-sources-policy-0');
   await expect(sources).toHaveValue('office-net');
-  await expect(sources).toHaveAttribute('readonly', '');
+  const sourceEditor = editor.getByRole('group', {name: 'Sources', exact: true});
+  await expect(sourceEditor.getByRole('button', {name: 'Remove office-net from Sources'})).toBeDisabled();
+  await expect(sourceEditor.getByLabel('Select value to add to Sources')).toBeDisabled();
   await sources.evaluate(input => {
-    input.removeAttribute('readonly');
     input.value = 'office-net, tampered-net';
     input.dispatchEvent(new Event('input', {bubbles: true}));
   });
