@@ -272,6 +272,7 @@ const snapshot: ConfigSnapshot = {
     ],
   },
   captures: {
+    editable: true,
     local: {
       enabled: false, directoryConfigured: true, filePrefixConfigured: false,
       fileSuffixConfigured: true, format: 'pcap_single', quotaMiB: 1024,

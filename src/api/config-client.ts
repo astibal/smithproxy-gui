@@ -885,6 +885,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       throw new Error('Invalid capture format.');
     }
     captures = {
+      editable: safeBoolean(value.captures.editable, 'capture editability'),
       local: {
         enabled: safeBoolean(value.captures.local.enabled, 'local capture state'),
         directoryConfigured: safeBoolean(

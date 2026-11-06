@@ -273,6 +273,7 @@ export interface SystemSettings {
 }
 
 export interface CaptureSettings {
+  editable: boolean;
   local: {
     enabled: boolean;
     directoryConfigured: boolean;

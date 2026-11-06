@@ -1820,11 +1820,24 @@ int main() {
     const auto captures = parse_config_captures(
         R"({"success":{"captures":{"local":{"enabled":"true","dir":"/private/captures","format":"pcap_single","pcap_quota":"512"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"192.0.2.10","tun_ttl":"1","bind_interface":"private0"},"options":{"calculate_checksums":"true"}}}})");
     assert(captures.captures);
+    assert(captures.captures->editable);
     assert(captures.captures->local_enabled);
     assert(!captures.captures->local_file_prefix_configured);
     assert(!captures.captures->local_file_suffix_configured);
     assert(captures.captures->local_quota_mib == 512U);
     assert(captures.captures->remote_destination_configured);
+    const auto partial_captures = parse_config_captures(
+        R"({"success":{"captures":{"local":{"enabled":"false"}}}})");
+    assert(partial_captures.captures);
+    assert(!partial_captures.captures->editable);
+    assert(!partial_captures.captures->local_enabled);
+    assert(partial_captures.captures->local_directory_configured);
+    assert(partial_captures.captures->local_format == "pcap_single");
+    assert(!partial_captures.captures->remote_enabled);
+    assert(partial_captures.captures->remote_tunnel_type == "gre");
+    assert(partial_captures.captures->remote_gre_format == "traffic");
+    assert(partial_captures.captures->remote_destination_configured);
+    assert(partial_captures.captures->remote_ttl == 1U);
     const auto boundary_captures = parse_config_captures(
         R"({"success":{"captures":{"local":{"enabled":"true","dir":"/tmp","format":"pcap_single","pcap_quota":"9007199254740991"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"","tun_ttl":"1"}}}})");
     assert(boundary_captures.captures);

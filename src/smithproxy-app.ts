@@ -6408,6 +6408,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
+    if (!this.snapshot?.captures?.editable) return undefined;
     const changes: DraftChange[] = [];
     for (const [path, id] of captureBooleanFields) {
       const select = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-${id}`);
@@ -9788,7 +9789,10 @@ export class SmithproxyApp extends LitElement {
             <article class="domain-card">
               <header><div><h3>Capture posture</h3><p>Paths and destinations are redacted</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('captures', 'captures')}
-                  <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('captures', event.currentTarget as HTMLElement)}>Edit</button>
+                  <button class="secondary" type="button" ?disabled=${!captures.editable}
+                    title=${captures.editable
+                      ? 'Edit capture settings' : 'Capture parent groups are incomplete in the running configuration.'}
+                    @click=${(event: Event) => this.openSystemDrawer('captures', event.currentTarget as HTMLElement)}>Edit</button>
                 </div>
               </header>
               <dl>
@@ -11690,7 +11694,7 @@ export class SmithproxyApp extends LitElement {
   private renderCaptureSettingsEditor() {
     const captures = this.snapshot?.captures;
     if (!captures) return nothing;
-    const disabled = !this.draftAvailable;
+    const disabled = !this.draftAvailable || !captures.editable;
     const booleanPaths: ReadonlyMap<string, string> = new Map(
       captureBooleanFields.map(([path, id]) => [id, `captures.${path}`]),
     );
@@ -11712,6 +11716,10 @@ export class SmithproxyApp extends LitElement {
       </div>
     `;
     return html`
+      ${captures.editable ? nothing : html`<div class="privacy-note section">
+        Capture values use Smithproxy defaults. Editing requires local, remote, and options parent groups
+        in the running configuration.
+      </div>`}
       <div class="form-grid wide-form-grid">
         <label for="captures-local-enabled">Local capture</label>
         ${booleanField('local-enabled', captures.local.enabled)}
@@ -12586,7 +12594,8 @@ export class SmithproxyApp extends LitElement {
     ].includes(entry.kind)
       ? this.structuralTransactionsAvailable(entry)
       : this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile);
-    const readOnly = !draftable;
+    const readOnly = !draftable ||
+      (entry.kind === 'captures' && this.snapshot?.captures?.editable !== true);
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
     const drawerDraftPaths = this.draftPathsForDrawer(entry);
     const removalArmed = this.draftRemovalArmedKey === this.drawerKey(entry);

@@ -308,6 +308,7 @@ struct ConfigCaptureSettings {
     std::uint64_t remote_ttl{};
     bool remote_bind_interface_configured{};
     bool calculate_checksums{};
+    bool editable{};
 };
 
 struct ConfigCertificateAuthority {

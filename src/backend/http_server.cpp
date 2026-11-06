@@ -1836,7 +1836,8 @@ private:
         }
         if (snapshot.captures) {
             const auto& value = *snapshot.captures;
-            captures = "{\"local\":{\"enabled\":" + std::string(value.local_enabled ? "true" : "false") +
+            captures = "{\"editable\":" + std::string(value.editable ? "true" : "false") +
+                       ",\"local\":{\"enabled\":" + std::string(value.local_enabled ? "true" : "false") +
                        ",\"directory_configured\":" +
                        (value.local_directory_configured ? "true" : "false") +
                        ",\"file_prefix_configured\":" +

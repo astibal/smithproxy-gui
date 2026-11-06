@@ -149,6 +149,7 @@ const liveSnapshot = {
     module_overrides: [{name: 'proxy', kind: 'integer', value: 7}],
   },
   captures: {
+    editable: true,
     local: {
       enabled: true, directory_configured: true, file_prefix_configured: true,
       file_suffix_configured: true, format: 'pcap_single', quota_mib: 512,

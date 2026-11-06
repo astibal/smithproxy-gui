@@ -1061,27 +1061,35 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
     const auto local_value = value->find("local");
     const auto remote_value = value->find("remote");
     const auto options_value = value->find("options");
-    if (local_value == value->end() || !local_value->is_object() ||
-        remote_value == value->end() || !remote_value->is_object() ||
+    if ((local_value != value->end() && !local_value->is_object()) ||
+        (remote_value != value->end() && !remote_value->is_object()) ||
         (options_value != value->end() && !options_value->is_object())) {
         return {std::nullopt, "Smithproxy returned invalid capture setting groups"};
     }
     Json empty = Json::object();
+    const Json& local = local_value == value->end() ? empty : *local_value;
+    const Json& remote = remote_value == value->end() ? empty : *remote_value;
     const Json& options = options_value == value->end() ? empty : *options_value;
-    const auto local_enabled = required_boolean_scalar(*local_value, "enabled");
-    const auto local_dir = bounded_string(*local_value, "dir", maximum_value_length);
-    const auto local_prefix = bounded_string(*local_value, "file_prefix", maximum_name_length, true);
-    const auto local_suffix = bounded_string(*local_value, "file_suffix", maximum_name_length, true);
-    const auto local_format = bounded_string(*local_value, "format", 16U);
+    const auto local_enabled = boolean_scalar(local, "enabled", true);
+    const auto local_dir = bounded_string(local, "dir", maximum_value_length, true);
+    const auto local_prefix = bounded_string(local, "file_prefix", maximum_name_length, true);
+    const auto local_suffix = bounded_string(local, "file_suffix", maximum_name_length, true);
+    const auto configured_local_format = bounded_string(local, "format", 16U, true);
+    const auto local_format = configured_local_format && configured_local_format->empty()
+        ? std::optional<std::string>{"pcap_single"} : configured_local_format;
     constexpr std::uint64_t maximum_json_safe_integer = 9007199254740991ULL;
     const auto local_quota = optional_decimal(
-        *local_value, "pcap_quota", 0U, maximum_json_safe_integer);
-    const auto remote_enabled = required_boolean_scalar(*remote_value, "enabled");
-    const auto tunnel_type = bounded_string(*remote_value, "tun_type", 16U);
-    const auto gre_format = bounded_string(*remote_value, "gre_format", 16U);
-    const auto destination = bounded_string(*remote_value, "tun_dst", maximum_name_length);
-    const auto ttl = optional_decimal(*remote_value, "tun_ttl", 0U, 255U);
-    const auto bind_interface = bounded_string(*remote_value, "bind_interface", maximum_name_length, true);
+        local, "pcap_quota", 0U, maximum_json_safe_integer);
+    const auto remote_enabled = boolean_scalar(remote, "enabled", false);
+    const auto configured_tunnel_type = bounded_string(remote, "tun_type", 16U, true);
+    const auto tunnel_type = configured_tunnel_type && configured_tunnel_type->empty()
+        ? std::optional<std::string>{"gre"} : configured_tunnel_type;
+    const auto configured_gre_format = bounded_string(remote, "gre_format", 16U, true);
+    const auto gre_format = configured_gre_format && configured_gre_format->empty()
+        ? std::optional<std::string>{"traffic"} : configured_gre_format;
+    const auto destination = bounded_string(remote, "tun_dst", maximum_name_length, true);
+    const auto ttl = optional_decimal(remote, "tun_ttl", 1U, 255U);
+    const auto bind_interface = bounded_string(remote, "bind_interface", maximum_name_length, true);
     const auto checksums = boolean_scalar(options, "calculate_checksums", false);
     if (!local_enabled || !local_dir || !local_prefix || !local_suffix || !local_format ||
         (*local_format != "pcap_single" && *local_format != "pcap" && *local_format != "smcap") ||
@@ -1091,10 +1099,13 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
         return {std::nullopt, "Smithproxy returned invalid capture setting fields"};
     }
     return {ConfigCaptureSettings{
-                *local_enabled, !local_dir->empty(), !local_prefix->empty(),
+                *local_enabled, local.find("dir") == local.end() || !local_dir->empty(), !local_prefix->empty(),
                 !local_suffix->empty(), *local_format, *local_quota,
-                *remote_enabled, *tunnel_type, *gre_format, !destination->empty(), *ttl,
+                *remote_enabled, *tunnel_type, *gre_format,
+                remote.find("tun_dst") == remote.end() || !destination->empty(), *ttl,
                 !bind_interface->empty(), *checksums,
+                local_value != value->end() && remote_value != value->end() &&
+                    options_value != value->end(),
             }, {}};
 }
 

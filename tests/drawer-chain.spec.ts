@@ -77,6 +77,7 @@ type MockState = {
   scriptProfilesPresent?: boolean;
   absentCollections?: ReadonlyArray<string>;
   contentRulesPresent?: boolean;
+  captureEditable?: boolean;
   unsavedConfig?: boolean;
   configRevision?: string | null;
   savedConfigRevision?: string | null;
@@ -974,6 +975,7 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
         module_overrides: [{name: 'proxy', kind: 'integer', value: 6}],
       },
       captures: {
+        editable: state.captureEditable ?? true,
         local: {
           enabled: false, directory_configured: true, file_prefix_configured: true,
           file_suffix_configured: true, format: 'pcap_single', quota_mib: 1024,
@@ -4279,6 +4281,18 @@ test('keeps missing ordinary collections empty without offering impossible first
   await expect(types.getByRole('option', {name: 'Routing'})).toHaveCount(0);
   await expect(types.getByRole('option', {name: 'TLS'})).toHaveCount(0);
   await expect(types.getByRole('option', {name: 'Detection'})).toHaveCount(1);
+});
+
+test('shows partial capture defaults without offering an invalid nested write', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true, captureEditable: false,
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+
+  const captureHeader = page.getByRole('heading', {name: 'Capture posture'}).locator('..').locator('..');
+  await expect(captureHeader.getByRole('button', {name: 'Edit'})).toBeDisabled();
+  await expect(page.getByText(/pcap_single/)).toBeVisible();
 });
 
 test('does not offer a first content rule when its parent list is absent', async ({page}) => {

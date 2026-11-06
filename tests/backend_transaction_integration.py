@@ -169,7 +169,8 @@ def main() -> int:
     TransactionSmithproxy.reject_next_prepare = False
     script_profiles = FakeSmithproxy.config_sections.pop("script_profiles")
     auth_profiles = FakeSmithproxy.config_sections.pop("auth_profiles")
-    captures = FakeSmithproxy.config_sections.pop("captures")
+    captures = FakeSmithproxy.config_sections["captures"]
+    FakeSmithproxy.config_sections["captures"] = {"local": {"enabled": "false"}}
     tls_ca = FakeSmithproxy.config_sections.pop("tls_ca")
     detection_signatures = FakeSmithproxy.config_sections.pop("detection_signatures")
     port_objects = FakeSmithproxy.config_sections.pop("port_objects")
@@ -228,8 +229,11 @@ def main() -> int:
             live_config = json.loads(body)
             assert status == 200
             assert live_config["state"] == "ready"
-            assert live_config["captures"] is None
-            assert live_config["captures_present"] is False
+            assert live_config["captures_present"] is True
+            assert live_config["captures"]["editable"] is False
+            assert live_config["captures"]["local"]["enabled"] is False
+            assert live_config["captures"]["local"]["format"] == "pcap_single"
+            assert live_config["captures"]["remote"]["tunnel_type"] == "gre"
             assert live_config["security_assets"]["certificate_authority_count"] == 0
             assert live_config["security_assets"]["starttls_signature_count"] == 1
             assert live_config["security_assets"]["detection_signature_count"] == 0
