@@ -180,6 +180,7 @@ type MockState = {
     plaintext: number; tls: number; udp: number; dtls: number;
     quic: number; socks: number; http_connect: number;
   }>;
+  dnsLookupRequests?: string[];
 };
 
 async function mockSystemApi(
@@ -315,6 +316,16 @@ async function mockSystemApi(
     await route.fulfill({json: {
       mode: state.gatewayMode ?? (configRead ? 'gateway' : 'disabled'),
       authenticated: state.gatewayAuthenticated ?? configRead,
+    }});
+  });
+  await page.route('**/api/v1/tools/dns/resolve?*', async route => {
+    const name = new URL(route.request().url()).searchParams.get('name') ?? '';
+    (state.dnsLookupRequests ??= []).push(name);
+    await route.fulfill({json: {
+      source: 'gui-core',
+      name,
+      state: name === 'missing.example' ? 'not-found' : 'resolved',
+      addresses: name === 'missing.example' ? [] : ['192.0.2.10', '2001:db8::10'],
     }});
   });
   await page.route('**/api/v1/status', async route => {
@@ -1116,7 +1127,8 @@ test('requires an explicit edit decision before live configuration fields can ch
 
 test('loads authenticated runtime configuration and saves an atomic policy draft', async ({page}) => {
   test.setTimeout(45_000);
-  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  const state: MockState = {smithproxy: 'ready'};
+  await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   const policySummary = page.getByLabel('Policy inventory summary');
@@ -1140,8 +1152,16 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(editor.getByRole('button', {name: 'office', exact: true})).toContainText('CIDR');
   await expect(editor.getByRole('button', {name: 'internet', exact: true})).toContainText('FQDN');
   await editor.getByRole('button', {name: 'internet', exact: true}).click();
-  await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
-  await page.keyboard.press('Escape');
+  const fqdnEditor = page.getByRole('dialog', {name: 'Edit internet'});
+  await expect(fqdnEditor).toBeVisible();
+  await expect(fqdnEditor.locator('.address-insight')).toContainText('best-effort syntax and DNS check');
+  await fqdnEditor.getByRole('button', {name: 'Evaluate'}).click();
+  await expect(fqdnEditor.locator('.address-insight')).toContainText(
+    'example.test resolves to 192.0.2.10, 2001:db8::10.',
+  );
+  expect(state.dnsLookupRequests).toEqual(['example.test']);
+  await fqdnEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(fqdnEditor).not.toBeVisible();
   await editor.getByLabel('Name').fill('Office outbound');
   await editor.locator('#policy-enabled-policy-0').uncheck();
   await setReferenceList(editor, 'Destinations', ['office', 'internet']);

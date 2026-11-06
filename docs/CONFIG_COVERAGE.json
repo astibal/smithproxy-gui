@@ -54,7 +54,7 @@
       "edit": "typed",
       "sensitivity": "configuration",
       "tracked_fields": ["name", "type", "value"],
-      "notes": "The pinned Smithproxy schema supports CIDR and FQDN address objects only; both are represented by typed edit and structural create drawers. A live object can prefill an explicit copy from its persistent and pending values without baking in temporary augment overlays. Confirmed structural deletion is available only for objects without live or pending policy/routing references and without pending field edits. Visible unused address, port, and protocol objects can be staged for deletion together in one confirmed atomic batch using the same dependency guards. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "The pinned Smithproxy schema supports CIDR and FQDN address objects only; both are represented by typed edit and structural create drawers. CIDR inputs show their normalized address range, while FQDN inputs provide an explicit best-effort DNS evaluation from the GUI core without contacting the resolved targets or changing the draft. A live object can prefill an explicit copy from its persistent and pending values without baking in temporary augment overlays. Confirmed structural deletion is available only for objects without live or pending policy/routing references and without pending field edits. Visible unused address, port, and protocol objects can be staged for deletion together in one confirmed atomic batch using the same dependency guards. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "port_objects",

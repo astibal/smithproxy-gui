@@ -103,6 +103,7 @@ def main() -> None:
     }
     require(gateway_paths == {
         "/api/v1/config/snapshot",
+        "/api/v1/tools/dns/resolve",
         "/api/v1/config/draft",
         "/api/v1/config/draft/preflight",
         "/api/v1/config/draft/changes",
@@ -137,6 +138,7 @@ def main() -> None:
         "/api/v1/jobs": "jobs",
         "/api/v1/jobs/{job-id}": "jobs",
         "/api/v1/config/snapshot": "config_read",
+        "/api/v1/tools/dns/resolve": "config_read",
         "/api/v1/config/draft": "drafts",
         "/api/v1/config/draft/preflight": "draft_preflight",
         "/api/v1/config/draft/changes": "drafts",

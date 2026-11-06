@@ -189,6 +189,13 @@ export interface InterfaceSnapshot {
   lastErrorCode: string | null;
 }
 
+export interface DnsLookup {
+  source: 'gui-core';
+  name: string;
+  state: 'resolved' | 'not-found';
+  addresses: ReadonlyArray<string>;
+}
+
 export type EventSeverity = 'info' | 'notice' | 'warning' | 'error';
 const operationalEventVocabulary = {
   'control-plane.ready': ['control-plane', 'info', 'Smithproxy control plane is reachable'],
@@ -925,6 +932,27 @@ function parseJob(value: unknown): JobRecord {
   return parseJobRecord(value.job);
 }
 
+function parseDnsLookup(value: unknown): DnsLookup {
+  if (!isObject(value) || value.source !== 'gui-core' || typeof value.name !== 'string' ||
+      value.name.length === 0 || value.name.length > 253 ||
+      !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(value.name) ||
+      (value.state !== 'resolved' && value.state !== 'not-found') ||
+      !Array.isArray(value.addresses) || value.addresses.length > 16 ||
+      value.addresses.some(address => typeof address !== 'string' ||
+        !/^[0-9a-f:.]{2,45}$/iu.test(address))) {
+    throw new Error('Invalid DNS lookup response.');
+  }
+  if ((value.state === 'resolved') !== (value.addresses.length > 0)) {
+    throw new Error('Inconsistent DNS lookup response.');
+  }
+  return {
+    source: 'gui-core',
+    name: value.name,
+    state: value.state,
+    addresses: value.addresses,
+  };
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -987,6 +1015,16 @@ export class SystemClient {
 
   async interfaceSummary(): Promise<InterfaceSnapshot> {
     return parseInterfaces(await this.#request(joinedPath(this.#apiBase, '/network/interfaces/summary')));
+  }
+
+  async resolveDnsName(name: string): Promise<DnsLookup> {
+    const query = new URLSearchParams({name});
+    const result = parseDnsLookup(await this.#request(
+      `${joinedPath(this.#apiBase, '/tools/dns/resolve')}?${query.toString()}`,
+    ));
+    const expectedName = name.trim().toLowerCase().replace(/\.$/u, '');
+    if (result.name !== expectedName) throw new Error('DNS lookup response name does not match the request.');
+    return result;
   }
 
   async recentEvents(): Promise<EventSnapshot> {

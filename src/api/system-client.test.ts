@@ -22,6 +22,33 @@ describe('SystemClient', () => {
     }));
   });
 
+  it('resolves a DNS name through the mounted GUI API', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      source: 'gui-core', name: 'example.test', state: 'resolved', addresses: ['192.0.2.10'],
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.resolveDnsName('example.test')).resolves.toEqual({
+      source: 'gui-core', name: 'example.test', state: 'resolved', addresses: ['192.0.2.10'],
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/ws001/smithproxy-gui/api/v1/tools/dns/resolve?name=example.test',
+      expect.objectContaining({credentials: 'same-origin'}),
+    );
+  });
+
+  it('rejects inconsistent DNS lookup responses', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', name: 'example.test', state: 'not-found', addresses: ['192.0.2.10'],
+    }));
+    await expect(client.resolveDnsName('example.test')).rejects.toThrow('Inconsistent DNS lookup');
+
+    const mismatched = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      source: 'gui-core', name: 'other.test', state: 'resolved', addresses: ['192.0.2.10'],
+    }));
+    await expect(mismatched.resolveDnsName('example.test')).rejects.toThrow('does not match');
+  });
+
   it('loads and maps capabilities', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', api_version: 'v1', base_path: '/', smithproxy_state: 'unconfigured',

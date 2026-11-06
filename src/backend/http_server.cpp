@@ -5,6 +5,7 @@
 #include "draft_operation.hpp"
 #include "draft_operation_json.hpp"
 #include "draft_store.hpp"
+#include "dns_lookup.hpp"
 #include "job_store.hpp"
 #include "json.hpp"
 #include "operational_alerts.hpp"
@@ -1197,6 +1198,29 @@ private:
         }
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
+        if (*relative == "/api/v1/tools/dns/resolve") {
+            if (!gateway_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+            }
+            const auto* requested = MHD_lookup_connection_value(
+                connection, MHD_GET_ARGUMENT_KIND, "name");
+            const auto name = requested == nullptr
+                ? std::optional<std::string>{}
+                : normalize_dns_name(requested);
+            if (!name) {
+                return {400, "application/json; charset=utf-8", "{\"error\":\"invalid DNS name\"}"};
+            }
+            const auto result = resolve_dns_name(*name);
+            if (result.state == DnsLookupState::Failed) {
+                return {503, "application/json; charset=utf-8", "{\"error\":\"DNS lookup unavailable\"}"};
+            }
+            return {200, "application/json; charset=utf-8", nlohmann::json{
+                {"source", "gui-core"},
+                {"name", *name},
+                {"state", result.state == DnsLookupState::Resolved ? "resolved" : "not-found"},
+                {"addresses", result.addresses},
+            }.dump()};
+        }
         if (*relative == "/api/v1/config/draft") {
             if (!gateway_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};

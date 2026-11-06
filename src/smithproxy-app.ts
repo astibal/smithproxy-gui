@@ -37,6 +37,7 @@ import {
   SystemClient,
   type AlertSnapshot,
   type AuditSnapshot,
+  type DnsLookup,
   type EventSnapshot,
   type GatewaySession,
   type InterfaceSnapshot,
@@ -88,6 +89,10 @@ const policyActions = ['accept', 'deny', 'reject'] as const;
 const policyNatModes = ['auto', 'none'] as const;
 const policyFeatures = ['sink-left', 'sink-right', 'sink-all', 'statistics', 'access-request'] as const;
 type EventStreamState = 'connecting' | 'live' | 'paused' | 'invalid' | 'unavailable';
+type FqdnEvaluation = Pick<DnsLookup, 'name' | 'state' | 'addresses'> & {
+  pending: boolean;
+  error?: string;
+};
 type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 type PolicyStatusFilter = 'all' | 'enabled' | 'disabled';
@@ -453,6 +458,7 @@ export class SmithproxyApp extends LitElement {
   @state() private configSaveError: string | undefined;
   @state() private searchQuery = '';
   @state() private authIdentityEditors = new Map<string, AuthIdentityEditorState>();
+  @state() private fqdnEvaluations = new Map<string, FqdnEvaluation>();
 
   private readonly drawerStore = new DrawerStore();
   private runtime: RuntimeConfig | undefined;
@@ -659,8 +665,9 @@ export class SmithproxyApp extends LitElement {
     .collector-table { overflow-x: auto; margin-top: 14px; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 3px; color: var(--app-muted); }
     .privacy-note { padding: 10px 13px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
-    .address-insight { padding: 9px 12px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
+    .address-insight { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 9px 12px; border-left: 3px solid var(--app-success); background: var(--app-success-bg); color: var(--app-muted); }
     .address-insight[data-valid="false"] { border-left-color: var(--app-warning); background: var(--app-warning-bg); }
+    .address-insight .secondary { padding: 5px 10px; }
     .origin-note { padding: 9px 11px; border-left: 3px solid var(--app-warning); background: var(--app-warning-bg); color: var(--app-muted); font-size: 12px; }
     .origin-note strong { color: var(--app-text); }
     .origin-card { margin-top: 10px; padding: 12px; border: 1px solid color-mix(in srgb, var(--app-warning) 45%, var(--app-border)); border-radius: 2px; background: var(--app-warning-bg); }
@@ -10889,12 +10896,53 @@ export class SmithproxyApp extends LitElement {
     )}`;
   }
 
-  private renderAddressInsight(id: string, type: string, value: string) {
+  private async evaluateFqdn(entry: DrawerEntry, value: string): Promise<void> {
+    const name = value.trim();
+    const key = this.drawerKey(entry);
+    if (!this.systemClient || name.length === 0) return;
+    this.fqdnEvaluations = new Map(this.fqdnEvaluations).set(key, {
+      name, state: 'not-found', addresses: [], pending: true,
+    });
+    try {
+      const result = await this.systemClient.resolveDnsName(name);
+      this.fqdnEvaluations = new Map(this.fqdnEvaluations).set(key, {...result, pending: false});
+    } catch (error) {
+      this.fqdnEvaluations = new Map(this.fqdnEvaluations).set(key, {
+        name,
+        state: 'not-found',
+        addresses: [],
+        pending: false,
+        error: error instanceof Error ? error.message : 'DNS lookup failed.',
+      });
+    }
+  }
+
+  private renderAddressInsight(id: string, type: string, value: string, entry: DrawerEntry) {
     const description = type === 'cidr' ? describeCidr(value) : undefined;
-    const message = description ?? (type === 'cidr' && value.trim().length > 0
-      ? 'Enter a valid IPv4 or IPv6 CIDR.' : '');
-    return html`<p id=${id} class="form-span address-insight" aria-live="polite"
-      ?hidden=${type !== 'cidr'} data-valid=${description ? 'true' : 'false'}>${message}</p>`;
+    if (type === 'cidr') {
+      const message = description ?? (value.trim().length > 0
+        ? 'Enter a valid IPv4 or IPv6 CIDR.' : 'Enter an IPv4 or IPv6 CIDR.');
+      return html`<p id=${id} class="form-span address-insight" aria-live="polite"
+        data-valid=${description ? 'true' : 'false'}><span>${message}</span></p>`;
+    }
+    const name = value.trim();
+    const evaluation = this.fqdnEvaluations.get(this.drawerKey(entry));
+    const current = evaluation?.name === name ? evaluation : undefined;
+    const message = name.length === 0 ? 'Enter a DNS host name.'
+      : current?.pending ? `Resolving ${name}…`
+      : current?.error ? current.error
+      : current?.state === 'resolved' ? `${name} resolves to ${current.addresses.join(', ')}.`
+      : current?.state === 'not-found' ? `${name} did not return an IPv4 or IPv6 address.`
+      : 'Resolve this name from the GUI core host as a best-effort syntax and DNS check.';
+    return html`<div id=${id} class="form-span address-insight" aria-live="polite"
+      data-valid=${current?.state === 'resolved' && !current.error ? 'true' : 'false'}>
+      <span>${message}</span>
+      <button type="button" class="secondary"
+        ?disabled=${name.length === 0 || current?.pending === true}
+        @click=${() => { void this.evaluateFqdn(entry, value); }}>
+        ${current?.pending ? 'Evaluating…' : 'Evaluate'}
+      </button>
+    </div>`;
   }
 
   private updateAddressPreview(entry: DrawerEntry, field: 'type' | 'value', event: Event): void {
@@ -10932,7 +10980,7 @@ export class SmithproxyApp extends LitElement {
         <input id=${valueId} .value=${value} aria-describedby=${insightId}
           @input=${(event: Event) => this.updateAddressPreview(entry, 'value', event)}
           .readOnly=${this.originReadOnly(`${base}.value`, readOnly)} />
-        ${this.renderAddressInsight(insightId, type, value)}
+        ${this.renderAddressInsight(insightId, type, value, entry)}
       </div>
       ${this.renderNamedRenameNotice(`${base}.name`)}
       ${this.renderObjectUsage(address)}
@@ -10973,7 +11021,7 @@ export class SmithproxyApp extends LitElement {
         <input id=${valueId} .value=${value} maxlength="1024" required aria-describedby=${insightId}
           @input=${(event: Event) => this.updateAddressPreview(entry, 'value', event)}
           autocomplete="off" .readOnly=${readOnly} />
-        ${this.renderAddressInsight(insightId, type, value)}
+        ${this.renderAddressInsight(insightId, type, value, entry)}
       </div>
       <div class="impact">
         The new object is retained only in the workspace draft until Smithproxy validates and commits the transaction.

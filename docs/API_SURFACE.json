@@ -131,6 +131,14 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/tools/dns/resolve",
+      "methods": ["GET", "HEAD"],
+      "authentication": "gateway",
+      "csrf": false,
+      "feature": "config_read",
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/config/draft",
       "methods": ["GET", "HEAD"],
       "authentication": "gateway",

@@ -93,6 +93,17 @@ GET /api/v1/auth/session
 GET /api/v1/config/snapshot
 ```
 
+### Best-effort DNS inspection
+
+```text
+GET /api/v1/tools/dns/resolve?name=<dns-host-name>
+```
+
+The trusted-gateway endpoint validates a DNS host name and resolves at most 16
+unique IPv4 or IPv6 addresses from the GUI core host. It never connects to the
+returned addresses and never mutates the configuration. The result is an
+operator aid only; Smithproxy may observe different DNS data at runtime.
+
 The session endpoint reveals only whether trusted gateway authentication is
 enabled and valid for the current request. The snapshot endpoint requires the
 trusted gateway handoff described in `SECURITY.md`; missing or invalid

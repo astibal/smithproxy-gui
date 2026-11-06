@@ -6,6 +6,7 @@
 #include "draft_operation_json.hpp"
 #include "draft_schema.hpp"
 #include "draft_store.hpp"
+#include "dns_lookup.hpp"
 #include "json.hpp"
 #include "job_store.hpp"
 #include "interface_metrics.hpp"
@@ -43,6 +44,16 @@ int main() {
     unsetenv("SMITHPROXY_CA_CERT");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
+
+    assert(normalize_dns_name("Example.COM.") == "example.com");
+    assert(normalize_dns_name("internal-host") == "internal-host");
+    assert(!normalize_dns_name(""));
+    assert(!normalize_dns_name("bad..example"));
+    assert(!normalize_dns_name("-bad.example"));
+    assert(!normalize_dns_name("bad-.example"));
+    assert(!normalize_dns_name("non-ascii-\xc3\xa9.example"));
+    assert(!normalize_dns_name("192.0.2.1"));
+    assert(!normalize_dns_name("2001:db8::1"));
 
     const std::string random_revision(32U, 'a');
     const std::string content_hash = "sha256:" + std::string(64U, 'b');

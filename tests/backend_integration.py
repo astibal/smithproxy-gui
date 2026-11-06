@@ -969,6 +969,19 @@ def main() -> int:
                 configured_port, "/api/v1/auth/session", headers=gateway_headers)
             assert status == 200
             assert json.loads(body) == {"mode": "gateway", "authenticated": True}
+            assert request(configured_port, "/api/v1/tools/dns/resolve?name=localhost")[0] == 401
+            status, _, body = request(
+                configured_port, "/api/v1/tools/dns/resolve?name=localhost",
+                headers=gateway_headers)
+            dns_lookup = json.loads(body)
+            assert status == 200
+            assert dns_lookup["source"] == "gui-core"
+            assert dns_lookup["name"] == "localhost"
+            assert dns_lookup["state"] == "resolved"
+            assert dns_lookup["addresses"]
+            assert request(
+                configured_port, "/api/v1/tools/dns/resolve?name=127.0.0.1",
+                headers=gateway_headers)[0] == 400
             assert json.loads(request(configured_port, "/api/v1/capabilities")[2])[
                 "features"]["config_read"] is False
             assert json.loads(request(configured_port, "/api/v1/capabilities")[2])[
