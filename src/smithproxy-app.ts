@@ -776,6 +776,17 @@ export class SmithproxyApp extends LitElement {
     .identity-field { display: grid; gap: 5px; }
     .identity-field small { color: var(--app-muted); }
     .form-grid input[readonly], .form-grid select:disabled { border-style: dashed; opacity: .8; }
+    .editor-context { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 16px; padding: 9px 11px; border: 1px solid var(--app-border); background: var(--app-canvas); }
+    .editor-context span { padding-right: 9px; border-right: 1px solid var(--app-border); color: var(--app-muted); font-size: 12px; }
+    .editor-context span:last-child { padding-right: 0; border-right: 0; }
+    .editor-context strong { color: var(--app-text); }
+    .editor-context code { color: var(--app-text); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .editor-section { padding: 16px 0 18px; border-top: 1px solid var(--app-border); }
+    .editor-section:first-of-type { padding-top: 0; border-top: 0; }
+    .editor-section-head { display: flex; gap: 16px; align-items: baseline; justify-content: space-between; margin-bottom: 13px; }
+    .editor-section-head h3 { margin: 0; font-size: 14px; }
+    .editor-section-head p { margin: 0; color: var(--app-muted); font-size: 12px; text-align: right; }
+    .editor-section .form-grid { max-width: none; }
     .reference-stack { display: grid; gap: 7px; }
     .reference-edit { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 7px; align-items: center; }
     .reference-edit .reference { width: auto; }
@@ -861,6 +872,8 @@ export class SmithproxyApp extends LitElement {
       .identity-row { grid-template-columns: 1fr; }
       .form-grid > *, .reference-edit { min-width: 0; }
       .form-grid label:not(:first-child) { margin-top: 10px; }
+      .editor-section-head { display: block; }
+      .editor-section-head p { margin-top: 2px; text-align: left; }
       .statusbar { grid-row: 3; }
       .status-secondary { display: none; }
       .metric-grid { grid-template-columns: 1fr; }
@@ -10098,6 +10111,7 @@ export class SmithproxyApp extends LitElement {
     );
     const actionValue = this.persistentValue(`${policyBase}.action`, policy.action);
     const natValue = this.persistentValue(`${policyBase}.nat`, policy.nat);
+    const policyEnabled = !this.persistentValue(`${policyBase}.disabled`, !policy.enabled);
     const legacyAction = !policyActions.some(value => value === actionValue);
     const legacyNat = !policyNatModes.some(value => value === natValue);
     const protocol = this.snapshot?.protocols.find(item => item.name === protocolValue);
@@ -10106,72 +10120,104 @@ export class SmithproxyApp extends LitElement {
     const placement = this.policyPlacementValue(policy.id);
     const showPlacement = (this.policyTransactionsAvailable() || pendingMove !== undefined) &&
       (this.snapshot?.policies.length ?? 0) + precedingPolicies.length > 1;
+    const assignedProfiles = [
+      policy.tlsProfile, policy.routing, policy.detectionProfile, policy.contentProfile,
+      policy.sshProfile, policy.dnsProfile, policy.scriptProfile,
+    ].filter(Boolean).length;
     return html`
-      <div class="form-grid">
-        <label for="policy-name-${entry.id}">Name</label>
-        <input id="policy-name-${entry.id}" .value=${this.persistentValue(`${policyBase}.name`, policy.name)}
-          .readOnly=${this.originReadOnly(`${policyBase}.name`, liveReadOnly)} />
-        <label>Enabled</label>
-        <label><input id="policy-enabled-${entry.id}" type="checkbox"
-          .checked=${!this.persistentValue(`${policyBase}.disabled`, !policy.enabled)}
-          ?disabled=${this.originReadOnly(`${policyBase}.disabled`, liveReadOnly)} /> Accept traffic for evaluation</label>
-        ${showPlacement ? html`
-          <label for="policy-placement-${entry.id}">Draft order</label>
-          <div class="reference-edit">
-            <select id="policy-placement-${entry.id}" data-structural-control="true"
-              ?disabled=${!this.policyTransactionsAvailable()}>
-              <option value="first" ?selected=${placement === 'first'}>First policy</option>
-              ${this.snapshot?.policies.filter(item => item.id !== policy.id).map(item => html`
-                <option value=${`before:${item.id}`} ?selected=${placement === `before:${item.id}`}>
-                  Before ${item.name}
-                </option>
-              `)}
-              ${precedingPolicies.map(item => {
-                const reference = `client:${item.clientId}`;
-                const name = typeof item.fields['name'] === 'string' ? item.fields['name'] : 'pending policy';
-                return html`<option value=${`before:${reference}`}
-                  ?selected=${placement === `before:${reference}`}>
-                  Before ${name} (pending)
-                </option>`;
-              })}
-              <option value="last" ?selected=${placement === 'last'}>Last policy</option>
-            </select>
-            <button class="secondary" type="button"
-              ?disabled=${!this.policyTransactionsAvailable() || this.draftSaving || this.draftCommitting ||
-                this.dirtyDrawerKeys.has(this.drawerKey(entry))}
-              title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
-                ? 'Save or discard ordinary policy field changes first.'
-                : 'Store policy order in the workspace draft'}
-              @click=${() => this.movePolicyInDraft(entry)}>
-              ${pendingMove ? 'Update draft order' : 'Save order to draft'}
-            </button>
-          </div>
-        ` : nothing}
-        <label for="policy-sources-${entry.id}">Sources</label>
-        <div class="reference-stack">
-          <input id="policy-sources-${entry.id}" .value=${sourceValues.join(', ')}
-            data-reference-preview="true"
-            .readOnly=${this.originReadOnly(`${policyBase}.src`, liveReadOnly)} />
-          ${this.renderAddressReferences(entry, `policy-sources-${entry.id}`, sourceValues)}</div>
-        <label for="destination-${entry.id}">Destinations</label>
-        <div class="reference-stack">
-          <input id="destination-${entry.id}"
-            .value=${destinationValues.join(', ')}
-            data-reference-preview="true"
-            .readOnly=${this.originReadOnly(`${policyBase}.dst`, liveReadOnly)} />
-          ${this.renderAddressReferences(entry, `destination-${entry.id}`, destinationValues)}
-        </div>
-        <label for="action-${entry.id}">Action</label>
-        <select id="action-${entry.id}" .value=${actionValue}
-          ?disabled=${this.originReadOnly(`${policyBase}.action`, liveReadOnly)}>
-          ${legacyAction ? html`<option value=${actionValue}>Legacy value: ${actionValue || '(empty)'}</option>` : nothing}
-          <option value="accept">Accept</option><option value="deny">Deny</option>
-          <option value="reject">Reject (legacy)</option>
-        </select>
+      <div class="editor-context" aria-label="Policy at a glance">
+        <span><strong>${policyEnabled ? 'Enabled' : 'Disabled'}</strong></span>
+        <span>Outcome <strong>${displayState(actionValue)}</strong></span>
+        <span>Match <code>${this.policyTransportSummary(
+          protocolValue, sourcePortValues, destinationPortValues,
+        )}</code></span>
+        <span><strong>${assignedProfiles}</strong> assigned profiles</span>
       </div>
-      <div class="section">
-        <h3>Advanced</h3>
+
+      <section class="editor-section" aria-labelledby="policy-identity-${entry.id}">
+        <div class="editor-section-head">
+          <h3 id="policy-identity-${entry.id}">Identity and outcome</h3>
+          <p>Name, evaluation state, order, and final traffic decision</p>
+        </div>
         <div class="form-grid">
+          <label for="policy-name-${entry.id}">Name</label>
+          <input id="policy-name-${entry.id}" .value=${this.persistentValue(`${policyBase}.name`, policy.name)}
+            .readOnly=${this.originReadOnly(`${policyBase}.name`, liveReadOnly)} />
+          <label>Enabled</label>
+          <label><input id="policy-enabled-${entry.id}" type="checkbox"
+            .checked=${policyEnabled}
+            ?disabled=${this.originReadOnly(`${policyBase}.disabled`, liveReadOnly)} />
+            Accept traffic for evaluation</label>
+          <label for="action-${entry.id}">Action</label>
+          <select id="action-${entry.id}" .value=${actionValue}
+            ?disabled=${this.originReadOnly(`${policyBase}.action`, liveReadOnly)}>
+            ${legacyAction
+              ? html`<option value=${actionValue}>Legacy value: ${actionValue || '(empty)'}</option>` : nothing}
+            <option value="accept">Accept</option><option value="deny">Deny</option>
+            <option value="reject">Reject (legacy)</option>
+          </select>
+          <label for="policy-nat-${entry.id}">NAT</label>
+          <select id="policy-nat-${entry.id}" .value=${natValue}
+            ?disabled=${this.originReadOnly(`${policyBase}.nat`, liveReadOnly)}>
+            ${legacyNat
+              ? html`<option value=${natValue}>Legacy value: ${natValue || '(empty)'}</option>` : nothing}
+            <option value="auto">Automatic</option><option value="none">None</option>
+          </select>
+          ${showPlacement ? html`
+            <label for="policy-placement-${entry.id}">Draft order</label>
+            <div class="reference-edit">
+              <select id="policy-placement-${entry.id}" data-structural-control="true"
+                ?disabled=${!this.policyTransactionsAvailable()}>
+                <option value="first" ?selected=${placement === 'first'}>First policy</option>
+                ${this.snapshot?.policies.filter(item => item.id !== policy.id).map(item => html`
+                  <option value=${`before:${item.id}`} ?selected=${placement === `before:${item.id}`}>
+                    Before ${item.name}
+                  </option>
+                `)}
+                ${precedingPolicies.map(item => {
+                  const reference = `client:${item.clientId}`;
+                  const name = typeof item.fields['name'] === 'string' ? item.fields['name'] : 'pending policy';
+                  return html`<option value=${`before:${reference}`}
+                    ?selected=${placement === `before:${reference}`}>
+                    Before ${name} (pending)
+                  </option>`;
+                })}
+                <option value="last" ?selected=${placement === 'last'}>Last policy</option>
+              </select>
+              <button class="secondary" type="button"
+                ?disabled=${!this.policyTransactionsAvailable() || this.draftSaving || this.draftCommitting ||
+                  this.dirtyDrawerKeys.has(this.drawerKey(entry))}
+                title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
+                  ? 'Save or discard ordinary policy field changes first.'
+                  : 'Store policy order in the workspace draft'}
+                @click=${() => this.movePolicyInDraft(entry)}>
+                ${pendingMove ? 'Update draft order' : 'Save order to draft'}
+              </button>
+            </div>
+          ` : nothing}
+        </div>
+      </section>
+
+      <section class="editor-section" aria-labelledby="policy-match-${entry.id}">
+        <div class="editor-section-head">
+          <h3 id="policy-match-${entry.id}">Traffic match</h3>
+          <p>Address, protocol, and port selectors; empty lists mean any</p>
+        </div>
+        <div class="form-grid wide-form-grid">
+          <label for="policy-sources-${entry.id}">Sources</label>
+          <div class="reference-stack">
+            <input id="policy-sources-${entry.id}" .value=${sourceValues.join(', ')}
+              data-reference-preview="true"
+              .readOnly=${this.originReadOnly(`${policyBase}.src`, liveReadOnly)} />
+            ${this.renderAddressReferences(entry, `policy-sources-${entry.id}`, sourceValues)}
+          </div>
+          <label for="destination-${entry.id}">Destinations</label>
+          <div class="reference-stack">
+            <input id="destination-${entry.id}" .value=${destinationValues.join(', ')}
+              data-reference-preview="true"
+              .readOnly=${this.originReadOnly(`${policyBase}.dst`, liveReadOnly)} />
+            ${this.renderAddressReferences(entry, `destination-${entry.id}`, destinationValues)}
+          </div>
           <label for="policy-protocol-${entry.id}">Protocol</label>
           <div class="reference-edit"><input id="policy-protocol-${entry.id}" .value=${protocolValue}
             data-reference-preview="true"
@@ -10187,6 +10233,15 @@ export class SmithproxyApp extends LitElement {
             .value=${destinationPortValues.join(', ')}
             data-reference-preview="true"
             .readOnly=${this.originReadOnly(`${policyBase}.dport`, liveReadOnly)} />${this.renderPortReferences(entry, `policy-destination-ports-${entry.id}`, destinationPortValues)}</div>
+        </div>
+      </section>
+
+      <section class="editor-section" aria-labelledby="policy-inspection-${entry.id}">
+        <div class="editor-section-head">
+          <h3 id="policy-inspection-${entry.id}">Inspection pipeline</h3>
+          <p>Reusable profiles open as the next card in the editor chain</p>
+        </div>
+        <div class="form-grid wide-form-grid">
           ${this.renderPolicyProfileField(entry, 'tls', 'TLS profile', 'tls', policy.tlsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'routing', 'Routing profile', 'routing', policy.routing, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'detection', 'Detection profile', 'detection', policy.detectionProfile, liveReadOnly)}
@@ -10194,6 +10249,15 @@ export class SmithproxyApp extends LitElement {
           ${this.renderPolicyProfileField(entry, 'ssh', 'SSH profile', 'ssh', policy.sshProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'dns', 'DNS ALG profile', 'dns', policy.dnsProfile, liveReadOnly)}
           ${this.renderPolicyProfileField(entry, 'script', 'Script profile', 'script', policy.scriptProfile, liveReadOnly)}
+        </div>
+      </section>
+
+      <section class="editor-section" aria-labelledby="policy-features-heading-${entry.id}">
+        <div class="editor-section-head">
+          <h3 id="policy-features-heading-${entry.id}">Features</h3>
+          <p>Optional per-policy processing behavior</p>
+        </div>
+        <div class="form-grid">
           <label>Features</label>
           <div id="policy-features-${entry.id}" class="choice-group" role="group" aria-label="Features">
             ${policyFeatures.map(feature => html`<label><input type="checkbox" value=${feature}
@@ -10203,14 +10267,8 @@ export class SmithproxyApp extends LitElement {
               ?disabled=${this.originReadOnly(`${policyBase}.features`, liveReadOnly)} />
               Legacy: ${feature}</label>`)}
           </div>
-          <label for="policy-nat-${entry.id}">NAT</label>
-          <select id="policy-nat-${entry.id}" .value=${natValue}
-            ?disabled=${this.originReadOnly(`${policyBase}.nat`, liveReadOnly)}>
-            ${legacyNat ? html`<option value=${natValue}>Legacy value: ${natValue || '(empty)'}</option>` : nothing}
-            <option value="auto">Automatic</option><option value="none">None</option>
-          </select>
         </div>
-      </div>
+      </section>
     `;
   }
 

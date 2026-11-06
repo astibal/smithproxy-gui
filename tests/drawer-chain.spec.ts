@@ -1015,6 +1015,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await policyRow.click();
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await expect(editor.getByText('Validation ready')).toBeVisible();
+  await expect(editor.getByRole('heading', {name: 'Identity and outcome'})).toBeVisible();
+  await expect(editor.getByRole('heading', {name: 'Traffic match'})).toBeVisible();
+  await expect(editor.getByRole('heading', {name: 'Inspection pipeline'})).toBeAttached();
   await editor.getByRole('button', {name: 'internet', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
   await page.keyboard.press('Escape');
