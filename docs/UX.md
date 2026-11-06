@@ -27,8 +27,9 @@ Captures. Používá pending hodnoty ze sdíleného draftu a výsledek otevře p
 ve správné kartě řetězce. Write-only hodnoty se neindexují ani nezobrazují.
 
 Provozní položky ve stavové liště používají stejné severity barvy jako monitoring
-a slouží jako zkratky do detailu. Na úzkém viewportu zůstává viditelný pouze
-stav GUI core a Smithproxy; fronta úloh se zobrazí až s reálným backend API.
+a slouží jako zkratky do detailu. Na úzkém viewportu zůstávají kritické stavy GUI
+core a Smithproxy první; celá lišta je fokusovatelná a vodorovně rolovatelná, takže
+alerty, čerstvost, event stream, fronta úloh, draft, konfigurace a gateway nezmizí.
 
 Monitoring rozlišuje stav SSE transportu od dostupnosti periodického recovery
 snapshotu. Ukazuje poslední otevření spojení, poslední validovaný payload,
@@ -90,7 +91,8 @@ Editor sdíleného objektu vždy ukáže známá použití a před uložením im
 - desktop: levá navigace, pracovní plocha a překrývající se drawery;
 - menší notebook: kompaktní navigace a větší relativní šířka editoru;
 - tablet/mobil: editor jako celá obrazovka, breadcrumb místo viditelných hran;
-- stavová lišta se na úzké obrazovce redukuje na nejdůležitější indikátory.
+- stavová lišta řadí na úzké obrazovce nejdůležitější indikátory první a zachovává
+  všechny další stavy ve vodorovně rolovatelném pruhu.
 
 ## Vložení do Saslik Tools
 
