@@ -1,5 +1,5 @@
 import {httpStatusError} from './http-error';
-import {isCanonicalRevisionOrNull} from './revision';
+import {isConfigRevisionOrNull} from './revision';
 import {boundedJson} from './bounded-json';
 import {normalizeSameOriginPath} from '../security/deployment-path';
 
@@ -328,7 +328,7 @@ function wireStructuralOperation(value: DraftStructuralOperation): JsonObject {
 
 function parseDraft(value: unknown): DraftSnapshot {
   if (!isObject(value) || value.id !== 'workspace-draft' ||
-      !isCanonicalRevisionOrNull(value.base_revision) ||
+      !isConfigRevisionOrNull(value.base_revision) ||
       typeof value.version !== 'number' || !Number.isSafeInteger(value.version) || value.version < 0 ||
       !Array.isArray(value.changes) || !Array.isArray(value.structural_operations) ||
       value.changes.length + value.structural_operations.length > 4096) {
@@ -412,7 +412,7 @@ const availabilityBlockerCodes = new Set<DraftPreflightBlocker['code']>([
 function parsePreflight(value: unknown): DraftPreflight {
   if (!isObject(value) || value.source !== 'gui-core' || value.draft_id !== 'workspace-draft' ||
       !Number.isSafeInteger(value.draft_version) || Number(value.draft_version) < 0 ||
-      !isCanonicalRevisionOrNull(value.base_revision) ||
+      !isConfigRevisionOrNull(value.base_revision) ||
       !Number.isSafeInteger(value.change_count) || Number(value.change_count) < 0 ||
       Number(value.change_count) > 4096 || !Number.isSafeInteger(value.sensitive_change_count) ||
       Number(value.sensitive_change_count) < 0 ||
@@ -483,7 +483,7 @@ function parsePreflight(value: unknown): DraftPreflight {
 function parseValidation(value: unknown): DraftValidation {
   if (!isObject(value) || value.source !== 'gui-core' || value.draft_id !== 'workspace-draft' ||
       !Number.isSafeInteger(value.draft_version) || Number(value.draft_version) < 0 ||
-      !isCanonicalRevisionOrNull(value.base_revision) || value.base_revision === null ||
+      !isConfigRevisionOrNull(value.base_revision) || value.base_revision === null ||
       value.upstream_validation !== 'valid' || !Number.isSafeInteger(value.validated_operations) ||
       Number(value.validated_operations) <= 0 || Number(value.validated_operations) > 4096 ||
       !Number.isSafeInteger(value.warning_count) || Number(value.warning_count) < 0 ||
@@ -508,8 +508,8 @@ function parseCommit(value: unknown): DraftCommit {
       !Number.isSafeInteger(value.committed_draft_version) || Number(value.committed_draft_version) < 0 ||
       !Number.isSafeInteger(value.draft_version) ||
       Number(value.draft_version) !== Number(value.committed_draft_version) + 1 ||
-      !isCanonicalRevisionOrNull(value.previous_revision) || value.previous_revision === null ||
-      !isCanonicalRevisionOrNull(value.revision) || value.revision === null ||
+      !isConfigRevisionOrNull(value.previous_revision) || value.previous_revision === null ||
+      !isConfigRevisionOrNull(value.revision) || value.revision === null ||
       value.revision === value.previous_revision ||
       !Number.isSafeInteger(value.committed_operations) || Number(value.committed_operations) <= 0 ||
       Number(value.committed_operations) > 4096 ||

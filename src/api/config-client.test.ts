@@ -197,9 +197,9 @@ describe('ApiConfigClient', () => {
     expect(snapshot).toMatchObject({source: 'live', state: 'ready', revision: null});
     expect(parseConfigSnapshot({
       ...liveSnapshot,
-      revision: `sha256:${'a'.repeat(64)}`,
-      saved_revision: `sha256:${'a'.repeat(64)}`,
-    }).revision).toBe(`sha256:${'a'.repeat(64)}`);
+      revision: '89afe0b0ccaad050ce7fca8f78661c35',
+      saved_revision: '89afe0b0ccaad050ce7fca8f78661c35',
+    }).revision).toBe('89afe0b0ccaad050ce7fca8f78661c35');
     expect(snapshot.policies[0]).toMatchObject({
       protocol: 'tcp', action: 'accept',
       sources: [{id: 'address-0', name: 'office'}],

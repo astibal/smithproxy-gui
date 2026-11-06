@@ -16,7 +16,7 @@ import type {
   ValueOrigin,
 } from './models';
 import {httpStatusError} from './http-error';
-import {isCanonicalRevisionOrNull} from './revision';
+import {isConfigRevisionOrNull} from './revision';
 import {boundedJson} from './bounded-json';
 import {normalizeSameOriginPath} from '../security/deployment-path';
 
@@ -239,8 +239,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       !['ready', 'starting', 'unavailable', 'unconfigured'].includes(value.state) ||
       typeof value.detail !== 'string' || value.detail.length > 1024 ||
       /[\u0000-\u001f\u007f]/u.test(value.detail) || value.view !== 'runtime' ||
-      !isCanonicalRevisionOrNull(value.revision) ||
-      !isCanonicalRevisionOrNull(value.saved_revision) || typeof value.unsaved !== 'boolean' ||
+      !isConfigRevisionOrNull(value.revision) ||
+      !isConfigRevisionOrNull(value.saved_revision) || typeof value.unsaved !== 'boolean' ||
       (value.unsaved === false && value.revision !== value.saved_revision)) {
     throw new Error('Invalid configuration snapshot.');
   }
