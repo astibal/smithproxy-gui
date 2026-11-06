@@ -1415,6 +1415,7 @@ export class SmithproxyApp extends LitElement {
     this.profileCreatePrefills.clear();
     this.authorityCreatePrefills.clear();
     this.signatureCreatePrefills.clear();
+    this.fqdnEvaluations = new Map<string, FqdnEvaluation>();
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
@@ -4206,6 +4207,11 @@ export class SmithproxyApp extends LitElement {
       this.drawerInitialChanges.delete(this.drawerKey(entry));
       this.clearReferencePreviews(entry);
       this.addressPreviewValues.delete(this.drawerKey(entry));
+      if (this.fqdnEvaluations.has(this.drawerKey(entry))) {
+        const evaluations = new Map(this.fqdnEvaluations);
+        evaluations.delete(this.drawerKey(entry));
+        this.fqdnEvaluations = evaluations;
+      }
       if (entry.kind === 'content-rule-create') this.contentRuleCreateParents.delete(entry.id);
       if (entry.kind === 'policy-create') this.policyCreatePrefills.delete(entry.id);
       if (entry.kind === 'address-create' || entry.kind === 'port-create' || entry.kind === 'protocol-create') {
@@ -10903,10 +10909,16 @@ export class SmithproxyApp extends LitElement {
     this.fqdnEvaluations = new Map(this.fqdnEvaluations).set(key, {
       name, state: 'not-found', addresses: [], pending: true,
     });
+    const acceptsResult = (): boolean =>
+      this.drawerStore.entries.some(candidate => this.drawerKey(candidate) === key) &&
+      this.fqdnEvaluations.get(key)?.name === name &&
+      this.fqdnEvaluations.get(key)?.pending === true;
     try {
       const result = await this.systemClient.resolveDnsName(name);
+      if (!acceptsResult()) return;
       this.fqdnEvaluations = new Map(this.fqdnEvaluations).set(key, {...result, pending: false});
     } catch (error) {
+      if (!acceptsResult()) return;
       this.fqdnEvaluations = new Map(this.fqdnEvaluations).set(key, {
         name,
         state: 'not-found',

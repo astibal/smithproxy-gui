@@ -181,6 +181,7 @@ type MockState = {
     quic: number; socks: number; http_connect: number;
   }>;
   dnsLookupRequests?: string[];
+  dnsLookupDelayMs?: number;
 };
 
 async function mockSystemApi(
@@ -321,6 +322,9 @@ async function mockSystemApi(
   await page.route('**/api/v1/tools/dns/resolve?*', async route => {
     const name = new URL(route.request().url()).searchParams.get('name') ?? '';
     (state.dnsLookupRequests ??= []).push(name);
+    if (state.dnsLookupDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, state.dnsLookupDelayMs));
+    }
     await route.fulfill({json: {
       source: 'gui-core',
       name,
@@ -1408,6 +1412,27 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await confirmDiscard.click();
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
+});
+
+test('discards a late FQDN evaluation after its nested editor closes', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', dnsLookupDelayMs: 250};
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await policyEditor.getByRole('button', {name: 'internet', exact: true}).click();
+  const fqdnEditor = page.getByRole('dialog', {name: 'Edit internet'});
+  await fqdnEditor.getByRole('button', {name: 'Evaluate'}).click();
+  await fqdnEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(fqdnEditor).not.toBeVisible();
+  await expect.poll(() => state.dnsLookupRequests?.length).toBe(1);
+  await page.waitForTimeout(300);
+
+  await policyEditor.getByRole('button', {name: 'internet', exact: true}).click();
+  const reopened = page.getByRole('dialog', {name: 'Edit internet'});
+  await expect(reopened.locator('.address-insight')).toContainText('best-effort syntax and DNS check');
+  await expect(reopened.locator('.address-insight')).not.toContainText('resolves to');
 });
 
 test('saves only fields changed since the editor opened', async ({page}) => {
