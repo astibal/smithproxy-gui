@@ -698,6 +698,12 @@ export class SmithproxyApp extends LitElement {
     .policy-row-main { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px minmax(170px, .9fr); gap: 16px; align-items: center; min-width: 0; padding: 12px 14px 12px 0; border: 0; background: transparent; color: var(--app-text); text-align: left; cursor: pointer; }
     .policy-row-main.heading { color: var(--app-muted); font-size: 12px; cursor: default; }
     .policy-row-main strong { font-weight: 650; }
+    .policy-identity { display: grid; min-width: 0; gap: 2px; }
+    .policy-identity strong, .policy-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .policy-identity small { color: var(--app-muted); font-size: 11px; }
+    .action-badge { justify-self: start; padding: 2px 7px; border: 1px solid var(--app-border); border-radius: 2px; font-size: 12px; font-weight: 650; text-transform: capitalize; }
+    .action-badge.accept { border-color: color-mix(in srgb, var(--app-success) 55%, var(--app-border)); color: var(--app-success); }
+    .action-badge.deny, .action-badge.reject { border-color: color-mix(in srgb, var(--app-danger) 55%, var(--app-border)); color: var(--app-danger); }
     .policy-transport { overflow: hidden; color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .draft-row { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr) auto; gap: 18px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .draft-row:last-child { border-bottom: 0; }
@@ -7066,6 +7072,14 @@ export class SmithproxyApp extends LitElement {
         operation.collection === 'policy' && (operation.op === 'create' || operation.op === 'move'),
     );
     const policyRows = this.draftOrderedRows(this.snapshot?.policies ?? [], policyOperations);
+    const profileSummary = (profiles: ReadonlyArray<readonly [string, string]>): string => {
+      const assigned = profiles.filter(([, value]) => value.trim().length > 0);
+      if (assigned.length === 0) return 'No routing or inspection profiles';
+      const visible = assigned.slice(0, 2).map(([label, value]) => `${label} ${value}`);
+      return `${visible.join(' · ')}${assigned.length > 2 ? ` · +${assigned.length - 2}` : ''}`;
+    };
+    const actionTone = (action: string): string =>
+      action === 'accept' || action === 'deny' || action === 'reject' ? action : '';
     const rowValues = (row: DraftOrderedRow<PolicySummary>) => {
       if (row.kind === 'create') {
         const text = (field: string, fallback = '') => {
@@ -7080,6 +7094,12 @@ export class SmithproxyApp extends LitElement {
           name: text('name', 'New policy'), protocol: text('proto'), sources: list('src'),
           sourcePorts: list('sport'), destinations: list('dst'), destinationPorts: list('dport'),
           action: text('action', 'unknown'), enabled: row.operation.fields['disabled'] !== true,
+          profiles: profileSummary([
+            ['Route', text('routing')], ['TLS', text('tls_profile')],
+            ['Detect', text('detection_profile')], ['Content', text('content_profile')],
+            ['SSH', text('ssh_profile')], ['DNS', text('alg_dns_profile')],
+            ['Script', text('script_profile')],
+          ]),
         };
       }
       const {item: policy, configIndex: index} = row;
@@ -7095,6 +7115,15 @@ export class SmithproxyApp extends LitElement {
         destinationPorts: this.presentedListValue(`${base}.dport`, policy.destinationPorts, 'string'),
         action: this.presentedValue(`${base}.action`, policy.action),
         enabled: !this.presentedValue(`${base}.disabled`, !policy.enabled),
+        profiles: profileSummary([
+          ['Route', this.presentedValue(`${base}.routing`, policy.routing)],
+          ['TLS', this.presentedValue(`${base}.tls_profile`, policy.tlsProfile)],
+          ['Detect', this.presentedValue(`${base}.detection_profile`, policy.detectionProfile)],
+          ['Content', this.presentedValue(`${base}.content_profile`, policy.contentProfile)],
+          ['SSH', this.presentedValue(`${base}.ssh_profile`, policy.sshProfile)],
+          ['DNS', this.presentedValue(`${base}.alg_dns_profile`, policy.dnsProfile)],
+          ['Script', this.presentedValue(`${base}.script_profile`, policy.scriptProfile)],
+        ]),
       };
     };
     const query = this.policyListQuery.trim().toLocaleLowerCase();
@@ -7104,7 +7133,7 @@ export class SmithproxyApp extends LitElement {
         (this.policyStatusFilter === 'enabled') === values.enabled;
       const actionMatches = this.policyActionFilter === 'all' || this.policyActionFilter === values.action;
       const queryMatches = !query || this.searchMatches([
-        values.name, values.protocol, values.action, ...values.sources, ...values.sourcePorts,
+        values.name, values.protocol, values.action, values.profiles, ...values.sources, ...values.sourcePorts,
         ...values.destinations, ...values.destinationPorts,
       ], query);
       return statusMatches && actionMatches && queryMatches;
@@ -7317,10 +7346,15 @@ export class SmithproxyApp extends LitElement {
                   @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
                     operation.localId, event.currentTarget as HTMLElement,
                   )}>
-                  <strong>${text('name', 'New policy')}</strong>
+                  <span class="policy-identity" title=${rowValues(row).profiles}>
+                    <strong>${text('name', 'New policy')}</strong>
+                    <small aria-hidden="true">${rowValues(row).profiles}</small>
+                  </span>
                   <span>${this.referenceNameSummary(list('src'))}</span>
                   <span>${this.referenceNameSummary(list('dst'))}</span>
-                  <span class="action">${text('action', 'unknown')}</span>
+                  <span class=${`action-badge ${actionTone(text('action', 'unknown'))}`}>
+                    ${text('action', 'unknown')}
+                  </span>
                   <span class="row-meta">
                     <span class="status ${disabled ? 'disabled' : ''}">${disabled ? 'Disabled' : 'Enabled'}</span>
                     <span class="pending-badge" title="This policy is a pending structural create">Pending create</span>
@@ -7345,6 +7379,7 @@ export class SmithproxyApp extends LitElement {
             const sourcePorts = this.presentedListValue(`${base}.sport`, policy.sourcePorts, 'string');
             const destinationPorts = this.presentedListValue(`${base}.dport`, policy.destinationPorts, 'string');
             const enabled = !this.presentedValue(`${base}.disabled`, !policy.enabled);
+            const profiles = rowValues(row).profiles;
             const fieldsReadOnly = bulkFields.every(field => this.originReadOnly(`${base}.${field}`, false));
             const deletionBlocked = this.policyBulkDeleteBlocker([policy.id]) !== undefined;
             const orderingBlocked = this.policyBulkMoveBlocker([policy.id]) !== undefined;
@@ -7362,10 +7397,13 @@ export class SmithproxyApp extends LitElement {
               </label>
               <button class="policy-row-main" type="button"
                 @click=${(event: MouseEvent) => this.openPolicy(policy, event.currentTarget as HTMLElement)}>
-                <strong>${name}</strong>
+                <span class="policy-identity" title=${profiles}>
+                  <strong>${name}</strong>
+                  <small aria-hidden="true">${profiles}</small>
+                </span>
                 <span>${this.referenceNameSummary(sources)}</span>
                 <span>${this.referenceNameSummary(destinations)}</span>
-                <span class="action">${action}</span>
+                <span class=${`action-badge ${actionTone(action)}`}>${action}</span>
                 <span class="row-meta">
                   <span class="status ${enabled ? '' : 'disabled'}">${enabled ? 'Enabled' : 'Disabled'}</span>
                   ${this.renderPendingBadge('policy', policy.id)}

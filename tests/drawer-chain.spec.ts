@@ -1011,6 +1011,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(policySummary.getByText('Enabled', {exact: true})).toBeVisible();
   const policyRow = page.getByRole('button', {name: /Policy 1 office internet accept/i});
   await expect(policyRow).toBeVisible();
+  await expect(policyRow).toContainText('TLS inspect');
   await expect(policyRow).toContainText('tcp · any → https');
   await policyRow.click();
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
