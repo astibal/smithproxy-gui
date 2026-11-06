@@ -1056,6 +1056,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
     'TLS profile', 'Content profile', 'Detection profile', 'Routing profile',
     'SSH profile', 'DNS ALG profile', 'Script profile',
   ]);
+  await expect(editor.getByRole('button', {name: 'office', exact: true})).toContainText('CIDR');
+  await expect(editor.getByRole('button', {name: 'internet', exact: true})).toContainText('FQDN');
   await editor.getByRole('button', {name: 'internet', exact: true}).click();
   await expect(page.getByRole('dialog', {name: 'Edit internet'})).toBeVisible();
   await page.keyboard.press('Escape');
@@ -1828,6 +1830,7 @@ test('shows and reopens structural creates from primary policy and object lists'
   await pendingPolicy.click();
   let editor = page.getByRole('dialog', {name: 'Create policy'});
   await expect(editor.getByLabel('Name')).toHaveValue('pending-policy');
+  await expect(editor.getByRole('button', {name: /pending-address pending draft/i})).toContainText('CIDR');
   await editor.getByRole('button', {name: 'Cancel'}).click();
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();

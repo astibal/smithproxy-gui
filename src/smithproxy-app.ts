@@ -807,6 +807,8 @@ export class SmithproxyApp extends LitElement {
     .reference-edit { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 7px; align-items: center; }
     .reference-edit .reference { width: auto; }
     .reference { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); cursor: pointer; }
+    .reference-main { display: flex; min-width: 0; gap: 8px; align-items: center; }
+    .reference-kind { flex: 0 0 auto; padding: 2px 5px; border: 1px solid var(--app-border); border-radius: 2px; color: var(--app-muted); font: 10px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .04em; }
     .reference-advisory { display: flex; min-width: 0; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 10px; border-left: 2px solid var(--app-warning); background: var(--app-warning-bg); color: var(--app-warning); }
     .reference-advisory strong { overflow-wrap: anywhere; color: var(--app-text); }
     .reference-advisory small { flex: 0 0 auto; color: inherit; }
@@ -3117,6 +3119,13 @@ export class SmithproxyApp extends LitElement {
   private addressDisplayName(address: AddressObject): string {
     const index = this.snapshot?.addresses.findIndex(item => item.id === address.id) ?? -1;
     return index < 0 ? address.name : this.presentedValue(`address_objects.[${index}].name`, address.name);
+  }
+
+  private addressDisplayType(address: AddressObject): AddressObject['type'] {
+    const index = this.snapshot?.addresses.findIndex(item => item.id === address.id) ?? -1;
+    return index < 0
+      ? address.type
+      : this.presentedValue(`address_objects.[${index}].type`, address.type) as AddressObject['type'];
   }
 
   private portDisplayName(port: PortObject): string {
@@ -10445,12 +10454,30 @@ export class SmithproxyApp extends LitElement {
     return html`${names.map(name => {
       const reference = this.snapshot?.addresses.find(item => this.addressDisplayName(item) === name);
       const pending = this.pendingNamedCreate(['address_objects'], name);
+      const pendingType = pending?.fields['type'];
       return reference ? html`
         <button class="reference" type="button"
+          aria-description=${`${this.addressDisplayType(reference).toUpperCase()} address object`}
           @click=${(event: MouseEvent) => this.openAddress(reference.id, event.currentTarget as HTMLElement)}>
-          <span>${name}</span><span aria-hidden="true">→</span>
+          <span class="reference-main"><span>${name}</span><span class="reference-kind" aria-hidden="true">
+            ${this.addressDisplayType(reference).toUpperCase()}
+          </span></span><span aria-hidden="true">→</span>
         </button>
-      ` : pending ? this.renderPendingReference(pending, name) : this.renderReferenceAdvisory(name);
+      ` : pending ? html`
+        <button class="reference" type="button"
+          aria-description=${typeof pendingType === 'string'
+            ? `Pending ${pendingType.toUpperCase()} address object`
+            : 'Pending address object'}
+          @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
+            pending.localId, event.currentTarget as HTMLElement,
+          )}>
+          <span class="reference-main"><span>${name} <small>pending draft</small></span>
+            ${typeof pendingType === 'string' ? html`<span class="reference-kind" aria-hidden="true">
+              ${pendingType.toUpperCase()}
+            </span>` : nothing}
+          </span><span aria-hidden="true">→</span>
+        </button>
+      ` : this.renderReferenceAdvisory(name);
     })}`;
   }
 
