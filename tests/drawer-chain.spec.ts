@@ -158,7 +158,18 @@ type MockState = {
   }>;
 };
 
-async function mockSystemApi(page: Page, state: MockState, configRead = false): Promise<void> {
+async function mockSystemApi(
+  page: Page,
+  state: MockState,
+  configRead = false,
+  autoEnableEditors = true,
+): Promise<void> {
+  if (autoEnableEditors) {
+    await page.addLocatorHandler(
+      page.locator('.drawer[aria-modal="true"] [data-enable-edit]'),
+      async edit => edit.click(),
+    );
+  }
   const now = (): number => state.now ?? Date.now();
   const collectorLastSuccess = (sampledAt: number): number =>
     sampledAt - (state.collectorLastSuccessAgeMs ?? 5_000);
@@ -1033,6 +1044,32 @@ async function expectNoWcagViolations(page: Page): Promise<void> {
   expect(result.violations, summary).toEqual([]);
 }
 
+test('requires an explicit edit decision before live configuration fields can change', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true, false);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const name = editor.getByLabel('Name');
+  const action = editor.getByLabel('Action', {exact: true});
+  const edit = editor.getByRole('button', {name: 'Edit', exact: true});
+  await expect(editor.getByText('Protected configuration view')).toBeVisible();
+  await expect(editor.getByText(/Select Edit before changing this configuration/u)).toBeVisible();
+  await expect(name).toHaveAttribute('readonly', '');
+  await expect(action).toBeDisabled();
+  await expect(edit).toBeFocused();
+  await expect(editor.getByRole('button', {name: 'Save to draft'})).toHaveCount(0);
+  await expect(editor.getByRole('button', {name: 'office', exact: true})).toBeEnabled();
+
+  await edit.click();
+  await expect(name).toBeEditable();
+  await expect(action).toBeEnabled();
+  await expect(name).toBeFocused();
+  await expect(editor.getByRole('button', {name: 'Save to draft'})).toBeVisible();
+  await expectNoWcagViolations(page);
+});
+
 test('loads authenticated runtime configuration and saves an atomic policy draft', async ({page}) => {
   test.setTimeout(45_000);
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
@@ -1343,6 +1380,7 @@ test('renames referenced configuration entities atomically across pending refere
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
   const addresses = page.getByRole('group', {name: 'Address objects'});
@@ -1529,6 +1567,7 @@ test('removes a pending rename and its cascaded references when restored', async
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('group', {name: 'Address objects'})
     .getByRole('button').filter({hasText: 'public-internet'}).click();
@@ -1793,6 +1832,7 @@ test('shows pending policy and object values in their configuration lists', asyn
     ],
   }, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   await expect(page.getByRole('button', {name: 'Review draft · 13'})).toBeVisible();
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   const policies = page.getByRole('group', {name: 'Policies'});
@@ -6473,6 +6513,7 @@ test('searches the complete readable configuration without unsafe markup', async
     ],
   }, true);
   await page.goto('/');
+  await expect(page.getByText('Config: Ready')).toBeVisible();
   const search = page.getByRole('searchbox', {name: 'Search'});
 
   await search.fill('10.0.0.0/24');
@@ -6770,7 +6811,7 @@ test.describe('Saslik visual regression', () => {
       await page.setViewportSize({width: 1440, height: 900});
       await page.emulateMedia({reducedMotion: 'reduce'});
       await page.addInitScript(() => { Date.now = () => 1_800_000_000_000; });
-      await mockSystemApi(page, {smithproxy: 'ready', now: 1_800_000_000_000}, true);
+      await mockSystemApi(page, {smithproxy: 'ready', now: 1_800_000_000_000}, true, false);
       await page.goto('/');
       await expect(page.getByText('Config: Ready')).toBeVisible();
       await applySaslikVisualTheme(page, theme);
@@ -6796,7 +6837,7 @@ test.describe('Saslik visual regression', () => {
       await page.setViewportSize({width: 390, height: 844});
       await page.emulateMedia({reducedMotion: 'reduce'});
       await page.addInitScript(() => { Date.now = () => 1_800_000_000_000; });
-      await mockSystemApi(page, {smithproxy: 'ready', now: 1_800_000_000_000}, true);
+      await mockSystemApi(page, {smithproxy: 'ready', now: 1_800_000_000_000}, true, false);
       await page.goto('/');
       await expect(page.getByText('Config: Ready')).toHaveText('Config: Ready');
       await applySaslikVisualTheme(page, theme);

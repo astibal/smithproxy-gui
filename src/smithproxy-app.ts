@@ -1,5 +1,6 @@
 import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
+import {keyed} from 'lit/directives/keyed.js';
 import {ApiConfigClient} from './api/config-client';
 import {
   DraftClient,
@@ -435,6 +436,7 @@ export class SmithproxyApp extends LitElement {
   @state() private structuralDeleteArmedKey: string | undefined;
   @state() private drawerError: string | undefined;
   @state() private dirtyDrawerKeys = new Set<string>();
+  @state() private editingDrawerKeys = new Set<string>();
   @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
@@ -792,6 +794,7 @@ export class SmithproxyApp extends LitElement {
     .drawer-title h2 { overflow: hidden; margin: 1px 0 0; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
     .icon-button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--app-border); border-radius: 3px; background: transparent; cursor: pointer; }
     .drawer-body { overflow: auto; padding: 22px 24px 32px; }
+    .edit-lock-note { margin: 0 0 18px; padding: 10px 12px; border-left: 3px solid var(--app-brand); background: var(--app-canvas); color: var(--app-muted); }
     .drawer-foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--app-border); background: var(--app-raised); }
     .drawer-foot .validation { flex: 1 1 150px; color: var(--app-success); }
     .drawer-foot .validation.warning { color: var(--app-warning); }
@@ -1368,6 +1371,7 @@ export class SmithproxyApp extends LitElement {
     this.drawers = [];
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
+    this.editingDrawerKeys = new Set<string>();
     this.pendingCloseIndex = undefined;
     this.pendingReturnFocus = undefined;
     this.drawerHistoryDepth = 0;
@@ -3934,6 +3938,50 @@ export class SmithproxyApp extends LitElement {
     return `${entry.kind}:${entry.id}`;
   }
 
+  private drawerStartsEditable(entry: Pick<DrawerEntry, 'kind'>): boolean {
+    return entry.kind.endsWith('-create');
+  }
+
+  private drawerEditing(entry: Pick<DrawerEntry, 'kind' | 'id'>): boolean {
+    return this.drawerStartsEditable(entry) || this.editingDrawerKeys.has(this.drawerKey(entry));
+  }
+
+  private enableDrawerEditing(entry: DrawerEntry): void {
+    const key = this.drawerKey(entry);
+    if (this.drawerStartsEditable(entry) || this.editingDrawerKeys.has(key)) return;
+    this.editingDrawerKeys = new Set(this.editingDrawerKeys).add(key);
+    void this.updateComplete.then(() => this.focusActiveDrawer());
+  }
+
+  /**
+   * Existing configuration drawers render as protected views. Native form
+   * properties are applied after each Lit update so pointer, keyboard, and
+   * assistive-technology interaction all observe the same lock. The keyed
+   * drawer body is recreated when Edit is selected, restoring the field-level
+   * capability and augment locks expressed by the templates themselves.
+   */
+  private syncDrawerEditLocks(): void {
+    for (const body of this.renderRoot.querySelectorAll<HTMLElement>('.drawer-body[data-edit-mode="view"]')) {
+      for (const control of body.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+        'input, select, textarea',
+      )) {
+        if (control instanceof HTMLSelectElement ||
+            (control instanceof HTMLInputElement && ['checkbox', 'radio', 'file'].includes(control.type))) {
+          control.disabled = true;
+        } else {
+          control.readOnly = true;
+        }
+      }
+      for (const button of body.querySelectorAll<HTMLButtonElement>('button[data-edit-control="true"]')) {
+        button.disabled = true;
+      }
+    }
+  }
+
+  protected updated(): void {
+    this.syncDrawerEditLocks();
+  }
+
   private draftScalarsEqual(left: DraftScalar, right: DraftScalar): boolean {
     return this.configValuesEqual(left, right);
   }
@@ -3950,6 +3998,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private markDrawerDirty(entry: DrawerEntry, event: Event): void {
+    if (!this.drawerEditing(entry)) return;
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement ||
           target instanceof HTMLTextAreaElement) || target.disabled ||
@@ -3986,6 +4035,11 @@ export class SmithproxyApp extends LitElement {
       this.dirtyDrawerKeys = remaining;
     }
     this.clearReferencePreviews(entry);
+    if (!this.drawerStartsEditable(entry) && this.editingDrawerKeys.has(key)) {
+      const remainingEditors = new Set(this.editingDrawerKeys);
+      remainingEditors.delete(key);
+      this.editingDrawerKeys = remainingEditors;
+    }
     this.pendingCloseIndex = undefined;
   }
 
@@ -4027,8 +4081,10 @@ export class SmithproxyApp extends LitElement {
     this.draftRemovalArmedKey = undefined;
     this.structuralDeleteArmedKey = undefined;
     const remainingDirty = new Set(this.dirtyDrawerKeys);
+    const remainingEditors = new Set(this.editingDrawerKeys);
     for (const entry of this.drawerStore.entries.slice(index)) {
       remainingDirty.delete(this.drawerKey(entry));
+      remainingEditors.delete(this.drawerKey(entry));
       this.drawerInitialChanges.delete(this.drawerKey(entry));
       this.clearReferencePreviews(entry);
       this.addressPreviewValues.delete(this.drawerKey(entry));
@@ -4053,6 +4109,7 @@ export class SmithproxyApp extends LitElement {
       if (entry.kind === 'authority-create') this.authorityCreatePrefills.delete(entry.id);
     }
     this.dirtyDrawerKeys = remainingDirty;
+    this.editingDrawerKeys = remainingEditors;
     this.pendingCloseIndex = undefined;
     const levels = this.drawerStore.entries.length - index;
     const returnFocus = this.drawerOrigins[index];
@@ -4267,6 +4324,11 @@ export class SmithproxyApp extends LitElement {
   private focusActiveDrawer(): void {
     if (this.drawers.length === 0) return;
     const active = this.renderRoot.querySelector<HTMLElement>('.drawer[aria-modal="true"]');
+    const edit = active?.querySelector<HTMLElement>('[data-enable-edit]');
+    if (edit) {
+      edit.focus();
+      return;
+    }
     const target = active?.querySelector<HTMLElement>(
       '.drawer-body input:not([disabled]), .drawer-body select:not([disabled]), ' +
       '.drawer-body textarea:not([disabled]), .drawer-body button:not([disabled])',
@@ -10356,7 +10418,7 @@ export class SmithproxyApp extends LitElement {
                 })}
                 <option value="last" ?selected=${placement === 'last'}>Last policy</option>
               </select>
-              <button class="secondary" type="button"
+              <button class="secondary" type="button" data-edit-control="true"
                 ?disabled=${!this.policyTransactionsAvailable() || this.draftSaving || this.draftCommitting ||
                   this.dirtyDrawerKeys.has(this.drawerKey(entry))}
                 title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
@@ -11102,7 +11164,7 @@ export class SmithproxyApp extends LitElement {
               <option value="clear">Clear all mappings</option>
             </select>
           </label>
-          ${editor.mode === 'replace' ? html`<button class="secondary" type="button"
+          ${editor.mode === 'replace' ? html`<button class="secondary" type="button" data-edit-control="true"
             ?disabled=${editor.rows.length >= 256}
             @click=${() => updateEditor({...editor, rows: [...editor.rows, {name: ''}]})}>Add identity</button>` : nothing}
         </div>
@@ -11142,7 +11204,8 @@ export class SmithproxyApp extends LitElement {
                       entry.id, index, 'alg_dns_profile', (event.currentTarget as HTMLSelectElement).value,
                     )}>${renderOptions('dns')}</select>
                 </label>
-                <button class="secondary danger-button" type="button" aria-label="Remove identity ${index + 1}"
+                <button class="secondary danger-button" type="button" data-edit-control="true"
+                  aria-label="Remove identity ${index + 1}"
                   ?disabled=${editor.rows.length === 1}
                   @click=${() => updateEditor({...editor, rows: editor.rows.filter((_, rowIndex) => rowIndex !== index)})}>
                   Remove
@@ -11394,7 +11457,7 @@ export class SmithproxyApp extends LitElement {
           </div>
           <label>Content rules</label>
           <div class="reference-stack" role="group" aria-label="Content rules">
-            <button class="secondary" type="button"
+            <button class="secondary" type="button" data-edit-control="true"
               ?disabled=${!this.contentRuleTransactionsAvailable() || !content.rulesPresent}
               title=${!content.rulesPresent
                 ? 'This profile has no content_rules collection in the live configuration.'
@@ -11994,7 +12057,7 @@ export class SmithproxyApp extends LitElement {
               })}
               <option value="last" ?selected=${placement === 'last'}>Last rule</option>
             </select>
-            <button class="secondary" type="button"
+            <button class="secondary" type="button" data-edit-control="true"
               ?disabled=${!this.contentRuleTransactionsAvailable() || this.draftSaving || this.draftCommitting ||
                 this.dirtyDrawerKeys.has(this.drawerKey(entry))}
               title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
@@ -12255,7 +12318,7 @@ export class SmithproxyApp extends LitElement {
               })}
               <option value="last" ?selected=${placement === 'last'}>Last step</option>
             </select>
-            <button class="secondary" type="button"
+            <button class="secondary" type="button" data-edit-control="true"
               ?disabled=${!this.signatureTransactionsAvailable() || this.draftSaving || this.draftCommitting ||
                 this.dirtyDrawerKeys.has(this.drawerKey(entry))}
               title=${this.dirtyDrawerKeys.has(this.drawerKey(entry))
@@ -12737,6 +12800,8 @@ export class SmithproxyApp extends LitElement {
       : this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile);
     const readOnly = !draftable ||
       (entry.kind === 'captures' && this.snapshot?.captures?.editable !== true);
+    const editing = this.drawerEditing(entry);
+    const protectedView = !readOnly && !editing;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
     const drawerDraftPaths = this.draftPathsForDrawer(entry);
     const removalArmed = this.draftRemovalArmedKey === this.drawerKey(entry);
@@ -12772,11 +12837,16 @@ export class SmithproxyApp extends LitElement {
           <button class="icon-button" type="button" aria-label=${closeLabel}
             @click=${() => this.requestCloseDrawer(index)}>×</button>
         </header>
-        <div class="drawer-body">
-          ${this.renderDrawerBody(entry)}
-          ${entry.kind === 'auth-identities' || entry.kind === 'auth-identities-create'
-            ? nothing : this.renderAugmentOrigins(entry)}
-        </div>
+        ${keyed(`${this.drawerKey(entry)}:${editing ? 'edit' : 'view'}`, html`
+          <div class="drawer-body" data-edit-mode=${editing ? 'edit' : 'view'}>
+            ${protectedView ? html`<p class="edit-lock-note">
+              Protected view. Select Edit before changing this configuration.
+            </p>` : nothing}
+            ${this.renderDrawerBody(entry)}
+            ${entry.kind === 'auth-identities' || entry.kind === 'auth-identities-create'
+              ? nothing : this.renderAugmentOrigins(entry)}
+          </div>
+        `)}
         <footer class="drawer-foot">
           ${closePending ? html`
             <span class="validation warning" role="alert">${closeFromIndex === index
@@ -12789,7 +12859,7 @@ export class SmithproxyApp extends LitElement {
           ` : html`
             <span class="validation ${dirty ? 'warning' : ''}" role="status" aria-live="polite">
               ${this.drawerError ?? this.draftError ?? (dirty ? 'Unsaved changes'
-                : readOnly ? 'Read-only runtime view'
+                : readOnly ? 'Read-only runtime view' : protectedView ? 'Protected configuration view'
                 : saved ? 'Saved to draft' : 'Validation ready')}
             </span>
             ${drawerDraftPaths.length > 0 ? html`
@@ -12858,10 +12928,18 @@ export class SmithproxyApp extends LitElement {
                 Duplicate signature
               </button>
             ` : nothing}
-            <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>Cancel</button>
-            <button class="primary" type="button"
-              ?disabled=${readOnly || this.draftSaving || this.draftCommitting}
-              @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
+            ${protectedView ? html`
+              <button class="primary" type="button" data-enable-edit
+                @click=${() => this.enableDrawerEditing(entry)}>Edit</button>
+            ` : nothing}
+            <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>
+              ${editing ? 'Cancel' : 'Close'}
+            </button>
+            ${editing ? html`
+              <button class="primary" type="button"
+                ?disabled=${readOnly || this.draftSaving || this.draftCommitting}
+                @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
+            ` : nothing}
           `}
         </footer>
       </section>
