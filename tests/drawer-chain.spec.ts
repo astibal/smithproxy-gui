@@ -70,6 +70,7 @@ type MockState = {
   configFetches?: number;
   configFailuresRemaining?: number;
   configSnapshotDelayMs?: number;
+  configSnapshotState?: 'ready' | 'unavailable';
   unsavedConfig?: boolean;
   configRevision?: string | null;
   savedConfigRevision?: string | null;
@@ -762,7 +763,11 @@ async function mockSystemApi(page: Page, state: MockState, configRead = false): 
       const savedRevision = state.savedConfigRevision ??
         (state.unsavedConfig ? `sha256:${'1'.repeat(64)}` : revision);
       await route.fulfill({json: {
-      state: 'ready', detail: 'Current runtime configuration', checked_at_unix_ms: now(),
+      state: state.configSnapshotState ?? 'ready',
+      detail: state.configSnapshotState === 'unavailable'
+        ? 'Smithproxy configuration parser rejected an optional section'
+        : 'Current runtime configuration',
+      checked_at_unix_ms: now(),
       last_success_at_unix_ms: now(), view: 'runtime',
       revision,
       saved_revision: savedRevision,
@@ -4832,6 +4837,19 @@ test('does not fabricate configuration without configuration API access', async 
   await expect(page.getByText('office-net')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(protectedRequests).toEqual([]);
+});
+
+test('does not present an unavailable snapshot as an empty live configuration', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', configSnapshotState: 'unavailable'};
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  await expect(page.getByRole('heading', {name: 'Configuration unavailable'})).toBeVisible();
+  await expect(page.getByText('Smithproxy configuration parser rejected an optional section')).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'Retry config'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Retry access'})).toHaveCount(0);
 });
 
 test('retries capability discovery before recovering configuration access', async ({page}) => {

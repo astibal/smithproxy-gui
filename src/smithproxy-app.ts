@@ -1556,6 +1556,7 @@ export class SmithproxyApp extends LitElement {
     try {
       const snapshot = await this.configClient.loadSnapshot();
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (snapshot.state !== 'ready') throw new Error(snapshot.detail);
       if (this.draftChangeCount > 0 || this.drawers.length > 0 || this.draftSaving ||
           this.draftCommitting) {
         this.configRefreshDeferred = true;
@@ -9967,12 +9968,12 @@ export class SmithproxyApp extends LitElement {
           <h2>Configuration unavailable</h2>
           <p>${detail}</p>
           <p>No local or cached configuration is displayed.</p>
-          <button class="secondary" type="button"
+          ${!this.configReadAvailable ? html`<button class="secondary" type="button"
             ?disabled=${this.capabilityBootstrapState === 'refreshing' || this.configRefreshInFlight}
             @click=${() => { void this.retryConfigurationAccess(); }}>
             ${this.capabilityBootstrapState === 'refreshing' || this.configRefreshInFlight
               ? 'Retrying…' : 'Retry access'}
-          </button>
+          </button>` : nothing}
         </div>
       `;
     }
