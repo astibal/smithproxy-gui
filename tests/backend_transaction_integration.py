@@ -14,8 +14,8 @@ import time
 from backend_integration import FakeSmithproxy, free_port, request, wait_for_config, wait_for_state
 
 
-BASE_REVISION = "sha256:" + "c" * 64
-COMMITTED_REVISION = "sha256:" + "d" * 64
+BASE_REVISION = "c" * 32
+COMMITTED_REVISION = "d" * 32
 SCHEMA_REVISION = "sha256:" + "a" * 64
 PRIVATE_VALUE = "transaction-private-password"
 

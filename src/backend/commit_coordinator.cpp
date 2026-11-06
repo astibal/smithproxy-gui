@@ -53,7 +53,7 @@ CommitCoordinator::Lease CommitCoordinator::begin(const std::uint64_t expected_v
         return {nullptr, CommitPreparationResult::VersionConflict};
     }
     if (draft.empty()) return {nullptr, CommitPreparationResult::Empty};
-    if (!draft.base_revision || !is_canonical_revision(*draft.base_revision)) {
+    if (!draft.base_revision || !is_config_revision(*draft.base_revision)) {
         return {nullptr, CommitPreparationResult::InvalidDraft};
     }
     if (!intent_ || intent_->version != draft.version ||

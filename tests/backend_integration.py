@@ -54,7 +54,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     auth_token = "a" * 32
     csrf_token = "b" * 32
     response_status = 200
-    config_revision = "sha256:" + "c" * 64
+    config_revision = "c" * 32
     revision_requests = 0
     state_requests = 0
     state_status = 200

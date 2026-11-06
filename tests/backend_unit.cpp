@@ -16,6 +16,7 @@
 #include "operational_event_store.hpp"
 #include "path.hpp"
 #include "runtime_metrics.hpp"
+#include "revision.hpp"
 #include "smithproxy_client.hpp"
 #include "tls_metrics.hpp"
 #include "transaction_capabilities.hpp"
@@ -42,6 +43,15 @@ int main() {
     unsetenv("SMITHPROXY_CA_CERT");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
+
+    const std::string random_revision(32U, 'a');
+    const std::string content_hash = "sha256:" + std::string(64U, 'b');
+    assert(is_config_revision(random_revision));
+    assert(is_config_revision(content_hash));
+    assert(!is_config_revision(std::string(31U, 'a')));
+    assert(!is_config_revision(std::string(32U, 'A')));
+    assert(is_content_hash(content_hash));
+    assert(!is_content_hash(random_revision));
 
     const auto log_line = format_log_line(
         LogLevel::Warning,

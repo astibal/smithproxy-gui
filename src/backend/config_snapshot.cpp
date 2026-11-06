@@ -314,7 +314,7 @@ ConfigRevisionParseResult parse_config_revision(const std::string_view payload) 
         return {std::nullopt, "Smithproxy returned an invalid configuration revision envelope"};
     }
     auto revision = document["success"]["revision"].get<std::string>();
-    if (!is_canonical_revision(revision)) {
+    if (!is_config_revision(revision)) {
         return {std::nullopt, "Smithproxy returned an invalid canonical configuration revision"};
     }
     return {std::move(revision), {}};
@@ -359,7 +359,7 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
 
     const auto revision = document["revision"].get<std::string>();
     const auto saved_revision = document["saved_revision"].get<std::string>();
-    if (!is_canonical_revision(revision) || !is_canonical_revision(saved_revision)) {
+    if (!is_config_revision(revision) || !is_config_revision(saved_revision)) {
         return {std::nullopt, "Smithproxy returned an invalid configuration state revision"};
     }
 

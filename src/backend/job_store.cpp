@@ -22,7 +22,7 @@ JobStore::JobStore(const std::chrono::milliseconds config_refresh_timeout)
 
 std::optional<std::string> JobStore::create_config_refresh(
     const std::string_view expected_revision) {
-    if (!is_canonical_revision(expected_revision)) return std::nullopt;
+    if (!is_config_revision(expected_revision)) return std::nullopt;
     const auto identifier = generate_transaction_idempotency_key();
     if (!identifier) return std::nullopt;
     const auto wall_now = std::chrono::system_clock::now();

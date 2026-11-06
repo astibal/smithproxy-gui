@@ -596,7 +596,7 @@ TransactionEnvelope build_transaction_envelope(
     const TransactionCapabilities& capabilities) {
     const auto operation_count = draft.operation_count();
     if (capabilities.state != "ready" || !draft.base_revision ||
-        !is_canonical_revision(*draft.base_revision) || !valid_idempotency_key(idempotency_key) ||
+        !is_config_revision(*draft.base_revision) || !valid_idempotency_key(idempotency_key) ||
         draft.empty() || operation_count > hard_maximum_operations ||
         capabilities.maximum_operations == 0U ||
         operation_count > capabilities.maximum_operations ||
@@ -797,7 +797,7 @@ TransactionResponse parse_transaction_response(
     if (payload.size() > hard_maximum_request_bytes || expected_operations > hard_maximum_operations) {
         return invalid_response();
     }
-    if (!is_canonical_revision(expected_base_revision)) return invalid_response();
+    if (!is_config_revision(expected_base_revision)) return invalid_response();
     const auto document = nlohmann::json::parse(payload, nullptr, false);
     if (document.is_discarded() || !document.is_object()) return invalid_response();
 
@@ -822,7 +822,7 @@ TransactionResponse parse_transaction_response(
         const bool revisions_match_mode = mode == TransactionMode::Validate
             ? revision == expected_base_revision && previous_revision == expected_base_revision
             : revision != expected_base_revision && previous_revision == expected_base_revision;
-        if (!is_canonical_revision(revision) || !is_canonical_revision(previous_revision) ||
+        if (!is_config_revision(revision) || !is_config_revision(previous_revision) ||
             !revisions_match_mode || validated != expected_operations ||
             (restart != "not-required" && restart != "required" && restart != "scheduled")) {
             return invalid_response();

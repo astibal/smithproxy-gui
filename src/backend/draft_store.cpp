@@ -189,7 +189,7 @@ DraftSnapshot DraftStore::snapshot() const {
 bool DraftStore::bind_base_revision(
     const std::string& revision,
     const std::chrono::steady_clock::time_point observation_started_at) {
-    if (!is_canonical_revision(revision)) return false;
+    if (!is_config_revision(revision)) return false;
     std::scoped_lock lock(mutex_);
     if (observation_started_at == std::chrono::steady_clock::time_point{} ||
         observation_started_at <= minimum_revision_observation_) {
@@ -471,11 +471,11 @@ DraftMutationResult DraftStore::clear(const std::uint64_t expected_version) {
 
 DraftMutationResult DraftStore::complete_commit(
     const std::uint64_t expected_version, const std::string& committed_revision) {
-    if (!is_canonical_revision(committed_revision)) return DraftMutationResult::InvalidValue;
+    if (!is_config_revision(committed_revision)) return DraftMutationResult::InvalidValue;
     std::scoped_lock lock(mutex_);
     if (expected_version != draft_.version) return DraftMutationResult::VersionConflict;
     if (draft_.empty()) return DraftMutationResult::Missing;
-    if (!draft_.base_revision || !is_canonical_revision(*draft_.base_revision) ||
+    if (!draft_.base_revision || !is_config_revision(*draft_.base_revision) ||
         *draft_.base_revision == committed_revision) {
         return DraftMutationResult::InvalidValue;
     }

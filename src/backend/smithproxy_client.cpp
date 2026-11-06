@@ -260,7 +260,7 @@ TransactionResponse SmithproxyMonitor::commit_transaction(
 }
 
 bool SmithproxyMonitor::note_config_committed(const std::string_view committed_revision) {
-    if (!config_ || !config_enabled_ || !is_canonical_revision(committed_revision)) return false;
+    if (!config_ || !config_enabled_ || !is_config_revision(committed_revision)) return false;
     {
         std::scoped_lock lock(mutex_);
         minimum_config_observation_ = std::chrono::steady_clock::now();
@@ -398,7 +398,7 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
             return transaction_failure("invalid-response");
         }
         const auto revision = (*committed.body)["revision"].get<std::string>();
-        if (!is_canonical_revision(revision) || revision == *draft.base_revision) {
+        if (!is_config_revision(revision) || revision == *draft.base_revision) {
             return transaction_failure("invalid-response");
         }
         return {

@@ -106,7 +106,7 @@ TransactionCapabilities parse_transaction_capabilities(
         }
         const auto id = collection["id"].get<std::string>();
         const auto revision = collection["schema_revision"].get<std::string>();
-        if (!valid_collection_id(id) || !is_canonical_revision(revision) ||
+        if (!valid_collection_id(id) || !is_content_hash(revision) ||
             !collection_ids.emplace(id).second) {
             return incompatible();
         }
