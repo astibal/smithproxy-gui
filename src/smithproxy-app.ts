@@ -731,6 +731,12 @@ export class SmithproxyApp extends LitElement {
     .dashboard > .section-head { margin-bottom: 0; }
     .dashboard-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .dashboard-shortcuts button { width: auto; min-height: 38px; }
+    .operational-health > summary { cursor: pointer; list-style: none; }
+    .operational-health > summary::-webkit-details-marker { display: none; }
+    .operational-health > summary::before { content: '›'; color: var(--app-muted); font-size: 20px; line-height: 1; }
+    .operational-health[open] > summary::before { rotate: 90deg; }
+    .operational-health > summary > div { margin-right: auto; }
+    .operational-health .network-config-table { margin-top: 12px; }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
     .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .metric { min-height: 116px; padding: 15px 16px; }
@@ -9636,32 +9642,41 @@ export class SmithproxyApp extends LitElement {
         lastSuccess: this.neighbors.lastSuccessAtUnixMs, intervalMs: 30_000},
       {name: 'Interfaces', state: this.interfaces.state, checked: this.interfaces.checkedAtUnixMs,
         lastSuccess: this.interfaces.lastSuccessAtUnixMs, intervalMs: 30_000},
-      {name: 'Configuration', state: this.snapshot?.state ?? 'starting', checked: this.snapshot?.checkedAtUnixMs ?? null,
-        lastSuccess: this.snapshot?.lastSuccessAtUnixMs ?? null, intervalMs: 30_000},
-    ];
+      ...(this.configReadAvailable || this.snapshot ? [{
+        name: 'Configuration', state: this.snapshot?.state ?? 'starting',
+        checked: this.snapshot?.checkedAtUnixMs ?? null,
+        lastSuccess: this.snapshot?.lastSuccessAtUnixMs ?? null, intervalMs: 30_000,
+      }] : []),
+    ].map(item => {
+      const freshness = classifyFreshness(item.lastSuccess, item.intervalMs);
+      const tone = item.state === 'ready' ? this.freshnessTone(freshness.state) :
+        ['unreachable', 'unauthorized', 'error', 'unavailable'].includes(item.state)
+          ? 'danger' : 'warning';
+      return {...item, freshness, tone, current: item.state === 'ready' && freshness.state === 'fresh'};
+    });
+    const issueCount = items.filter(item => !item.current).length;
     return html`
       <section class="runtime-summary" aria-label="Operational health matrix">
-        <div class="runtime-heading">
-          <div><h3>Operational health</h3><p>Availability and freshness of administrator-facing services</p></div>
-        </div>
-        <div class="table network-config-table" tabindex="0">
-          <table class="listener-table" aria-label="Operational subsystem health">
-            <thead><tr><th>Subsystem</th><th>State</th><th>Last success</th><th>Checked</th></tr></thead>
-            <tbody>${items.map(item => {
-              const freshness = classifyFreshness(item.lastSuccess, item.intervalMs);
-              const stateTone = item.state === 'ready' ? this.freshnessTone(freshness.state) :
-                ['unreachable', 'unauthorized', 'error', 'unavailable'].includes(item.state)
-                  ? 'danger' : 'warning';
-              return html`<tr>
-                <td class="listener-name">${item.name}</td>
-                <td><span class="runtime-state ${stateTone}">
-                  ● ${displayState(item.state)} · ${freshnessLabel(freshness.state)}
-                </span></td>
-                <td>${this.sampleAgeLabel(item.lastSuccess)}</td><td>${this.sampleAgeLabel(item.checked)}</td>
-              </tr>`;
-            })}</tbody>
-          </table>
-        </div>
+        <details class="monitor-panel operational-health" ?open=${issueCount > 0}>
+          <summary class="runtime-heading">
+            <div><h3>Operational health</h3><p>Availability and freshness of administrator-facing services</p></div>
+            <span class="runtime-state ${issueCount > 0 ? 'warning' : 'success'}">
+              ${issueCount > 0 ? `${issueCount} require attention` : '● All current'}
+            </span>
+          </summary>
+          <div class="table network-config-table" tabindex="0">
+            <table class="listener-table" aria-label="Operational subsystem health">
+              <thead><tr><th>Subsystem</th><th>State</th><th>Last success</th><th>Checked</th></tr></thead>
+              <tbody>${items.map(item => html`<tr>
+                  <td class="listener-name">${item.name}</td>
+                  <td><span class="runtime-state ${item.tone}">
+                    ● ${displayState(item.state)} · ${freshnessLabel(item.freshness.state)}
+                  </span></td>
+                  <td>${this.sampleAgeLabel(item.lastSuccess)}</td><td>${this.sampleAgeLabel(item.checked)}</td>
+                </tr>`)}</tbody>
+            </table>
+          </div>
+        </details>
       </section>`;
   }
 

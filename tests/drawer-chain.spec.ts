@@ -5092,6 +5092,9 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).toContainText('Alerts: 1 active');
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   await expect(activeAlerts.getByText('Control plane is unavailable', {exact: true})).toBeVisible();
+  const degradedHealth = page.getByRole('region', {name: 'Operational health matrix'});
+  await expect(degradedHealth).toContainText('require attention');
+  await expect(degradedHealth.getByRole('table', {name: 'Operational subsystem health'})).toBeVisible();
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Control plane'}).click();
@@ -5112,6 +5115,9 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(incidentTimeline).toContainText('No control-plane incident was observed');
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   const health = page.getByRole('region', {name: 'Operational health matrix'});
+  await expect(health).toContainText('All current');
+  await expect(health.getByRole('table', {name: 'Operational subsystem health'})).not.toBeVisible();
+  await health.locator('summary').click();
   const healthTable = health.getByRole('table', {name: 'Operational subsystem health'});
   await expect(healthTable.getByRole('row').filter({hasText: 'Management API'})).toContainText('Ready · Fresh');
   await expect(healthTable.getByRole('row').filter({hasText: 'TLS cache'})).toContainText('Ready · Fresh');
