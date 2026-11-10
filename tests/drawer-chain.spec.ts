@@ -5180,14 +5180,15 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).toContainText('Events: Connecting', {timeout: 4_000});
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Control plane'}).click();
-  const pingMetric = page.getByText('Control-plane ping').locator('..');
-  await expect(pingMetric).toContainText('protected configuration access is reported separately');
-  await expect(page.getByText('Probe latency').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
-  await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
+    .getByRole('button', {name: 'Connectivity'}).click();
+  const connectionMetric = page.getByText('Smithproxy connection', {exact: true}).locator('..');
+  await expect(connectionMetric).toContainText('Ready');
+  await expect(connectionMetric).toContainText('Last successful check');
+  await expect(page.getByText('Response time').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
+  await expect(page.getByRole('region', {name: 'Connectivity check history'})).toBeVisible();
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
-  const incidentTimeline = page.getByRole('region', {name: 'Control-plane incident timeline'});
-  await expect(incidentTimeline).toContainText('No control-plane incident was observed');
+  const incidentTimeline = page.getByRole('region', {name: 'Management connectivity incidents'});
+  await expect(incidentTimeline).toContainText('No connectivity incident was observed');
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   const activeAlerts = page.getByRole('region', {name: 'Active operational alerts'});
   await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
@@ -5254,10 +5255,10 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(degradedHealth.getByRole('table', {name: 'Operational subsystem health'})).toBeVisible();
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Control plane'}).click();
+    .getByRole('button', {name: 'Connectivity'}).click();
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await expect(incidentTimeline.getByText('Incident active', {exact: true})).toBeVisible();
-  await expect(incidentTimeline.getByText('1 failed probe', {exact: true})).toBeVisible();
+  await expect(incidentTimeline.getByText('1 failed check', {exact: true})).toBeVisible();
 
   state.smithproxy = 'ready';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -5267,9 +5268,9 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Control plane'}).click();
+    .getByRole('button', {name: 'Connectivity'}).click();
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
-  await expect(incidentTimeline).toContainText('No control-plane incident was observed');
+  await expect(incidentTimeline).toContainText('No connectivity incident was observed');
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   const health = page.getByRole('region', {name: 'Operational health matrix'});
   await expect(health).toContainText('All current');

@@ -160,7 +160,7 @@ const systemNavigation: ReadonlyArray<{kind: SystemView; label: string; icon: st
   {kind: 'configuration', label: 'Configuration archive', icon: '◇'},
   {kind: 'backend', label: 'Management', icon: '⚙'},
   {kind: 'appearance', label: 'Appearance', icon: '◐'},
-  {kind: 'control-plane', label: 'Control plane', icon: '⌘'},
+  {kind: 'control-plane', label: 'Connectivity', icon: '⌘'},
 ];
 
 interface CollectorPresentation {
@@ -9835,17 +9835,17 @@ export class SmithproxyApp extends LitElement {
     };
     const incidents = history.filter(sample => sample.state !== 'ready').length;
     return html`
-      <div class="metric-grid" aria-label="Probe latency analysis">
+      <div class="metric-grid" aria-label="Connection latency analysis">
         <article class="metric"><span class="metric-label">Median latency</span>
-          <strong class="metric-value">${percentile(.5)}</strong><span class="metric-note">p50 successful probes</span></article>
+          <strong class="metric-value">${percentile(.5)}</strong><span class="metric-note">p50 successful checks</span></article>
         <article class="metric"><span class="metric-label">Tail latency</span>
-          <strong class="metric-value">${percentile(.95)}</strong><span class="metric-note">p95 successful probes</span></article>
+          <strong class="metric-value">${percentile(.95)}</strong><span class="metric-note">p95 successful checks</span></article>
         <article class="metric"><span class="metric-label">Maximum latency</span>
           <strong class="metric-value">${latencies.length ? `${latencies.at(-1)} ms` : '—'}</strong>
-          <span class="metric-note">Successful probes in window</span></article>
-        <article class="metric"><span class="metric-label">Incident samples</span>
+          <span class="metric-note">Successful checks in window</span></article>
+        <article class="metric"><span class="metric-label">Failed checks</span>
           <strong class="metric-value ${incidents ? 'danger' : ''}">${incidents}</strong>
-          <span class="metric-note">Non-ready states in window</span></article>
+          <span class="metric-note">Unsuccessful checks in window</span></article>
       </div>`;
   }
 
@@ -9868,15 +9868,15 @@ export class SmithproxyApp extends LitElement {
     const incidents = [...probeIncidents(this.systemStatus.history)].reverse().slice(0, 5);
     const active = incidents.filter(incident => incident.recoveredAtUnixMs === null).length;
     return html`
-      <section class="monitor-panel" aria-label="Control-plane incident timeline">
+      <section class="monitor-panel" aria-label="Management connectivity incidents">
         <div class="runtime-heading">
-          <div><h3>Observed incidents</h3><p>Consecutive non-ready probes grouped into recovery windows</p></div>
+          <div><h3>Observed incidents</h3><p>Consecutive failed checks grouped into recovery windows</p></div>
           <span class="runtime-state ${active ? 'danger' : 'success'}">
             ${active ? `${active} active` : incidents.length ? '● Recovered' : '● Clear'}
           </span>
         </div>
         ${incidents.length === 0 ? html`
-          <div class="privacy-note">No control-plane incident was observed in the current five-minute window.</div>
+          <div class="privacy-note">No connectivity incident was observed in the current five-minute window.</div>
         ` : html`
           <div class="incident-list" role="list">
             ${incidents.map(incident => {
@@ -9888,7 +9888,7 @@ export class SmithproxyApp extends LitElement {
                     <strong>${incident.recoveredAtUnixMs === null ? 'Incident active' : 'Recovered'}</strong>
                     <small>${incident.states.map(displayState).join(' → ')}</small>
                   </span>
-                  <span>${incident.samples} failed probe${incident.samples === 1 ? '' : 's'}</span>
+                  <span>${incident.samples} failed check${incident.samples === 1 ? '' : 's'}</span>
                   <span class="incident-duration">${incident.recoveredAtUnixMs === null ? 'observed ' : 'after '}${this.durationLabel(end - incident.startedAtUnixMs)}</span>
                 </article>`;
             })}
@@ -10196,34 +10196,34 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
-          <div><h2>Control plane</h2><p>Live reachability between the GUI core and Smithproxy</p></div>
+          <div><h2>Management connectivity</h2><p>Reachability between this interface and Smithproxy</p></div>
         </div>
         <div class="metric-grid">
           <article class="metric">
-            <span class="metric-label">Smithproxy API</span>
+            <span class="metric-label">Smithproxy connection</span>
             <strong class="metric-value">${displayState(this.systemStatus.smithproxy)}</strong>
-            <span class="metric-note">${this.systemStatus.detail}</span>
+            <span class="metric-note">Last successful check: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Probe latency</span>
+            <span class="metric-label">Response time</span>
             <strong class="metric-value">${this.systemStatus.latencyMs === null ? '—' : `${this.systemStatus.latencyMs} ms`}</strong>
-            <span class="metric-note">Last API ping round trip</span>
+            <span class="metric-note">Latest management check round trip</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Window availability</span>
+            <span class="metric-label">Recent availability</span>
             <strong class="metric-value">${this.availabilityLabel()}</strong>
-            <span class="metric-note">${successes} / ${history.length} successful probes</span>
+            <span class="metric-note">${successes} / ${history.length} successful checks</span>
           </article>
           <article class="metric">
-            <span class="metric-label">GUI core uptime</span>
+            <span class="metric-label">Management uptime</span>
             <strong class="metric-value">${this.uptimeLabel()}</strong>
-            <span class="metric-note">${history.length} recent probes</span>
+            <span class="metric-note">${history.length} recent checks</span>
           </article>
         </div>
-        <section class="monitor-panel" aria-label="Probe history">
-          <h3>Recent probe history</h3>
+        <section class="monitor-panel" aria-label="Connectivity check history">
+          <h3>Recent connectivity checks</h3>
           <p>Up to five minutes at the current five-second sampling interval. Last success: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}.</p>
-          <div class="probe-history" role="img" aria-label="${history.length} probe samples">
+          <div class="probe-history" role="img" aria-label="${history.length} connectivity checks">
             ${Array.from({length: Math.max(0, 60 - history.length)}, () => html`<span class="probe" aria-hidden="true"></span>`)}
             ${history.map(sample => html`<span class="probe ${sample.state}"
               title="${displayState(sample.state)} · ${sample.latencyMs ?? '—'} ms · ${this.timeLabel(sample.checkedAtUnixMs)}"
@@ -14720,7 +14720,7 @@ export class SmithproxyApp extends LitElement {
             ● Alerts: ${this.alertsError ? 'Unavailable' : activeAlertCount ? `${activeAlertCount} active` : 'Clear'}
           </button>
           <button class="status-action status-secondary system-state ${this.freshnessTone(controlFreshness.state)}" type="button"
-            title="Last successful authenticated control-plane probe: ${this.sampleAgeLabel(this.systemStatus.lastSuccessAtUnixMs)}"
+            title="Last successful management connectivity check: ${this.sampleAgeLabel(this.systemStatus.lastSuccessAtUnixMs)}"
             @click=${() => { this.activeSection = 'Monitoring'; this.monitoringView = 'overview'; }}>
             ● Freshness: ${freshnessLabel(controlFreshness.state)}
           </button>
