@@ -12069,6 +12069,10 @@ export class SmithproxyApp extends LitElement {
           <input id="profile-create-rewrite-sni-to-${entry.id}" .value=${String(field('rewrite_sni_to', ''))}
             maxlength="1024" autocomplete="off" .readOnly=${readOnly} />
         ` : type === 'tls' ? html`
+          <fieldset class="editor-group">
+            <legend>Inspection and TLS sessions</legend>
+            <p>Core interception behavior, forward secrecy, and connection reuse.</p>
+            <div class="form-grid">
           ${booleanSelect('tls-inspect', 'TLS inspection', booleanField('inspect', true))}
           ${booleanSelect('tls-use-pfs', 'Perfect forward secrecy', booleanField('use_pfs', true))}
           ${booleanSelect('tls-left-use-pfs', 'Downstream PFS', booleanField('left_use_pfs', true))}
@@ -12077,6 +12081,12 @@ export class SmithproxyApp extends LitElement {
             booleanField('left_disable_reuse', false))}
           ${booleanSelect('tls-right-disable-reuse', 'Disable upstream session reuse',
             booleanField('right_disable_reuse', false))}
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Certificate validation</legend>
+            <p>Controls which upstream certificates are accepted and how revocation evidence is checked.</p>
+            <div class="form-grid">
           ${booleanSelect('tls-allow-untrusted', 'Allow untrusted issuers',
             booleanField('allow_untrusted_issuers', false))}
           ${booleanSelect('tls-allow-invalid', 'Allow invalid certificates',
@@ -12096,6 +12106,12 @@ export class SmithproxyApp extends LitElement {
             .value=${String(field('ocsp_stapling_mode', 1))} ?disabled=${readOnly}>
             <option value="0">Loose</option><option value="1">Strict</option><option value="2">Required</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Certificate selection and bypass</legend>
+            <p>Selects generated or custom certificates and defines explicit bypass behavior.</p>
+            <div class="form-grid">
           ${booleanSelect('tls-alpn-block', 'Block ALPN negotiation', booleanField('alpn_block', false))}
           ${booleanSelect('tls-sni-cert', 'SNI certificate lookup', booleanField('sni_based_cert', true))}
           ${booleanSelect('tls-ip-cert', 'IP certificate lookup', booleanField('ip_based_cert', true))}
@@ -12111,6 +12127,12 @@ export class SmithproxyApp extends LitElement {
           <input id="profile-create-tls-warning-ports-${entry.id}"
             .value=${operation || prefill ? numberList('redirect_warning_ports').join(', ') : '443'}
             placeholder="443, 44443" .readOnly=${readOnly} />
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Certificate failure handling</legend>
+            <p>Defines replacement and temporary override behavior after validation fails.</p>
+            <div class="form-grid">
           ${booleanSelect('tls-failed-replacement', 'Certificate failure replacement',
             booleanField('failed_certcheck_replacement', true))}
           ${booleanSelect('tls-failed-override', 'Certificate failure override',
@@ -12123,6 +12145,12 @@ export class SmithproxyApp extends LitElement {
             .value=${String(field('failed_certcheck_override_timeout_type', 0))} ?disabled=${readOnly}>
             <option value="0">Absolute expiry</option><option value="1">Idle expiry</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Timing and diagnostics</legend>
+            <p>Handshake deadlines, client-certificate response, alerts, and diagnostic output.</p>
+            <div class="form-grid">
           ${booleanSelect('tls-key-log', 'SSL key logging', booleanField('sslkeylog', false))}
           <label for="profile-create-tls-hello-timeout-${entry.id}">Client hello timeout</label>
           <input id="profile-create-tls-hello-timeout-${entry.id}" type="number" min="1" max="2147483647"
@@ -12147,6 +12175,8 @@ export class SmithproxyApp extends LitElement {
           <textarea id="profile-create-tls-bypass-${entry.id}" maxlength="65536"
             aria-label="New SNI bypass list" autocomplete="off" placeholder='["private.example"] (write-only)'
             .readOnly=${readOnly}></textarea>
+            </div>
+          </fieldset>
         ` : type === 'detection' ? html`
           <label for="profile-create-mode-${entry.id}">Detection mode</label>
           <select id="profile-create-mode-${entry.id}" .value=${String(field('mode', 0))} ?disabled=${readOnly}>

@@ -2856,6 +2856,15 @@ test('creates a complete fail-closed TLS profile with a redacted SNI bypass list
   let editor = page.getByRole('dialog', {name: 'Create profile'});
   await editor.getByLabel('Profile type').selectOption('tls');
   await editor.getByLabel('Name').fill('branch-tls');
+  await expect(editor.getByRole('group', {name: 'Inspection and TLS sessions'})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Certificate validation'}))
+    .toContainText('upstream certificates');
+  await expect(editor.getByRole('group', {name: 'Certificate selection and bypass'}))
+    .toContainText('custom certificates');
+  await expect(editor.getByRole('group', {name: 'Certificate failure handling'}))
+    .toContainText('validation fails');
+  await expect(editor.getByRole('group', {name: 'Timing and diagnostics'}))
+    .toContainText('Handshake deadlines');
   await editor.getByLabel('OCSP certificate checks').selectOption('2');
   await editor.getByLabel('Certificate warning ports').fill('443, 8443');
   await editor.getByLabel('Override timeout', {exact: true}).fill('900');
