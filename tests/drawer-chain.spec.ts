@@ -1702,6 +1702,36 @@ test('navigates object categories as dedicated views', async ({page}) => {
   await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
 });
 
+test('counts pending object creates and deletes in their own navigation categories', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', structuralDraftsReady: true, commitReady: true,
+    initialStructuralOperations: [{
+      op: 'delete', local_id: 'delete-address-count', collection: 'address_objects',
+      entity_id: 'address-0',
+    }, {
+      op: 'create', local_id: 'create-port-count', client_id: 'create-port-count',
+      collection: 'port_objects', position: {last: true},
+      fields: {name: 'pending-port', start: 9443, end: 9443},
+    }, {
+      op: 'create', local_id: 'create-tls-count', client_id: 'create-tls-count',
+      collection: 'tls_profiles', position: {last: true},
+      fields: {name: 'pending-tls', inspect: true},
+    }, {
+      op: 'delete', local_id: 'delete-signature-count', collection: 'starttls_signatures',
+      entity_id: 'signature-0',
+    }],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+
+  const categories = page.getByRole('group', {name: 'Object categories', exact: true});
+  await expect(categories.getByTitle('All objects').locator('.nav-count')).toHaveText('14');
+  await expect(categories.getByTitle('Address objects').locator('.nav-count')).toHaveText('1');
+  await expect(categories.getByTitle('Port objects').locator('.nav-count')).toHaveText('2');
+  await expect(categories.getByTitle('Profiles and routing').locator('.nav-count')).toHaveText('8');
+  await expect(categories.getByTitle('Signatures').locator('.nav-count')).toHaveText('1');
+});
+
 test('collapses all-object sections and reopens filtered results', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');

@@ -14703,11 +14703,33 @@ export class SmithproxyApp extends LitElement {
     const configurationAccessLabel = gateway.label === 'Disabled'
       ? 'Restricted'
       : gateway.label === 'Discovering' ? 'Checking' : gateway.label;
-    const profileCount = this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0;
-    const objectCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
-      (this.snapshot?.protocols.length ?? 0) + profileCount +
-      (this.snapshot?.securityAssets?.certificateAuthorities.length ?? 0) +
-      (this.snapshot?.securityAssets?.signatures.length ?? 0);
+    const draftCollectionDelta = (collections: ReadonlySet<string>) =>
+      (this.workspaceDraft?.structuralOperations ?? []).reduce((delta, operation) => {
+        if (!collections.has(operation.collection)) return delta;
+        if (operation.op === 'create') return delta + 1;
+        if (operation.op === 'delete') return delta - 1;
+        return delta;
+      }, 0);
+    // Navigation counts describe the effective workspace visible to the
+    // administrator, not merely the older running snapshot underneath it.
+    const effectiveCount = (live: number, collections: ReadonlyArray<string>) =>
+      Math.max(0, live + draftCollectionDelta(new Set(collections)));
+    const addressCount = effectiveCount(this.snapshot?.addresses.length ?? 0, ['address_objects']);
+    const portCount = effectiveCount(this.snapshot?.ports.length ?? 0, ['port_objects']);
+    const protocolCount = effectiveCount(this.snapshot?.protocols.length ?? 0, ['proto_objects']);
+    const profileCount = effectiveCount(
+      this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0,
+      ['routing', 'tls_profiles', 'content_profiles', 'ssh_profiles', 'script_profiles',
+        'detection_profiles', 'alg_dns_profiles'],
+    );
+    const trustCount = effectiveCount(
+      this.snapshot?.securityAssets?.certificateAuthorities.length ?? 0, ['tls_ca'],
+    );
+    const signatureCount = effectiveCount(
+      this.snapshot?.securityAssets?.signatures.length ?? 0,
+      ['starttls_signatures', 'detection_signatures'],
+    );
+    const objectCount = addressCount + portCount + protocolCount + profileCount + trustCount + signatureCount;
     const navigationBadge = (item: string): string | undefined => {
       if (item === 'Draft') return this.draftChangeCount.toLocaleString();
       if (item === 'Objects') return this.snapshot ? objectCount.toLocaleString() : undefined;
@@ -14722,15 +14744,12 @@ export class SmithproxyApp extends LitElement {
     const objectNavigationCount = (category: (typeof objectNavigation)[number]): string | undefined => {
       if (!this.snapshot) return undefined;
       if (category.kind === 'all') return objectCount.toLocaleString();
-      if (category.kind === 'address') return this.snapshot.addresses.length.toLocaleString();
-      if (category.kind === 'port') return this.snapshot.ports.length.toLocaleString();
-      if (category.kind === 'protocol') return this.snapshot.protocols.length.toLocaleString();
+      if (category.kind === 'address') return addressCount.toLocaleString();
+      if (category.kind === 'port') return portCount.toLocaleString();
+      if (category.kind === 'protocol') return protocolCount.toLocaleString();
       if (category.kind === 'profile') return profileCount.toLocaleString();
-      const securityAssets = this.snapshot.securityAssets;
-      if (category.securityFilter === 'trust') {
-        return (securityAssets?.certificateAuthorities.length ?? 0).toLocaleString();
-      }
-      return (securityAssets?.signatures.length ?? 0).toLocaleString();
+      if (category.securityFilter === 'trust') return trustCount.toLocaleString();
+      return signatureCount.toLocaleString();
     };
     // Draft is a global configuration workspace, not a child of whichever
     // object type happened to produce its first pending operation.
