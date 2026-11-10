@@ -2224,6 +2224,19 @@ export class SmithproxyApp extends LitElement {
     };
   }
 
+  /** Opens the detailed trust diagnostics behind a configuration-access warning. */
+  private openManagementDiagnostics(): void {
+    this.activeSection = 'System';
+    this.systemView = 'backend';
+    this.systemNavigationExpanded = true;
+    void this.updateComplete.then(() => {
+      const diagnostics = this.renderRoot.querySelector<HTMLDetailsElement>('details.management-diagnostics');
+      if (!diagnostics) return;
+      diagnostics.open = true;
+      diagnostics.scrollIntoView({block: 'start', behavior: 'smooth'});
+    });
+  }
+
   private downloadDiagnostics(): void {
     let gatewayState: GatewayDiagnosticState = 'verified';
     if (this.gatewaySessionError) gatewayState = 'unavailable';
@@ -14514,6 +14527,10 @@ export class SmithproxyApp extends LitElement {
     const attentionJobCount = activeJobCount + failedJobCount;
     const attentionEventCount = this.operationalEvents.events.filter(event =>
       event.severity === 'warning' || event.severity === 'error').length;
+    const gateway = this.gatewayStatus();
+    const configurationAccessLabel = gateway.label === 'Disabled'
+      ? 'Restricted'
+      : gateway.label === 'Discovering' ? 'Checking' : gateway.label;
     const profileCount = this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0;
     const objectCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
       (this.snapshot?.protocols.length ?? 0) + profileCount +
@@ -14916,8 +14933,12 @@ export class SmithproxyApp extends LitElement {
               : this.configReadAvailable ? 'Loading' : 'Unavailable'}
             ${this.configRefreshDeferred ? ' · refresh paused' : ''}
           </span>
-          <span class="status-secondary system-state ${this.gatewayStatus().tone}"
-            title=${this.gatewayStatus().detail}>● Gateway: ${this.gatewayStatus().label}</span>
+          ${gateway.label !== 'Verified' ? html`
+            <button class="status-action status-secondary system-state ${gateway.tone}" type="button"
+              title=${gateway.detail} @click=${() => this.openManagementDiagnostics()}>
+              ● Configuration access: ${configurationAccessLabel}
+            </button>
+          ` : nothing}
           <span class="spacer"></span>
         </footer>
       </div>

@@ -5223,7 +5223,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Alerts: Clear');
-  await expect(statusbar).toContainText('Gateway: Disabled');
+  await expect(statusbar).toContainText('Configuration access: Restricted');
   await expect(statusbar).toContainText('Freshness: Fresh');
   await expect(statusbar).toContainText('Events: Live');
   await expect(statusbar).not.toContainText('API:');
@@ -5361,7 +5361,8 @@ test('reports a verified Saslik gateway handoff without exposing credentials', a
   await page.goto('/');
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
-  await expect(statusbar).toContainText('Gateway: Verified');
+  await expect(statusbar).not.toContainText('Configuration access:');
+  await expect(statusbar).not.toContainText('Gateway:');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Access & integrations'}).click();
@@ -5395,11 +5396,10 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await page.goto('/');
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
-  await expect(statusbar).toContainText('Gateway: Rejected');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Access & integrations'}).click();
-  await page.getByRole('heading', {name: 'Management diagnostics'}).click();
+  await expect(statusbar).toContainText('Configuration access: Rejected');
+  await statusbar.getByRole('button', {name: /Configuration access: Rejected/u}).click();
+  await expect(page.getByRole('button', {name: 'Access & integrations'})).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('details.management-diagnostics')).toHaveAttribute('open', '');
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
   });
@@ -5414,7 +5414,7 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   state.gatewayAuthenticated = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect.poll(() => state.authSessionRequests).toBeGreaterThan(1);
-  await expect(statusbar).toContainText('Gateway: Verified');
+  await expect(statusbar).not.toContainText('Configuration access:');
   await expect(gatewayCard).toContainText('Current requestVerified');
   await expect(gatewayCard).toContainText('Configuration readAvailable');
   await expect.poll(() => protectedRequests.length).toBeGreaterThan(0);
@@ -5430,7 +5430,7 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   state.gatewayAuthenticated = false;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect.poll(() => state.authSessionRequests).toBeGreaterThan(2);
-  await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Configuration access: Rejected');
   await expect(statusbar).toContainText('Events: Unavailable');
   await expect(interfaceCount.getByText('0', {exact: true})).toBeVisible();
   await page.waitForTimeout(200);
@@ -5450,12 +5450,12 @@ test('discards monitoring responses completed after gateway access is revoked', 
   await page.goto('/');
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
-  await expect(statusbar).toContainText('Gateway: Verified');
+  await expect(statusbar).not.toContainText('Configuration access:');
   await expect.poll(() => state.metricsRequests ?? 0).toBeGreaterThan(0);
 
   state.gatewayAuthenticated = false;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Configuration access: Rejected');
   await page.waitForTimeout(1_100);
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
@@ -5486,7 +5486,7 @@ test('ignores late configuration and draft snapshots after gateway revocation', 
   state.gatewayAuthenticated = false;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
-  await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Configuration access: Rejected');
   await page.waitForTimeout(900);
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
@@ -6105,7 +6105,7 @@ test('removes an open live editor when gateway configuration access is revoked',
 
   state.gatewayAuthenticated = false;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Configuration access: Rejected');
   await expect(statusbar).toContainText('Config: Unavailable');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(policy).toHaveCount(0);
@@ -6159,7 +6159,7 @@ test('rejects management capabilities that contradict the gateway session', asyn
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Management: Offline');
-  await expect(statusbar).toContainText('Gateway: Rejected');
+  await expect(statusbar).toContainText('Configuration access: Rejected');
   await expect(statusbar).toContainText('Events: Unavailable');
   expect(protectedRequests).toEqual([]);
 });
