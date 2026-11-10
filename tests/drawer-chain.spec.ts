@@ -5124,6 +5124,7 @@ test('reports a verified Saslik gateway handoff without exposing credentials', a
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Backend'}).click();
+  await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
   });
@@ -5157,6 +5158,7 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Backend'}).click();
+  await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
   });
@@ -5932,6 +5934,7 @@ test('rejects an incoherent privileged capability graph before protected request
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Backend'}).click();
+  await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const capabilityCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capability bootstrap'}),
   });
@@ -6340,6 +6343,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Backend', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Management backend'})).toBeVisible();
+  await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const capabilityCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capability bootstrap'}),
   });

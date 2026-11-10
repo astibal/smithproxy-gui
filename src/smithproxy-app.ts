@@ -772,6 +772,16 @@ export class SmithproxyApp extends LitElement {
     .diagnostic-section > summary p { margin: 3px 0 0; color: var(--app-muted); }
     .diagnostic-content { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--app-border); }
     .diagnostic-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+    .management-diagnostics { grid-column: 1 / -1; }
+    .management-diagnostics > summary { display: flex; gap: 12px; align-items: center; cursor: pointer; list-style: none; }
+    .management-diagnostics > summary::-webkit-details-marker { display: none; }
+    .management-diagnostics > summary::before { content: '›'; color: var(--app-muted); font-size: 20px; line-height: 1; }
+    .management-diagnostics[open] > summary::before { rotate: 90deg; }
+    .management-diagnostics > summary > div { flex: 1; min-width: 0; }
+    .management-diagnostics > summary h3 { margin: 0; }
+    .management-diagnostics > summary p { margin: 3px 0 0; color: var(--app-muted); }
+    .management-diagnostics-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--app-border); }
+    .management-diagnostics-grid .domain-card { margin: 0; background: var(--app-canvas); }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
     .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .metric { min-height: 116px; padding: 15px 16px; }
@@ -1132,6 +1142,7 @@ export class SmithproxyApp extends LitElement {
       .inventory-summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
+      .management-diagnostics-grid { grid-template-columns: 1fr; }
       .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .35fr) minmax(220px, 1fr); max-width: 920px; }
       .identity-row { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
       .status-tertiary { display: none; }
@@ -10674,31 +10685,6 @@ export class SmithproxyApp extends LitElement {
             ${this.renderEventStreamHealth()}
           </div>
           <article class="domain-card" data-system-section="backend">
-            <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
-            <dl>
-              <dt>Status</dt><dd>${displayState(this.systemStatus.core)}</dd>
-              <dt>Uptime</dt><dd>${this.uptimeLabel()}</dd>
-              <dt>API version</dt><dd>${this.apiVersion}</dd>
-              <dt>Base path</dt><dd>${this.runtime?.basePath ?? 'discovering'}</dd>
-            </dl>
-          </article>
-          <article class="domain-card" data-system-section="backend">
-            <header>
-              <div><h3>Capability bootstrap</h3><p>Browser trust and feature boundary</p></div>
-              <span class="runtime-state ${capabilityTone}" title=${this.capabilityError ?? ''}>
-                ● ${displayState(this.capabilityBootstrapState)}
-              </span>
-            </header>
-            <dl>
-              <dt>Last check</dt><dd>${this.timeLabel(this.capabilityCheckedAtUnixMs)}</dd>
-              <dt>Last valid contract</dt><dd>${this.timeLabel(this.capabilityLastSuccessAtUnixMs)}</dd>
-              <dt>API contract</dt><dd>${this.apiVersion}</dd>
-              <dt>Enabled surfaces</dt><dd>${enabledCapabilityCount} / 15</dd>
-              <dt>Refresh cadence</dt><dd>30 seconds · connectivity-triggered</dd>
-            </dl>
-            ${this.capabilityError ? html`<p role="status">${this.capabilityError}</p>` : nothing}
-          </article>
-          <article class="domain-card" data-system-section="backend">
             <header><div><h3>Smithproxy API</h3><p>Server-side authenticated connection</p></div></header>
             <dl>
               <dt>Status</dt><dd>${displayState(this.systemStatus.smithproxy)}</dd>
@@ -10715,34 +10701,68 @@ export class SmithproxyApp extends LitElement {
               <dt>Fallback</dt><dd>Petroleum dark</dd>
             </dl>
           </article>
-          <article class="domain-card" data-system-section="backend">
-            <header><div><h3>Security boundary</h3><p>Browser requests stay on the current origin</p></div></header>
-            <dl>
-              <dt>Browser credentials</dt><dd>Same origin</dd>
-              <dt>Smithproxy key</dt><dd>Never exposed</dd>
-              <dt>External redirects</dt><dd>Rejected</dd>
-            </dl>
-          </article>
-          <article class="domain-card" data-system-section="backend">
-            <header>
-              <div><h3>Saslik gateway</h3><p>Trusted per-instance request handoff</p></div>
-              <span class="runtime-state ${gateway.tone}" title=${gateway.detail}>● ${gateway.label}</span>
-            </header>
-            <dl>
-              <dt>Core mode</dt><dd>${this.gatewaySession?.mode === 'gateway' ? 'Gateway configured' :
-                this.gatewaySession?.mode === 'disabled' ? 'Fail-closed disabled' : 'Unknown'}</dd>
-              <dt>Current request</dt><dd>${this.gatewaySession?.authenticated ? 'Verified' : 'Not verified'}</dd>
-              <dt>Configuration read</dt><dd>${this.configReadAvailable ? 'Available' : 'Blocked'}</dd>
-              <dt>Shared draft</dt><dd>${this.draftAvailable ? 'Available' : 'Blocked'}</dd>
-              <dt>Atomic commit</dt><dd>${this.configWriteAvailable ? 'Available' : 'Blocked'}</dd>
-              <dt>Explicit save</dt><dd>${this.configSaveAvailable ? 'Available' : 'Not advertised'}</dd>
-              <dt>Upstream transaction</dt><dd>${this.transactionCapabilityState === 'not-advertised' ? 'Not advertised' :
-                this.transactionCapabilityState === 'review-required' ? 'Schema review required' :
-                this.transactionCapabilityState === 'ready' ? 'Reviewed contract ready' :
-                displayState(this.transactionCapabilityState)}</dd>
-            </dl>
-            <p role="status">${gateway.detail}</p>
-          </article>
+          <details class="domain-card management-diagnostics" data-system-section="backend">
+            <summary>
+              <div><h3>Management diagnostics</h3><p>GUI core, capability, trust, and gateway internals</p></div>
+              <span class="runtime-state ${this.capabilityBootstrapState === 'ready' && gateway.tone !== 'danger'
+                ? 'success' : 'warning'}">Advanced</span>
+            </summary>
+            <div class="management-diagnostics-grid">
+              <article class="domain-card">
+                <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
+                <dl>
+                  <dt>Status</dt><dd>${displayState(this.systemStatus.core)}</dd>
+                  <dt>Uptime</dt><dd>${this.uptimeLabel()}</dd>
+                  <dt>API version</dt><dd>${this.apiVersion}</dd>
+                  <dt>Base path</dt><dd>${this.runtime?.basePath ?? 'discovering'}</dd>
+                </dl>
+              </article>
+              <article class="domain-card">
+                <header>
+                  <div><h3>Capability bootstrap</h3><p>Browser trust and feature boundary</p></div>
+                  <span class="runtime-state ${capabilityTone}" title=${this.capabilityError ?? ''}>
+                    ● ${displayState(this.capabilityBootstrapState)}
+                  </span>
+                </header>
+                <dl>
+                  <dt>Last check</dt><dd>${this.timeLabel(this.capabilityCheckedAtUnixMs)}</dd>
+                  <dt>Last valid contract</dt><dd>${this.timeLabel(this.capabilityLastSuccessAtUnixMs)}</dd>
+                  <dt>API contract</dt><dd>${this.apiVersion}</dd>
+                  <dt>Enabled surfaces</dt><dd>${enabledCapabilityCount} / 15</dd>
+                  <dt>Refresh cadence</dt><dd>30 seconds · connectivity-triggered</dd>
+                </dl>
+                ${this.capabilityError ? html`<p role="status">${this.capabilityError}</p>` : nothing}
+              </article>
+              <article class="domain-card">
+                <header><div><h3>Security boundary</h3><p>Browser requests stay on the current origin</p></div></header>
+                <dl>
+                  <dt>Browser credentials</dt><dd>Same origin</dd>
+                  <dt>Smithproxy key</dt><dd>Never exposed</dd>
+                  <dt>External redirects</dt><dd>Rejected</dd>
+                </dl>
+              </article>
+              <article class="domain-card">
+                <header>
+                  <div><h3>Saslik gateway</h3><p>Trusted per-instance request handoff</p></div>
+                  <span class="runtime-state ${gateway.tone}" title=${gateway.detail}>● ${gateway.label}</span>
+                </header>
+                <dl>
+                  <dt>Core mode</dt><dd>${this.gatewaySession?.mode === 'gateway' ? 'Gateway configured' :
+                    this.gatewaySession?.mode === 'disabled' ? 'Fail-closed disabled' : 'Unknown'}</dd>
+                  <dt>Current request</dt><dd>${this.gatewaySession?.authenticated ? 'Verified' : 'Not verified'}</dd>
+                  <dt>Configuration read</dt><dd>${this.configReadAvailable ? 'Available' : 'Blocked'}</dd>
+                  <dt>Shared draft</dt><dd>${this.draftAvailable ? 'Available' : 'Blocked'}</dd>
+                  <dt>Atomic commit</dt><dd>${this.configWriteAvailable ? 'Available' : 'Blocked'}</dd>
+                  <dt>Explicit save</dt><dd>${this.configSaveAvailable ? 'Available' : 'Not advertised'}</dd>
+                  <dt>Upstream transaction</dt><dd>${this.transactionCapabilityState === 'not-advertised' ? 'Not advertised' :
+                    this.transactionCapabilityState === 'review-required' ? 'Schema review required' :
+                    this.transactionCapabilityState === 'ready' ? 'Reviewed contract ready' :
+                    displayState(this.transactionCapabilityState)}</dd>
+                </dl>
+                <p role="status">${gateway.detail}</p>
+              </article>
+            </div>
+          </details>
           <article class="domain-card" data-system-section="configuration">
             <header><div><h3>Augment overlays</h3><p>Persistent and effective value provenance</p></div></header>
             <dl>
