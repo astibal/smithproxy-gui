@@ -7375,17 +7375,17 @@ export class SmithproxyApp extends LitElement {
                 changes contain write-only values. Their values remain redacted.
               </p>
             ` : !this.draftPreflightAvailable ? html`
-              <div class="metrics-message">The management service does not advertise draft preflight.</div>
+              <div class="metrics-message">The management service cannot review these changes for commit.</div>
             ` : this.draftPreflightError ? html`
               <div class="metrics-message" role="alert">${this.draftPreflightError}</div>
             ` : html`
-              <div class="metrics-message" role="status">Loading secure preflight…</div>
+              <div class="metrics-message" role="status">Checking whether these changes can be committed safely…</div>
             `}
           </section>
         ` : nothing}
         ${this.draftCommitResult ? html`
           <div class="metrics-message" role="status">
-            Atomic commit completed: ${this.draftCommitResult.committedOperations} operations ·
+            Configuration committed: ${this.draftCommitResult.committedOperations} operations ·
             ${this.draftCommitResult.warningCount} warnings · restart
             ${this.draftCommitResult.restart.replaceAll('-', ' ')}.
             ${this.draftCommitResult.refreshJobId
@@ -7398,7 +7398,7 @@ export class SmithproxyApp extends LitElement {
         ${pendingCount === 0 ? html`
           <div class="empty-state">
             <h2>No pending changes</h2>
-            <p>Edits from policy and referenced-object drawers will appear here before validation and commit.</p>
+            <p>Edits from policies and referenced objects will appear here before commit.</p>
           </div>
         ` : html`
           <div class="table" role="table" aria-label="Pending draft changes">
@@ -7494,7 +7494,7 @@ export class SmithproxyApp extends LitElement {
             })}
           </div>
           <div class="scope-note section">
-            This is a pending management draft only. It has not changed persistent or runtime Smithproxy configuration.
+            This is a pending management draft only. It has not changed the running or saved Smithproxy configuration.
           </div>
         `}
       </div>
@@ -9988,7 +9988,7 @@ export class SmithproxyApp extends LitElement {
     return html`
       <section class="monitor-panel" aria-label="Runtime history">
         <div class="runtime-heading">
-          <div><h3>Five-minute runtime history</h3><p>Sixty bounded aggregate samples at the control-plane interval</p></div>
+          <div><h3>Recent traffic history</h3><p>Last five minutes, sampled every five seconds</p></div>
           <span class="runtime-state ${readySamples === history.length && history.length > 0 ? 'success' : 'warning'}">
             ${readySamples}/${history.length} ready
           </span>
@@ -10320,7 +10320,7 @@ export class SmithproxyApp extends LitElement {
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
           <div><h2>${traffic ? 'Traffic monitoring' : 'Monitoring overview'}</h2><p>${traffic
-            ? 'Live aggregate counters from the Smithproxy runtime'
+            ? 'Current proxy traffic and connection totals'
             : 'Actionable health, freshness, and incident state'}</p></div>
         </div>
         ${traffic ? html`

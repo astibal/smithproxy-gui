@@ -2368,7 +2368,7 @@ test('validates and atomically commits the draft with one administrator action',
 
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
-  await expect(page.getByRole('status').filter({hasText: 'Atomic commit completed'})).toContainText(
+  await expect(page.getByRole('status').filter({hasText: 'Configuration committed'})).toContainText(
     '1 operations · 1 warnings',
   );
   await expect(page.getByRole('status').filter({
