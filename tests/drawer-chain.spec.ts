@@ -1154,7 +1154,9 @@ async function expectNoWcagViolations(page: Page): Promise<void> {
 
 test('offers the slide-out CLI only when a real broker capability is available', async ({page}) => {
   const cliInputs: Array<string | Buffer> = [];
+  let cliConnections = 0;
   await page.routeWebSocket('**/api/v1/console', socket => {
+    cliConnections += 1;
     socket.onMessage(message => cliInputs.push(message));
   });
   await mockSystemApi(page, {smithproxy: 'ready', consoleReady: true}, true, false);
@@ -1173,6 +1175,13 @@ test('offers the slide-out CLI only when a real broker capability is available',
   await expect(consoleRegion.getByLabel('Interactive Smithproxy terminal')).toBeVisible();
   await expect.poll(() => cliInputs.at(-1)?.toString())
     .toBe('configure terminal\redit policy\redit [0]\r');
+
+  // Reopening an object must not reuse a CLI location left behind by the
+  // operator. Each contextual jump starts at a fresh broker root.
+  await editor.getByRole('button', {name: 'Open in CLI'}).click();
+  await expect.poll(() => cliConnections).toBe(2);
+  await expect.poll(() => cliInputs.length).toBe(2);
+  expect(cliInputs.at(-1)?.toString()).toBe('configure terminal\redit policy\redit [0]\r');
 });
 
 test('does not imply CLI access when the broker capability is absent', async ({page}) => {

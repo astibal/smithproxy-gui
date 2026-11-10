@@ -28,8 +28,13 @@ export class SmithproxyConsole extends LitElement {
   openAt(commands: ReadonlyArray<string>): void {
     if (commands.length === 0 || commands.some(command =>
       command.length === 0 || command.length > 256 || !/^[A-Za-z0-9_.\[\] -]+$/u.test(command))) return;
+
+    // A contextual jump must not inherit an arbitrary config-tree location
+    // left behind by earlier interactive work. Smithproxy's `end` command
+    // walks back only one level, so a fresh broker session is the only
+    // deterministic way to start the generated path at the CLI root.
+    this.resetBrokerSession();
     this.pendingInput = `${commands.join('\r')}\r`;
-    this.flushPendingInput();
     if (this.expanded) void this.openConsole();
   }
 
@@ -172,6 +177,15 @@ export class SmithproxyConsole extends LitElement {
     socket?.close(1000, 'Console closed');
     this.connectionState = 'closed';
     this.connectionDetail = detail;
+  }
+
+  /** Close the current CLI context without presenting it as an operator disconnect. */
+  private resetBrokerSession(): void {
+    const socket = this.socket;
+    this.socket = undefined;
+    socket?.close(1000, 'Opening configuration context');
+    this.connectionState = 'connecting';
+    this.connectionDetail = 'Opening configuration context…';
   }
 
   private requestToggle(): void {
