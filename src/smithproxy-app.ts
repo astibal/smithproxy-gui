@@ -1043,6 +1043,7 @@ export class SmithproxyApp extends LitElement {
     .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .3fr) minmax(170px, 1fr) minmax(120px, .3fr) minmax(170px, 1fr); max-width: none; }
     .editor-group { grid-column: 1 / -1; min-width: 0; margin: 2px 0 12px; padding: 18px; border: 1px solid var(--app-border); border-radius: 3px; }
     .editor-group legend { padding: 0 7px; color: var(--app-text); font-weight: 700; }
+    .editor-group > summary { margin: -4px 0 12px; color: var(--app-text); font-weight: 700; }
     .editor-group > p { margin: 0 0 16px; color: var(--app-muted); }
     .editor-group .form-grid { max-width: none; }
     .form-span { grid-column: 1 / -1; margin: var(--sp-space-3, 1rem) 0 0; }
@@ -13075,17 +13076,26 @@ export class SmithproxyApp extends LitElement {
         configuration contains: ${missingGroups.join(', ')}.
       </div>` : nothing}
       <div class="form-grid wide-form-grid">
+        <fieldset class="editor-group">
+          <legend>Traffic admission</legend>
+          <p>Enables accepted proxy entry points and defines fail-closed behavior.</p>
+          <div class="form-grid">
         ${booleanField('accept-tproxy', 'TPROXY listener', settings.acceptTproxy)}
         ${booleanField('accept-redirect', 'REDIRECT listener', settings.acceptRedirect)}
         ${booleanField('accept-socks', 'SOCKS listener', settings.acceptSocks)}
         ${booleanField('accept-http-connect', 'HTTP CONNECT listener', settings.acceptHttpConnect)}
         ${booleanField('accept-api', 'Smithproxy API listener', settings.acceptApi)}
-        <h3 class="form-span">Explicit proxy security</h3>
         ${booleanField('local-destination-protection', 'Protect local destinations', settings.extendedLocalDestinationProtection)}
         ${booleanField('socks-proxy-authorization', 'Require SOCKS authentication', settings.auxiliary.socksProxyAuthorization)}
         ${booleanField('http-connect-proxy-authorization', 'Require HTTP CONNECT authentication', settings.auxiliary.httpConnectProxyAuthorization)}
         ${booleanField('policy-fail-open', 'Policy failure', settings.policyFailOpen)}
         ${booleanField('access-fail-open', 'Access request failure', settings.accessRequestFailOpen)}
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Worker capacity</legend>
+          <p>Controls listener concurrency; zero keeps Smithproxy automatic sizing.</p>
+          <div class="form-grid">
         ${workerField('plaintext', 'Plaintext workers', settings.workers.plaintext)}
         ${workerField('tls', 'TLS workers', settings.workers.tls)}
         ${workerField('udp', 'UDP workers', settings.workers.udp)}
@@ -13097,7 +13107,12 @@ export class SmithproxyApp extends LitElement {
           Zero lets Smithproxy choose its default worker count. QUIC alone uses -1 to disable its listener and
           accepts at most one event loop. Smithproxy validation applies the target host CPU ceiling to other pools.
         </span>
-        <h3 class="form-span">Listener endpoints</h3>
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Listener endpoints</legend>
+          <p>Assigns the local ports used by enabled proxy entry points.</p>
+          <div class="form-grid">
         ${numericField('port-plaintext', 'Plaintext port', settings.ports.plaintext, 1024, 65535)}
         ${numericField('port-tls', 'TLS port', settings.ports.tls, 1024, 65535)}
         ${numericField('port-udp', 'UDP port', settings.ports.udp, 1024, 65535)}
@@ -13112,7 +13127,12 @@ export class SmithproxyApp extends LitElement {
         <span class="form-span privacy-note">
           Status-cache TTLs are reported by Smithproxy but its configuration schema marks them read-only.
         </span>
-        <h3 class="form-span">Logging and payloads</h3>
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Logging and payloads</legend>
+          <p>Controls operational logs, syslog delivery, and default payload retention.</p>
+          <div class="form-grid">
         ${booleanField('logging-default-payload', 'Default payload capture', settings.logging.defaultWritePayload)}
         ${numericField('logging-pcap-quota', 'Single PCAP quota', settings.logging.pcapSingleQuota, 0, Number.MAX_SAFE_INTEGER)}
         ${numericField('logging-level', 'Log level', settings.logging.level, 0, 8)}
@@ -13130,7 +13150,12 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('log-file', 'Log file', settings.logging.fileConfigured)}
         ${writeOnlyField('tls-key-log-file', 'TLS key log file', settings.logging.sslKeyFileConfigured)}
         ${writeOnlyField('syslog-server', 'Syslog server', settings.logging.syslogServerConfigured)}
-        <h3 class="form-span">Auxiliary services</h3>
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Auxiliary services</legend>
+          <p>Configures CLI, SOCKS behavior, certificate resources, and supporting assets.</p>
+          <div class="form-grid">
         ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 1024, 65535)}
         ${booleanField('aux-thread-pool-log', 'Thread-pool task logging', settings.auxiliary.threadPoolLogging)}
         ${booleanField('aux-socks-async-dns', 'SOCKS asynchronous DNS', settings.auxiliary.socksAsyncDns)}
@@ -13151,7 +13176,16 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('payload-prefix', 'Payload filename prefix', settings.auxiliary.payloadFilePrefixConfigured)}
         ${writeOnlyField('payload-suffix', 'Payload filename suffix', settings.auxiliary.payloadFileSuffixConfigured)}
         ${writeOnlyField('web-rating-key', 'Web rating key', settings.auxiliary.webRatingKeyConfigured, true)}
-        <h3 class="form-span">Performance tuning</h3>
+        <label for="settings-nameservers">Nameservers</label>
+        <input id="settings-nameservers"
+          .value=${strings('settings.nameservers', settings.nameservers).join(', ')}
+          placeholder="192.0.2.53, resolver.example" .readOnly=${locked('settings.nameservers')} />
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Performance tuning</legend>
+          <p>Advanced buffer, timeout, cache, and transport behavior.</p>
+          <div class="form-grid">
         ${tuningField('host-buffer-min', 'Initial host buffer (bytes)', settings.auxiliary.tuning.hostBufferMin, 1500, 10000000)}
         ${tuningField('host-buffer-max-multiplier', 'Maximum buffer multiplier', settings.auxiliary.tuning.hostBufferMaxMultiplier, 1, 1024000000)}
         ${tuningField('host-write-full', 'Queued write threshold (bytes)', settings.auxiliary.tuning.hostWriteFull, 1024, 1024000000)}
@@ -13163,7 +13197,12 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('tls-autodetect', 'TLS autodetection', settings.tlsAutodetect)}
         ${booleanField('tls-autodetect-harder', 'Aggressive TLS autodetection', settings.tlsAutodetectHarder)}
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}
-        <h3 class="form-span">Smithproxy HTTP API</h3>
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Management API</legend>
+          <p>Controls authenticated API access, token lifetime, and allowed management clients.</p>
+          <div class="form-grid">
         ${numericField('api-key-timeout', 'API token TTL (seconds)', settings.httpApi.keyTimeout, 1, 4294967295)}
         <label for="settings-api-port">API port</label>
         <input id="settings-api-port" type="number" min="1024" max="65535"
@@ -13175,21 +13214,6 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('api-header', 'API header access', settings.httpApi.allowApiHeader)}
         ${writeOnlyField('api-bind-address', 'API bind address', settings.httpApi.bindAddressConfigured)}
         ${writeOnlyField('api-bind-interface', 'API bind interface', settings.httpApi.bindInterfaceConfigured)}
-        <h3 class="form-span">Webhook</h3>
-        ${booleanField('webhook-enabled', 'Webhook', settings.webhook.enabled)}
-        ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
-        ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
-        ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
-        ${numericField('webhook-sift-payload-limit', 'Sift payload limit per direction', settings.webhook.siftPayloadLimitPerDirection, 1, 1073741824)}
-        ${numericField('webhook-ping-interval', 'Webhook ping interval (seconds)', settings.webhook.pingInterval, 0, 2147483647)}
-        ${numericField('webhook-neighbor-update-interval', 'Neighbor update interval (seconds)', settings.webhook.neighborUpdateInterval, 0, 2147483647)}
-        ${numericField('webhook-neighbor-tag-refresh-age', 'Neighbor tag refresh age (seconds)', settings.webhook.neighborTagRefreshAge, 0, 2147483647)}
-        ${booleanField('webhook-task-debug', 'Webhook task diagnostics', settings.webhook.taskDebug)}
-        ${booleanField('webhook-task-debug-dump', 'Webhook task dump diagnostics', settings.webhook.taskDebugDump)}
-        <label for="settings-nameservers">Nameservers</label>
-        <input id="settings-nameservers"
-          .value=${strings('settings.nameservers', settings.nameservers).join(', ')}
-          placeholder="192.0.2.53, resolver.example" .readOnly=${locked('settings.nameservers')} />
         <label for="settings-api-keys-mode">HTTP API keys</label>
         <div class="write-only-control">
           <select id="settings-api-keys-mode" ?disabled=${locked('settings.http_api.keys')}>
@@ -13206,14 +13230,35 @@ export class SmithproxyApp extends LitElement {
           .value=${strings('settings.http_api.allowed_ips', settings.httpApi.allowedIps).join(', ')}
           placeholder="127.0.0.1, 192.0.2.0/24"
           .readOnly=${locked('settings.http_api.allowed_ips')} />
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Webhook integration</legend>
+          <p>Connects Smithproxy events and Sift processing to an external service.</p>
+          <div class="form-grid">
+        ${booleanField('webhook-enabled', 'Webhook', settings.webhook.enabled)}
+        ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
+        ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
+        ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
+        ${numericField('webhook-sift-payload-limit', 'Sift payload limit per direction', settings.webhook.siftPayloadLimitPerDirection, 1, 1073741824)}
+        ${numericField('webhook-ping-interval', 'Webhook ping interval (seconds)', settings.webhook.pingInterval, 0, 2147483647)}
+        ${numericField('webhook-neighbor-update-interval', 'Neighbor update interval (seconds)', settings.webhook.neighborUpdateInterval, 0, 2147483647)}
+        ${numericField('webhook-neighbor-tag-refresh-age', 'Neighbor tag refresh age (seconds)', settings.webhook.neighborTagRefreshAge, 0, 2147483647)}
+        ${booleanField('webhook-task-debug', 'Webhook task diagnostics', settings.webhook.taskDebug)}
+        ${booleanField('webhook-task-debug-dump', 'Webhook task dump diagnostics', settings.webhook.taskDebugDump)}
         ${writeOnlyField('webhook-url', 'Webhook URL', settings.webhook.urlConfigured)}
         ${writeOnlyField('webhook-sift-url', 'Sift URL', settings.webhook.siftUrlConfigured)}
         ${writeOnlyField('webhook-sift-tenant', 'Sift tenant ID', settings.webhook.siftTenantConfigured)}
         ${writeOnlyField('webhook-sift-instance', 'Sift instance ID', settings.webhook.siftInstanceConfigured)}
         ${writeOnlyField('webhook-host-id', 'Webhook host ID', settings.webhook.hostIdConfigured)}
         ${writeOnlyField('webhook-bind-interface', 'Webhook bind interface', settings.webhook.bindInterfaceConfigured)}
+          </div>
+        </fieldset>
         ${this.snapshot?.debug ? html`
-          <h3 class="form-span">Debug logging</h3>
+          <details class="editor-group">
+            <summary>Developer diagnostics</summary>
+            <p>Verbose logging and per-module overrides intended for troubleshooting.</p>
+            <div class="form-grid">
           <label for="debug-data-crc">Payload CRC logging</label>
           ${this.renderBooleanSelect(
             'debug-data-crc', scalar('debug.log_data_crc', this.snapshot.debug.logDataCrc),
@@ -13260,6 +13305,8 @@ export class SmithproxyApp extends LitElement {
           ${this.snapshot.debug.moduleOverrideCount === 0
             ? html`<span class="form-span">No per-module overrides are configured.</span>`
             : nothing}
+            </div>
+          </details>
         ` : nothing}
       </div>
     `;

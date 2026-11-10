@@ -6654,6 +6654,16 @@ test('saves typed system and capture settings without exposing redacted values',
   });
   await trafficCard.getByRole('button', {name: 'Edit'}).click();
   const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
+  for (const group of [
+    'Traffic admission', 'Worker capacity', 'Listener endpoints', 'Logging and payloads',
+    'Auxiliary services', 'Performance tuning', 'Management API', 'Webhook integration',
+  ]) {
+    await expect(settingsEditor.getByRole('group', {name: group})).toBeVisible();
+  }
+  const diagnostics = settingsEditor.locator('details.editor-group').filter({hasText: 'Developer diagnostics'});
+  await expect(diagnostics).not.toHaveAttribute('open', '');
+  await diagnostics.locator('summary').click();
+  await expect(settingsEditor.getByLabel('Socket event logging')).toBeVisible();
   await expect(settingsEditor.getByLabel('Plaintext port')).toHaveAttribute('min', '1024');
   await expect(settingsEditor.getByLabel('QUIC port')).toHaveAttribute('min', '1');
   await expect(settingsEditor.getByLabel('Log level', {exact: true})).toHaveAttribute('max', '8');
