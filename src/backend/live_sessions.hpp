@@ -9,6 +9,10 @@
 
 namespace smithproxy::gui {
 
+// Recently closed sessions stay visible long enough for an administrator to
+// notice short connections between two GUI refreshes.
+inline constexpr std::chrono::seconds live_session_closed_retention{300};
+
 struct SessionActivityBucket {
     std::string protocol;
     std::uint64_t sessions{};

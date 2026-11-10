@@ -202,6 +202,7 @@ export interface LiveSessionSnapshot {
   detail: string;
   checkedAtUnixMs: number | null;
   lastSuccessAtUnixMs: number | null;
+  closedRetentionSeconds: number;
   entries: ReadonlyArray<LiveSessionEntry>;
 }
 
@@ -734,6 +735,8 @@ function parseLiveSessions(value: unknown): LiveSessionSnapshot {
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
       !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
+      !isNonNegativeInteger(value.closed_retention_seconds) || value.closed_retention_seconds === 0 ||
+      value.closed_retention_seconds > 86_400 ||
       !Array.isArray(value.entries) || value.entries.length > 512) {
     throw new Error('Invalid live session response.');
   }
@@ -796,6 +799,7 @@ function parseLiveSessions(value: unknown): LiveSessionSnapshot {
     detail: value.detail,
     checkedAtUnixMs: value.checked_at_unix_ms,
     lastSuccessAtUnixMs: value.last_success_at_unix_ms,
+    closedRetentionSeconds: value.closed_retention_seconds,
     entries,
   };
 }

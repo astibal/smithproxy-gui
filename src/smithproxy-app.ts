@@ -330,6 +330,7 @@ const initialLiveSessions: LiveSessionSnapshot = {
   detail: 'Waiting for the first live session sample.',
   checkedAtUnixMs: null,
   lastSuccessAtUnixMs: null,
+  closedRetentionSeconds: 0,
   entries: [],
 };
 
@@ -10635,7 +10636,7 @@ export class SmithproxyApp extends LitElement {
           <article class="metric">
             <span class="metric-label">Recently closed</span>
             <strong class="metric-value">${this.liveSessions.entries.filter(entry => !entry.active).length.toLocaleString()}</strong>
-            <span class="metric-note">Retained for five minutes</span>
+            <span class="metric-note">Retained for ${this.durationLabel(this.liveSessions.closedRetentionSeconds * 1000)}</span>
           </article>
         </div>
         ${this.renderCollectorNotice(presentation, activity.lastSuccessAtUnixMs)}

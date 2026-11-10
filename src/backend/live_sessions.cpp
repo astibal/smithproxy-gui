@@ -15,7 +15,6 @@ constexpr std::size_t maximum_upstream_sessions = 2048U;
 constexpr std::size_t maximum_protocols = 32U;
 constexpr std::size_t maximum_classifications = 16U;
 constexpr std::size_t maximum_retained_sessions = 512U;
-constexpr auto closed_session_retention = std::chrono::minutes(5);
 
 std::optional<std::string> bounded_text(
     const nlohmann::json& object, const char* name, const std::size_t maximum_length,
@@ -264,7 +263,7 @@ void reconcile_live_sessions(
         retained.active = false;
         if (!retained.closed_at) retained.closed_at = observed_at;
         if (*retained.closed_at <= observed_at &&
-            observed_at - *retained.closed_at <= closed_session_retention) {
+            observed_at - *retained.closed_at <= live_session_closed_retention) {
             current.entries.push_back(std::move(retained));
         }
     }

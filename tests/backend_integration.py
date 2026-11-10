@@ -775,6 +775,7 @@ def main() -> int:
             sessions = json.loads(body)
             assert status == 200
             assert sessions["state"] == "ready"
+            assert sessions["closed_retention_seconds"] == 300
             assert sessions["entries"][0]["sift_classifications"] == []
             assert sessions["entries"][1]["sift_classifications"] == ["HTTPS"]
             assert sessions["entries"][1]["lored_classifications"] == ["Web browsing"]

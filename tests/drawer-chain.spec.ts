@@ -435,6 +435,7 @@ async function mockSystemApi(
       detail: state.smithproxy === 'ready' ? 'Current live sessions' : 'Live sessions are stale',
       checked_at_unix_ms: sampledAt,
       last_success_at_unix_ms: collectorLastSuccess(sampledAt),
+      closed_retention_seconds: 300,
       entries: [
         {id: 'session-1', source_address: '192.0.2.10', source_port: '51342',
          destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
@@ -5292,6 +5293,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   const activity = page.getByRole('region', {name: 'Session activity'});
   await expect(activity.getByRole('heading', {name: 'Session activity'})).toBeVisible();
   await expect(activity.getByText('3.84 kB/s')).toBeVisible();
+  await expect(activity.getByText('Retained for 5m 0s')).toBeVisible();
   const sessions = activity.getByRole('table', {name: 'Observed proxy sessions'});
   await expect(sessions.getByText('192.0.2.10:51342').first()).toBeVisible();
   await expect(sessions.getByText('198.51.100.20:443')).toBeVisible();

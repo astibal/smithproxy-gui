@@ -409,7 +409,9 @@ GET /api/v1/events
 
 `/sessions/activity` remains the low-cost aggregate surface. The authenticated
 `/sessions` surface exposes a bounded administrator view of active connections
-and connections closed during the preceding five minutes. GUI core accepts only
+and recently closed connections. Its `closed_retention_seconds` field declares
+the retention window used by GUI core, so the browser does not duplicate a
+backend constant. GUI core accepts only
 bounded endpoint, protocol, policy, throughput, and byte-counter fields from
 Smithproxy; worker names, raw diagnostic payloads, TLS internals, and upstream
 authentication material never cross the browser boundary. At most 512 active

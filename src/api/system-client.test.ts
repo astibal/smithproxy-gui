@@ -448,6 +448,7 @@ describe('SystemClient', () => {
   it('loads bounded active and recently closed session rows', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
+      closed_retention_seconds: 300,
       entries: [
         {id: 'session-1', source_address: '192.0.2.10', source_port: '51342',
          destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
@@ -463,6 +464,7 @@ describe('SystemClient', () => {
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
 
     await expect(client.sessions()).resolves.toMatchObject({
+      closedRetentionSeconds: 300,
       entries: [
         {id: 'session-1', sourceAddress: '192.0.2.10', destinationPort: '443', active: true,
          siftClassifications: ['HTTPS'], loredClassifications: ['Web browsing'], loredStatus: 'classified'},
@@ -477,6 +479,7 @@ describe('SystemClient', () => {
   it('rejects incoherent live session lifecycle metadata', async () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
       state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
+      closed_retention_seconds: 300,
       entries: [{id: 'session-1', source_address: '192.0.2.10', source_port: '51342',
         destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
         speed_up: 0, speed_down: 0, bytes_up: 0, bytes_down: 0, active: true,
@@ -488,6 +491,7 @@ describe('SystemClient', () => {
   it('rejects unbounded live session classifications', async () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
       state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
+      closed_retention_seconds: 300,
       entries: [{id: 'session-1', source_address: '192.0.2.10', source_port: '51342',
         destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
         sift_classifications: Array.from({length: 17}, (_, index) => `class-${index}`),

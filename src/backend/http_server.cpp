@@ -2523,6 +2523,8 @@ private:
                     ",\"detail\":" + json_string(snapshot.detail) +
                     ",\"checked_at_unix_ms\":" + timestamp_json(snapshot.checked_at) +
                     ",\"last_success_at_unix_ms\":" + timestamp_json(snapshot.last_success_at) +
+                    ",\"closed_retention_seconds\":" +
+                        std::to_string(live_session_closed_retention.count()) +
                     ",\"entries\":" + entries + "}"};
     }
 
