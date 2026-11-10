@@ -1352,6 +1352,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await editor.getByRole('button', {name: 'main', exact: true}).click();
   let routingEditor = page.getByRole('dialog', {name: 'Edit main'});
+  await expect(routingEditor.getByRole('group', {name: 'Upstream destinations'})).toBeVisible();
+  await expect(routingEditor.getByRole('group', {name: 'SNI rewriting'})).toBeVisible();
   await routingEditor.getByLabel('Destination addresses').fill('internet, office');
   await routingEditor.getByLabel('Load balancing').selectOption('sticky-l4');
   await routingEditor.getByLabel('Rewrite SNI match').fill('old.example');
@@ -2689,6 +2691,8 @@ test('creates complete typed routing detection and DNS profiles', async ({page})
   await page.getByRole('button', {name: 'New profile'}).click();
   let editor = page.getByRole('dialog', {name: 'Create profile'});
   await editor.getByLabel('Name').fill('branch-route');
+  await expect(editor.getByRole('group', {name: 'Upstream destinations'})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'SNI rewriting'})).toBeVisible();
   await editor.getByLabel('Destination addresses').fill('backend-a, backend-b');
   await editor.getByLabel('Destination ports').fill('https, 8443');
   await editor.getByLabel('Load balancing').selectOption('sticky-l4');

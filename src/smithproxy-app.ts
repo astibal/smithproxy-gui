@@ -12048,6 +12048,10 @@ export class SmithproxyApp extends LitElement {
         <input id="profile-create-name-${entry.id}" .value=${String(field('name', ''))}
           maxlength="128" required autocomplete="off" .readOnly=${readOnly} />
         ${type === 'routing' ? html`
+          <fieldset class="editor-group">
+            <legend>Upstream destinations</legend>
+            <p>Selects destination objects and distributes matching traffic between them.</p>
+            <div class="form-grid">
           <label for="profile-create-addresses-${entry.id}">Destination addresses</label>
           <input id="profile-create-addresses-${entry.id}"
             .value=${stringList('dnat_address').join(', ')}
@@ -12062,12 +12066,20 @@ export class SmithproxyApp extends LitElement {
             <option value="round-robin">Round robin</option><option value="sticky-l3">Sticky layer 3</option>
             <option value="sticky-l4">Sticky layer 4</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>SNI rewriting</legend>
+            <p>Optionally replaces the TLS server name before connecting to the selected destination.</p>
+            <div class="form-grid">
           <label for="profile-create-rewrite-sni-${entry.id}">Rewrite SNI match</label>
           <input id="profile-create-rewrite-sni-${entry.id}" .value=${String(field('rewrite_sni', ''))}
             maxlength="1024" autocomplete="off" .readOnly=${readOnly} />
           <label for="profile-create-rewrite-sni-to-${entry.id}">Rewrite SNI target</label>
           <input id="profile-create-rewrite-sni-to-${entry.id}" .value=${String(field('rewrite_sni_to', ''))}
             maxlength="1024" autocomplete="off" .readOnly=${readOnly} />
+            </div>
+          </fieldset>
         ` : type === 'tls' ? html`
           <fieldset class="editor-group">
             <legend>Inspection and TLS sessions</legend>
@@ -12543,12 +12555,16 @@ export class SmithproxyApp extends LitElement {
     const persistentScriptType = persistent('type', configuredScriptType);
     const scriptRuntime = persistentScriptType === '0' ? 'python' : persistentScriptType === '1' ? 'go' : 'unknown';
     return html`
-      <div class=${tls || content || ssh ? 'form-grid wide-form-grid' : 'form-grid'}>
+      <div class=${routing || tls || content || ssh ? 'form-grid wide-form-grid' : 'form-grid'}>
         <label for=${mapped ? `profile-name-${entry.id}` : nothing}>Name</label>
         ${mapped ? html`<input id="profile-name-${entry.id}"
           .value=${persistent('name', profile.name)} .readOnly=${fieldReadOnly('name')} />` : html`<span>${profile.name}</span>`}
         <label>Profile type</label><span class="action">${profile.type}</span>
         ${routing ? html`
+          <fieldset class="editor-group">
+            <legend>Upstream destinations</legend>
+            <p>Selects destination objects and distributes matching traffic between them.</p>
+            <div class="form-grid">
           <label for="routing-addresses-${entry.id}">Destination addresses</label>
           <input id="routing-addresses-${entry.id}"
             .value=${routingAddressValues.join(', ')} data-reference-preview="true"
@@ -12573,6 +12589,12 @@ export class SmithproxyApp extends LitElement {
             <option value="sticky-l3">Sticky L3</option>
             <option value="sticky-l4">Sticky L4</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>SNI rewriting</legend>
+            <p>Optionally replaces the TLS server name before connecting to the selected destination.</p>
+            <div class="form-grid">
           <label for="routing-rewrite-sni-${entry.id}">Rewrite SNI match</label>
           <input id="routing-rewrite-sni-${entry.id}"
             .value=${persistent('rewrite_sni', routing.rewriteSni)}
@@ -12581,6 +12603,8 @@ export class SmithproxyApp extends LitElement {
           <input id="routing-rewrite-sni-to-${entry.id}"
             .value=${persistent('rewrite_sni_to', routing.rewriteSniTo)}
             .readOnly=${fieldReadOnly('rewrite_sni_to')} placeholder="Disabled" />
+            </div>
+          </fieldset>
         ` : tls ? html`
           <fieldset class="editor-group">
             <legend>Inspection and TLS sessions</legend>
