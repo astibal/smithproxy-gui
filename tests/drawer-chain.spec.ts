@@ -5036,7 +5036,7 @@ test('binds system, capture, and nested security editors to persistent values', 
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
-  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
   const settings = page.getByRole('dialog', {name: 'Edit System settings'});
   await expect(settings.getByLabel('TPROXY listener')).toHaveValue('false');
   await expect(settings.getByLabel('TPROXY listener')).toBeDisabled();
@@ -6854,7 +6854,7 @@ test('keeps absent nested settings groups visible but read-only', async ({page})
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
-  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
   const editor = page.getByRole('dialog', {name: 'Edit System settings'});
 
   await expect(editor.getByText(/Defaults are shown for absent settings groups/i)).toContainText(
@@ -6885,7 +6885,7 @@ test('preserves legacy worker values while enforcing pinned worker semantics', a
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
-  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
   let editor = page.getByRole('dialog', {name: 'Edit System settings'});
 
   await expect(editor.getByLabel('Plaintext workers')).toHaveAttribute('min', '0');
@@ -6902,7 +6902,7 @@ test('preserves legacy worker values while enforcing pinned worker semantics', a
   ]]);
 
   await expect(editor).not.toBeVisible();
-  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
   editor = page.getByRole('dialog', {name: 'Edit System settings'});
 
   await editor.getByLabel('Plaintext workers').fill('-1');
@@ -6937,7 +6937,7 @@ test('saves typed system and capture settings without exposing redacted values',
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
-  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
   const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
   for (const group of [
     'Traffic admission', 'Worker capacity', 'Listener endpoints', 'Logging and payloads',
