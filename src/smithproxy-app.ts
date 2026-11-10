@@ -14216,6 +14216,8 @@ export class SmithproxyApp extends LitElement {
               @click=${() => this.enableDrawerEditing(entry)}>Edit</button>
           ` : nothing}
           ${editing && !closePending ? html`
+            <button class="secondary" type="button"
+              @click=${() => this.requestCloseDrawer(index)}>Cancel</button>
             <button class="primary drawer-save" type="button"
               ?disabled=${readOnly || this.draftSaving || this.draftCommitting}
               @click=${() => this.saveToDraftAndClose(entry, index)}>
@@ -14322,9 +14324,8 @@ export class SmithproxyApp extends LitElement {
                 Duplicate signature
               </button>
             ` : nothing}
-            <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>
-              ${editing ? 'Cancel' : 'Close'}
-            </button>
+            ${!editing ? html`<button class="secondary" type="button"
+              @click=${() => this.requestCloseDrawer(index)}>Close</button>` : nothing}
           `}
         </footer>
       </section>

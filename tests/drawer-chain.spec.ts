@@ -1205,7 +1205,9 @@ test('requires an explicit edit decision before live configuration fields can ch
   await expect(name).not.toBeFocused();
   await expect(editor.getByRole('button', {name: 'Close Policy 1'})).toBeFocused();
   await expect(editor.locator('.drawer-head').getByRole('button', {name: 'Save to draft'})).toBeVisible();
+  await expect(editor.locator('.drawer-head').getByRole('button', {name: 'Cancel'})).toBeVisible();
   await expect(editor.locator('.drawer-foot').getByRole('button', {name: 'Save to draft'})).toHaveCount(0);
+  await expect(editor.locator('.drawer-foot').getByRole('button', {name: 'Cancel'})).toHaveCount(0);
   await expectNoWcagViolations(page);
 });
 
