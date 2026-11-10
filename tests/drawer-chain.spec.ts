@@ -1730,6 +1730,18 @@ test('counts pending object creates and deletes in their own navigation categori
   await expect(categories.getByTitle('Port objects').locator('.nav-count')).toHaveText('2');
   await expect(categories.getByTitle('Profiles and routing').locator('.nav-count')).toHaveText('8');
   await expect(categories.getByTitle('Signatures').locator('.nav-count')).toHaveText('1');
+
+  await categories.getByRole('button', {name: 'Profiles and routing'}).click();
+  const profiles = page.getByRole('group', {name: 'Profile categories'});
+  await expect(profiles.getByTitle('All profiles').locator('.nav-count')).toHaveText('8');
+  await expect(profiles.getByTitle('TLS').locator('.nav-count')).toHaveText('2');
+  await expect(profiles.getByTitle('Content').locator('.nav-count')).toHaveText('1');
+
+  await categories.getByRole('button', {name: 'Signatures'}).click();
+  const signatures = page.getByRole('group', {name: 'Signature categories'});
+  await expect(signatures.getByTitle('All signatures').locator('.nav-count')).toHaveText('1');
+  await expect(signatures.getByTitle('STARTTLS signatures').locator('.nav-count')).toHaveText('0');
+  await expect(signatures.getByTitle('Detection signatures').locator('.nav-count')).toHaveText('1');
 });
 
 test('collapses all-object sections and reopens filtered results', async ({page}) => {

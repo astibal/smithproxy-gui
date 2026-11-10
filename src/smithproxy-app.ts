@@ -14751,6 +14751,16 @@ export class SmithproxyApp extends LitElement {
       if (category.securityFilter === 'trust') return trustCount.toLocaleString();
       return signatureCount.toLocaleString();
     };
+    const profileNavigationCount = (kind: ProfileObjectFilter): string => {
+      if (kind === 'all') return profileCount.toLocaleString();
+      const live = this.snapshot?.profiles.filter(profile => profile.type === kind).length ?? 0;
+      return effectiveCount(live, [profileCreateCollections[kind]]).toLocaleString();
+    };
+    const signatureNavigationCount = (kind: SecurityObjectFilter): string => {
+      if (kind === 'signatures') return signatureCount.toLocaleString();
+      const live = this.snapshot?.securityAssets?.signatures.filter(signature => signature.kind === kind).length ?? 0;
+      return effectiveCount(live, [`${kind}_signatures`]).toLocaleString();
+    };
     // Draft is a global configuration workspace, not a child of whichever
     // object type happened to produce its first pending operation.
     const visibleNavigation = this.draftChangeCount > 0
@@ -14894,7 +14904,9 @@ export class SmithproxyApp extends LitElement {
                               this.selectObjectView('profile');
                               this.profileObjectFilter = profile.kind;
                             }}><span class="nav-icon" aria-hidden="true">·</span>
-                            <span class="nav-label">${profile.label}</span></button>`)}
+                            <span class="nav-label">${profile.label}</span>
+                            <span class="nav-count" aria-hidden="true">${profileNavigationCount(profile.kind)}</span>
+                          </button>`)}
                         </div>
                       ` : nothing}
                       ${category.kind === 'security' && category.securityFilter === 'signatures' &&
@@ -14907,7 +14919,9 @@ export class SmithproxyApp extends LitElement {
                             @click=${() => {
                               this.selectObjectView('security', security.kind);
                             }}><span class="nav-icon" aria-hidden="true">·</span>
-                            <span class="nav-label">${security.label}</span></button>`)}
+                            <span class="nav-label">${security.label}</span>
+                            <span class="nav-count" aria-hidden="true">${signatureNavigationCount(security.kind)}</span>
+                          </button>`)}
                         </div>
                       ` : nothing}
                     `)}
