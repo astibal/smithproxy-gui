@@ -5474,6 +5474,14 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
 
+  expect(await page.locator('.content.dashboard > section').evaluateAll(sections =>
+    sections.map(section => section.getAttribute('aria-label')),
+  )).toEqual([
+    'Runtime metrics summary',
+    'Active operational alerts',
+    'Operational health matrix',
+    'Configuration workspace',
+  ]);
   const inventory = page.getByRole('region', {name: 'Configuration workspace'});
   await expect(inventory).toContainText('Running config saved · No draft changes');
   const shortcuts = inventory.getByRole('group', {name: 'Configuration shortcuts'});

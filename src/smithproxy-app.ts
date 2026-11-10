@@ -10176,9 +10176,9 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="content dashboard" tabindex="0">
         ${this.renderRuntimeSummary()}
-        ${this.renderConfigurationInventory()}
         ${this.renderActiveAlerts()}
         ${this.renderOperationalHealth()}
+        ${this.renderConfigurationInventory()}
       </div>
     `;
   }
