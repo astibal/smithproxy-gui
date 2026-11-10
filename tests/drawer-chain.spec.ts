@@ -4959,6 +4959,32 @@ test('restores drawer routes and manages focus across the chain', async ({page})
   await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
 });
 
+test('preserves the drawer position when protected configuration enters edit mode', async ({page}) => {
+  await page.setViewportSize({width: 1100, height: 620});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true, false);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
+  await page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /^inspect tls /u}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit inspect'});
+  const body = editor.locator('.drawer-body');
+  const targetScroll = await body.evaluate(element => {
+    const maximum = element.scrollHeight - element.clientHeight;
+    element.scrollTop = Math.min(320, maximum);
+    return element.scrollTop;
+  });
+  expect(targetScroll).toBeGreaterThan(100);
+
+  await editor.getByRole('button', {name: 'Edit'}).click();
+  await expect(editor.getByRole('button', {name: 'Close inspect'})).toBeFocused();
+  await expect.poll(() => body.evaluate(element => element.scrollTop))
+    .toBeGreaterThanOrEqual(targetScroll - 1);
+  await expect.poll(() => body.evaluate(element => element.scrollTop))
+    .toBeLessThanOrEqual(targetScroll + 1);
+});
+
 test('requires an explicit decision before closing unsaved drawer changes', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
