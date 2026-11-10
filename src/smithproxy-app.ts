@@ -10908,14 +10908,10 @@ export class SmithproxyApp extends LitElement {
             </dl>
           </article>
           <article class="domain-card" data-system-section="appearance">
-            <header><div><h3>Shared appearance</h3><p>Consistent management theme across Saslik applications</p></div></header>
-            <dl>
-              <dt>Theme managed by</dt><dd>Saslik</dd>
-              <dt>Smithproxy override</dt><dd>Not configured separately</dd>
-              <dt>Updates</dt><dd>Applied automatically</dd>
-            </dl>
+            <header><div><h3>Shared appearance</h3><p>Uses the common management theme</p></div></header>
             <p class="metric-note">
-              Change the shared theme in Saslik appearance settings. Smithproxy follows it automatically.
+              Color palette and light or dark mode are controlled by the host management interface.
+              Changes apply to Smithproxy automatically.
             </p>
           </article>
           <details class="domain-card management-diagnostics" data-system-section="backend">
