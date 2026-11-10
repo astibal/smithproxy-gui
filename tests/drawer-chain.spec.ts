@@ -5265,7 +5265,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await page.getByRole('group', {name: 'Monitoring categories'})
     .getByRole('button', {name: 'Sessions'}).click();
   const activity = page.getByRole('region', {name: 'Session activity'});
-  await expect(activity.getByRole('heading', {name: 'Live session activity'})).toBeVisible();
+  await expect(activity.getByRole('heading', {name: 'Session activity'})).toBeVisible();
   await expect(activity.getByText('3.84 kB/s')).toBeVisible();
   const sessions = activity.getByRole('table', {name: 'Observed proxy sessions'});
   await expect(sessions.getByText('192.0.2.10:51342').first()).toBeVisible();

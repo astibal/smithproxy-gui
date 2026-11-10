@@ -10544,7 +10544,7 @@ export class SmithproxyApp extends LitElement {
     return html`
       <section class="runtime-summary" aria-label="Session activity">
         <div class="runtime-heading">
-          <div><h3>Live session activity</h3><p>Privacy-preserving transport aggregates</p></div>
+          <div><h3>Session activity</h3><p>Current traffic grouped by transport</p></div>
           <span class="runtime-state ${presentation.tone}" title=${activity.detail}>
             ● ${presentation.label}
           </span>
@@ -10590,7 +10590,7 @@ export class SmithproxyApp extends LitElement {
           </table>
         </div>
         <div class="runtime-heading">
-          <div><h3>Observed connections</h3><p>Active sessions and recently closed sessions retained by the management service</p></div>
+          <div><h3>Observed connections</h3><p>Active and recently closed proxy sessions</p></div>
           <span class="runtime-state ${this.liveSessions.state === 'ready' ? 'success' : 'warning'}"
             title=${this.liveSessions.detail}>● ${displayState(this.liveSessions.state)}</span>
         </div>
@@ -10675,7 +10675,10 @@ export class SmithproxyApp extends LitElement {
             </tbody>
           </table>
         </div>
-        <div class="privacy-note">The management service exposes only bounded endpoint, policy, protocol, classification, and counter metadata. Raw Smithproxy diagnostics remain server-side.</div>
+        <div class="privacy-note">
+          This view contains connection endpoints, policy matches, classifications, and traffic counters.
+          Packet contents are not displayed.
+        </div>
       </section>
     `;
   }
