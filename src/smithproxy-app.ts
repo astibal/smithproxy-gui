@@ -10309,13 +10309,16 @@ export class SmithproxyApp extends LitElement {
         ),
       };
     });
+    const currentCount = collectors.filter(item => item.presentation.current).length;
     return html`
-      <section class="monitor-panel" aria-label="Data freshness">
-        <div class="runtime-heading">
-          <div><h3>Data freshness</h3><p>Current status of runtime data shown in this GUI</p></div>
-          <span class="runtime-state">${collectors.filter(item =>
-            item.presentation.current).length}/${collectors.length} current</span>
-        </div>
+      <details class="monitor-panel diagnostic-section" aria-label="Data collection diagnostics"
+        ?open=${currentCount < collectors.length}>
+        <summary class="runtime-heading">
+          <div><h3>Data collection diagnostics</h3><p>Source freshness and refresh cadence for troubleshooting</p></div>
+          <span class="runtime-state ${currentCount < collectors.length ? 'warning' : 'success'}">
+            ${currentCount}/${collectors.length} current
+          </span>
+        </summary>
         <div class="table collector-table" tabindex="0" aria-label="Scrollable data freshness table">
           <table class="listener-table" aria-label="Data freshness">
             <thead><tr>
@@ -10341,7 +10344,7 @@ export class SmithproxyApp extends LitElement {
             </tbody>
           </table>
         </div>
-      </section>`;
+      </details>`;
   }
 
   private renderEventStreamHealth() {

@@ -6237,7 +6237,11 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
   expect(pending.size).toBe(0);
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  const collectionDiagnostics = page.getByRole('group', {name: 'Data collection diagnostics'});
+  await expect(collectionDiagnostics).toContainText('5/5 current');
   const collectorHealth = page.getByRole('table', {name: 'Data freshness'});
+  await expect(collectorHealth).not.toBeVisible();
+  await collectionDiagnostics.locator('summary').click();
   await expect(collectorHealth.getByRole('row')).toHaveCount(6);
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Runtime metrics'}))
     .toContainText('Ready');
@@ -6245,7 +6249,6 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
     .toContainText('Fresh');
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Network interfaces'}))
     .toContainText('Fresh');
-  await expect(page.getByRole('region', {name: 'Data freshness'})).toContainText('5/5 current');
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
@@ -6283,9 +6286,11 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
   await page.getByRole('button', {name: 'Sessions', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Session activity'})).toContainText('Ready · Stale');
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  const collectionDiagnostics = page.getByRole('group', {name: 'Data collection diagnostics'});
+  await expect(collectionDiagnostics).toContainText('0/5 current');
   const collectorHealth = page.getByRole('table', {name: 'Data freshness'});
+  await expect(collectorHealth).toBeVisible();
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Stale'})).toHaveCount(5);
-  await expect(page.getByRole('region', {name: 'Data freshness'})).toContainText('0/5 current');
 });
 
 test('diagnoses an invalid event stream and recovers only after an explicit retry', async ({page}) => {
@@ -7560,6 +7565,7 @@ test('meets automated WCAG rules across primary and nested views', async ({page}
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await page.getByRole('button', {name: 'Health', exact: true}).click();
+  await page.getByRole('group', {name: 'Data collection diagnostics'}).locator('summary').click();
   await expect(page.getByRole('table', {name: 'Data freshness'})).toBeVisible();
   await expectNoWcagViolations(page);
 
