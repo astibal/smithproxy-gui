@@ -235,6 +235,8 @@ const captureBooleanFields = [
 type ProfileCreateType =
   'routing' | 'tls' | 'detection' | 'dns' | 'authentication' | 'content' | 'ssh' | 'script';
 type PolicyReferenceKind = 'protocol' | ProfileCreateType;
+type ProfileObjectFilter = 'all' | Exclude<ProfileCreateType, 'authentication'>;
+type SecurityObjectFilter = 'all' | 'trust' | 'starttls' | 'detection';
 
 const profileCreateCollections: Readonly<Record<ProfileCreateType, DraftCreateOperation['collection']>> = {
   routing: 'routing',
@@ -250,6 +252,22 @@ const profileCreateLabels: Readonly<Record<ProfileCreateType, string>> = {
   routing: 'Routing', tls: 'TLS', detection: 'Detection', dns: 'DNS ALG',
   authentication: 'Authentication', content: 'Content', ssh: 'SSH', script: 'Script',
 };
+const profileObjectNavigation: ReadonlyArray<{kind: ProfileObjectFilter; label: string}> = [
+  {kind: 'all', label: 'All profiles'},
+  {kind: 'tls', label: 'TLS'},
+  {kind: 'content', label: 'Content'},
+  {kind: 'detection', label: 'Detection'},
+  {kind: 'routing', label: 'Routing'},
+  {kind: 'ssh', label: 'SSH'},
+  {kind: 'dns', label: 'DNS ALG'},
+  {kind: 'script', label: 'Script'},
+];
+const securityObjectNavigation: ReadonlyArray<{kind: SecurityObjectFilter; label: string}> = [
+  {kind: 'all', label: 'All trust and signatures'},
+  {kind: 'trust', label: 'Trust'},
+  {kind: 'starttls', label: 'STARTTLS signatures'},
+  {kind: 'detection', label: 'Detection signatures'},
+];
 
 const policyProfileAssignments = [
   {kind: 'tls', field: 'tls_profile', property: 'tlsProfile', label: 'TLS'},
@@ -457,6 +475,8 @@ export class SmithproxyApp extends LitElement {
   @state() private policyBulkDeleteConfirmation: string | undefined;
   @state() private objectListQuery = '';
   @state() private objectKindFilter: ObjectKindFilter = 'all';
+  @state() private profileObjectFilter: ProfileObjectFilter = 'all';
+  @state() private securityObjectFilter: SecurityObjectFilter = 'all';
   @state() private objectNavigationExpanded = false;
   @state() private policyNavigationExpanded = false;
   @state() private networkNavigationExpanded = false;
@@ -654,10 +674,12 @@ export class SmithproxyApp extends LitElement {
     .logs-nav-toggle[aria-expanded='true'] .nav-expand,
     .policy-nav-toggle[aria-expanded='true'] .nav-expand,
     .system-nav-toggle[aria-expanded='true'] .nav-expand { rotate: 90deg; }
-    .object-subnav { display: grid; gap: 2px; margin: 2px 0 6px 16px; padding-left: 7px; border-left: 1px solid var(--app-border); }
+    .object-subnav { display: grid; gap: 2px; margin: 2px 0 6px 8px; padding-left: 5px; border-left: 1px solid var(--app-border); }
     .object-subnav[hidden] { display: none; }
     .object-subnav button { grid-template-columns: 14px minmax(0, 1fr); padding: 8px; border-radius: 2px; font-size: 13px; }
     .object-subnav button[aria-current='page'] { box-shadow: none; color: var(--app-text); }
+    .nested-subnav { display: grid; gap: 1px; margin: -1px 0 3px 13px; padding-left: 5px; border-left: 1px solid var(--app-border); }
+    .nested-subnav button { grid-template-columns: 10px minmax(0, 1fr); padding: 6px 7px; font-size: 12px; }
 
     .main { display: grid; grid-template-rows: 58px minmax(0, 1fr); min-width: 0; min-height: 0; }
     .topbar { display: flex; gap: 16px; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--app-border); background: color-mix(in srgb, var(--app-surface) 88%, transparent); }
@@ -3625,12 +3647,20 @@ export class SmithproxyApp extends LitElement {
   }
 
   private objectViewLabel(): string {
+    if (this.objectKindFilter === 'profile' && this.profileObjectFilter !== 'all') {
+      return `${profileCreateLabels[this.profileObjectFilter]} profiles`;
+    }
+    if (this.objectKindFilter === 'security' && this.securityObjectFilter !== 'all') {
+      return securityObjectNavigation.find(item => item.kind === this.securityObjectFilter)?.label ?? 'Trust';
+    }
     return objectNavigation.find(item => item.kind === this.objectKindFilter)?.label ?? 'Objects';
   }
 
   private selectObjectView(kind: ObjectKindFilter): void {
     this.activeSection = 'Objects';
     this.objectKindFilter = kind;
+    if (kind !== 'profile') this.profileObjectFilter = 'all';
+    if (kind !== 'security') this.securityObjectFilter = 'all';
     this.objectNavigationExpanded = true;
     this.objectBulkMessage = undefined;
     this.objectBulkDeleteConfirmation = undefined;
@@ -8859,6 +8889,10 @@ export class SmithproxyApp extends LitElement {
     const query = this.objectListQuery.trim().toLocaleLowerCase();
     const kindMatches = (kind: Exclude<ObjectKindFilter, 'all'>) =>
       this.objectKindFilter === 'all' || this.objectKindFilter === kind;
+    const profileTypeMatches = (type: string | undefined) =>
+      this.profileObjectFilter === 'all' || this.profileObjectFilter === type;
+    const securityTypeMatches = (type: Exclude<SecurityObjectFilter, 'all'>) =>
+      this.securityObjectFilter === 'all' || this.securityObjectFilter === type;
     const usageMatches = (used: boolean) => this.objectUsageFilter === 'all' ||
       (this.objectUsageFilter === 'used') === used;
     const queryMatches = (values: ReadonlyArray<string | number>) =>
@@ -8928,14 +8962,14 @@ export class SmithproxyApp extends LitElement {
       const usage = collection ? liveUsage(name, liveCount, collection) :
         {used: liveCount > 0, label: String(liveCount), pendingCount: 0};
       return {item, prefix, name, summary, usage};
-    }).filter(row => kindMatches('profile') && usageMatches(row.usage.used) &&
+    }).filter(row => kindMatches('profile') && profileTypeMatches(row.item.type) && usageMatches(row.usage.used) &&
       queryMatches([row.name, row.item.type, row.summary, 'profile', 'routing']));
     const pendingProfileRows = pendingProfiles.map(operation => {
       const type = profileTypes.get(operation.collection);
       return {operation, type, summary: this.pendingProfileInventorySummary(operation, type),
         usage: pendingUsage(operation)};
     })
-      .filter(row => row.type !== 'authentication' && kindMatches('profile') &&
+      .filter(row => row.type !== 'authentication' && kindMatches('profile') && profileTypeMatches(row.type) &&
         usageMatches(row.usage > 0) && queryMatches([
         fieldText(row.operation, 'name'), row.type ?? 'profile', row.summary, 'profile', 'pending',
       ]));
@@ -8945,13 +8979,13 @@ export class SmithproxyApp extends LitElement {
       const name = this.presentedValue(`${prefix}name`, item.name);
       const summary = item.pathConfigured ? 'CA path configured · redacted' : 'CA path not configured';
       return {item, prefix, name, summary};
-    }).filter(row => kindMatches('security') && securityFilterAvailable &&
+    }).filter(row => kindMatches('security') && securityTypeMatches('trust') && securityFilterAvailable &&
       queryMatches([row.name, row.summary, 'certificate authority', 'ca', 'trust']));
     const pendingAuthorityRows = pendingAuthorities.map(operation => ({
       operation,
       name: fieldText(operation, 'name', 'New certificate authority'),
       summary: 'CA path configured · redacted',
-    })).filter(row => kindMatches('security') && securityFilterAvailable &&
+    })).filter(row => kindMatches('security') && securityTypeMatches('trust') && securityFilterAvailable &&
       queryMatches([row.name, row.summary, 'certificate authority', 'ca', 'trust', 'pending']));
     const signatureIndexes = {starttls: 0, detection: 0};
     const signatureRows = (this.snapshot?.securityAssets?.signatures ?? []).map(item => {
@@ -8974,10 +9008,11 @@ export class SmithproxyApp extends LitElement {
       const summary = `${category} · ${side} · severity ${severity} · ${engine || 'default engine'} · ${flowCount} flow ${
         flowCount === 1 ? 'step' : 'steps'}`;
       return {item, prefix: `${base}.`, name, summary};
-    }).filter(row => kindMatches('security') && securityFilterAvailable &&
+    }).filter(row => kindMatches('security') && securityTypeMatches(row.item.kind) && securityFilterAvailable &&
       queryMatches([row.name, row.summary, row.item.kind, 'signature', 'trust']));
     const pendingSignatureRows = pendingSignatures.map(operation => {
-      const kind = operation.collection === 'starttls_signatures' ? 'starttls' : 'detection';
+      const kind: 'starttls' | 'detection' = operation.collection === 'starttls_signatures'
+        ? 'starttls' : 'detection';
       const flowCount = pendingSignatureFlows.filter(flow =>
         flow.parentId === operation.clientId && flow.collection === `${kind}_signatures.flow`).length;
       const name = fieldText(operation, 'name', 'New signature');
@@ -8986,7 +9021,7 @@ export class SmithproxyApp extends LitElement {
         fieldText(operation, 'engine', '') || 'default engine'} · ${flowCount} flow ${
         flowCount === 1 ? 'step' : 'steps'}`;
       return {operation, kind, name, summary};
-    }).filter(row => kindMatches('security') && securityFilterAvailable &&
+    }).filter(row => kindMatches('security') && securityTypeMatches(row.kind) && securityFilterAvailable &&
       queryMatches([row.name, row.summary, row.kind, 'signature', 'trust', 'pending']));
     const liveProfileCount = this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0;
     const pendingProfileCount = pendingProfiles.filter(operation =>
@@ -9024,7 +9059,9 @@ export class SmithproxyApp extends LitElement {
         ? 'At most 256 objects can be deleted in one atomic batch.'
       : bulkDeleteEntries.length === 0
         ? 'No visible unused configuration object is available for deletion.' : undefined;
-    const filtersActive = query.length > 0 || this.objectKindFilter !== 'all' || this.objectUsageFilter !== 'all';
+    const filtersActive = query.length > 0 || this.objectKindFilter !== 'all' ||
+      this.profileObjectFilter !== 'all' || this.securityObjectFilter !== 'all' ||
+      this.objectUsageFilter !== 'all';
     const sectionOpen = (kind: ObjectSectionKind) =>
       filtersActive || this.objectKindFilter !== 'all' || this.expandedObjectSections.has(kind);
     const rememberSectionState = (kind: ObjectSectionKind, event: Event) => {
@@ -9054,6 +9091,8 @@ export class SmithproxyApp extends LitElement {
             <button type="button" aria-pressed=${this.objectKindFilter === kind}
               @click=${() => {
                 this.objectKindFilter = kind;
+                if (kind !== 'profile') this.profileObjectFilter = 'all';
+                if (kind !== 'security') this.securityObjectFilter = 'all';
                 this.objectBulkMessage = undefined;
                 this.objectBulkDeleteConfirmation = undefined;
               }}>${label} <small>${count.toLocaleString()}</small></button>
@@ -9109,6 +9148,8 @@ export class SmithproxyApp extends LitElement {
             <select aria-label="Filter objects by kind" .value=${this.objectKindFilter}
               @change=${(event: Event) => {
                 this.objectKindFilter = (event.currentTarget as HTMLSelectElement).value as ObjectKindFilter;
+                if (this.objectKindFilter !== 'profile') this.profileObjectFilter = 'all';
+                if (this.objectKindFilter !== 'security') this.securityObjectFilter = 'all';
                 this.objectBulkMessage = undefined;
                 this.objectBulkDeleteConfirmation = undefined;
               }}>
@@ -9248,8 +9289,10 @@ export class SmithproxyApp extends LitElement {
         <details class="object-section" ?open=${sectionOpen('profile')}
           @toggle=${(event: Event) => rememberSectionState('profile', event)}
           ?hidden=${!kindMatches('profile') || (filtersActive && profileRows.length + pendingProfileRows.length === 0)}>
-          <summary><h3>Profiles and routing</h3><small>${profileRows.length + pendingProfileRows.length}</small></summary>
-          <div class="table" role="group" aria-label="Profiles and routing">
+          <summary><h3>${this.profileObjectFilter === 'all'
+            ? 'Profiles and routing' : this.objectViewLabel()}</h3>
+            <small>${profileRows.length + pendingProfileRows.length}</small></summary>
+          <div class="table" role="group" aria-label=${this.objectViewLabel()}>
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value exposure</span><span>Uses</span>
             </div>
@@ -9277,35 +9320,36 @@ export class SmithproxyApp extends LitElement {
           ?hidden=${!kindMatches('security') || !securityFilterAvailable ||
             (filtersActive && authorityRows.length + pendingAuthorityRows.length +
               signatureRows.length + pendingSignatureRows.length === 0)}>
-          <summary><h3>Trust and signatures</h3>
+          <summary><h3>${this.securityObjectFilter === 'all'
+            ? 'Trust and signatures' : this.objectViewLabel()}</h3>
             <small>${authorityRows.length + pendingAuthorityRows.length +
               signatureRows.length + pendingSignatureRows.length}</small></summary>
           <div class="object-section-actions">
-              <button class="secondary" type="button"
+              ${securityTypeMatches('trust') ? html`<button class="secondary" type="button"
                 ?disabled=${!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca')}
                 title=${!this.collectionPresent('tls_ca')
                   ? 'The tls_ca collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
                 New certificate authority
-              </button>
-              <button class="secondary" type="button"
+              </button>` : nothing}
+              ${securityTypeMatches('starttls') ? html`<button class="secondary" type="button"
                 ?disabled=${!this.signatureTransactionsAvailable() ||
                   !this.collectionPresent('starttls_signatures')}
                 title=${!this.collectionPresent('starttls_signatures')
                   ? 'The starttls_signatures collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'starttls', event.currentTarget as HTMLElement,
-                )}>New STARTTLS signature</button>
-              <button class="secondary" type="button"
+                )}>New STARTTLS signature</button>` : nothing}
+              ${securityTypeMatches('detection') ? html`<button class="secondary" type="button"
                 ?disabled=${!this.signatureTransactionsAvailable() ||
                   !this.collectionPresent('detection_signatures')}
                 title=${!this.collectionPresent('detection_signatures')
                   ? 'The detection_signatures collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewSignature(
                   'detection', event.currentTarget as HTMLElement,
-                )}>New detection signature</button>
+                )}>New detection signature</button>` : nothing}
           </div>
-          <div class="table" role="group" aria-label="Trust and signatures">
+          <div class="table" role="group" aria-label=${this.objectViewLabel()}>
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Safe summary</span><span>State</span>
             </div>
@@ -14126,6 +14170,30 @@ export class SmithproxyApp extends LitElement {
                         <span class="nav-icon" aria-hidden="true">${category.icon}</span>
                         <span class="nav-label">${category.label}</span>
                       </button>
+                      ${category.kind === 'profile' && this.activeSection === 'Objects' &&
+                        this.objectKindFilter === 'profile' ? html`
+                        <div class="nested-subnav" role="group" aria-label="Profile categories">
+                          ${profileObjectNavigation.map(profile => html`<button type="button"
+                            aria-current=${this.profileObjectFilter === profile.kind ? 'page' : nothing}
+                            @click=${() => {
+                              this.selectObjectView('profile');
+                              this.profileObjectFilter = profile.kind;
+                            }}><span class="nav-icon" aria-hidden="true">·</span>
+                            <span class="nav-label">${profile.label}</span></button>`)}
+                        </div>
+                      ` : nothing}
+                      ${category.kind === 'security' && this.activeSection === 'Objects' &&
+                        this.objectKindFilter === 'security' ? html`
+                        <div class="nested-subnav" role="group" aria-label="Trust and signature categories">
+                          ${securityObjectNavigation.map(security => html`<button type="button"
+                            aria-current=${this.securityObjectFilter === security.kind ? 'page' : nothing}
+                            @click=${() => {
+                              this.selectObjectView('security');
+                              this.securityObjectFilter = security.kind;
+                            }}><span class="nav-icon" aria-hidden="true">·</span>
+                            <span class="nav-label">${security.label}</span></button>`)}
+                        </div>
+                      ` : nothing}
                     `)}
                   </div>
                 ` : nothing}

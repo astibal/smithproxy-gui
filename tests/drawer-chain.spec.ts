@@ -5357,6 +5357,36 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
   await expect(page.getByRole('group', {name: 'Trust and signatures'})).toBeVisible();
 });
 
+test('opens focused profile, trust, and signature views from shallow object navigation', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('button', {name: 'Profiles and routing', exact: true}).click();
+
+  const profiles = page.getByRole('group', {name: 'Profile categories'});
+  await profiles.getByRole('button', {name: 'TLS', exact: true}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'TLS profiles'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'TLS profiles'})).toContainText('inspect');
+  await expect(page.getByRole('group', {name: 'TLS profiles'})).not.toContainText('capture');
+
+  await profiles.getByRole('button', {name: 'Content', exact: true}).click();
+  await expect(page.getByRole('group', {name: 'Content profiles'})).toContainText('capture');
+  await expect(page.getByRole('group', {name: 'Content profiles'})).not.toContainText('inspect');
+
+  await page.getByRole('button', {name: 'Trust and signatures', exact: true}).click();
+  const security = page.getByRole('group', {name: 'Trust and signature categories'});
+  await security.getByRole('button', {name: 'Trust', exact: true}).click();
+  await expect(page.getByRole('group', {name: 'Trust', exact: true})).toContainText('default');
+  await expect(page.getByRole('group', {name: 'Trust', exact: true})).not.toContainText('smtp/starttls');
+
+  await security.getByRole('button', {name: 'STARTTLS signatures', exact: true}).click();
+  await expect(page.getByRole('group', {name: 'STARTTLS signatures', exact: true}))
+    .toContainText('smtp/starttls');
+  await expect(page.getByRole('group', {name: 'STARTTLS signatures', exact: true}))
+    .not.toContainText('http/request');
+  await expectNoWcagViolations(page);
+});
+
 test('filters real and pending policies by text, status, and action', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready', secondPolicy: true,
