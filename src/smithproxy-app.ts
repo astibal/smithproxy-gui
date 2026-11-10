@@ -545,7 +545,6 @@ export class SmithproxyApp extends LitElement {
   @state() private configRefreshInFlight = false;
   @state() private configRevisionDrift = false;
   @state() private externalConfigNotice = false;
-  @state() private configSaveArmed = false;
   @state() private configSaving = false;
   @state() private configSaveError: string | undefined;
   @state() private searchQuery = '';
@@ -580,7 +579,6 @@ export class SmithproxyApp extends LitElement {
   private closeEventStream: (() => void) | undefined;
   private eventStreamDegradedTimer: number | undefined;
   private nextConfigRefreshAt = 0;
-  private configSaveArmTimer: number | undefined;
   private externalConfigNoticeTimer: number | undefined;
   // A successful local commit changes the same revision observed by the background poller.
   // Remember it until the authoritative snapshot arrives so it is not reported as external work.
@@ -702,7 +700,6 @@ export class SmithproxyApp extends LitElement {
     .config-workflow { display: flex; flex: 0 0 auto; gap: 7px; align-items: center; }
     .config-workflow button { min-height: 38px; white-space: nowrap; }
     .config-workflow .save-required { border-color: var(--app-warning); background: var(--app-warning); color: #17120a; }
-    .config-workflow .save-confirm { border-color: var(--app-danger); background: var(--app-danger); color: #19070b; }
     .config-workflow-error { max-width: 180px; overflow: hidden; color: var(--app-danger); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .config-state { color: var(--app-muted); font-size: 12px; white-space: nowrap; }
     .config-state.danger { color: var(--app-danger); font-weight: 700; }
@@ -1296,7 +1293,6 @@ export class SmithproxyApp extends LitElement {
     this.systemClient?.cancelPendingRequests();
     this.configClient?.cancelPendingRequests();
     this.draftClient?.cancelPendingRequests();
-    if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
@@ -1765,9 +1761,6 @@ export class SmithproxyApp extends LitElement {
     this.configRevisionDrift = false;
     this.configError = undefined;
     this.configSaving = false;
-    this.configSaveArmed = false;
-    if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
-    this.configSaveArmTimer = undefined;
     this.configSaveError = undefined;
     this.searchQuery = '';
     if (this.activeSection === 'Search') this.activeSection = 'Dashboard';
@@ -1875,9 +1868,6 @@ export class SmithproxyApp extends LitElement {
       this.configWriteAvailable = nextConfigWriteAvailable;
       this.configSaveAvailable = nextConfigSaveAvailable;
       if (configSaveWasAvailable && !nextConfigSaveAvailable) {
-        this.configSaveArmed = false;
-        if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
-        this.configSaveArmTimer = undefined;
         this.configSaveError = undefined;
       }
       this.structuralDraftsAvailable = nextStructuralDraftsAvailable;
@@ -1927,7 +1917,6 @@ export class SmithproxyApp extends LitElement {
       this.configRefreshDeferred = false;
       this.configWriteAvailable = false;
       this.configSaveAvailable = false;
-      this.configSaveArmed = false;
       this.configSaveError = undefined;
       this.structuralDraftsAvailable = false;
       this.primitiveStructuralDraftsAvailable = false;
@@ -1989,11 +1978,6 @@ export class SmithproxyApp extends LitElement {
         this.configError = undefined;
         return;
       }
-      if (snapshot.revision !== this.snapshot?.revision || !snapshot.unsaved) {
-        this.configSaveArmed = false;
-        if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
-        this.configSaveArmTimer = undefined;
-      }
       this.snapshot = snapshot;
       this.restoreDrawerRoute();
       this.configError = undefined;
@@ -2032,22 +2016,9 @@ export class SmithproxyApp extends LitElement {
     const snapshot = this.snapshot;
     if (!this.configSaveAvailable || !this.configClient || !snapshot?.revision ||
         !snapshot.unsaved || this.configSaving || this.draftCommitting) return;
-    if (!this.configSaveArmed) {
-      this.configSaveArmed = true;
-      this.configSaveError = undefined;
-      if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
-      this.configSaveArmTimer = window.setTimeout(() => {
-        this.configSaveArmTimer = undefined;
-        this.configSaveArmed = false;
-      }, 10_000);
-      return;
-    }
     const expectedRevision = snapshot.revision;
     const accessEpoch = this.configurationAccessEpoch;
     this.configSaving = true;
-    this.configSaveArmed = false;
-    if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
-    this.configSaveArmTimer = undefined;
     this.configSaveError = undefined;
     try {
       const saved = await this.configClient.saveConfiguration(expectedRevision);
@@ -15007,7 +14978,7 @@ export class SmithproxyApp extends LitElement {
                   </button>
                 ` : nothing}
                 ${this.snapshot?.source === 'live' && this.snapshot.unsaved ? html`
-                  <button class="primary ${this.configSaveArmed ? 'save-confirm' : 'save-required'}" type="button"
+                  <button class="primary save-required" type="button"
                     ?disabled=${!this.configSaveAvailable || this.configSaving || this.draftCommitting}
                     title=${this.configSaveAvailable
                       ? this.draftChangeCount > 0
@@ -15015,11 +14986,7 @@ export class SmithproxyApp extends LitElement {
                         : 'Persist the current running revision as the startup configuration.'
                       : 'Saving startup configuration is unavailable with the connected Smithproxy version.'}
                     @click=${() => { void this.saveRunningConfiguration(); }}>
-                    ${this.configSaving
-                      ? 'Saving startup…'
-                      : this.configSaveArmed
-                        ? 'Confirm save to startup'
-                        : 'Save startup'}
+                    ${this.configSaving ? 'Saving startup…' : 'Save startup'}
                   </button>
                 ` : nothing}
                 ${this.configSaveError ? html`

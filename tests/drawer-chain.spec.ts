@@ -6585,7 +6585,7 @@ test('keeps mobile draft and startup actions visible without overflowing the top
   await expect.poll(() => topbar.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
-test('persists the exact running revision only after explicit confirmation', async ({page}) => {
+test('persists the exact running revision with one explicit save action', async ({page}) => {
   const runningRevision = `sha256:${'2'.repeat(64)}`;
   const state: MockState = {
     smithproxy: 'ready', configSaveReady: true, unsavedConfig: true,
@@ -6595,10 +6595,6 @@ test('persists the exact running revision only after explicit confirmation', asy
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Save startup'}).click();
-  await expect(page.getByRole('button', {name: 'Confirm save to startup'})).toBeVisible();
-  expect(state.configSaveRequests).toEqual([]);
-
-  await page.getByRole('button', {name: 'Confirm save to startup'}).click();
   await expect(page.getByText('Running configuration saved')).toBeVisible();
   expect(state.configSaveRequests).toEqual([{
     expectedRevision: runningRevision, csrf: '1',
