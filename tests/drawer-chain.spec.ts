@@ -6243,7 +6243,42 @@ test('polls only monitoring surfaces advertised for the current session', async 
   await page.getByRole('group', {name: 'Network categories'})
     .getByRole('button', {name: 'Interfaces'}).click();
   await expect(page.getByRole('region', {name: 'Network interfaces'}))
-    .toContainText('Unavailable · Last data no data');
+    .toContainText('does not provide interface monitoring');
+});
+
+test('does not present initialized monitoring counters as live zeroes', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    disabledMonitoringFeatures: [
+      'metrics', 'session_activity', 'tls_monitoring', 'neighbor_monitoring', 'interface_monitoring',
+    ],
+  });
+  await page.goto('/');
+
+  const runtime = page.getByRole('region', {name: 'Runtime metrics summary'});
+  await expect(runtime).toContainText('Unavailable');
+  await expect(runtime).toContainText('does not provide runtime traffic metrics');
+  await expect(runtime.getByRole('article')).toHaveCount(0);
+
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  const neighborhood = page.getByRole('region', {name: 'Neighborhood activity'});
+  await expect(neighborhood).toContainText('does not provide neighborhood monitoring');
+  await expect(neighborhood.getByRole('article')).toHaveCount(0);
+  await expect(page.getByRole('region', {name: 'Listener workload'})).toHaveCount(0);
+  await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
+  const interfaces = page.getByRole('region', {name: 'Network interfaces'});
+  await expect(interfaces).toContainText('does not provide interface monitoring');
+  await expect(interfaces.getByRole('article')).toHaveCount(0);
+
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await page.getByRole('button', {name: 'Traffic', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Runtime history'})).toHaveCount(0);
+  await page.getByRole('button', {name: 'Sessions', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Session activity'}))
+    .toContainText('does not provide session monitoring');
+  await page.getByRole('button', {name: 'TLS cache', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'TLS interception cache'}))
+    .toContainText('does not provide TLS cache monitoring');
 });
 
 test('loads independent monitoring surfaces concurrently', async ({page}) => {

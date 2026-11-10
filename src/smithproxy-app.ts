@@ -9659,6 +9659,7 @@ export class SmithproxyApp extends LitElement {
           <div><h2>Network activity</h2><p>Neighborhood, listener workload, and interface synchronization</p></div>
         </div>
         ${this.renderNeighborSummary()}
+        ${this.metricsAvailable ? html`
         ${this.renderCollectorNotice(presentation, metrics.detail, metrics.lastSuccessAtUnixMs)}
         <section class="runtime-summary" aria-label="Listener workload">
           <div class="runtime-heading">
@@ -9687,11 +9688,18 @@ export class SmithproxyApp extends LitElement {
             </div>
           ` : html`<div class="metrics-message">No listener samples are available yet.</div>`}
         </section>
+        ` : nothing}
       </div>
     `;
   }
 
   private renderNeighborSummary() {
+    if (!this.neighborMonitoringAvailable) {
+      return this.renderUnavailableMonitoringSection(
+        'Neighborhood activity', 'Neighborhood activity',
+        'This management connection does not provide neighborhood monitoring.',
+      );
+    }
     const neighbors = this.neighbors;
     const presentation = this.collectorPresentation(
       neighbors.state, neighbors.lastSuccessAtUnixMs, 30_000,
@@ -9732,6 +9740,12 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderInterfaceSummary() {
+    if (!this.interfaceMonitoringAvailable) {
+      return this.renderUnavailableMonitoringSection(
+        'Network interfaces', 'Network interfaces',
+        'This management connection does not provide interface monitoring.',
+      );
+    }
     const interfaces = this.interfaces;
     const presentation = this.collectorPresentation(
       interfaces.state, interfaces.lastSuccessAtUnixMs, 30_000,
@@ -10107,7 +10121,26 @@ export class SmithproxyApp extends LitElement {
     return `${amount.toFixed(amount >= 100 ? 0 : amount >= 10 ? 1 : 2)} ${units[unit]}`;
   }
 
+  /** Shows an honest capability boundary instead of rendering initialized counters as live zeroes. */
+  private renderUnavailableMonitoringSection(ariaLabel: string, title: string, detail: string) {
+    return html`
+      <section class="runtime-summary" aria-label=${ariaLabel}>
+        <div class="runtime-heading">
+          <div><h3>${title}</h3></div>
+          <span class="runtime-state warning">● Unavailable</span>
+        </div>
+        <div class="metrics-message" role="status">${detail}</div>
+      </section>
+    `;
+  }
+
   private renderRuntimeSummary() {
+    if (!this.metricsAvailable) {
+      return this.renderUnavailableMonitoringSection(
+        'Runtime metrics summary', 'Runtime traffic',
+        'This management connection does not provide runtime traffic metrics.',
+      );
+    }
     const metrics = this.runtimeMetrics;
     const presentation = this.collectorPresentation(
       metrics.state, metrics.lastSuccessAtUnixMs, 5_000,
@@ -10148,6 +10181,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderRuntimeHistory() {
+    if (!this.metricsAvailable) return nothing;
     const history = this.runtimeMetrics.history;
     const emptySlots = Math.max(0, 60 - history.length);
     const sessionPeak = Math.max(0, ...history.map(sample => sample.sessionsActive));
@@ -10214,6 +10248,12 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderTlsCache() {
+    if (!this.tlsMonitoringAvailable) {
+      return this.renderUnavailableMonitoringSection(
+        'TLS interception cache', 'TLS interception cache',
+        'This management connection does not provide TLS cache monitoring.',
+      );
+    }
     const cache = this.tlsCache;
     const presentation = this.collectorPresentation(
       cache.state, cache.lastSuccessAtUnixMs, 5_000,
@@ -10508,6 +10548,7 @@ export class SmithproxyApp extends LitElement {
         </div>
         ${traffic ? html`
           ${this.renderRuntimeSummary()}
+          ${this.metricsAvailable ? html`
           ${this.renderRuntimeHistory()}
           <div class="table">
           <table class="listener-table">
@@ -10527,6 +10568,7 @@ export class SmithproxyApp extends LitElement {
             </tbody>
           </table>
           </div>
+          ` : nothing}
         ` : html`
           ${this.renderActiveAlerts()}
           ${this.renderCollectorMatrix()}
@@ -10538,6 +10580,12 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderSessionActivity() {
+    if (!this.sessionActivityAvailable) {
+      return this.renderUnavailableMonitoringSection(
+        'Session activity', 'Session activity',
+        'This management connection does not provide session monitoring.',
+      );
+    }
     const activity = this.sessionActivity;
     const presentation = this.collectorPresentation(
       activity.state, activity.lastSuccessAtUnixMs, 10_000,
