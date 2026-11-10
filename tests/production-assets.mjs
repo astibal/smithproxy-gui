@@ -17,8 +17,23 @@ if (unfingerprinted.length > 0) {
 }
 
 const entrypoint = await readFile(new URL('index.html', output), 'utf8');
-for (const asset of assets) {
-  if (!entrypoint.includes(`./${asset}`)) {
-    throw new Error(`Production entry point does not reference ${asset}.`);
+const reachable = new Set(assets.filter(asset => entrypoint.includes(`./${asset}`)));
+let discovered = true;
+while (discovered) {
+  discovered = false;
+  for (const parent of [...reachable].filter(asset => asset.endsWith('.js'))) {
+    const source = await readFile(new URL(parent, output), 'utf8');
+    for (const asset of assets) {
+      const filename = asset.slice('assets/'.length);
+      if (!reachable.has(asset) &&
+          (source.includes(`./${filename}`) || source.includes(`./${asset}`))) {
+        reachable.add(asset);
+        discovered = true;
+      }
+    }
   }
+}
+const orphaned = assets.filter(asset => !reachable.has(asset));
+if (orphaned.length > 0) {
+  throw new Error(`Production assets are not reachable from the entry point: ${orphaned.join(', ')}`);
 }

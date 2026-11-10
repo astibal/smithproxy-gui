@@ -66,6 +66,36 @@ std::optional<std::uint16_t> parse_port(const std::string_view value) {
     return static_cast<std::uint16_t>(port);
 }
 
+// Parse the deployment-owned CLI broker address. Brackets keep IPv6 endpoints
+// unambiguous while the common host:port form remains convenient for Saslik.
+std::optional<SmithproxyCliConfig> parse_cli_endpoint(const std::string_view value) {
+    std::string_view host;
+    std::string_view port;
+    if (value.starts_with('[')) {
+        const auto closing = value.find(']');
+        if (closing == std::string_view::npos || closing == 1U ||
+            closing + 2U >= value.size() || value[closing + 1U] != ':') {
+            return std::nullopt;
+        }
+        host = value.substr(1U, closing - 1U);
+        port = value.substr(closing + 2U);
+    } else {
+        const auto separator = value.rfind(':');
+        if (separator == std::string_view::npos || separator == 0U ||
+            separator + 1U >= value.size() || value.find(':') != separator) {
+            return std::nullopt;
+        }
+        host = value.substr(0U, separator);
+        port = value.substr(separator + 1U);
+    }
+    if (host.find_first_of(" \t\r\n/\\?#@[]") != std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto parsed_port = parse_port(port);
+    if (!parsed_port) return std::nullopt;
+    return SmithproxyCliConfig{std::string(host), *parsed_port};
+}
+
 } // namespace
 
 std::filesystem::path resolve_default_asset_root(
@@ -139,6 +169,12 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
         while (normalized_url.ends_with('/')) normalized_url.pop_back();
         config.smithproxy = SmithproxyConfig{std::move(normalized_url), *key, *ca};
     }
+    if (const auto cli = environment("SMITHPROXY_CLI")) {
+        config.smithproxy_cli = parse_cli_endpoint(*cli);
+        if (!config.smithproxy_cli) {
+            return failure("SMITHPROXY_CLI must use host:port or [IPv6]:port");
+        }
+    }
     if (auto gateway_secret = environment("SMITHPROXY_GUI_GATEWAY_SECRET")) {
         if (gateway_secret->size() < 32U || gateway_secret->size() > 256U ||
             !valid_header_value(*gateway_secret)) {
@@ -175,7 +211,8 @@ std::string usage() {
            "\nSmithproxy credentials are read only from SMITHPROXY_API_URL,\n"
            "SMITHPROXY_API_KEY and SMITHPROXY_CA_CERT. A trusted reverse proxy\n"
            "must authenticate non-loopback browser APIs with SMITHPROXY_GUI_GATEWAY_SECRET.\n"
-           "SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS supports bounded rotation overlap.\n";
+           "SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS supports bounded rotation overlap.\n"
+           "SMITHPROXY_CLI optionally identifies the existing libcli2 broker as host:port.\n";
 }
 
 } // namespace smithproxy::gui

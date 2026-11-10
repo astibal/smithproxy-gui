@@ -42,6 +42,14 @@
       "version": "@nlohmann_json_VERSION@",
       "licenses": [{ "license": { "id": "MIT" } }],
       "purl": "pkg:generic/nlohmann-json@@nlohmann_json_VERSION@"
+    },
+    {
+      "type": "library",
+      "bom-ref": "openssl:@OPENSSL_VERSION@",
+      "name": "openssl",
+      "version": "@OPENSSL_VERSION@",
+      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "purl": "pkg:generic/openssl@@OPENSSL_VERSION@"
     }
   ]
 }

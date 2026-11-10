@@ -44,6 +44,7 @@ export interface DiagnosticsReportInput {
     tlsMonitoring: boolean;
     neighborMonitoring: boolean;
     interfaceMonitoring: boolean;
+    console: boolean;
     configTransaction: 'starting' | 'not-advertised' | 'review-required' | 'incompatible' | 'unavailable' | 'ready' | 'unknown';
   };
   runtime: TimedAggregateInput & {
@@ -136,7 +137,7 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
         ? null : safeInteger(input.capabilities.checkedAtUnixMs),
       lastSuccessAtUnixMs: input.capabilities.lastSuccessAtUnixMs === null
         ? null : safeInteger(input.capabilities.lastSuccessAtUnixMs),
-      enabledFeatureCount: Math.min(14, requiredInteger(input.capabilities.enabledFeatureCount)),
+      enabledFeatureCount: Math.min(15, requiredInteger(input.capabilities.enabledFeatureCount)),
       configRead: input.capabilities.configRead,
       configWrite: input.capabilities.configWrite,
       configSave: input.capabilities.configSave,
@@ -151,6 +152,7 @@ export function buildDiagnosticsReport(input: DiagnosticsReportInput): Diagnosti
       tlsMonitoring: input.capabilities.tlsMonitoring,
       neighborMonitoring: input.capabilities.neighborMonitoring,
       interfaceMonitoring: input.capabilities.interfaceMonitoring,
+      console: input.capabilities.console,
       configTransaction: input.capabilities.configTransaction,
     },
     runtime: {

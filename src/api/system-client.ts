@@ -61,6 +61,7 @@ export interface SystemCapabilities {
     tlsMonitoring: boolean;
     neighborMonitoring: boolean;
     interfaceMonitoring: boolean;
+    console: boolean;
   };
 }
 
@@ -462,6 +463,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const policyStructuralDrafts = features.policy_structural_drafts ?? false;
   const contentRuleStructuralDrafts = features.content_rule_structural_drafts ?? false;
   const signatureStructuralDrafts = features.signature_structural_drafts ?? false;
+  const consoleAvailable = features.console ?? false;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof configSave !== 'boolean' ||
       typeof features.structural_drafts !== 'boolean' ||
@@ -478,7 +480,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       typeof features.smithproxy_events !== 'boolean' ||
       typeof features.metrics !== 'boolean' || typeof features.session_activity !== 'boolean' ||
       typeof features.tls_monitoring !== 'boolean' || typeof features.neighbor_monitoring !== 'boolean' ||
-      typeof features.interface_monitoring !== 'boolean') {
+      typeof features.interface_monitoring !== 'boolean' || typeof consoleAvailable !== 'boolean') {
     throw new Error('Invalid capabilities feature flags.');
   }
   const transactionState = value.config_transaction_state ?? 'unknown';
@@ -531,6 +533,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       tlsMonitoring: features.tls_monitoring,
       neighborMonitoring: features.neighbor_monitoring,
       interfaceMonitoring: features.interface_monitoring,
+      console: consoleAvailable,
     },
   };
 }

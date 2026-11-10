@@ -22,6 +22,7 @@
 #include "tls_metrics.hpp"
 #include "transaction_capabilities.hpp"
 #include "transaction_envelope.hpp"
+#include "websocket.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -44,6 +45,23 @@ int main() {
     unsetenv("SMITHPROXY_CA_CERT");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
+    unsetenv("SMITHPROXY_CLI");
+
+    assert(websocket_accept("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+    assert(websocket_accept("not-a-websocket-key") == "");
+    const std::string masked_text{"\x81\x85\x37\xfa\x21\x3d\x7f\x9f\x4d\x51\x58", 11U};
+    const auto decoded_text = decode_websocket_client_frame(masked_text, 64U);
+    assert(decoded_text.state == WebSocketDecodeState::Frame);
+    assert(decoded_text.frame.opcode == WebSocketOpcode::Text);
+    assert(decoded_text.frame.payload == "Hello");
+    assert(decoded_text.frame.consumed == masked_text.size());
+    assert(decode_websocket_client_frame(masked_text.substr(0U, 8U), 64U).state ==
+           WebSocketDecodeState::Incomplete);
+    assert(decode_websocket_client_frame("\x81\x05Hello", 64U).state ==
+           WebSocketDecodeState::ProtocolError);
+    assert(decode_websocket_client_frame(masked_text, 4U).state ==
+           WebSocketDecodeState::ProtocolError);
+    assert(encode_websocket_server_frame(WebSocketOpcode::Text, "Hello") == "\x81\x05Hello");
 
     assert(normalize_dns_name("Example.COM.") == "example.com");
     assert(normalize_dns_name("internal-host") == "internal-host");
@@ -2032,6 +2050,30 @@ int main() {
     assert(parsed.config);
     assert(parsed.config->base_path == "/");
     assert(parsed.config->port == 18082);
+    assert(!parsed.config->smithproxy_cli);
+
+    setenv("SMITHPROXY_CLI", "10.240.0.26:55000", 1);
+    const auto cli_configured = parse_config(
+        static_cast<int>(argv.size()), argv.data(), "/srv/gui");
+    assert(cli_configured.config);
+    assert(cli_configured.config->smithproxy_cli);
+    assert(cli_configured.config->smithproxy_cli->host == "10.240.0.26");
+    assert(cli_configured.config->smithproxy_cli->port == 55000U);
+
+    setenv("SMITHPROXY_CLI", "[2001:db8::7]:55000", 1);
+    const auto cli_ipv6 = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
+    assert(cli_ipv6.config);
+    assert(cli_ipv6.config->smithproxy_cli->host == "2001:db8::7");
+
+    for (const char* invalid : {"55000", ":55000", "host:", "host:0", "host:65536",
+                                "host:port", "host:22:33", "bad host:55000",
+                                "https://host:55000", "[2001:db8::7]55000"}) {
+        setenv("SMITHPROXY_CLI", invalid, 1);
+        const auto rejected = parse_config(
+            static_cast<int>(argv.size()), argv.data(), "/srv/gui");
+        assert(!rejected.config);
+    }
+    unsetenv("SMITHPROXY_CLI");
 
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "short", 1);
     const auto invalid_secret = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");

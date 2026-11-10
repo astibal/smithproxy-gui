@@ -65,7 +65,7 @@ describe('SystemClient', () => {
         jobs: false, events: true, alerts: true, audit: true,
         smithproxy_events: false,
         metrics: true, session_activity: true, tls_monitoring: true, neighbor_monitoring: true,
-        interface_monitoring: true,
+        interface_monitoring: true, console: true,
       },
     }));
     const client = new SystemClient('/api/v1', '/', fetcher);
@@ -79,7 +79,7 @@ describe('SystemClient', () => {
         contentRuleStructuralDrafts: false,
         signatureStructuralDrafts: false,
         drafts: false, draftPreflight: false, events: true,
-        alerts: true, audit: true, smithproxyEvents: false, metrics: true},
+        alerts: true, audit: true, smithproxyEvents: false, metrics: true, console: true},
     });
   });
 

@@ -10,12 +10,12 @@ konfiguračním souborům Smithproxy.
 ┌────────────────────── Browser ──────────────────────┐
 │ TypeScript UI                                        │
 │ navigation │ workspace │ drawer chain │ status bar │
-└──────────────────── HTTPS + SSE ────────────────────┘
+└────────────── HTTPS + SSE + CLI WebSocket ──────────┘
                             │
 ┌────────────── smithproxy-gui management ────────────┐
 │ C++23 + lmhpp                                        │
 │ static assets │ auth │ API client │ jobs │ audit    │
-└────────────────── Smithproxy API ───────────────────┘
+└──────────── Smithproxy API + libcli2 broker ────────┘
                             │
 ┌────────────────────── Smithproxy ───────────────────┐
 │ schema │ config │ augments │ runtime │ events       │
@@ -54,6 +54,7 @@ automatická produkční závislost.
 
 - REST pro snapshoty, dotazy, validace a příkazy;
 - SSE pro jednosměrné živé události a stav úloh;
+- WebSocket pouze pro plně duplexní, bajtově transparentní CLI terminál;
 - revision/ETag pro optimistic concurrency;
 - idempotency key pro opakovatelné mutace;
 - jasné limity velikosti, času a počtu položek.
@@ -72,7 +73,12 @@ audit store. Store zaznamenává pouze validované cílové cesty, nikoli hodnot
 Persistentní uložení a actor attribution se přidají až s prověřeným identity
 kontraktem Saslik gateway.
 
-WebSocket se přidá jen tehdy, pokud se prokáže potřeba plně duplexního kanálu.
+Konzole je prokázaný plně duplexní případ. GUI core proto nabízí jediný
+WebSocket bridge do existujícího Smithproxy libcli2 brokeru. Nevytváří shell,
+neinterpretuje příkazy a neimplementuje druhé CLI. Endpoint existuje jen s
+`SMITHPROXY_CLI=host:port`, používá management autentizaci, přesný same-origin
+handshake a pevný subprotocol `smithproxy-cli-v1`. Počet relací, frame, pending
+buffer, connect a idle čas jsou omezené.
 
 ## Deploy
 
@@ -102,4 +108,5 @@ odkazy ani API klient nesmí obsahovat natvrdo zapsaný `/` jako deployment root
 
 Chybějící schopnost Smithproxy se řeší verzovaným rozšířením Smithproxy API.
 GUI nesmí obcházet API čtením souborů, CLI automatizací ani přímým přístupem do
-interní paměti procesu.
+interní paměti procesu. Interaktivní konzole je pouze explicitní operátorský
+transport do existujícího CLI; GUI z ní nečte stav a neposílá do ní skryté příkazy.

@@ -12,6 +12,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(MICROHTTPD REQUIRED IMPORTED_TARGET libmicrohttpd)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET "libcurl>=7.85")
 find_package(nlohmann_json 3.11 REQUIRED CONFIG)
+find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
 
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/lmhpp/include/lmhttpd.hpp")
     message(FATAL_ERROR "lmhpp is missing; run: git submodule update --init")
@@ -114,12 +115,18 @@ add_library(smithproxy_gui_core
     src/backend/tls_metrics.cpp
     src/backend/transaction_capabilities.cpp
     src/backend/transaction_envelope.cpp
+    src/backend/websocket.cpp
 )
 target_include_directories(smithproxy_gui_core PUBLIC src/backend)
-target_link_libraries(smithproxy_gui_core PUBLIC PkgConfig::CURL nlohmann_json::nlohmann_json)
+target_link_libraries(smithproxy_gui_core PUBLIC
+    PkgConfig::CURL
+    nlohmann_json::nlohmann_json
+    OpenSSL::Crypto
+)
 target_compile_options(smithproxy_gui_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
 
 add_executable(smithproxy-gui
+    src/backend/cli_console.cpp
     src/backend/http_server.cpp
     src/backend/main.cpp
 )
@@ -165,8 +172,13 @@ if(BUILD_TESTING)
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/backend_integration.py"
                 "$<TARGET_FILE:smithproxy-gui>" "${SMITHPROXY_GUI_TEST_ASSET_DIR}")
     set_tests_properties(backend_integration_tests PROPERTIES TIMEOUT 20)
+    add_test(NAME cli_console_integration_tests
+        COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_console_integration.py"
+                "$<TARGET_FILE:smithproxy-gui>" "${SMITHPROXY_GUI_TEST_ASSET_DIR}")
+    set_tests_properties(cli_console_integration_tests PROPERTIES TIMEOUT 20)
     add_executable(backend_transaction_test_server
         tests/backend_transaction_server.cpp
+        src/backend/cli_console.cpp
         src/backend/http_server.cpp
     )
     target_include_directories(backend_transaction_test_server PRIVATE
@@ -196,11 +208,13 @@ if(BUILD_TESTING)
                 "${CURL_VERSION}"
                 "${MICROHTTPD_VERSION}"
                 "${nlohmann_json_VERSION}"
+                "${OPENSSL_VERSION}"
                 "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME api_surface_tests
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/api_surface.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/docs/API_SURFACE.json"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/backend/http_server.cpp")
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/backend/http_server.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/backend/cli_console.cpp")
     if(SMITHPROXY_GUI_BUILD_FRONTEND)
         add_test(NAME installed_bundle_tests
             COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_bundle.py"

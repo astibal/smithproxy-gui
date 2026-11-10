@@ -68,11 +68,16 @@ Proces čte přístup ke Smithproxy pouze z prostředí:
 SMITHPROXY_API_URL=https://127.0.0.1:55555
 SMITHPROXY_API_KEY=...
 SMITHPROXY_CA_CERT=/path/to/ca-cert.pem
+SMITHPROXY_CLI=127.0.0.1:55000
 ```
 
 Proměnné se nastavují společně. Klíč se nepředává přes argumenty, neposílá se
 do prohlížeče a neloguje se. Pro nasazení za Saslik gateway použij například
 `--base-path /ws001/smithproxy-gui/`.
+
+Volitelná proměnná `SMITHPROXY_CLI` zpřístupní omezený WebSocket bridge k
+existujícímu libcli2 brokeru. GUI core nespouští systémový shell ani samo
+neinterpretuje CLI příkazy.
 
 První vertikální řez používá fake config API a ukazuje standalone i embeddable
 aplikační shell. Kořenová web componenta podporuje integraci do Saslik Tools:

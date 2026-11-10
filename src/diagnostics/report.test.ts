@@ -18,7 +18,7 @@ function fixture(): DiagnosticsReportInput {
       configRead: true, configWrite: false, configSave: false, drafts: true, draftPreflight: true,
       jobs: true, eventsAvailable: true, alertsAvailable: true, auditAvailable: true, metrics: true,
       sessionActivity: true, tlsMonitoring: true, neighborMonitoring: true,
-      interfaceMonitoring: true,
+      interfaceMonitoring: true, console: true,
       configTransaction: 'review-required',
     },
     runtime: {...timed, workers: 3, sessionsTotal: 19, sessionsActive: 4, bytesUp: 1536, bytesDown: 2304, listenerCount: 2},
@@ -53,7 +53,7 @@ describe('diagnostics report', () => {
       runtime: {listenerCount: 2, sessionsActive: 4},
       interfaces: {generation: 42, interfaces: 3, addresses: 5},
       capabilities: {bootstrapState: 'ready', enabledFeatureCount: 12,
-        jobs: true, metrics: true, interfaceMonitoring: true,
+        jobs: true, metrics: true, interfaceMonitoring: true, console: true,
         eventsAvailable: true, alertsAvailable: true, auditAvailable: true},
       operations: {
         eventStream: 'live', eventStreamReconnectCount: 2,
@@ -87,7 +87,7 @@ describe('diagnostics report', () => {
     expect(report.generatedAtUnixMs).toBe(0);
     expect(report.capabilities.checkedAtUnixMs).toBeNull();
     expect(report.capabilities.lastSuccessAtUnixMs).toBeNull();
-    expect(report.capabilities.enabledFeatureCount).toBe(14);
+    expect(report.capabilities.enabledFeatureCount).toBe(15);
     expect(report.operations.eventStreamConnectedAtUnixMs).toBeNull();
     expect(report.operations.eventStreamLastMessageAtUnixMs).toBeNull();
     expect(report.operations.eventStreamLastDisconnectAtUnixMs).toBeNull();

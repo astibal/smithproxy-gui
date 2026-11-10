@@ -78,6 +78,15 @@ operations. Configuration revocation removes the live snapshot, shared
 draft state, validation results, open drawers, and their form controls; slower
 configuration or draft responses cannot repopulate them.
 
+The optional browser console is available only when `SMITHPROXY_CLI` names an
+existing libcli2 broker. It never opens an operating-system shell. Its WebSocket
+upgrade requires the trusted gateway when configured, an exact same-origin
+`Origin`, same-site Fetch Metadata, WebSocket version 13, and the fixed
+`smithproxy-cli-v1` subprotocol. Browser frames must be masked and unfragmented;
+frame size, pending buffers, connection attempts, concurrent sessions, and idle
+time are bounded. The bridge forwards terminal bytes without parsing commands,
+and shutdown or any protocol violation closes both sides.
+
 The public bootstrap response is treated as untrusted input. Its API version,
 canonical mount path, gateway-session relationship, and feature dependency graph
 must agree before the browser enables a protected request. A response for a

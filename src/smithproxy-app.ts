@@ -70,6 +70,7 @@ import {probeIncidents} from './monitoring/incidents';
 import {orderListenerWorkloads} from './monitoring/listener-order';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
 import {DrawerStore, MAXIMUM_DRAWER_DEPTH, type DrawerEntry} from './state/drawer-store';
+import './console/smithproxy-console';
 import {
   connectingSystemStatus,
   displayState,
@@ -530,6 +531,8 @@ export class SmithproxyApp extends LitElement {
   @state() private archiveResourcePath = '';
   @state() private archiveResourceExecutable = false;
   @state() private archiveResourceDeleteArmed: string | undefined;
+  @state() private consoleAvailable = false;
+  @state() private consoleExpanded = false;
 
   private readonly drawerStore = new DrawerStore();
   private runtime: RuntimeConfig | undefined;
@@ -1711,7 +1714,8 @@ export class SmithproxyApp extends LitElement {
       const managementCapabilities = capabilities.features.jobs || capabilities.features.events ||
         capabilities.features.alerts || capabilities.features.audit || capabilities.features.metrics ||
         capabilities.features.sessionActivity || capabilities.features.tlsMonitoring ||
-        capabilities.features.neighborMonitoring || capabilities.features.interfaceMonitoring;
+        capabilities.features.neighborMonitoring || capabilities.features.interfaceMonitoring ||
+        capabilities.features.console;
       if (managementCapabilities && sessionResult.status === 'fulfilled' &&
           sessionResult.value.mode === 'gateway' && !sessionResult.value.authenticated) {
         throw new Error('Management capabilities require a verified trusted gateway session.');
@@ -1773,6 +1777,7 @@ export class SmithproxyApp extends LitElement {
       this.signatureStructuralDraftsAvailable = nextSignatureStructuralDraftsAvailable;
       this.draftAvailable = nextDraftAvailable;
       this.draftPreflightAvailable = nextDraftPreflightAvailable;
+      this.consoleAvailable = capabilities.features.console;
       if (configurationCapabilitiesChanged) this.configurationAccessEpoch += 1;
       if (configReadWasAvailable && !this.configReadAvailable) {
         this.clearPrivilegedConfigurationState();
@@ -1821,6 +1826,8 @@ export class SmithproxyApp extends LitElement {
       this.signatureStructuralDraftsAvailable = false;
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
+      this.consoleAvailable = false;
+      this.consoleExpanded = false;
       this.updateMonitoringCapabilities(undefined);
       const failure = statusFromFailure(error);
       this.systemStatus = failure;
@@ -2069,6 +2076,7 @@ export class SmithproxyApp extends LitElement {
       this.alertsAvailable, this.auditAvailable, this.metricsAvailable,
       this.sessionActivityAvailable, this.tlsMonitoringAvailable,
       this.neighborMonitoringAvailable, this.interfaceMonitoringAvailable,
+      this.consoleAvailable,
     ].filter(Boolean).length;
   }
 
@@ -2144,6 +2152,7 @@ export class SmithproxyApp extends LitElement {
         tlsMonitoring: this.tlsMonitoringAvailable,
         neighborMonitoring: this.neighborMonitoringAvailable,
         interfaceMonitoring: this.interfaceMonitoringAvailable,
+        console: this.consoleAvailable,
         configTransaction: this.transactionCapabilityState,
       },
       runtime: {
@@ -7166,6 +7175,11 @@ export class SmithproxyApp extends LitElement {
   }
 
   private handleKeydown(event: KeyboardEvent): void {
+    if (this.consoleAvailable && event.ctrlKey && event.key === '`') {
+      event.preventDefault();
+      this.consoleExpanded = !this.consoleExpanded;
+      return;
+    }
     if (event.key === 'Escape' && this.drawers.length > 0) {
       event.preventDefault();
       this.requestCloseDrawer(this.drawers.length - 1);
@@ -10517,7 +10531,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Last check</dt><dd>${this.timeLabel(this.capabilityCheckedAtUnixMs)}</dd>
               <dt>Last valid contract</dt><dd>${this.timeLabel(this.capabilityLastSuccessAtUnixMs)}</dd>
               <dt>API contract</dt><dd>${this.apiVersion}</dd>
-              <dt>Enabled surfaces</dt><dd>${enabledCapabilityCount} / 14</dd>
+              <dt>Enabled surfaces</dt><dd>${enabledCapabilityCount} / 15</dd>
               <dt>Refresh cadence</dt><dd>30 seconds · connectivity-triggered</dd>
             </dl>
             ${this.capabilityError ? html`<p role="status">${this.capabilityError}</p>` : nothing}
@@ -14215,6 +14229,12 @@ export class SmithproxyApp extends LitElement {
             ${this.drawers.map((entry, index) => this.renderDrawer(entry, index))}
           </div>
         </main>
+        ${this.consoleAvailable ? html`
+          <smithproxy-console .expanded=${this.consoleExpanded} .basePath=${this.runtime?.basePath ?? '/'}
+            @console-toggle=${(event: CustomEvent<{expanded: boolean}>) => {
+              this.consoleExpanded = event.detail.expanded;
+            }}></smithproxy-console>
+        ` : nothing}
         ${this.externalConfigNotice ? html`
           <aside class="config-toast" role="status" aria-live="polite">
             <div class="config-toast-content">

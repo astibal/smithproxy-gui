@@ -19,7 +19,7 @@ def function_body(source: str, start: str, end: str) -> str:
     return source[start_index:end_index]
 
 
-def implemented_routes(source: str) -> dict[str, tuple[str, ...]]:
+def implemented_routes(source: str, console_source: str) -> dict[str, tuple[str, ...]]:
     read_router = function_body(
         source,
         "Response route(MHD_Connection* connection, const std::string_view url)",
@@ -44,13 +44,16 @@ def implemented_routes(source: str) -> dict[str, tuple[str, ...]]:
     for path in mutation_paths:
         require(path not in routes, f"route method extraction is ambiguous for {path}")
         routes[path] = ("POST",)
+    if '"/api/v1/console"' in console_source:
+        routes["/api/v1/console"] = ("GET",)
     return routes
 
 
 def main() -> None:
-    require(len(sys.argv) == 3, "expected API manifest and router source paths")
+    require(len(sys.argv) == 4, "expected API manifest and two router source paths")
     manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     source = Path(sys.argv[2]).read_text(encoding="utf-8")
+    console_source = Path(sys.argv[3]).read_text(encoding="utf-8")
 
     require(manifest.get("schema_version") == 1, "unsupported API surface schema")
     require(manifest.get("api_version") == "v1", "unexpected API version")
@@ -60,7 +63,7 @@ def main() -> None:
     allowed_authentication = {"public", "management", "gateway"}
     allowed_media_types = {
         "application/json", "text/event-stream", "application/octet-stream",
-        "application/vnd.smithproxy.cftar",
+        "application/vnd.smithproxy.cftar", "application/websocket",
     }
     documented: dict[str, tuple[str, ...]] = {}
     for endpoint in endpoints:
@@ -74,7 +77,7 @@ def main() -> None:
                 f"endpoint escapes the versioned API: {path}")
         require(path not in documented, f"duplicate endpoint: {path}")
         methods = endpoint["methods"]
-        require(methods in (["GET", "HEAD"], ["POST"]), f"unsupported methods for {path}")
+        require(methods in (["GET", "HEAD"], ["GET"], ["POST"]), f"unsupported methods for {path}")
         require(endpoint["authentication"] in allowed_authentication,
                 f"invalid authentication boundary for {path}")
         require(isinstance(endpoint["csrf"], bool), f"invalid CSRF marker for {path}")
@@ -92,7 +95,7 @@ def main() -> None:
             require(path == "/api/v1/events", "unexpected event stream endpoint")
         documented[path] = tuple(methods)
 
-    require(documented == implemented_routes(source),
+    require(documented == implemented_routes(source, console_source),
             "API surface manifest and C++ router have different paths or methods")
 
     public_paths = {
@@ -135,6 +138,7 @@ def main() -> None:
         "/healthz": None,
         "/api/v1/capabilities": None,
         "/api/v1/auth/session": None,
+        "/api/v1/console": "console",
         "/api/v1/status": None,
         "/api/v1/metrics/summary": "metrics",
         "/api/v1/tls/cache/summary": "tls_monitoring",

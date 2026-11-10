@@ -12,10 +12,10 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    require(len(sys.argv) == 8, "expected SBOM path, five versions, and source path")
+    require(len(sys.argv) == 9, "expected SBOM path, six versions, and source path")
     sbom_path = Path(sys.argv[1])
-    project_version, lmhpp_revision, curl_version, microhttpd_version, json_version = sys.argv[2:7]
-    source_path = sys.argv[7]
+    project_version, lmhpp_revision, curl_version, microhttpd_version, json_version, openssl_version = sys.argv[2:8]
+    source_path = sys.argv[8]
 
     raw = sbom_path.read_text(encoding="utf-8")
     payload = json.loads(raw)
@@ -37,6 +37,7 @@ def main() -> None:
         "libmicrohttpd": (microhttpd_version, "LGPL-2.1-or-later",
                            "pkg:generic/libmicrohttpd"),
         "nlohmann-json": (json_version, "MIT", "pkg:generic/nlohmann-json"),
+        "openssl": (openssl_version, "Apache-2.0", "pkg:generic/openssl"),
     }
     components = payload.get("components")
     require(isinstance(components, list), "components must be an array")

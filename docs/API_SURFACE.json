@@ -27,6 +27,14 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/console",
+      "methods": ["GET"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "console",
+      "response_media_type": "application/websocket"
+    },
+    {
       "path": "/api/v1/status",
       "methods": ["GET", "HEAD"],
       "authentication": "management",

@@ -93,6 +93,7 @@ The backend reads Smithproxy access exclusively from its process environment:
 SMITHPROXY_API_URL=https://127.0.0.1:55555
 SMITHPROXY_API_KEY=...
 SMITHPROXY_CA_CERT=/path/to/ca-cert.pem
+SMITHPROXY_CLI=127.0.0.1:55000
 SMITHPROXY_GUI_GATEWAY_SECRET=at-least-32-random-characters
 SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS=optional-overlap-during-rotation
 ```
@@ -101,6 +102,10 @@ The variables must be provided together. The API key is never accepted through
 command-line arguments, exposed to the browser, or written to logs. For a
 deployment behind the Saslik gateway, use a base path such as
 `--base-path /ws001/smithproxy-gui/`.
+
+`SMITHPROXY_CLI` is optional. When configured, the GUI exposes a bounded,
+same-origin WebSocket bridge to the existing libcli2 broker. It does not start
+an operating-system shell or interpret CLI commands in the GUI core.
 
 Runtime configuration reads are fail-closed. They are enabled only when
 `SMITHPROXY_GUI_GATEWAY_SECRET` is configured and the trusted reverse proxy
@@ -358,9 +363,9 @@ are not stable.
 
 Control-plane health and listener monitoring use the production C++ backend. A
 bounded five-minute runtime history visualizes active sessions and aggregate
-throughput. Live session monitoring is aggregated by transport inside the GUI core;
-endpoint addresses, ports, session identifiers, and policy names are never sent
-to the browser. TLS monitoring exposes cache size, capacity, and freshness only;
+throughput. The authenticated session browser receives a bounded set of active and
+recently closed endpoint, transport, policy, rate, and byte metadata needed by an
+administrator; it does not retain payloads or credentials. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The
 Network neighborhood monitoring follows the same rule: only endpoint counts,
 activity windows, observations, and traffic totals reach the browser; hostnames,
@@ -428,7 +433,9 @@ targets, listener names, protocol names, credentials, or tokens.
 The privacy-preserving interface-monitor contract required for future netlink
 health monitoring is documented in
 [`docs/SMITHPROXY_INTERFACE_API_PROPOSAL.md`](docs/SMITHPROXY_INTERFACE_API_PROPOSAL.md).
-The GUI does not invoke or parse the privileged administrative CLI.
+The optional slide-out console connects through a bounded same-origin WebSocket
+bridge to the existing Smithproxy libcli2 broker. The GUI does not parse,
+automate, or emulate that privileged CLI and never exposes an operating-system shell.
 
 When served behind Saslik, the page loads the canonical `/saslik-theme.css` and
 `/saslik-theme.js` assets with the `smithproxy-gui` application scope. Standalone

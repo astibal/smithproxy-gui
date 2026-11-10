@@ -2,6 +2,7 @@
 
 #include "audit_store.hpp"
 #include "commit_coordinator.hpp"
+#include "cli_console.hpp"
 #include "draft_operation.hpp"
 #include "draft_operation_json.hpp"
 #include "draft_store.hpp"
@@ -1532,7 +1533,9 @@ private:
                     ",\"session_activity\":" + (monitoring ? "true" : "false") +
                     ",\"tls_monitoring\":" + (monitoring ? "true" : "false") +
                     ",\"neighbor_monitoring\":" + (monitoring ? "true" : "false") +
-                    ",\"interface_monitoring\":" + (monitoring ? "true" : "false") + "}}"};
+                    ",\"interface_monitoring\":" + (monitoring ? "true" : "false") +
+                    ",\"console\":" +
+                    (monitoring && config_.smithproxy_cli ? "true" : "false") + "}}"};
     }
 
     bool gateway_authenticated(MHD_Connection* connection) const {
@@ -2614,16 +2617,28 @@ private:
 } // namespace
 
 int run_http_server(const AppConfig& config, SmithproxyMonitor& monitor, std::atomic_bool& stop_requested) {
+    // Upgraded console sessions outlive their HTTP request. Keep their shutdown
+    // flag independently owned so a late bridge iteration cannot observe a
+    // caller-owned atomic after run_http_server returns.
+    const auto console_stop_requested = std::make_shared<std::atomic_bool>(false);
     lmh::WebServer server(config.port);
     server.options().bind_address = config.bind_address;
     server.options().thread_pool_size = 8;
+    server.options().allow_upgrade = config.smithproxy_cli.has_value();
     server.options().configure_listen_socket = [](const int socket) {
         int enabled = 1;
         return ::setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled)) == 0;
     };
-    server.options().handler_should_terminate = [&stop_requested] { return stop_requested.load(); };
+    server.options().handler_should_terminate = [&stop_requested, console_stop_requested] {
+        const bool stopping = stop_requested.load();
+        if (stopping) console_stop_requested->store(true);
+        return stopping;
+    };
+    server.addController(make_cli_console_controller(config, console_stop_requested));
     server.addController(std::make_shared<GuiController>(config, monitor));
-    return server.start() ? 0 : 1;
+    const bool started = server.start();
+    console_stop_requested->store(true);
+    return started ? 0 : 1;
 }
 
 } // namespace smithproxy::gui

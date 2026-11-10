@@ -76,6 +76,7 @@ type MockState = {
   gatewayMode?: 'gateway' | 'disabled';
   gatewayAuthenticated?: boolean;
   forceManagementCapabilities?: boolean;
+  consoleReady?: boolean;
   inconsistentPrivilegedCapabilities?: boolean;
   invalidEventStream?: boolean;
   eventStreamRequests?: number;
@@ -297,6 +298,7 @@ async function mockSystemApi(
       tls_monitoring: monitoringFeature('tls_monitoring'),
       neighbor_monitoring: monitoringFeature('neighbor_monitoring'),
       interface_monitoring: monitoringFeature('interface_monitoring'),
+      console: management && Boolean(state.consoleReady),
     };
     if (state.inconsistentPrivilegedCapabilities) {
       featureFlags.config_write = true;
@@ -1123,6 +1125,25 @@ async function expectNoWcagViolations(page: Page): Promise<void> {
   ).join('\n');
   expect(result.violations, summary).toEqual([]);
 }
+
+test('offers the slide-out CLI only when a real broker capability is available', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready', consoleReady: true}, true, false);
+  await page.goto('/');
+
+  const consoleRegion = page.getByRole('region', {name: 'Smithproxy CLI console'});
+  const toggle = consoleRegion.getByRole('button', {name: /Console/u});
+  await expect(consoleRegion).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(consoleRegion.getByLabel('Interactive Smithproxy terminal')).toBeVisible();
+});
+
+test('does not imply CLI access when the broker capability is absent', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true, false);
+  await page.goto('/');
+  await expect(page.getByRole('region', {name: 'Smithproxy CLI console'})).toHaveCount(0);
+});
 
 test('requires an explicit edit decision before live configuration fields can change', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true, false);
@@ -5879,7 +5900,7 @@ test('rejects an incoherent privileged capability graph before protected request
     has: page.getByRole('heading', {name: 'Capability bootstrap'}),
   });
   await expect(capabilityCard).toContainText('Unavailable');
-  await expect(capabilityCard).toContainText('Enabled surfaces0 / 14');
+  await expect(capabilityCard).toContainText('Enabled surfaces0 / 15');
   await expect(capabilityCard).toContainText('Inconsistent privileged capabilities.');
   expect(protectedRequests).toEqual([]);
 });
@@ -6285,7 +6306,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   });
   await expect(capabilityCard).toContainText('Ready');
   await expect(capabilityCard).toContainText('API contractv1');
-  await expect(capabilityCard).toContainText('Enabled surfaces12 / 14');
+  await expect(capabilityCard).toContainText('Enabled surfaces12 / 15');
   await expect(capabilityCard).toContainText('30 seconds · connectivity-triggered');
   const jobsCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Backend jobs'}),
