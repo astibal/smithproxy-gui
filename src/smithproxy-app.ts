@@ -81,6 +81,10 @@ import {
 } from './state/system-status';
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
+const navigationIcons: Readonly<Record<string, string>> = {
+  Dashboard: '⌂', Network: '⌁', Objects: '◇', Policy: '≣', Draft: '✎',
+  Monitoring: '⌁', Logs: '≡', System: '⚙',
+};
 const sectionDescriptions: Readonly<Record<string, string>> = {
   Dashboard: 'Traffic, configuration, and operational status',
   Network: 'Traffic activity, listeners, interfaces, and nearby systems',
@@ -14405,20 +14409,23 @@ export class SmithproxyApp extends LitElement {
       if (item === 'System') return activeJobCount > 0 ? activeJobCount.toLocaleString() : undefined;
       return undefined;
     };
-    const visibleNavigation = navigation;
+    // Draft is a global configuration workspace, not a child of whichever
+    // object type happened to produce its first pending operation.
+    const visibleNavigation = this.draftChangeCount > 0
+      ? [...navigation.slice(0, 4), 'Draft', ...navigation.slice(4)]
+      : navigation;
     const sectionTitle = this.activeSection === 'Objects' ? this.objectViewLabel() : this.activeSection;
     return html`
       <div class="shell" @keydown=${this.handleKeydown}>
         <aside class="sidebar">
           <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
           <nav aria-label="Primary navigation">
-            ${visibleNavigation.map((item, index) => html`
+            ${visibleNavigation.map(item => html`
               <div class="nav-item ${['Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'].includes(item)
                 ? `${item.toLowerCase()}-nav-item` : ''}">
                 <button type="button" class=${['Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'].includes(item)
                   ? `${item.toLowerCase()}-nav-toggle` : nothing}
-                  aria-current=${this.activeSection === item || (item === 'Policy' && this.activeSection === 'Draft')
-                    ? 'page' : nothing}
+                  aria-current=${this.activeSection === item ? 'page' : nothing}
                   aria-expanded=${item === 'Objects' ? String(this.objectNavigationExpanded) :
                     item === 'Network' ? String(this.networkNavigationExpanded) :
                     item === 'Policy' ? String(this.policyNavigationExpanded) :
@@ -14498,7 +14505,7 @@ export class SmithproxyApp extends LitElement {
                     }
                   }}>
                   <span class="nav-icon" aria-hidden="true">
-                    ${item === 'Draft' ? '✎' : ['⌂', '⌁', '◇', '≣', '⌁', '≡', '⚙'][index]}
+                    ${navigationIcons[item] ?? '·'}
                   </span>
                   <span class="nav-label">${item}</span>
                   ${['Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'].includes(item)

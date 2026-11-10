@@ -4308,6 +4308,24 @@ test('rejects validation metadata that is not bound to the complete draft', asyn
   await expect(preflight.getByText('Validated', {exact: true})).toHaveCount(0);
 });
 
+test('presents the shared draft as a top-level workspace', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready',
+    initialDraftChanges: [{path: 'address_objects.[0].value', value: '192.0.2.1/32'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+
+  const navigation = page.getByRole('navigation', {name: 'Primary navigation'});
+  const draft = navigation.getByRole('button', {name: 'Draft', exact: true});
+  await expect(draft).toBeVisible();
+  await draft.click();
+  await expect(draft).toHaveAttribute('aria-current', 'page');
+  await expect(navigation.getByRole('button', {name: 'Policy', exact: true}))
+    .not.toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
+});
+
 test('refreshes live configuration only outside an active edit transaction', async ({page}) => {
   const state: MockState = {smithproxy: 'ready', configFetches: 0};
   await mockSystemApi(page, state, true);
