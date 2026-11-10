@@ -7450,6 +7450,11 @@ test.describe('Saslik visual regression', () => {
         element => element.getBoundingClientRect().width,
       );
       expect(policyActionWidth).toBeGreaterThan(300);
+      await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+      const mobileMonitoring = page.getByRole('group', {name: 'Monitoring categories'});
+      await expect(mobileMonitoring.getByRole('button', {name: 'Health', exact: true})).toBeVisible();
+      await expect(mobileMonitoring.getByRole('button', {name: 'Traffic', exact: true})).toBeVisible();
+      await page.getByRole('button', {name: 'Policy', exact: true}).click();
 
       await expect(page).toHaveScreenshot(`${theme}-mobile-policy.png`, {
         animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,

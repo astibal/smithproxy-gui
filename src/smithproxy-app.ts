@@ -14489,6 +14489,7 @@ export class SmithproxyApp extends LitElement {
                   <div class="object-subnav" role="group" aria-label="Network categories"
                     ?hidden=${!this.networkNavigationExpanded}>
                     ${networkNavigation.map(category => html`<button type="button"
+                      aria-label=${category.label} title=${category.label}
                       aria-current=${this.activeSection === 'Network' && this.networkView === category.kind ? 'page' : nothing}
                       @click=${() => {
                         this.activeSection = 'Network'; this.networkView = category.kind;
@@ -14501,6 +14502,7 @@ export class SmithproxyApp extends LitElement {
                     ?hidden=${!this.objectNavigationExpanded}>
                     ${objectNavigation.map(category => html`
                       <button type="button"
+                        aria-label=${category.label}
                         aria-current=${this.activeSection === 'Objects' && this.objectKindFilter === category.kind &&
                           (category.kind !== 'security' || this.securityObjectFilter === category.securityFilter ||
                             (category.securityFilter === 'signatures' &&
@@ -14517,6 +14519,7 @@ export class SmithproxyApp extends LitElement {
                         this.objectKindFilter === 'profile' ? html`
                         <div class="nested-subnav" role="group" aria-label="Profile categories">
                           ${profileObjectNavigation.map(profile => html`<button type="button"
+                            aria-label=${profile.label} title=${profile.label}
                             aria-current=${this.profileObjectFilter === profile.kind ? 'page' : nothing}
                             @click=${() => {
                               this.selectObjectView('profile');
@@ -14530,6 +14533,7 @@ export class SmithproxyApp extends LitElement {
                         this.securityObjectFilter !== 'trust' ? html`
                         <div class="nested-subnav" role="group" aria-label="Signature categories">
                           ${securityObjectNavigation.map(security => html`<button type="button"
+                            aria-label=${security.label} title=${security.label}
                             aria-current=${this.securityObjectFilter === security.kind ? 'page' : nothing}
                             @click=${() => {
                               this.selectObjectView('security', security.kind);
@@ -14555,6 +14559,7 @@ export class SmithproxyApp extends LitElement {
                   <div class="object-subnav" role="group" aria-label="Monitoring categories"
                     ?hidden=${!this.monitoringNavigationExpanded}>
                     ${monitoringNavigation.map(category => html`<button type="button"
+                      aria-label=${category.label} title=${category.label}
                       aria-current=${this.activeSection === 'Monitoring' && this.monitoringView === category.kind ? 'page' : nothing}
                       @click=${() => {
                         this.activeSection = 'Monitoring'; this.monitoringView = category.kind;
@@ -14566,6 +14571,7 @@ export class SmithproxyApp extends LitElement {
                   <div class="object-subnav" role="group" aria-label="Log categories"
                     ?hidden=${!this.logsNavigationExpanded}>
                     ${logsNavigation.map(category => html`<button type="button"
+                      aria-label=${category.label} title=${category.label}
                       aria-current=${this.activeSection === 'Logs' && this.logsView === category.kind ? 'page' : nothing}
                       @click=${() => {
                         this.activeSection = 'Logs'; this.logsView = category.kind;
@@ -14577,6 +14583,7 @@ export class SmithproxyApp extends LitElement {
                   <div class="object-subnav" role="group" aria-label="System categories"
                     ?hidden=${!this.systemNavigationExpanded}>
                     ${systemNavigation.map(category => html`<button type="button"
+                      aria-label=${category.label} title=${category.label}
                       aria-current=${this.activeSection === 'System' && this.systemView === category.kind ? 'page' : nothing}
                       @click=${() => {
                         this.activeSection = 'System'; this.systemView = category.kind;
