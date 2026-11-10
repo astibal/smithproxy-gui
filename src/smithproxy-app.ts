@@ -4471,7 +4471,8 @@ export class SmithproxyApp extends LitElement {
 
   private openSystemDrawer(
     kind: 'settings' | 'captures', origin?: HTMLElement,
-    settingsGroup?: 'management-api' | 'webhook',
+    settingsGroup?: 'traffic' | 'workers' | 'listeners' | 'logging' | 'auxiliary' | 'tuning' |
+      'management-api' | 'webhook',
   ): void {
     if ((kind === 'settings' && !this.snapshot?.settings) ||
         (kind === 'captures' && !this.snapshot?.captures)) return;
@@ -10937,7 +10938,10 @@ export class SmithproxyApp extends LitElement {
             <article class="domain-card" data-system-section="settings">
               <header><div><h3>Traffic admission</h3><p>Configured listener and failure policy</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('settings', 'settings')}
-                  <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
+                  <button class="secondary" type="button"
+                    @click=${(event: Event) => this.openSystemDrawer(
+                      'settings', event.currentTarget as HTMLElement, 'traffic',
+                    )}>Open traffic settings</button>
                 </div>
               </header>
               <dl>
@@ -10952,7 +10956,12 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Worker pools</h3><p>Configured runtime concurrency</p></div></header>
+              <header><div><h3>Worker pools</h3><p>Configured runtime concurrency</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'workers',
+                  )}>Open worker settings</button>
+              </header>
               <dl>
                 <dt>Plaintext / TLS</dt><dd>${workers(setting('plaintext_workers', settings.workers.plaintext))} / ${workers(setting('ssl_workers', settings.workers.tls))}</dd>
                 <dt>UDP / DTLS / QUIC</dt><dd>${workers(setting('udp_workers', settings.workers.udp))} / ${workers(setting('dtls_workers', settings.workers.dtls))} / ${workers(setting('quic_workers', settings.workers.quic))}</dd>
@@ -10962,7 +10971,12 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Listener endpoints</h3><p>Configured local ports and certificate status caches</p></div></header>
+              <header><div><h3>Listener endpoints</h3><p>Configured local ports and certificate status caches</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'listeners',
+                  )}>Open listener settings</button>
+              </header>
               <dl>
                 <dt>Plaintext / TLS</dt><dd>${setting('plaintext_port', settings.ports.plaintext)} / ${setting('ssl_port', settings.ports.tls)}</dd>
                 <dt>UDP / QUIC</dt><dd>${setting('udp_port', settings.ports.udp)} / ${setting('quic_port', settings.ports.quic)}</dd>
@@ -10972,7 +10986,12 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Logging and payloads</h3><p>Destinations stay redacted</p></div></header>
+              <header><div><h3>Logging and payloads</h3><p>Destinations stay redacted</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'logging',
+                  )}>Open logging settings</button>
+              </header>
               <dl>
                 <dt>Log level / console</dt><dd>${setting('log_level', settings.logging.level)} / ${setting('log_console', settings.logging.console) ? 'On' : 'Off'}</dd>
                 <dt>Log file</dt><dd>${settings.logging.fileConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
@@ -10985,18 +11004,36 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Auxiliary services</h3><p>Credentials and filesystem paths stay redacted</p></div></header>
+              <header><div><h3>Auxiliary services</h3><p>Credentials and filesystem paths stay redacted</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'auxiliary',
+                  )}>Open service settings</button>
+              </header>
               <dl>
                 <dt>CLI port / password</dt><dd>${setting('cli.port', settings.auxiliary.cliPort)} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
                 <dt>SOCKS async DNS</dt><dd>${setting('socks.async_dns', settings.auxiliary.socksAsyncDns) ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Host buffer</dt><dd>${setting('tuning.host_bufsz_min', settings.auxiliary.tuning.hostBufferMin)} bytes</dd>
-                <dt>Neighbor cache</dt><dd>${setting('tuning.nbr_cache_size', settings.auxiliary.tuning.neighborCacheSize)} entries</dd>
                 <dt>UDP quick ports</dt><dd>${settingStrings('udp_quick_ports', settings.auxiliary.udpQuickPorts).join(', ') || 'None'}</dd>
                 <dt>Certificates / CA bundle</dt><dd>${settings.auxiliary.certificatesPathConfigured ? 'Configured' : 'Missing'} / ${settings.auxiliary.caBundlePathConfigured ? 'Configured' : 'Missing'}</dd>
                 <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>Message assets</dt><dd>${settings.auxiliary.messagesDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>Payload filename parts</dt><dd>${settings.auxiliary.payloadFilePrefixConfigured ? 'Prefix' : 'No prefix'} / ${settings.auxiliary.payloadFileSuffixConfigured ? 'Suffix' : 'No suffix'}</dd>
                 <dt>Web rating key</dt><dd>${settings.auxiliary.webRatingKeyConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+              </dl>
+            </article>
+            <article class="domain-card" data-system-section="settings">
+              <header><div><h3>Performance tuning</h3><p>Advanced transport capacity and timeouts</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'tuning',
+                  )}>Open tuning settings</button>
+              </header>
+              <dl>
+                <dt>Host buffer</dt><dd>${setting('tuning.host_bufsz_min', settings.auxiliary.tuning.hostBufferMin)} bytes</dd>
+                <dt>Maximum multiplier</dt><dd>${setting('tuning.host_bufsz_max_multiplier', settings.auxiliary.tuning.hostBufferMaxMultiplier)}</dd>
+                <dt>I/O batch</dt><dd>${setting('tuning.host_io_batch', settings.auxiliary.tuning.hostIoBatch).toLocaleString()} bytes</dd>
+                <dt>Open / idle timeout</dt><dd>${setting('tuning.host_open_timeout', settings.auxiliary.tuning.hostOpenTimeout)}s / ${setting('tuning.host_idle_timeout', settings.auxiliary.tuning.hostIdleTimeout)}s</dd>
+                <dt>Neighbor cache</dt><dd>${setting('tuning.nbr_cache_size', settings.auxiliary.tuning.neighborCacheSize).toLocaleString()} entries</dd>
               </dl>
             </article>
             <article class="domain-card" data-system-section="backend">
@@ -13116,7 +13153,7 @@ export class SmithproxyApp extends LitElement {
         configuration contains: ${missingGroups.join(', ')}.
       </div>` : nothing}
       <div class="form-grid wide-form-grid">
-        <fieldset class="editor-group">
+        <fieldset class="editor-group" data-settings-group="traffic">
           <legend>Traffic admission</legend>
           <p>Enables accepted proxy entry points and defines fail-closed behavior.</p>
           <div class="form-grid">
@@ -13132,7 +13169,7 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('access-fail-open', 'Access request failure', settings.accessRequestFailOpen)}
           </div>
         </fieldset>
-        <fieldset class="editor-group">
+        <fieldset class="editor-group" data-settings-group="workers">
           <legend>Worker capacity</legend>
           <p>Controls listener concurrency; zero keeps Smithproxy automatic sizing.</p>
           <div class="form-grid">
@@ -13149,7 +13186,7 @@ export class SmithproxyApp extends LitElement {
         </span>
           </div>
         </fieldset>
-        <fieldset class="editor-group">
+        <fieldset class="editor-group" data-settings-group="listeners">
           <legend>Listener endpoints</legend>
           <p>Assigns the local ports used by enabled proxy entry points.</p>
           <div class="form-grid">
@@ -13169,7 +13206,7 @@ export class SmithproxyApp extends LitElement {
         </span>
           </div>
         </fieldset>
-        <fieldset class="editor-group">
+        <fieldset class="editor-group" data-settings-group="logging">
           <legend>Logging and payloads</legend>
           <p>Controls operational logs, syslog delivery, and default payload retention.</p>
           <div class="form-grid">
@@ -13192,7 +13229,7 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('syslog-server', 'Syslog server', settings.logging.syslogServerConfigured)}
           </div>
         </fieldset>
-        <fieldset class="editor-group">
+        <fieldset class="editor-group" data-settings-group="auxiliary">
           <legend>Auxiliary services</legend>
           <p>Configures CLI, SOCKS behavior, certificate resources, and supporting assets.</p>
           <div class="form-grid">
@@ -13222,7 +13259,7 @@ export class SmithproxyApp extends LitElement {
           placeholder="192.0.2.53, resolver.example" .readOnly=${locked('settings.nameservers')} />
           </div>
         </fieldset>
-        <fieldset class="editor-group">
+        <fieldset class="editor-group" data-settings-group="tuning">
           <legend>Performance tuning</legend>
           <p>Advanced buffer, timeout, cache, and transport behavior.</p>
           <div class="form-grid">

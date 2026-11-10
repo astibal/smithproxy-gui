@@ -1244,6 +1244,35 @@ test('opens management settings at the selected protected configuration group', 
   await expect(editor.getByLabel('Webhook', {exact: true})).toBeDisabled();
 });
 
+test('opens each system status card at its protected configuration group', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true, false);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'System settings', exact: true}).click();
+
+  const shortcuts = [
+    ['Open traffic settings', 'Traffic admission', 'TPROXY listener'],
+    ['Open worker settings', 'Worker capacity', 'Plaintext workers'],
+    ['Open listener settings', 'Listener endpoints', 'Plaintext port'],
+    ['Open logging settings', 'Logging and payloads', 'Log level'],
+    ['Open service settings', 'Auxiliary services', 'CLI port'],
+    ['Open tuning settings', 'Performance tuning', 'Initial host buffer (bytes)'],
+  ] as const;
+
+  for (const [buttonName, groupName, fieldName] of shortcuts) {
+    await page.getByRole('button', {name: buttonName}).click();
+    const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+    await expect(editor.getByText('Protected configuration view')).toBeVisible();
+    await expect(editor.getByRole('group', {name: groupName})).toBeInViewport();
+    const field = editor.getByLabel(fieldName, {exact: true});
+    await expect(field).toBeVisible();
+    expect(await field.evaluate(element =>
+      (element as HTMLInputElement).readOnly || (element as HTMLInputElement).disabled,
+    )).toBe(true);
+    await editor.getByRole('button', {name: 'Close System settings'}).click();
+  }
+});
+
 test('loads authenticated runtime configuration and saves an atomic policy draft', async ({page}) => {
   test.setTimeout(45_000);
   const state: MockState = {smithproxy: 'ready'};
