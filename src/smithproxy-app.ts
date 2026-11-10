@@ -14856,7 +14856,11 @@ export class SmithproxyApp extends LitElement {
           ${this.snapshot?.unsaved ? html`
             <button class="status-action system-state warning" type="button"
               title="Running configuration differs from the last explicit Smithproxy save"
-              @click=${() => { this.activeSection = 'System'; }}>
+              @click=${() => {
+                this.activeSection = 'System';
+                this.systemView = 'configuration';
+                this.systemNavigationExpanded = true;
+              }}>
               ● Running config: Unsaved
             </button>
           ` : nothing}

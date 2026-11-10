@@ -6464,8 +6464,13 @@ test('keeps an unsaved running configuration visible on mobile', async ({page}) 
   await expect(page.locator('.statusbar')).not.toContainText('Running config: unsaved');
   await expect(page.getByRole('region', {name: 'Configuration workspace'}))
     .toContainText('Running config unsaved');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  await expect(page.getByRole('heading', {level: 2, name: 'Access & integrations'})).toBeVisible();
   await unsaved.click();
 
+  await expect(page.getByRole('heading', {level: 2, name: 'Startup configuration & backups'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Startup & backups'})).toHaveAttribute('aria-current', 'page');
   const card = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Running configuration'}),
   });
