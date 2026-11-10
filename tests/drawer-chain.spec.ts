@@ -6670,6 +6670,8 @@ test('saves typed system and capture settings without exposing redacted values',
   const debugCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Debug logging'}),
   });
+  await expect(debugCard.getByText('Socket eventsEnabled')).toBeHidden();
+  await debugCard.getByText('Debug logging', {exact: true}).click();
   await expect(debugCard).toContainText('Socket eventsEnabled');
   await page.getByRole('button', {name: 'Backend', exact: true}).click();
   const apiPosture = page.getByRole('article').filter({

@@ -763,6 +763,15 @@ export class SmithproxyApp extends LitElement {
     .operational-health[open] > summary::before { rotate: 90deg; }
     .operational-health > summary > div { margin-right: auto; }
     .operational-health .network-config-table { margin-top: 12px; }
+    .diagnostic-section > summary { display: flex; gap: 12px; align-items: center; cursor: pointer; list-style: none; }
+    .diagnostic-section > summary::-webkit-details-marker { display: none; }
+    .diagnostic-section > summary::before { content: '›'; color: var(--app-muted); font-size: 20px; line-height: 1; }
+    .diagnostic-section[open] > summary::before { rotate: 90deg; }
+    .diagnostic-section > summary > div { flex: 1; min-width: 0; }
+    .diagnostic-section > summary h3 { margin: 0; }
+    .diagnostic-section > summary p { margin: 3px 0 0; color: var(--app-muted); }
+    .diagnostic-content { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--app-border); }
+    .diagnostic-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
     .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .metric { min-height: 116px; padding: 15px 16px; }
@@ -10860,18 +10869,24 @@ export class SmithproxyApp extends LitElement {
           ` : nothing}
           ${debug ? html`
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Debug logging</h3><p>Potentially expensive diagnostic controls</p></div>
-                <div class="preflight-actions">${this.renderPendingBadge('settings', 'settings')}
-                  <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
+              <details class="diagnostic-section">
+                <summary>
+                  <div><h3>Debug logging</h3><p>Advanced, potentially expensive diagnostic controls</p></div>
+                  <span class="runtime-state warning">Advanced</span>
+                </summary>
+                <div class="diagnostic-content">
+                  <div class="diagnostic-actions">${this.renderPendingBadge('settings', 'settings')}
+                    <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit debug settings</button>
+                  </div>
+                  <dl>
+                    <dt>Payload CRC</dt><dd>${debugSetting('log_data_crc', debug.logDataCrc) ? 'Enabled' : 'Disabled'}</dd>
+                    <dt>Socket events</dt><dd>${debugSetting('log_sockets', debug.logSockets) ? 'Enabled' : 'Disabled'}</dd>
+                    <dt>Resolve online names</dt><dd>${debugSetting('log_online_cx_name', debug.logOnlineConnectionName) ? 'Enabled · expensive' : 'Disabled'}</dd>
+                    <dt>Source lines</dt><dd>${debugSetting('log_srclines_always', debug.logSourceLinesAlways) ? 'Always' : debugSetting('log_srclines', debug.logSourceLines) ? 'Diagnostic levels' : 'Disabled'}</dd>
+                    <dt>Module overrides</dt><dd>${debug.moduleOverrideCount} configured</dd>
+                  </dl>
                 </div>
-              </header>
-              <dl>
-                <dt>Payload CRC</dt><dd>${debugSetting('log_data_crc', debug.logDataCrc) ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Socket events</dt><dd>${debugSetting('log_sockets', debug.logSockets) ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Resolve online names</dt><dd>${debugSetting('log_online_cx_name', debug.logOnlineConnectionName) ? 'Enabled · expensive' : 'Disabled'}</dd>
-                <dt>Source lines</dt><dd>${debugSetting('log_srclines_always', debug.logSourceLinesAlways) ? 'Always' : debugSetting('log_srclines', debug.logSourceLines) ? 'Diagnostic levels' : 'Disabled'}</dd>
-                <dt>Module overrides</dt><dd>${debug.moduleOverrideCount} configured</dd>
-              </dl>
+              </details>
             </article>
           ` : nothing}
           ${captures ? html`
