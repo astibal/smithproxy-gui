@@ -9978,7 +9978,8 @@ export class SmithproxyApp extends LitElement {
         <div class="dashboard-shortcuts" role="group" aria-label="Configuration shortcuts">
           <button class="secondary" type="button" title="Ordered traffic decisions"
             @click=${() => open('Policy')}>Policies</button>
-          <button class="secondary" type="button" title="Addresses, ports, and protocols"
+          <button class="secondary" type="button" aria-label="Open objects"
+            title="Addresses, ports, and protocols"
             @click=${() => open('Objects')}>Objects</button>
           <button class="secondary" type="button" title="Inspection, content, and routing behavior"
             @click=${() => open('Objects', 'profile')}>Profiles</button>
@@ -13858,6 +13859,13 @@ export class SmithproxyApp extends LitElement {
             <button class="primary" type="button" data-enable-edit
               @click=${() => this.enableDrawerEditing(entry)}>Edit</button>
           ` : nothing}
+          ${editing && !closePending ? html`
+            <button class="primary drawer-save" type="button"
+              ?disabled=${readOnly || this.draftSaving || this.draftCommitting}
+              @click=${() => this.saveToDraftAndClose(entry, index)}>
+              ${this.draftSaving ? 'Saving…' : 'Save to draft'}
+            </button>
+          ` : nothing}
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}
@@ -13961,11 +13969,6 @@ export class SmithproxyApp extends LitElement {
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>
               ${editing ? 'Cancel' : 'Close'}
             </button>
-            ${editing ? html`
-              <button class="primary" type="button"
-                ?disabled=${readOnly || this.draftSaving || this.draftCommitting}
-                @click=${() => this.saveToDraftAndClose(entry, index)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
-            ` : nothing}
           `}
         </footer>
       </section>

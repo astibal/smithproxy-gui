@@ -1168,7 +1168,8 @@ test('requires an explicit edit decision before live configuration fields can ch
   await expect(action).toBeEnabled();
   await expect(name).not.toBeFocused();
   await expect(editor.getByRole('button', {name: 'Close Policy 1'})).toBeFocused();
-  await expect(editor.getByRole('button', {name: 'Save to draft'})).toBeVisible();
+  await expect(editor.locator('.drawer-head').getByRole('button', {name: 'Save to draft'})).toBeVisible();
+  await expect(editor.locator('.drawer-foot').getByRole('button', {name: 'Save to draft'})).toHaveCount(0);
   await expectNoWcagViolations(page);
 });
 
@@ -5340,7 +5341,7 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
   await expect(inventory.getByText('Total', {exact: true})).toHaveCount(0);
   await expectNoWcagViolations(page);
 
-  await shortcuts.getByRole('button', {name: 'Objects', exact: true}).click();
+  await shortcuts.getByRole('button', {name: 'Open objects'}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'All objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toContainText('office');
 
