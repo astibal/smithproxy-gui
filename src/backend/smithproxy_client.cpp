@@ -387,41 +387,49 @@ ConfigSaveResponse SmithproxyMonitor::save_config(
         return config_save_failure("conflict");
     }
 
-    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
-    if (!curl) return config_save_failure("unavailable");
-    curl_slist* raw_headers = nullptr;
-    const std::array header_values{
-        "X-API-Key: " + config_->api_key,
-        std::string{"Content-Type: application/json"},
-        std::string{"Accept: application/json"},
-        std::string{"Expect:"},
-    };
-    for (const auto& value : header_values) {
-        auto* updated = curl_slist_append(raw_headers, value.c_str());
-        if (!updated) {
-            curl_slist_free_all(raw_headers);
-            return config_save_failure("unavailable");
-        }
-        raw_headers = updated;
-    }
-    std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
     const auto request = nlohmann::json{
         {"params", {{"expected_revision", expected_revision}}},
     }.dump();
-    ResponseBuffer response{.limit = 64U * 1024U, .body = {}, .exceeded = false};
-    configure_request(curl.get(), *config_, config_->api_url + "/api/config/save", headers.get());
-    curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
-    curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
-    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
-    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
-                     static_cast<curl_off_t>(request.size()));
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
-    if (curl_easy_perform(curl.get()) != CURLE_OK || response.exceeded) {
-        return config_save_failure("unavailable");
-    }
+    ResponseBuffer response;
     long status_code{};
-    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    std::optional<std::string> rejected_auth_token;
+
+    for (unsigned attempt = 0U; attempt < 2U; ++attempt) {
+        const auto session_result = upstream_session(rejected_auth_token);
+        if (!session_result.session) return config_save_failure("unauthorized");
+        const auto& session = *session_result.session;
+
+        std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+        if (!curl) return config_save_failure("unavailable");
+        auto* raw_headers = append_session_headers(
+            nullptr, session.auth_token, session.csrf_token);
+        if (!raw_headers) return config_save_failure("unavailable");
+        auto* updated_headers = curl_slist_append(raw_headers, "Expect:");
+        if (!updated_headers) {
+            curl_slist_free_all(raw_headers);
+            return config_save_failure("unavailable");
+        }
+        std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
+        response = {.limit = 64U * 1024U, .body = {}, .exceeded = false};
+        configure_request(
+            curl.get(), *config_, config_->api_url + "/api/config/save", headers.get());
+        curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
+        curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
+        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                         static_cast<curl_off_t>(request.size()));
+        curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+        curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+        if (curl_easy_perform(curl.get()) != CURLE_OK || response.exceeded) {
+            return config_save_failure("unavailable");
+        }
+        curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+        if ((status_code == 401L || status_code == 403L) && attempt == 0U) {
+            rejected_auth_token = session.auth_token;
+            continue;
+        }
+        break;
+    }
     if (status_code == 409L) return config_save_failure("conflict");
     if (status_code == 422L) return config_save_failure("rejected");
     if (status_code != 200L) {
