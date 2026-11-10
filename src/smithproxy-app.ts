@@ -83,14 +83,14 @@ import {
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
 const sectionDescriptions: Readonly<Record<string, string>> = {
   Dashboard: 'Traffic, configuration, and operational status',
-  Network: 'Listeners, interfaces, and runtime reachability',
+  Network: 'Traffic activity, listeners, interfaces, and nearby systems',
   Objects: 'Reusable configuration, profiles, and trust assets',
   Policy: 'Ordered traffic decisions and inspection behavior',
-  Monitoring: 'Runtime activity, health, and capacity',
+  Monitoring: 'Traffic, sessions, operational health, and capacity',
   Logs: 'Operational events and administrative audit',
-  System: 'Runtime settings, persistence, and backend jobs',
+  System: 'Configuration, captures, appearance, and management health',
   Search: 'Configuration search results',
-  Draft: 'Review, validate, and commit pending operations',
+  Draft: 'Review and commit pending configuration changes',
 };
 const policyActions = ['accept', 'deny', 'reject'] as const;
 const policyNatModes = ['auto', 'none'] as const;
@@ -150,7 +150,7 @@ const systemNavigation: ReadonlyArray<{kind: SystemView; label: string; icon: st
   {kind: 'settings', label: 'System settings', icon: '≡'},
   {kind: 'captures', label: 'Captures', icon: '◉'},
   {kind: 'configuration', label: 'Configuration archive', icon: '◇'},
-  {kind: 'backend', label: 'Backend', icon: '⚙'},
+  {kind: 'backend', label: 'Management', icon: '⚙'},
   {kind: 'appearance', label: 'Appearance', icon: '◐'},
   {kind: 'control-plane', label: 'Control plane', icon: '⌘'},
 ];
@@ -1532,7 +1532,7 @@ export class SmithproxyApp extends LitElement {
         this.backendJobs = jobs.value;
         this.jobsError = undefined;
       } else {
-        this.jobsError = jobs.reason instanceof Error ? jobs.reason.message : 'Backend jobs are unavailable.';
+        this.jobsError = jobs.reason instanceof Error ? jobs.reason.message : 'Background operations are unavailable.';
       }
       await this.refreshConfiguration();
     } catch (error) {
@@ -1569,7 +1569,7 @@ export class SmithproxyApp extends LitElement {
         detail: 'Interface monitoring is unavailable while the management service is offline.',
       };
       this.auditError = 'Management audit is unavailable while the management service is offline.';
-      this.jobsError = 'Backend jobs are unavailable while the management service is offline.';
+      this.jobsError = 'Background operations are unavailable while the management service is offline.';
     } finally {
       this.systemProbeInFlight = false;
       if (this.systemProbePending) {
@@ -2694,7 +2694,7 @@ export class SmithproxyApp extends LitElement {
           }
         } catch (error) {
           if (monitoringEpoch === this.monitoringAccessEpoch && this.jobsAvailable) {
-            this.jobsError = error instanceof Error ? error.message : 'Backend jobs are unavailable.';
+            this.jobsError = error instanceof Error ? error.message : 'Background operations are unavailable.';
           }
         }
       }
@@ -10549,7 +10549,7 @@ export class SmithproxyApp extends LitElement {
           <div><h2>${this.systemView === 'configuration' ? 'Configuration archive' :
             this.systemView === 'settings' ? 'System settings' :
             this.systemView === 'captures' ? 'Traffic captures' :
-            this.systemView === 'backend' ? 'Management backend' :
+            this.systemView === 'backend' ? 'Management service' :
             'Appearance'}</h2>
             <p>Focused system administration backed by the current Smithproxy state</p></div>
         </div>
@@ -10777,7 +10777,7 @@ export class SmithproxyApp extends LitElement {
           </article>
           <article class="domain-card job-card" data-system-section="backend">
             <header>
-              <div><h3>Backend jobs</h3><p>Bounded, redacted control-plane work queue</p></div>
+              <div><h3>Background operations</h3><p>Recent management work that may take time to complete</p></div>
               <span class="runtime-state ${this.jobsError ? 'danger' : this.jobsAvailable ? 'success' : 'warning'}">
                 ● ${this.jobsError ? 'Unavailable' : this.jobsAvailable ? 'Available' : 'Not advertised'}
               </span>
@@ -10792,7 +10792,7 @@ export class SmithproxyApp extends LitElement {
                   <span class="system-state ${job.state === 'succeeded' ? 'success' : job.state === 'failed' || job.state === 'cancelled' ? 'danger' : 'warning'}">${displayState(job.state)}</span>
                 </div>
               `)}
-              ${this.backendJobs.jobs.length === 0 ? html`<p>No backend jobs have been recorded since the management service started.</p>` : nothing}
+              ${this.backendJobs.jobs.length === 0 ? html`<p>No background operations have been recorded since the management service started.</p>` : nothing}
             </div>
           </article>
           ${settings ? html`
@@ -14419,7 +14419,7 @@ export class SmithproxyApp extends LitElement {
                       this.configRevisionDrift ? 'Resolve draft' : 'Review & commit'} · ${this.draftChangeCount}`}
                     title=${this.configRevisionDrift
                       ? 'The running configuration changed after this draft was opened. Review the conflict.'
-                      : 'Review, validate, and atomically commit pending changes to the running configuration.'}
+                      : 'Review and atomically commit pending changes to the running configuration.'}
                     @click=${() => {
                       this.discardDraftArmed = false;
                       this.activeSection = 'Draft';
