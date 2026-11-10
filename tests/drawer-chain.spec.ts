@@ -156,6 +156,7 @@ type MockState = {
   }>;
   validationReady?: boolean;
   commitReady?: boolean;
+  commitResponseDelayMs?: number;
   configSaveReady?: boolean;
   configSaveRequests?: Array<{expectedRevision: string; csrf: string | null}>;
   structuralDraftsReady?: boolean;
@@ -635,6 +636,9 @@ async function mockSystemApi(
       changes: [], structural_operations: [], private_profile_references_complete: false,
       private_profile_references: [],
     };
+    if (state.commitResponseDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, state.commitResponseDelayMs));
+    }
     await route.fulfill({json: {
       source: 'gui-core', draft_id: 'workspace-draft',
       committed_draft_version: committedVersion, draft_version: draft.version,
@@ -2413,6 +2417,60 @@ test('validates and atomically commits the draft with one administrator action',
     csrf: '1',
   }]);
   await expectNoWcagViolations(page);
+});
+
+test('does not report its own revision when polling overlaps an atomic commit', async ({page}) => {
+  const firstRevision = `sha256:${'1'.repeat(64)}`;
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    commitResponseDelayMs: 3_000, configFetches: 0,
+    configRevision: firstRevision, savedConfigRevision: firstRevision,
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Review draft · 1'}).click();
+  await page.getByRole('region', {name: 'Draft preflight'})
+    .getByRole('button', {name: 'Commit configuration'}).click();
+
+  // Smithproxy has installed the revision, but the commit response which
+  // identifies it as local is deliberately still in flight.
+  await expect.poll(() => state.configRevision).toBe(`sha256:${'2'.repeat(64)}`);
+  await expect.poll(() => page.locator('smithproxy-gui').evaluate((app: HTMLElement & {
+    draftCommitting: boolean; localCommitPending: boolean;
+  }) => app.draftCommitting && app.localCommitPending)).toBe(true);
+  await page.evaluate(() => {
+    const advanced = Date.now() + 31_000;
+    Date.now = () => advanced;
+    window.dispatchEvent(new Event('online'));
+  });
+  await expect.poll(() => state.configFetches).toBeGreaterThan(1);
+  await expect.poll(() => page.locator('smithproxy-gui').evaluate((app: HTMLElement & {
+    localCommitPending: boolean;
+  }) => app.localCommitPending)).toBe(true);
+
+  await expect(page.getByRole('status').filter({
+    hasText: 'Running configuration changed outside this workspace.',
+  })).toHaveCount(0);
+  await expect(page.getByText('Draft: 0 changes')).toBeVisible();
+  await expect(page.getByRole('button', {name: /Review draft/u})).toHaveCount(0);
+
+  // Once the committed revision has been acknowledged, a later unrelated
+  // revision must still be reported as external work.
+  await expect.poll(() => page.locator('smithproxy-gui').evaluate((app: HTMLElement & {
+    localCommitPending: boolean;
+  }) => app.localCommitPending)).toBe(false);
+  const acknowledgedFetches = state.configFetches ?? 0;
+  state.configRevision = `sha256:${'3'.repeat(64)}`;
+  await page.evaluate(() => {
+    const advanced = Date.now() + 31_000;
+    Date.now = () => advanced;
+    window.dispatchEvent(new Event('online'));
+  });
+  await expect.poll(() => state.configFetches ?? 0).toBeGreaterThan(acknowledgedFetches);
+  await expect(page.getByRole('status').filter({
+    hasText: 'Running configuration changed outside this workspace.',
+  })).toBeVisible();
 });
 
 test('reviews and removes a structural draft operation', async ({page}) => {

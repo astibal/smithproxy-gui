@@ -583,6 +583,7 @@ export class SmithproxyApp extends LitElement {
   // A successful local commit changes the same revision observed by the background poller.
   // Remember it until the authoritative snapshot arrives so it is not reported as external work.
   private locallyCommittedRevision: string | undefined;
+  private localCommitPending = false;
   private drawerHistoryDepth = 0;
   private drawerHistoryNavigationPending = false;
   private drawerOrigins: HTMLElement[] = [];
@@ -1723,6 +1724,8 @@ export class SmithproxyApp extends LitElement {
     this.draftValidationError = undefined;
     this.draftValidating = false;
     this.draftCommitting = false;
+    this.localCommitPending = false;
+    this.locallyCommittedRevision = undefined;
     this.draftCommitError = undefined;
     this.draftCommitResult = undefined;
     this.draftRemovalArmedKey = undefined;
@@ -1939,15 +1942,23 @@ export class SmithproxyApp extends LitElement {
       const liveSnapshotLoaded = this.snapshot?.source === 'live';
       const locallyCommittedRevisionLoaded = snapshot.revision !== null &&
         snapshot.revision === this.locallyCommittedRevision;
+      const localCommitAwaitingResponse = this.localCommitPending &&
+        this.locallyCommittedRevision === undefined;
       const externalRevisionChanged = liveSnapshotLoaded && snapshot.revision !== null &&
         this.snapshot?.revision !== null && snapshot.revision !== this.snapshot?.revision &&
-        !locallyCommittedRevisionLoaded;
+        !locallyCommittedRevisionLoaded && !localCommitAwaitingResponse;
       if (externalRevisionChanged) this.showExternalConfigNotice();
-      if (locallyCommittedRevisionLoaded || externalRevisionChanged) this.locallyCommittedRevision = undefined;
+      if (locallyCommittedRevisionLoaded || externalRevisionChanged) {
+        this.locallyCommittedRevision = undefined;
+        this.localCommitPending = false;
+      }
       if (liveSnapshotLoaded && (this.draftChangeCount > 0 || this.drawers.length > 0 ||
           this.draftSaving || this.draftCommitting)) {
         this.configRefreshDeferred = true;
-        if (snapshot.revision && this.snapshot?.revision && snapshot.revision !== this.snapshot.revision) {
+        // A snapshot may observe our new revision before the commit request
+        // returns it. Do not report that normal race as external drift.
+        if (!localCommitAwaitingResponse && snapshot.revision && this.snapshot?.revision &&
+            snapshot.revision !== this.snapshot.revision) {
           this.configRevisionDrift = true;
           this.draftValidation = undefined;
         }
@@ -2654,6 +2665,7 @@ export class SmithproxyApp extends LitElement {
         !preflight.validationAvailable || this.draftChangeCount === 0 || this.draftCommitting ||
         this.draftSaving || this.draftValidating) return;
 
+    this.localCommitPending = true;
     const validationMatches = () => this.draftValidation !== undefined &&
       this.draftValidation.draftVersion === this.draftVersion &&
       this.draftValidation.baseRevision === this.draftPreflight?.baseRevision &&
@@ -2661,7 +2673,10 @@ export class SmithproxyApp extends LitElement {
     if (!validationMatches()) {
       await this.validateDraft();
       preflight = this.draftPreflight;
-      if (!preflight?.commitAvailable || !validationMatches()) return;
+      if (!preflight?.commitAvailable || !validationMatches()) {
+        this.localCommitPending = false;
+        return;
+      }
     }
 
     const expectedVersion = this.draftVersion;
@@ -2707,6 +2722,7 @@ export class SmithproxyApp extends LitElement {
       this.configRefreshDeferred = true;
       this.nextConfigRefreshAt = 0;
     } catch (error) {
+      this.localCommitPending = false;
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const message = error instanceof Error ? error.message : 'Atomic commit could not be confirmed.';
       await this.loadDraft();
