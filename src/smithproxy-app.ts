@@ -896,8 +896,6 @@ export class SmithproxyApp extends LitElement {
     .incident-state small, .incident-time, .incident-duration { color: var(--app-muted); font-size: 12px; }
     .incident-state small { overflow: hidden; margin-top: 3px; text-overflow: ellipsis; white-space: nowrap; }
     .incident-duration { text-align: right; }
-    .capacity-track { height: 8px; overflow: hidden; border-radius: 2px; background: var(--app-border); }
-    .capacity-fill { height: 100%; border-radius: inherit; background: var(--app-brand); }
 
     .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
     .domain-card { padding: 16px; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
@@ -10042,7 +10040,6 @@ export class SmithproxyApp extends LitElement {
     const presentation = this.collectorPresentation(
       cache.state, cache.lastSuccessAtUnixMs, 5_000,
     );
-    const utilization = cache.capacity === 0 ? 0 : Math.min(100, cache.size / cache.capacity * 100);
     return html`
       <section class="runtime-summary" aria-label="TLS interception cache">
         <div class="runtime-heading">
@@ -10062,13 +10059,9 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">Configured maximum entries</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Cache occupancy</span>
-            <strong class="metric-value">${utilization.toFixed(utilization === 0 ? 0 : 1)}%</strong>
-            <div class="capacity-track" role="progressbar" aria-label="TLS cache occupancy"
-              aria-valuemin="0" aria-valuemax="100" aria-valuenow=${utilization.toFixed(1)}>
-              <div class="capacity-fill" style=${`width: ${utilization}%`}></div>
-            </div>
-            <span class="metric-note">A full cache rotates normally; it is not an overload condition</span>
+            <span class="metric-label">Rotation policy</span>
+            <strong class="metric-value">Automatic</strong>
+            <span class="metric-note">Oldest certificates are replaced after the configured capacity is reached</span>
           </article>
           <article class="metric">
             <span class="metric-label">Last successful sample</span>
