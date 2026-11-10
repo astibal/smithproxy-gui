@@ -7151,7 +7151,7 @@ test.describe('Saslik visual regression', () => {
 
       await expect(page).toHaveScreenshot(`${theme}-dashboard.png`, {
         animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
-        mask: [page.getByText(/^Events:/)],
+        mask: [page.getByRole('contentinfo', {name: 'System status'})],
       });
 
       await page.getByRole('button', {name: 'Policy', exact: true}).click();
@@ -7161,7 +7161,7 @@ test.describe('Saslik visual regression', () => {
       await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
       await expect(page).toHaveScreenshot(`${theme}-nested-editors.png`, {
         animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
-        mask: [page.getByText(/^Events:/)],
+        mask: [page.getByRole('contentinfo', {name: 'System status'})],
       });
     });
   }
@@ -7182,7 +7182,7 @@ test.describe('Saslik visual regression', () => {
 
       await expect(page).toHaveScreenshot(`${theme}-mobile-policy.png`, {
         animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
-        mask: [page.getByText(/^Events:/)],
+        mask: [page.getByRole('contentinfo', {name: 'System status'})],
       });
     });
   }
