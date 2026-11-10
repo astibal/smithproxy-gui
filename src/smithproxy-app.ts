@@ -10314,51 +10314,51 @@ export class SmithproxyApp extends LitElement {
     const recoveryLabel = !this.eventsAvailable ? 'Unavailable' :
       this.eventsError ? 'Unavailable' : 'Available';
     return html`
-      <section class="monitor-panel" aria-label="Operational event transport">
+      <section class="monitor-panel" aria-label="Operational event delivery">
         <div class="runtime-heading">
           <div>
-            <h3>Operational event transport</h3>
-            <p>Authenticated same-origin SSE with a bounded REST recovery snapshot</p>
+            <h3>Operational event delivery</h3>
+            <p>Keeps logs and management status updates current</p>
           </div>
           <div class="preflight-actions">
             <span class="runtime-state ${tone}">● ${displayState(this.eventStreamState)}</span>
             ${this.eventStreamState === 'invalid' ? html`
               <button class="secondary" type="button" @click=${() => this.retryEventStream()}>
-                Retry stream
+                Reconnect
               </button>
             ` : nothing}
           </div>
         </div>
         <div class="metric-grid">
           <article class="metric">
-            <span class="metric-label">Last connection</span>
+            <span class="metric-label">Last connected</span>
             <strong class="metric-value">${this.timeLabel(this.eventStreamConnectedAtUnixMs)}</strong>
-            <span class="metric-note">Browser EventSource opened</span>
+            <span class="metric-note">Management connection established</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Last validated payload</span>
+            <span class="metric-label">Last update</span>
             <strong class="metric-value">${this.timeLabel(this.eventStreamLastMessageAtUnixMs)}</strong>
-            <span class="metric-note">Snapshot or structured event accepted</span>
+            <span class="metric-note">Latest event received successfully</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Reconnect attempts</span>
+            <span class="metric-label">Reconnects</span>
             <strong class="metric-value">${this.eventStreamReconnectCount.toLocaleString()}</strong>
             <span class="metric-note">Last interruption: ${this.timeLabel(this.eventStreamLastDisconnectAtUnixMs)}</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Recovery snapshot</span>
+            <span class="metric-label">Recent history</span>
             <strong class="metric-value ${this.eventsError ? 'danger' : ''}">
               ${recoveryLabel}
             </strong>
-            <span class="metric-note">${this.operationalEvents.events.length} bounded events retained</span>
+            <span class="metric-note">${this.operationalEvents.events.length} recent events retained</span>
           </article>
         </div>
         ${this.eventStreamError ? html`<div class="metrics-message" role="status">${this.eventStreamError}</div>` : nothing}
         <div class="privacy-note">
           ${this.operationalEvents.smithproxyEventsAvailable
-            ? 'The feed includes reviewed Smithproxy events.'
-            : 'The feed currently contains GUI-core control-plane and backend-job transitions only.'}
-          Event payloads are validated before they update this state.
+            ? 'Smithproxy events are included.'
+            : 'Only management-service events are currently available.'}
+          Sensitive configuration values are excluded.
         </div>
       </section>
     `;
@@ -10742,12 +10742,12 @@ export class SmithproxyApp extends LitElement {
             ${this.renderEventStreamHealth()}
           </div>
           <article class="domain-card" data-system-section="backend">
-            <header><div><h3>Smithproxy API</h3><p>Server-side authenticated connection</p></div></header>
+            <header><div><h3>Smithproxy connection</h3><p>Authenticated management link</p></div></header>
             <dl>
               <dt>Status</dt><dd>${displayState(this.systemStatus.smithproxy)}</dd>
               <dt>Last check</dt><dd>${this.timeLabel(this.systemStatus.checkedAtUnixMs)}</dd>
               <dt>Last success</dt><dd>${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}</dd>
-              <dt>Credential handling</dt><dd>Management service only</dd>
+              <dt>Credentials</dt><dd>Held by the management service</dd>
             </dl>
           </article>
           <article class="domain-card" data-system-section="appearance">

@@ -6148,9 +6148,9 @@ test('polls only monitoring surfaces advertised for the current session', async 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Management'}).click();
-  const eventTransport = page.getByRole('region', {name: 'Operational event transport'});
+  const eventTransport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(eventTransport).toContainText('Unavailable');
-  await expect(eventTransport.getByText('Recovery snapshot', {exact: true}).locator('..'))
+  await expect(eventTransport.getByText('Recent history', {exact: true}).locator('..'))
     .toContainText('Unavailable');
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
@@ -6202,10 +6202,10 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Management', exact: true}).click();
-  const eventTransport = page.getByRole('region', {name: 'Operational event transport'});
+  const eventTransport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(eventTransport).toContainText('Live');
-  await expect(eventTransport).toContainText('Recovery snapshot');
-  await expect(eventTransport.getByRole('article').filter({hasText: 'Last validated payload'}))
+  await expect(eventTransport).toContainText('Recent history');
+  await expect(eventTransport.getByRole('article').filter({hasText: 'Last update'}))
     .not.toContainText('Never');
 });
 
@@ -6250,11 +6250,11 @@ test('diagnoses an invalid event stream and recovers only after an explicit retr
   await expect(statusbar).toContainText('Events: Invalid');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Management', exact: true}).click();
-  const transport = page.getByRole('region', {name: 'Operational event transport'});
+  const transport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(transport).toContainText('Invalid');
-  await expect(transport.getByRole('article').filter({hasText: 'Last validated payload'}))
+  await expect(transport.getByRole('article').filter({hasText: 'Last update'}))
     .toContainText('Never');
-  await expect(transport.getByRole('button', {name: 'Retry stream'})).toBeVisible();
+  await expect(transport.getByRole('button', {name: 'Reconnect'})).toBeVisible();
   await expect(page.getByText('private upstream event text')).toHaveCount(0);
 
   const streamRequestsAfterFailure = state.eventStreamRequests ?? 0;
@@ -6265,10 +6265,10 @@ test('diagnoses an invalid event stream and recovers only after an explicit retr
   await expect(statusbar).toContainText('Events: Invalid');
 
   state.invalidEventStream = false;
-  await transport.getByRole('button', {name: 'Retry stream'}).click();
+  await transport.getByRole('button', {name: 'Reconnect'}).click();
   await expect(statusbar).toContainText('Events: Live');
   await expect.poll(() => state.eventStreamRequests ?? 0).toBeGreaterThanOrEqual(2);
-  await expect(transport.getByRole('article').filter({hasText: 'Last validated payload'}))
+  await expect(transport.getByRole('article').filter({hasText: 'Last update'}))
     .not.toContainText('Never');
 });
 
