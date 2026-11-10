@@ -6377,8 +6377,10 @@ test('surfaces active backend work in the status bar and System view', async ({p
     has: page.getByRole('heading', {name: 'Background operations'}),
   });
   await expect(jobsCard).toContainText('Configuration refresh');
-  await expect(jobsCard).toContainText('Waiting for revision');
+  await expect(jobsCard).toContainText('Confirming new revision');
   await expect(jobsCard).toContainText('75%');
+  await expect(jobsCard).not.toContainText('waiting-for-revision');
+  await expect(jobsCard.locator('.job-row')).not.toHaveAttribute('title');
   await expect(jobsCard).not.toContainText('sha256:');
 });
 
@@ -6703,7 +6705,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(capturePosture).toBeVisible();
   await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
   await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
-  await expect(page.getByText('Management access, webhook integrations, background jobs, and diagnostics')).toBeVisible();
+  await expect(page.getByText('Management access, webhook integrations, background operations, and diagnostics')).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Management access'})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
   await page.getByRole('button', {name: 'Startup & backups', exact: true}).click();

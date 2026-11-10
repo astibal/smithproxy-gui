@@ -9797,6 +9797,17 @@ export class SmithproxyApp extends LitElement {
     return `${(ratio * 100).toFixed(ratio === 1 ? 0 : 1)}%`;
   }
 
+  /** Converts the reviewed configuration-refresh lifecycle into administrator-facing progress. */
+  private backgroundOperationPhaseLabel(phase: string): string {
+    return ({
+      refreshing: 'Refreshing configuration',
+      'waiting-for-control-plane': 'Waiting for Smithproxy',
+      'waiting-for-revision': 'Confirming new revision',
+      synchronized: 'Completed',
+      'timed-out': 'Timed out',
+    } as Readonly<Record<string, string>>)[phase] ?? 'In progress';
+  }
+
   private sampleAgeLabel(value: number | null): string {
     if (value === null) return 'Never sampled';
     const seconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
@@ -10699,7 +10710,7 @@ export class SmithproxyApp extends LitElement {
         : this.systemView === 'captures'
           ? 'Review and control local and remote traffic capture'
           : this.systemView === 'backend'
-            ? 'Management access, webhook integrations, background jobs, and diagnostics'
+            ? 'Management access, webhook integrations, background operations, and diagnostics'
             : 'Choose how this management interface looks';
     return html`
       <div class="content dashboard" tabindex="0">
@@ -10982,9 +10993,9 @@ export class SmithproxyApp extends LitElement {
             ${this.jobsError ? html`<p role="alert">${this.jobsError}</p>` : nothing}
             <div class="job-list" aria-label="Recent background operations">
               ${[...this.backendJobs.jobs].reverse().slice(0, 5).map(job => html`
-                <div class="job-row" title=${job.id}>
-                  <strong>${job.type === 'config-refresh' ? 'Configuration refresh' : job.type}</strong>
-                  <span>${displayState(job.phase.replaceAll('-', ' '))}<small>${job.result ?? `Deadline ${this.timeLabel(job.deadlineAtUnixMs)}`}</small></span>
+                <div class="job-row">
+                  <strong>Configuration refresh</strong>
+                  <span>${this.backgroundOperationPhaseLabel(job.phase)}<small>${job.result ?? `Deadline ${this.timeLabel(job.deadlineAtUnixMs)}`}</small></span>
                   <span class="job-progress"><progress max="100" .value=${job.progressPercent}></progress><small>${job.progressPercent}%</small></span>
                   <span class="system-state ${job.state === 'succeeded' ? 'success' : job.state === 'failed' || job.state === 'cancelled' ? 'danger' : 'warning'}">${displayState(job.state)}</span>
                 </div>
@@ -11136,10 +11147,10 @@ export class SmithproxyApp extends LitElement {
                   )}>Open access settings</button>
               </header>
               <dl>
-                <dt>Listener</dt><dd>${setting('accept_api', settings.acceptApi) ? 'Enabled' : 'Disabled'}</dd>
+                <dt>Admission</dt><dd>${setting('accept_api', settings.acceptApi) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>API keys</dt><dd>${settings.httpApi.keyCount} configured</dd>
                 <dt>Allowed IPs</dt><dd>${settingStrings('http_api.allowed_ips', settings.httpApi.allowedIps).join(', ') || 'None'}</dd>
-                <dt>Listener</dt><dd>Port ${setting('http_api.port', settings.httpApi.port)} · ${setting('http_api.key_timeout', settings.httpApi.keyTimeout)}s token TTL</dd>
+                <dt>Endpoint</dt><dd>Port ${setting('http_api.port', settings.httpApi.port)} · ${setting('http_api.key_timeout', settings.httpApi.keyTimeout)}s token TTL</dd>
                 <dt>Token refresh</dt><dd>${setting('http_api.key_extend_on_access', settings.httpApi.keyExtendOnAccess) ? 'On access' : 'Fixed expiry'}</dd>
                 <dt>Loopback only</dt><dd>${setting('http_api.loopback_only', settings.httpApi.loopbackOnly) ? 'Yes' : 'No'}</dd>
                 <dt>Bind address</dt><dd>${settings.httpApi.bindAddressConfigured ? 'Configured · redacted' : 'Default'}</dd>
