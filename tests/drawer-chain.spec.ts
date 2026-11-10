@@ -6224,6 +6224,12 @@ test('polls only monitoring surfaces advertised for the current session', async 
   expect(requests).not.toContain('/api/v1/audit/recent');
   expect(requests).not.toContain('/api/v1/network/interfaces/summary');
 
+  const health = page.getByRole('region', {name: 'Operational health matrix'});
+  await health.locator('summary').click();
+  const healthTable = health.getByRole('table', {name: 'Operational subsystem health'});
+  await expect(healthTable.getByRole('row').filter({hasText: 'Traffic metrics'})).toBeVisible();
+  await expect(healthTable.getByRole('row').filter({hasText: 'Interfaces'})).toHaveCount(0);
+
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Access & integrations'}).click();

@@ -9870,16 +9870,26 @@ export class SmithproxyApp extends LitElement {
     const items = [
       {name: 'Management connection', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs,
         lastSuccess: this.systemStatus.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'connectivity'},
-      {name: 'Traffic metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs,
-        lastSuccess: this.runtimeMetrics.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'traffic'},
-      {name: 'Session activity', state: this.sessionActivity.state, checked: this.sessionActivity.checkedAtUnixMs,
-        lastSuccess: this.sessionActivity.lastSuccessAtUnixMs, intervalMs: 10_000, target: 'sessions'},
-      {name: 'TLS cache', state: this.tlsCache.state, checked: this.tlsCache.checkedAtUnixMs,
-        lastSuccess: this.tlsCache.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'tls'},
-      {name: 'Neighborhood', state: this.neighbors.state, checked: this.neighbors.checkedAtUnixMs,
-        lastSuccess: this.neighbors.lastSuccessAtUnixMs, intervalMs: 30_000, target: 'neighborhood'},
-      {name: 'Interfaces', state: this.interfaces.state, checked: this.interfaces.checkedAtUnixMs,
-        lastSuccess: this.interfaces.lastSuccessAtUnixMs, intervalMs: 30_000, target: 'interfaces'},
+      ...(this.metricsAvailable ? [{
+        name: 'Traffic metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs,
+        lastSuccess: this.runtimeMetrics.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'traffic',
+      }] : []),
+      ...(this.sessionActivityAvailable ? [{
+        name: 'Session activity', state: this.sessionActivity.state, checked: this.sessionActivity.checkedAtUnixMs,
+        lastSuccess: this.sessionActivity.lastSuccessAtUnixMs, intervalMs: 10_000, target: 'sessions',
+      }] : []),
+      ...(this.tlsMonitoringAvailable ? [{
+        name: 'TLS cache', state: this.tlsCache.state, checked: this.tlsCache.checkedAtUnixMs,
+        lastSuccess: this.tlsCache.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'tls',
+      }] : []),
+      ...(this.neighborMonitoringAvailable ? [{
+        name: 'Neighborhood', state: this.neighbors.state, checked: this.neighbors.checkedAtUnixMs,
+        lastSuccess: this.neighbors.lastSuccessAtUnixMs, intervalMs: 30_000, target: 'neighborhood',
+      }] : []),
+      ...(this.interfaceMonitoringAvailable ? [{
+        name: 'Interfaces', state: this.interfaces.state, checked: this.interfaces.checkedAtUnixMs,
+        lastSuccess: this.interfaces.lastSuccessAtUnixMs, intervalMs: 30_000, target: 'interfaces',
+      }] : []),
       ...(this.configReadAvailable || this.snapshot ? [{
         name: 'Configuration', state: this.snapshot?.state ?? 'starting',
         checked: this.snapshot?.checkedAtUnixMs ?? null,
