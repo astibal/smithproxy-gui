@@ -1255,7 +1255,10 @@ test('opens each system status card at its protected configuration group', async
     ['Open worker settings', 'Worker capacity', 'Plaintext workers'],
     ['Open listener settings', 'Listener endpoints', 'Plaintext port'],
     ['Open logging settings', 'Logging and payloads', 'Log level'],
-    ['Open service settings', 'Auxiliary services', 'CLI port'],
+    ['Open administration settings', 'Local administration', 'CLI port'],
+    ['Open resolver settings', 'Name resolution', 'Nameservers'],
+    ['Open certificate settings', 'Certificate resources', 'Certificates path'],
+    ['Open resource settings', 'Supporting resources', 'Message assets'],
     ['Open tuning settings', 'Performance tuning', 'Initial host buffer (bytes)'],
   ] as const;
 
@@ -6950,7 +6953,8 @@ test('saves typed system and capture settings without exposing redacted values',
   const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
   for (const group of [
     'Traffic admission', 'Worker capacity', 'Listener endpoints', 'Logging and payloads',
-    'Auxiliary services', 'Performance tuning', 'Management API', 'Webhook integration',
+    'Local administration', 'Name resolution', 'Certificate resources', 'Supporting resources',
+    'Performance tuning', 'Management API', 'Webhook integration',
   ]) {
     await expect(settingsEditor.getByRole('group', {name: group})).toBeVisible();
   }

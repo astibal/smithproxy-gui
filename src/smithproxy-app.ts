@@ -4504,8 +4504,8 @@ export class SmithproxyApp extends LitElement {
 
   private openSystemDrawer(
     kind: 'settings' | 'captures', origin?: HTMLElement,
-    settingsGroup?: 'traffic' | 'workers' | 'listeners' | 'logging' | 'auxiliary' | 'tuning' |
-      'management-api' | 'webhook',
+    settingsGroup?: 'traffic' | 'workers' | 'listeners' | 'logging' | 'administration' |
+      'resolution' | 'certificates' | 'assets' | 'tuning' | 'management-api' | 'webhook',
   ): void {
     if ((kind === 'settings' && !this.snapshot?.settings) ||
         (kind === 'captures' && !this.snapshot?.captures)) return;
@@ -11062,20 +11062,54 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Auxiliary services</h3><p>Credentials and filesystem paths stay redacted</p></div>
+              <header><div><h3>Local administration</h3><p>Command-line access and administrator identity</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
-                    'settings', event.currentTarget as HTMLElement, 'auxiliary',
-                  )}>Open service settings</button>
+                    'settings', event.currentTarget as HTMLElement, 'administration',
+                  )}>Open administration settings</button>
               </header>
               <dl>
                 <dt>CLI port / password</dt><dd>${setting('cli.port', settings.auxiliary.cliPort)} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
+                <dt>Administration group</dt><dd>${settings.auxiliary.adminGroupConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+              </dl>
+            </article>
+            <article class="domain-card" data-system-section="settings">
+              <header><div><h3>Name resolution</h3><p>Resolver behavior used by proxy services</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'resolution',
+                  )}>Open resolver settings</button>
+              </header>
+              <dl>
                 <dt>SOCKS async DNS</dt><dd>${setting('socks.async_dns', settings.auxiliary.socksAsyncDns) ? 'Enabled' : 'Disabled'}</dd>
+                <dt>SOCKS IP preference</dt><dd>${setting('socks.prefer_ipv6', settings.auxiliary.socksPreferIpv6) ? 'Prefer IPv6' : 'Default order'}</dd>
                 <dt>UDP quick ports</dt><dd>${settingStrings('udp_quick_ports', settings.auxiliary.udpQuickPorts).join(', ') || 'None'}</dd>
-                <dt>Certificates / CA bundle</dt><dd>${settings.auxiliary.certificatesPathConfigured ? 'Configured' : 'Missing'} / ${settings.auxiliary.caBundlePathConfigured ? 'Configured' : 'Missing'}</dd>
+                <dt>Nameservers</dt><dd>${settingStrings('nameservers', settings.nameservers).join(', ') || 'System defaults'}</dd>
+              </dl>
+            </article>
+            <article class="domain-card" data-system-section="settings">
+              <header><div><h3>Certificate resources</h3><p>Private paths and passwords stay redacted</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'certificates',
+                  )}>Open certificate settings</button>
+              </header>
+              <dl>
+                <dt>Certificates</dt><dd>${settings.auxiliary.certificatesPathConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>CA bundle</dt><dd>${settings.auxiliary.caBundlePathConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Certificate transparency log</dt><dd>${settings.auxiliary.certificateTransparencyLogConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+              </dl>
+            </article>
+            <article class="domain-card" data-system-section="settings">
+              <header><div><h3>Supporting resources</h3><p>Optional message and reputation data</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'assets',
+                  )}>Open resource settings</button>
+              </header>
+              <dl>
                 <dt>Message assets</dt><dd>${settings.auxiliary.messagesDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>Payload filename parts</dt><dd>${settings.auxiliary.payloadFilePrefixConfigured ? 'Prefix' : 'No prefix'} / ${settings.auxiliary.payloadFileSuffixConfigured ? 'Suffix' : 'No suffix'}</dd>
                 <dt>Web rating key</dt><dd>${settings.auxiliary.webRatingKeyConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
               </dl>
             </article>
@@ -13304,36 +13338,53 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('log-file', 'Log file', settings.logging.fileConfigured)}
         ${writeOnlyField('tls-key-log-file', 'TLS key log file', settings.logging.sslKeyFileConfigured)}
         ${writeOnlyField('syslog-server', 'Syslog server', settings.logging.syslogServerConfigured)}
+        ${writeOnlyField('payload-prefix', 'Payload filename prefix', settings.auxiliary.payloadFilePrefixConfigured)}
+        ${writeOnlyField('payload-suffix', 'Payload filename suffix', settings.auxiliary.payloadFileSuffixConfigured)}
           </div>
         </fieldset>
-        <fieldset class="editor-group" data-settings-group="auxiliary">
-          <legend>Auxiliary services</legend>
-          <p>Configures CLI, SOCKS behavior, certificate resources, and supporting assets.</p>
+        <fieldset class="editor-group" data-settings-group="administration">
+          <legend>Local administration</legend>
+          <p>Configures command-line access and the local administrator identity.</p>
           <div class="form-grid">
         ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 1024, 65535)}
-        ${booleanField('aux-thread-pool-log', 'Thread-pool task logging', settings.auxiliary.threadPoolLogging)}
+        ${writeOnlyField('cli-password', 'CLI password', settings.auxiliary.cliPasswordConfigured, true)}
+        ${writeOnlyField('admin-group', 'Administration group', settings.auxiliary.adminGroupConfigured)}
+          </div>
+        </fieldset>
+        <fieldset class="editor-group" data-settings-group="resolution">
+          <legend>Name resolution</legend>
+          <p>Controls resolver selection and SOCKS address-family behavior.</p>
+          <div class="form-grid">
         ${booleanField('aux-socks-async-dns', 'SOCKS asynchronous DNS', settings.auxiliary.socksAsyncDns)}
         ${booleanField('aux-socks-ipver-mixing', 'SOCKS IP-version mixing', settings.auxiliary.socksIpVersionMixing)}
         ${booleanField('aux-socks-prefer-ipv6', 'SOCKS prefer IPv6', settings.auxiliary.socksPreferIpv6)}
-        ${writeOnlyField('cli-password', 'CLI password', settings.auxiliary.cliPasswordConfigured, true)}
         <label for="settings-udp-quick-ports">UDP quick ports</label>
         <input id="settings-udp-quick-ports"
           .value=${strings('settings.udp_quick_ports', settings.auxiliary.udpQuickPorts).join(', ')}
           placeholder="0, 53, 443" .readOnly=${locked('settings.udp_quick_ports')} />
+        <label for="settings-nameservers">Nameservers</label>
+        <input id="settings-nameservers"
+          .value=${strings('settings.nameservers', settings.nameservers).join(', ')}
+          placeholder="192.0.2.53, resolver.example" .readOnly=${locked('settings.nameservers')} />
+          </div>
+        </fieldset>
+        <fieldset class="editor-group" data-settings-group="certificates">
+          <legend>Certificate resources</legend>
+          <p>Locates certificate stores, trust bundles, and certificate-transparency data.</p>
+          <div class="form-grid">
         ${writeOnlyField('certificates-path', 'Certificates path', settings.auxiliary.certificatesPathConfigured)}
         ${writeOnlyField('certificate-password', 'Certificate password', settings.auxiliary.certificatePasswordConfigured, true)}
         ${writeOnlyField('certificate-transparency-log', 'Certificate transparency log file', settings.auxiliary.certificateTransparencyLogConfigured)}
         ${writeOnlyField('ca-bundle-path', 'CA bundle path', settings.auxiliary.caBundlePathConfigured)}
         ${writeOnlyField('ca-bundle-file', 'CA bundle file', settings.auxiliary.caBundleFileConfigured)}
-        ${writeOnlyField('admin-group', 'Administration group', settings.auxiliary.adminGroupConfigured)}
+          </div>
+        </fieldset>
+        <fieldset class="editor-group" data-settings-group="assets">
+          <legend>Supporting resources</legend>
+          <p>Configures optional message templates and external reputation data.</p>
+          <div class="form-grid">
         ${writeOnlyField('messages-directory', 'Message assets', settings.auxiliary.messagesDirectoryConfigured)}
-        ${writeOnlyField('payload-prefix', 'Payload filename prefix', settings.auxiliary.payloadFilePrefixConfigured)}
-        ${writeOnlyField('payload-suffix', 'Payload filename suffix', settings.auxiliary.payloadFileSuffixConfigured)}
         ${writeOnlyField('web-rating-key', 'Web rating key', settings.auxiliary.webRatingKeyConfigured, true)}
-        <label for="settings-nameservers">Nameservers</label>
-        <input id="settings-nameservers"
-          .value=${strings('settings.nameservers', settings.nameservers).join(', ')}
-          placeholder="192.0.2.53, resolver.example" .readOnly=${locked('settings.nameservers')} />
           </div>
         </fieldset>
         <fieldset class="editor-group" data-settings-group="tuning">
@@ -13436,6 +13487,12 @@ export class SmithproxyApp extends LitElement {
           ${this.renderBooleanSelect(
             'debug-source-lines-always', scalar('debug.log_srclines_always', this.snapshot.debug.logSourceLinesAlways),
             locked('debug.log_srclines_always'),
+          )}
+          <label for="settings-aux-thread-pool-log">Thread-pool task logging</label>
+          ${this.renderBooleanSelect(
+            'settings-aux-thread-pool-log',
+            scalar('settings.tpool_log', settings.auxiliary.threadPoolLogging),
+            locked('settings.tpool_log'),
           )}
           <h3 class="form-span">Per-module overrides</h3>
           ${this.snapshot.debug.moduleOverrides.map((override, index) => {
