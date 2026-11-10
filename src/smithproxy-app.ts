@@ -9978,29 +9978,12 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderDashboard() {
-    const history = this.systemStatus.history;
-    const emptySlots = Math.max(0, 60 - history.length);
     return html`
       <div class="content dashboard" tabindex="0">
         ${this.renderRuntimeSummary()}
-        ${this.renderOperationalHealth()}
-        ${this.renderActiveAlerts()}
         ${this.renderConfigurationInventory()}
-        <section class="monitor-panel" aria-label="Probe history">
-          <h3>Recent probe history</h3>
-          <p>Up to five minutes at the current five-second sampling interval. Last success: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}.</p>
-          <div class="probe-history" role="img" aria-label="${history.length} probe samples">
-            ${Array.from({length: emptySlots}, () => html`<span class="probe" aria-hidden="true"></span>`)}
-            ${history.map(sample => html`
-              <span class="probe ${sample.state}" title="${displayState(sample.state)} · ${sample.latencyMs ?? '—'} ms · ${this.timeLabel(sample.checkedAtUnixMs)}" aria-hidden="true"></span>
-            `)}
-          </div>
-          ${this.renderProbeAnalysis()}
-        </section>
-        ${this.renderProbeIncidents()}
-        <div class="scope-note">
-          Control-plane health and listener counters are live. TLS inspection outcomes and deeper dataplane health will be added as dedicated monitoring surfaces.
-        </div>
+        ${this.renderActiveAlerts()}
+        ${this.renderOperationalHealth()}
       </div>
     `;
   }

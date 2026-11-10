@@ -5115,10 +5115,6 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   const healthTable = health.getByRole('table', {name: 'Operational subsystem health'});
   await expect(healthTable.getByRole('row').filter({hasText: 'Control plane'})).toContainText('Ready · Fresh');
   await expect(healthTable.getByRole('row').filter({hasText: 'TLS cache'})).toContainText('Ready · Fresh');
-  const analysis = page.getByLabel('Probe latency analysis');
-  await expect(analysis.getByText('11 ms', {exact: true})).toBeVisible();
-  await expect(analysis.getByText('12 ms', {exact: true})).toHaveCount(2);
-  await expect(analysis.getByText('0', {exact: true})).toBeVisible();
 });
 
 test('reports a verified Saslik gateway handoff without exposing credentials', async ({page}) => {
