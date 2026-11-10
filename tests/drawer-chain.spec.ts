@@ -6788,6 +6788,18 @@ test('organizes operational surfaces into focused administrator views', async ({
   await expectNoWcagViolations(page);
 });
 
+test('uses the Logs navigation badge only for events requiring attention', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready', jobFailure: true}, true);
+  await page.goto('/');
+
+  const badge = page.locator('.logs-nav-item .nav-badge');
+  await expect(badge).toHaveText('1');
+  await page.getByRole('button', {name: 'Logs', exact: true}).click();
+  await expect(page.getByRole('list', {name: 'Operational events'})).toContainText(
+    'Configuration refresh did not converge',
+  );
+});
+
 test('projects pending listener settings into Network and opens their real editor', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready',

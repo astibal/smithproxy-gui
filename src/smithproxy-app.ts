@@ -14511,6 +14511,8 @@ export class SmithproxyApp extends LitElement {
     const failedJobCount = this.backendJobs.jobs.filter(job => job.state === 'failed').length;
     const jobTone = this.jobsError ? 'danger' : !this.jobsAvailable ? 'warning' :
       activeJobCount > 0 ? 'warning' : failedJobCount > 0 ? 'danger' : 'success';
+    const attentionEventCount = this.operationalEvents.events.filter(event =>
+      event.severity === 'warning' || event.severity === 'error').length;
     const profileCount = this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0;
     const objectCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
       (this.snapshot?.protocols.length ?? 0) + profileCount +
@@ -14521,8 +14523,8 @@ export class SmithproxyApp extends LitElement {
       if (item === 'Objects') return this.snapshot ? objectCount.toLocaleString() : undefined;
       if (item === 'Policy') return this.snapshot ? this.snapshot.policies.length.toLocaleString() : undefined;
       if (item === 'Monitoring') return activeAlertCount > 0 ? activeAlertCount.toLocaleString() : undefined;
-      if (item === 'Logs') return this.operationalEvents.events.length > 0
-        ? this.operationalEvents.events.length.toLocaleString() : undefined;
+      if (item === 'Logs') return attentionEventCount > 0
+        ? attentionEventCount.toLocaleString() : undefined;
       if (item === 'System') return activeJobCount > 0 ? activeJobCount.toLocaleString() : undefined;
       return undefined;
     };
