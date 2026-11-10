@@ -89,11 +89,18 @@ std::optional<std::filesystem::path> safe_asset_path(
 }
 
 bool valid_archive_resource_path(const std::string_view path) noexcept {
-    if (path.empty() || path.size() > 512U || path.front() == '/' ||
+    // Keep this boundary aligned with CfgTar::Limits::max_path_size. Reject
+    // malformed paths here so the HTTP API never forwards input that the
+    // native archive would reject later during publication.
+    if (path.empty() || path.size() > 1024U || path.front() == '/' ||
         path.find('\\') != std::string_view::npos ||
         !(path.starts_with("pki/") || path.starts_with("templates/") ||
           path.starts_with("commands/"))) {
         return false;
+    }
+
+    for(const unsigned char character : path) {
+        if(character < 0x20U || character == 0x7fU) return false;
     }
 
     std::size_t start{};

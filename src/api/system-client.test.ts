@@ -925,6 +925,9 @@ describe('SystemClient', () => {
     for (const legacyPath of ['messages/notice.txt', 'scripts/task.sh', 'ssh/hostkeys/key']) {
       expect(() => client.archiveResourceUrl(legacyPath)).toThrow('resource path');
     }
+    expect(() => client.archiveResourceUrl('pki/ca/default/line\nbreak.pem')).toThrow('resource path');
+    expect(() => client.archiveResourceUrl(`pki/${'a'.repeat(1020)}`)).not.toThrow();
+    expect(() => client.archiveResourceUrl(`pki/${'a'.repeat(1021)}`)).toThrow('resource path');
   });
 
   it('writes and removes managed CFtar resources with archive preconditions', async () => {

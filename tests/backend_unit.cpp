@@ -873,6 +873,9 @@ int main() {
     assert(!valid_archive_resource_path("pki/../secret"));
     assert(!valid_archive_resource_path("pki//ca.pem"));
     assert(!valid_archive_resource_path("pki/ca.pem/"));
+    assert(!valid_archive_resource_path("pki/ca/default/line\nbreak.pem"));
+    assert(valid_archive_resource_path("pki/" + std::string(1020U, 'a')));
+    assert(!valid_archive_resource_path("pki/" + std::string(1021U, 'a')));
 
     const auto bundle_root = std::filesystem::temp_directory_path() / "smithproxy-gui-bundle-test";
     const auto bundle_bin = bundle_root / "bin";

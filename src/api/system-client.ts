@@ -1441,7 +1441,10 @@ export class SystemClient {
   #validateArchiveResourcePath(path: string): void {
     const managedNamespace = ['pki/', 'templates/', 'commands/']
       .some(prefix => path.startsWith(prefix));
-    if (path.length === 0 || path.length > 512 || path.startsWith('/') || path.includes('\\') ||
+    // Match the native CFtar path contract before a request crosses the API
+    // boundary. This produces one predictable client error for every caller.
+    if (path.length === 0 || path.length > 1024 || path.startsWith('/') || path.includes('\\') ||
+        /[\u0000-\u001f\u007f]/u.test(path) ||
         !managedNamespace ||
         path.split('/').some(part => part.length === 0 || part === '.' || part === '..')) {
       throw new Error('Invalid configuration archive resource path.');
