@@ -10399,31 +10399,31 @@ export class SmithproxyApp extends LitElement {
 
   private renderCollectorMatrix() {
     const collectors = [
-      {
+      ...(this.metricsAvailable ? [{
         name: 'Runtime metrics', state: this.runtimeMetrics.state,
         lastSuccessAtUnixMs: this.runtimeMetrics.lastSuccessAtUnixMs,
         expectedIntervalMs: 5_000, detail: this.runtimeMetrics.detail,
-      },
-      {
+      }] : []),
+      ...(this.sessionActivityAvailable ? [{
         name: 'Session activity', state: this.sessionActivity.state,
         lastSuccessAtUnixMs: this.sessionActivity.lastSuccessAtUnixMs,
         expectedIntervalMs: 10_000, detail: this.sessionActivity.detail,
-      },
-      {
+      }] : []),
+      ...(this.tlsMonitoringAvailable ? [{
         name: 'TLS cache', state: this.tlsCache.state,
         lastSuccessAtUnixMs: this.tlsCache.lastSuccessAtUnixMs,
         expectedIntervalMs: 5_000, detail: this.tlsCache.detail,
-      },
-      {
+      }] : []),
+      ...(this.neighborMonitoringAvailable ? [{
         name: 'Network neighbors', state: this.neighbors.state,
         lastSuccessAtUnixMs: this.neighbors.lastSuccessAtUnixMs,
         expectedIntervalMs: 30_000, detail: this.neighbors.detail,
-      },
-      {
+      }] : []),
+      ...(this.interfaceMonitoringAvailable ? [{
         name: 'Network interfaces', state: this.interfaces.state,
         lastSuccessAtUnixMs: this.interfaces.lastSuccessAtUnixMs,
         expectedIntervalMs: 30_000, detail: this.interfaces.detail,
-      },
+      }] : []),
     ].map(item => {
       const freshness = classifyFreshness(
         item.lastSuccessAtUnixMs, item.expectedIntervalMs,
@@ -10436,6 +10436,7 @@ export class SmithproxyApp extends LitElement {
         ),
       };
     });
+    if (collectors.length === 0) return nothing;
     const currentCount = collectors.filter(item => item.presentation.current).length;
     return html`
       <details class="monitor-panel diagnostic-section" aria-label="Data collection diagnostics"

@@ -6271,6 +6271,7 @@ test('does not present initialized monitoring counters as live zeroes', async ({
   await expect(interfaces.getByRole('article')).toHaveCount(0);
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await expect(page.getByRole('group', {name: 'Data collection diagnostics'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Traffic', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Runtime history'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Sessions', exact: true}).click();
