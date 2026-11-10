@@ -1471,9 +1471,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(addressEditor.locator('.address-insight')).toHaveText('Enter a valid IPv4 or IPv6 CIDR.');
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(addressEditor).toBeVisible();
-  await addressEditor.getByLabel('Address').fill('10.0.1.37/23');
+  await addressEditor.getByLabel('Address').fill('10.0.1.37');
   await expect(addressEditor.locator('.address-insight')).toHaveText(
-    'IPv4 /23 · 512 addresses · 10.0.0.0 – 10.0.1.255',
+    'IPv4 /32 · single address · 10.0.1.37',
   );
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(addressEditor).not.toBeVisible();
@@ -1497,7 +1497,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(preflight).toContainText('Smithproxy transaction schemas are not reviewed by this GUI core.');
   await expectNoWcagViolations(page);
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('address_objects.[0].value');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.37/23');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('10.0.1.37/32');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('routing.[0].dnat_lb_method');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('sticky-l4');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('detection_profiles.[0].mode');
@@ -1523,7 +1523,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   const addressDiff = page.getByRole('table', {name: 'Pending draft changes'})
     .getByRole('row').filter({hasText: 'address_objects.[0].value'});
   await expect(addressDiff.locator('.draft-transition-value')).toHaveText([
-    /Persistent\s*10\.0\.0\.0\/24/u, /Pending\s*10\.0\.1\.37\/23/u,
+    /Persistent\s*10\.0\.0\.0\/24/u, /Pending\s*10\.0\.1\.37\/32/u,
   ]);
   const authorityDiff = page.getByRole('table', {name: 'Pending draft changes'})
     .getByRole('row').filter({hasText: 'tls_ca.[0].path'});
@@ -2689,7 +2689,9 @@ test('creates and reopens an address object through a structural drawer', async 
   expect(state.structuralMutationRequests).toEqual([]);
 
   await editor.getByLabel('Type').selectOption('cidr');
-  await editor.getByLabel('Address', {exact: true}).fill('192.0.2.0/24');
+  await editor.getByLabel('Address', {exact: true}).fill('192.0.2.37');
+  await expect(editor.locator('.address-insight'))
+    .toHaveText('IPv4 /32 · single address · 192.0.2.37');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
@@ -2698,7 +2700,7 @@ test('creates and reopens an address object through a structural drawer', async 
   expect(request.csrf).toBe('1');
   expect(request.operation).toMatchObject({
     op: 'create', collection: 'address_objects', position: {last: true},
-    fields: {name: 'branch-office', type: 'cidr', value: '192.0.2.0/24'},
+    fields: {name: 'branch-office', type: 'cidr', value: '192.0.2.37/32'},
   });
   expect(request.operation.local_id).toMatch(/^create-address-[0-9a-f-]{36}$/u);
   expect(request.operation.client_id).toBe(request.operation.local_id);
@@ -2710,7 +2712,7 @@ test('creates and reopens an address object through a structural drawer', async 
   await table.getByRole('button', {name: 'Edit'}).click();
   editor = page.getByRole('dialog', {name: 'Create address object'});
   await expect(editor.getByLabel('Name')).toHaveValue('branch-office');
-  await expect(editor.getByLabel('Address', {exact: true})).toHaveValue('192.0.2.0/24');
+  await expect(editor.getByLabel('Address', {exact: true})).toHaveValue('192.0.2.37/32');
 });
 
 test('creates and reopens bounded port and protocol objects', async ({page}) => {
