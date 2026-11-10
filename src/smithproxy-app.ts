@@ -10585,7 +10585,10 @@ export class SmithproxyApp extends LitElement {
     const enabledCapabilityCount = this.enabledCapabilityCount();
     const currentArchiveUrl = this.systemClient?.archiveDownloadUrl('current');
     const previousArchiveUrl = this.systemClient?.archiveDownloadUrl('previous');
-    const archiveEntries = this.archiveValidation?.entries ?? this.archiveInventory?.resources ?? [];
+    // Keep a selected backup separate from the current archive inventory. A
+    // restore candidate must never look like an editable live resource list.
+    const selectedArchiveEntries = this.archiveValidation?.entries ?? [];
+    const managedResources = this.archiveInventory?.resources ?? [];
     // A system page reports only drafts belonging to the task shown on that page.
     // Trust and signature drafts live exclusively in their dedicated object views.
     const pendingConfiguration =
@@ -10635,13 +10638,15 @@ export class SmithproxyApp extends LitElement {
           </article>
           <article class="domain-card job-card" data-system-section="configuration">
             <header>
-              <div><h3>Native configuration archive</h3><p>Portable CFtar startup configuration and managed resources</p></div>
-              <span class="runtime-state ${this.archiveRestore ? 'warning' : this.archiveInventory ? 'success' : 'warning'}">
-                ● ${this.archiveRestore ? 'Restart required' : this.archiveInventory ? 'Ready' : 'Not loaded'}
+              <div><h3>Configuration backups</h3><p>Download or restore a portable CFtar startup configuration</p></div>
+              <span class="runtime-state ${this.archiveRestore ? 'warning' :
+                this.archiveValidation || this.archiveInventory ? 'success' : 'warning'}">
+                ● ${this.archiveRestore ? 'Restart required' : this.archiveValidation ? 'Validated' :
+                  this.archiveInventory ? 'Ready' : 'Not loaded'}
               </span>
             </header>
             <dl>
-              <dt>Current archive</dt><dd title=${this.archiveInventory?.contentHash ?? ''}>
+              <dt>Current backup</dt><dd title=${this.archiveInventory?.contentHash ?? ''}>
                 ${this.archiveInventory ? `${this.archiveInventory.resources.length} managed resources` : 'Inventory unavailable'}
               </dd>
               <dt>Selected file</dt><dd>${this.archiveFileName || 'None'}</dd>
@@ -10656,57 +10661,20 @@ export class SmithproxyApp extends LitElement {
               ` : nothing}
             </dl>
             <div class="archive-actions">
-              <button class="secondary" type="button" ?disabled=${this.archiveBusy}
-                @click=${() => { void this.loadArchiveInventory(); }}>
-                ${this.archiveBusy && !this.archiveFileName ? 'Loading…' : 'Refresh inventory'}
-              </button>
               ${currentArchiveUrl ? html`<a class="secondary" href=${currentArchiveUrl} download>Download current</a>` : nothing}
               ${previousArchiveUrl ? html`<a class="secondary" href=${previousArchiveUrl} download>Download previous</a>` : nothing}
               <label>
-                <span class="sr-only">Select CFtar archive to validate</span>
+                <span>Select backup to validate</span>
                 <input type="file" accept=".cftar,application/vnd.smithproxy.cftar,application/x-tar"
                   ?disabled=${this.archiveBusy} @change=${(event: Event) => { void this.selectArchive(event); }}>
               </label>
             </div>
-            ${archiveEntries.length > 0 ? html`
-              <div class="archive-resources" aria-label="Configuration archive entries">
-                ${archiveEntries.map(entry => html`<div class="archive-resource">
+            ${selectedArchiveEntries.length > 0 ? html`
+              <div class="archive-resources" aria-label="Selected backup contents">
+                ${selectedArchiveEntries.map(entry => html`<div class="archive-resource">
                   <code>${entry.path}</code><span>${this.formatBytes(entry.size)}${entry.executable ? ' · executable' : ''}</span>
-                  ${!this.archiveValidation && this.archiveInventory ? html`<span class="archive-resource-actions">
-                    <a class="secondary" href=${this.systemClient?.archiveResourceUrl(entry.path) ?? '#'} download>Download</a>
-                    <button class="${this.archiveResourceDeleteArmed === entry.path ? 'danger' : 'secondary'}"
-                      type="button" ?disabled=${this.archiveBusy || !this.configSaveAvailable}
-                      @click=${() => { void this.deleteArchiveResource(entry.path); }}>
-                      ${this.archiveResourceDeleteArmed === entry.path ? 'Confirm remove' : 'Remove'}
-                    </button>
-                  </span>` : nothing}
                 </div>`)}
               </div>
-            ` : nothing}
-            ${this.archiveInventory && !this.archiveValidation ? html`
-              <div class="archive-resource-editor">
-                <input type="text" maxlength="1024" placeholder="templates/replacement/notice.html"
-                  aria-label="Managed resource path" .value=${this.archiveResourcePath}
-                  @input=${(event: Event) => {
-                    const input = event.currentTarget;
-                    if (input instanceof HTMLInputElement) this.archiveResourcePath = input.value;
-                  }}>
-                <input type="file" ?disabled=${this.archiveBusy}
-                  aria-label="Managed resource file"
-                  @change=${(event: Event) => { void this.selectArchiveResource(event); }}>
-                <button class="primary" type="button"
-                  ?disabled=${this.archiveBusy || !this.configSaveAvailable || !this.archiveResourcePayload || !this.archiveResourcePath.trim() || !this.snapshot?.revision}
-                  @click=${() => { void this.writeArchiveResource(); }}>Add or replace resource</button>
-              </div>
-              <label class="archive-confirm">
-                <input type="checkbox" .checked=${this.archiveResourceExecutable}
-                  @change=${(event: Event) => {
-                    const input = event.currentTarget;
-                    if (input instanceof HTMLInputElement) this.archiveResourceExecutable = input.checked;
-                  }}>
-                <span>Preserve this resource as executable. Stored files are never executed by the archive layer itself.</span>
-              </label>
-              <p>Managed paths must begin with <code>pki/</code>, <code>templates/</code>, or <code>commands/</code>. Resource changes replace only the saved startup archive and require restart.</p>
             ` : nothing}
             ${this.archiveValidation ? html`
               <label class="archive-confirm">
@@ -10737,6 +10705,77 @@ export class SmithproxyApp extends LitElement {
               Archive restored at revision ${this.archiveRestore.revision}. Restart Smithproxy to activate it.
             </div>` : nothing}
             ${this.archiveError ? html`<div class="metrics-message danger" role="alert">${this.archiveError}</div>` : nothing}
+          </article>
+          <article class="domain-card job-card" data-system-section="configuration">
+            <header>
+              <div><h3>Managed resources</h3><p>Certificates, templates, and commands stored with startup configuration</p></div>
+              <span class="runtime-state ${this.archiveInventory ? 'success' : 'warning'}">
+                ● ${this.archiveInventory ? 'Ready' : 'Not loaded'}
+              </span>
+            </header>
+            <dl>
+              <dt>Resources</dt><dd>${this.archiveInventory
+                ? managedResources.length.toLocaleString() : 'Inventory unavailable'}</dd>
+              <dt>Stored size</dt><dd>${this.archiveInventory
+                ? this.formatBytes(managedResources.reduce((total, entry) => total + entry.size, 0)) : 'Unavailable'}</dd>
+              <dt>Activation</dt><dd>Changes take effect after restart</dd>
+            </dl>
+            <div class="archive-actions">
+              <button class="secondary" type="button" ?disabled=${this.archiveBusy}
+                @click=${() => { void this.loadArchiveInventory(); }}>
+                ${this.archiveBusy && !this.archiveFileName ? 'Loading…' : 'Refresh resources'}
+              </button>
+            </div>
+            ${managedResources.length > 0 ? html`
+              <div class="archive-resources" aria-label="Managed startup resources">
+                ${managedResources.map(entry => html`<div class="archive-resource">
+                  <code>${entry.path}</code><span>${this.formatBytes(entry.size)}${entry.executable ? ' · executable' : ''}</span>
+                  <span class="archive-resource-actions">
+                    <a class="secondary" href=${this.systemClient?.archiveResourceUrl(entry.path) ?? '#'} download>Download</a>
+                    <button class="${this.archiveResourceDeleteArmed === entry.path ? 'danger' : 'secondary'}"
+                      type="button" ?disabled=${this.archiveBusy || !this.configSaveAvailable}
+                      @click=${() => { void this.deleteArchiveResource(entry.path); }}>
+                      ${this.archiveResourceDeleteArmed === entry.path ? 'Confirm remove' : 'Remove'}
+                    </button>
+                  </span>
+                </div>`)}
+              </div>
+            ` : this.archiveInventory ? html`
+              <div class="metrics-message">No managed resources are stored in the current startup configuration.</div>
+            ` : nothing}
+            ${this.archiveInventory ? html`
+              <details class="diagnostic-section">
+                <summary>
+                  <div><h4>Add or replace resource</h4><p>Advanced startup configuration maintenance</p></div>
+                  <span class="runtime-state warning">Restart required</span>
+                </summary>
+                <div class="diagnostic-content">
+                  <div class="archive-resource-editor">
+                    <input type="text" maxlength="1024" placeholder="templates/replacement/notice.html"
+                      aria-label="Managed resource path" .value=${this.archiveResourcePath}
+                      @input=${(event: Event) => {
+                        const input = event.currentTarget;
+                        if (input instanceof HTMLInputElement) this.archiveResourcePath = input.value;
+                      }}>
+                    <input type="file" ?disabled=${this.archiveBusy}
+                      aria-label="Managed resource file"
+                      @change=${(event: Event) => { void this.selectArchiveResource(event); }}>
+                    <button class="primary" type="button"
+                      ?disabled=${this.archiveBusy || !this.configSaveAvailable || !this.archiveResourcePayload || !this.archiveResourcePath.trim() || !this.snapshot?.revision}
+                      @click=${() => { void this.writeArchiveResource(); }}>Add or replace resource</button>
+                  </div>
+                  <label class="archive-confirm">
+                    <input type="checkbox" .checked=${this.archiveResourceExecutable}
+                      @change=${(event: Event) => {
+                        const input = event.currentTarget;
+                        if (input instanceof HTMLInputElement) this.archiveResourceExecutable = input.checked;
+                      }}>
+                    <span>Preserve this resource as executable. Stored files are never executed by the archive layer itself.</span>
+                  </label>
+                  <p>Managed paths must begin with <code>pki/</code>, <code>templates/</code>, or <code>commands/</code>. Resource changes replace only the saved startup archive.</p>
+                </div>
+              </details>
+            ` : nothing}
           </article>
           <div data-system-section="backend">
             ${this.renderEventStreamHealth()}

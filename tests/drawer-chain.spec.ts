@@ -6614,22 +6614,44 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.getByRole('button', {name: 'Configuration archive', exact: true}).click();
   await expect(page.getByText('Save, download, validate, and restore the startup configuration')).toBeVisible();
   await page.locator('smithproxy-gui').evaluate((application: HTMLElement & {
-    archiveInventory?: {state: 'ready'; contentHash: string; resources: []};
+    archiveInventory?: {
+      state: 'ready'; contentHash: string;
+      resources: Array<{path: string; size: number; executable: boolean}>;
+    };
+    archiveValidation?: {
+      state: 'valid'; contentHash: string; archiveSize: number; payloadSize: number;
+      formatVersion: number; entries: Array<{path: string; size: number; executable: boolean}>;
+    };
+    archiveFileName?: string;
     updateComplete: Promise<unknown>;
   }) => {
     application.archiveInventory = {
-      state: 'ready', contentHash: `sha256:${'a'.repeat(64)}`, resources: [],
+      state: 'ready', contentHash: `sha256:${'a'.repeat(64)}`,
+      resources: [{path: 'pki/trust/live.pem', size: 12, executable: false}],
     };
+    application.archiveValidation = {
+      state: 'valid', contentHash: `sha256:${'b'.repeat(64)}`,
+      archiveSize: 64, payloadSize: 64, formatVersion: 1,
+      entries: [{path: 'templates/restored.html', size: 8, executable: false}],
+    };
+    application.archiveFileName = 'backup.cftar';
     return application.updateComplete;
   });
-  await expect(page.getByRole('heading', {name: 'Native configuration archive'})).toBeVisible();
-  const archive = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Native configuration archive'}),
+  await expect(page.getByRole('heading', {name: 'Configuration backups'})).toBeVisible();
+  const backups = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Configuration backups'}),
   });
-  await expect(archive).toContainText('Managed paths must begin with pki/, templates/, or commands/.');
-  await expect(archive).not.toContainText('messages/');
-  await expect(archive).not.toContainText('ssh/');
-  await expect(archive.getByLabel('Managed resource path')).toHaveAttribute('maxlength', '1024');
+  const resources = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Managed resources'}),
+  });
+  await expect(backups).toContainText('templates/restored.html');
+  await expect(backups).not.toContainText('pki/trust/live.pem');
+  await expect(resources).toContainText('pki/trust/live.pem');
+  await expect(resources).not.toContainText('templates/restored.html');
+  await expect(resources).toContainText('Managed paths must begin with pki/, templates/, or commands/.');
+  await expect(resources).not.toContainText('messages/');
+  await expect(resources).not.toContainText('ssh/');
+  await expect(resources.getByLabel('Managed resource path')).toHaveAttribute('maxlength', '1024');
   await expect(page.getByRole('heading', {name: 'Trust and signatures'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('button', {name: 'Trust', exact: true}).click();
