@@ -1169,14 +1169,15 @@ export class SmithproxyApp extends LitElement {
       .object-subnav button { width: 42px; padding: 8px; }
       .object-subnav .nav-label { display: none; }
       .main { grid-row: 2; grid-template-rows: 94px minmax(0, 1fr); }
-      .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto; gap: 5px 8px; padding: 8px 12px; }
+      .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto auto; gap: 5px 8px; padding: 8px 12px; }
       .section-head { align-items: start; }
       .structural-action { max-width: 190px; }
       .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .topbar p { display: none; }
-      .config-workflow { justify-self: end; }
+      .config-workflow { grid-column: 2; justify-self: end; }
       .config-workflow button { min-height: 34px; padding: 6px 9px; }
       .config-workflow-error { display: none; }
+      .config-refresh { grid-row: 1; grid-column: 3; }
       .topbar .search { display: block; grid-column: 1 / -1; width: 100%; max-width: none; }
       .content { padding: 14px; }
       .drawer { inset: 0; }

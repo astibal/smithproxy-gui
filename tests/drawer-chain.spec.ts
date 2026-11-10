@@ -7250,6 +7250,11 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
 
   await expect(page.locator('link[data-saslik-theme]')).toHaveAttribute('href', '/saslik-theme.css');
   await expect(page.locator('script[data-app="smithproxy-gui"]')).toHaveAttribute('src', '/saslik-theme.js');
+  const titleBox = await page.getByRole('heading', {level: 1, name: 'Dashboard'}).boundingBox();
+  const refreshBox = await page.getByRole('button', {name: 'Refresh configuration'}).boundingBox();
+  expect(titleBox).not.toBeNull();
+  expect(refreshBox).not.toBeNull();
+  expect(Math.abs(titleBox!.y - refreshBox!.y)).toBeLessThan(6);
   const inventory = page.getByRole('region', {name: 'Configuration workspace'});
   await expect(inventory).toBeVisible();
   await expect.poll(() => inventory.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
