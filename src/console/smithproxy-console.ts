@@ -19,6 +19,19 @@ export class SmithproxyConsole extends LitElement {
   private socket: WebSocket | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private terminalLoading: Promise<void> | undefined;
+  private pendingInput: string | undefined;
+
+  /**
+   * Open the shared console and navigate through trusted CLI commands supplied
+   * by the GUI. Commands are queued until the broker connection is ready.
+   */
+  openAt(commands: ReadonlyArray<string>): void {
+    if (commands.length === 0 || commands.some(command =>
+      command.length === 0 || command.length > 256 || !/^[A-Za-z0-9_.\[\] -]+$/u.test(command))) return;
+    this.pendingInput = `${commands.join('\r')}\r`;
+    this.flushPendingInput();
+    if (this.expanded) void this.openConsole();
+  }
 
   static styles = [unsafeCSS(xtermStyles), css`
     :host { position: fixed; z-index: 18; right: 0; bottom: 30px; left: 216px; height: 40px;
@@ -124,6 +137,7 @@ export class SmithproxyConsole extends LitElement {
       if (this.socket !== socket) return;
       this.connectionState = 'connected';
       this.connectionDetail = 'Connected to Smithproxy CLI';
+      this.flushPendingInput();
       this.terminal?.focus();
     });
     socket.addEventListener('message', event => {
@@ -144,6 +158,12 @@ export class SmithproxyConsole extends LitElement {
         this.connectionDetail = 'CLI session closed. Reconnect when needed.';
       }
     });
+  }
+
+  private flushPendingInput(): void {
+    if (!this.pendingInput || this.socket?.readyState !== WebSocket.OPEN) return;
+    this.socket.send(this.pendingInput);
+    this.pendingInput = undefined;
   }
 
   private disconnect(detail: string): void {

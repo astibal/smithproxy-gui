@@ -70,6 +70,7 @@ import {probeIncidents} from './monitoring/incidents';
 import {orderListenerWorkloads} from './monitoring/listener-order';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
 import {DrawerStore, MAXIMUM_DRAWER_DEPTH, type DrawerEntry} from './state/drawer-store';
+import type {SmithproxyConsole} from './console/smithproxy-console';
 import './console/smithproxy-console';
 import {
   connectingSystemStatus,
@@ -4485,6 +4486,32 @@ export class SmithproxyApp extends LitElement {
 
   private drawerEditing(entry: Pick<DrawerEntry, 'kind' | 'id'>): boolean {
     return this.drawerStartsEditable(entry) || this.editingDrawerKeys.has(this.drawerKey(entry));
+  }
+
+  /** Build the same config-tree navigation an administrator would type manually. */
+  private cliCommandsForDrawer(entry: DrawerEntry): ReadonlyArray<string> | undefined {
+    if (this.drawerStartsEditable(entry)) return undefined;
+    if (entry.kind === 'settings') return ['configure terminal', 'edit settings'];
+    if (entry.kind === 'captures') return ['configure terminal', 'edit captures'];
+    const prefix = this.originPrefix(entry);
+    if (!prefix) return undefined;
+    const segments = [...prefix.matchAll(/([A-Za-z][A-Za-z0-9_]*)\.\[(\d+)\]\./gu)];
+    if (segments.length === 0) return undefined;
+    const commands = ['configure terminal'];
+    for (const [, section, index] of segments) {
+      commands.push(`edit ${section}`, `edit [${index}]`);
+    }
+    return commands;
+  }
+
+  private openDrawerInCli(entry: DrawerEntry): void {
+    const commands = this.cliCommandsForDrawer(entry);
+    if (!commands || !this.consoleAvailable || this.draftChangeCount > 0 ||
+        this.dirtyDrawerKeys.has(this.drawerKey(entry))) return;
+    const consoleElement = this.renderRoot.querySelector<SmithproxyConsole>('smithproxy-console');
+    if (!consoleElement) return;
+    consoleElement.openAt(commands);
+    this.consoleExpanded = true;
   }
 
   private enableDrawerEditing(entry: DrawerEntry): void {
@@ -14132,6 +14159,11 @@ export class SmithproxyApp extends LitElement {
     const editing = this.drawerEditing(entry);
     const protectedView = !readOnly && !editing;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
+    const cliCommands = this.cliCommandsForDrawer(entry);
+    const cliBlocker = dirty ? 'Save or discard the unsaved form changes before opening this object in CLI.'
+      : this.draftChangeCount > 0
+        ? 'Commit or discard the shared workspace draft before editing the running configuration in CLI.'
+        : undefined;
     const drawerDraftPaths = this.draftPathsForDrawer(entry);
     const removalArmed = this.draftRemovalArmedKey === this.drawerKey(entry);
     const deleteTarget = this.structuralDeleteTarget(entry);
@@ -14157,6 +14189,12 @@ export class SmithproxyApp extends LitElement {
                         ? 'Create content rule' : entry.kind === 'signature-flow-create'
                           ? 'Create signature flow step' : entry.kind === 'signature-create'
                             ? 'Create signature' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+          ${active && this.consoleAvailable && cliCommands ? html`
+            <button class="secondary" type="button" aria-label="Open in CLI"
+              title=${cliBlocker ?? 'Open the console at this configuration object'}
+              ?disabled=${cliBlocker !== undefined}
+              @click=${() => this.openDrawerInCli(entry)}>Open in CLI</button>
+          ` : nothing}
           ${protectedView ? html`
             <button class="primary" type="button" data-enable-edit
               @click=${() => this.enableDrawerEditing(entry)}>Edit</button>

@@ -1149,6 +1149,10 @@ async function expectNoWcagViolations(page: Page): Promise<void> {
 }
 
 test('offers the slide-out CLI only when a real broker capability is available', async ({page}) => {
+  const cliInputs: Array<string | Buffer> = [];
+  await page.routeWebSocket('**/api/v1/console', socket => {
+    socket.onMessage(message => cliInputs.push(message));
+  });
   await mockSystemApi(page, {smithproxy: 'ready', consoleReady: true}, true, false);
   await page.goto('/');
 
@@ -1156,9 +1160,15 @@ test('offers the slide-out CLI only when a real broker capability is available',
   const toggle = consoleRegion.getByRole('button', {name: /Console/u});
   await expect(consoleRegion).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await toggle.click();
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await editor.getByRole('button', {name: 'Open in CLI'}).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(consoleRegion.getByLabel('Interactive Smithproxy terminal')).toBeVisible();
+  await expect.poll(() => cliInputs.at(-1)?.toString())
+    .toBe('configure terminal\redit policy\redit [0]\r');
 });
 
 test('does not imply CLI access when the broker capability is absent', async ({page}) => {
