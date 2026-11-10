@@ -6685,6 +6685,8 @@ test('organizes operational surfaces into focused administrator views', async ({
   await expect(page.getByRole('list', {name: 'Operational events'})).toHaveCount(0);
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Configuration archive', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Augment overlays'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Appearance', exact: true}).click();
   await expect(page.getByRole('heading', {level: 2, name: 'Appearance'})).toBeVisible();
   const appearance = page.getByRole('article').filter({
@@ -6695,6 +6697,10 @@ test('organizes operational surfaces into focused administrator views', async ({
   await expect(page.getByRole('heading', {name: 'Background operations'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Management', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Background operations'})).toBeVisible();
+  const diagnostics = page.locator('details.management-diagnostics');
+  await expect(page.getByRole('heading', {name: 'Augment overlays'})).toHaveCount(0);
+  await diagnostics.locator('summary').click();
+  await expect(page.getByRole('heading', {name: 'Augment overlays'})).toBeVisible();
   await expectNoWcagViolations(page);
 });
 

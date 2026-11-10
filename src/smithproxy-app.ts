@@ -10864,16 +10864,16 @@ export class SmithproxyApp extends LitElement {
                 </dl>
                 <p role="status">${gateway.detail}</p>
               </article>
+              <article class="domain-card">
+                <header><div><h3>Augment overlays</h3><p>Persistent and effective value provenance</p></div></header>
+                <dl>
+                  <dt>Overlay support</dt><dd>${this.snapshot?.augmentSupport ? 'Available' : 'Unavailable'}</dd>
+                  <dt>Tracked values</dt><dd>${this.snapshot?.valueOrigins.length ?? 0}</dd>
+                  <dt>Editing target</dt><dd>Persistent config</dd>
+                </dl>
+              </article>
             </div>
           </details>
-          <article class="domain-card" data-system-section="configuration">
-            <header><div><h3>Augment overlays</h3><p>Persistent and effective value provenance</p></div></header>
-            <dl>
-              <dt>Overlay support</dt><dd>${this.snapshot?.augmentSupport ? 'Available' : 'Unavailable'}</dd>
-              <dt>Tracked values</dt><dd>${this.snapshot?.valueOrigins.length ?? 0}</dd>
-              <dt>Editing target</dt><dd>Persistent config</dd>
-            </dl>
-          </article>
           <article class="domain-card job-card" data-system-section="backend">
             <header>
               <div><h3>Background operations</h3><p>Recent management work that may take time to complete</p></div>
