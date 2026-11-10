@@ -863,6 +863,17 @@ int main() {
     assert(!safe_asset_path(root, "/assets%2fsecret"));
     assert(!safe_asset_path(root, "/assets\\secret"));
 
+    assert(valid_archive_resource_path("pki/ca/default/ca-cert.pem"));
+    assert(valid_archive_resource_path("templates/replacement/notice.html"));
+    assert(valid_archive_resource_path("commands/macros/disable-capture"));
+    assert(valid_archive_resource_path("commands/scripts/collect-debug.sh"));
+    assert(!valid_archive_resource_path("messages/notice.txt"));
+    assert(!valid_archive_resource_path("scripts/collect-debug.sh"));
+    assert(!valid_archive_resource_path("ssh/hostkeys/ed25519"));
+    assert(!valid_archive_resource_path("pki/../secret"));
+    assert(!valid_archive_resource_path("pki//ca.pem"));
+    assert(!valid_archive_resource_path("pki/ca.pem/"));
+
     const auto bundle_root = std::filesystem::temp_directory_path() / "smithproxy-gui-bundle-test";
     const auto bundle_bin = bundle_root / "bin";
     const auto bundle_assets = bundle_root / "share" / "smithproxy-gui";

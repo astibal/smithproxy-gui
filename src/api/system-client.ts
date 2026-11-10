@@ -1439,7 +1439,7 @@ export class SystemClient {
   }
 
   #validateArchiveResourcePath(path: string): void {
-    const managedNamespace = ['pki/', 'messages/', 'scripts/', 'ssh/']
+    const managedNamespace = ['pki/', 'templates/', 'commands/']
       .some(prefix => path.startsWith(prefix));
     if (path.length === 0 || path.length > 512 || path.startsWith('/') || path.includes('\\') ||
         !managedNamespace ||

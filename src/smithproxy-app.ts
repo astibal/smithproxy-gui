@@ -10671,7 +10671,7 @@ export class SmithproxyApp extends LitElement {
             ` : nothing}
             ${this.archiveInventory && !this.archiveValidation ? html`
               <div class="archive-resource-editor">
-                <input type="text" maxlength="512" placeholder="messages/notice.txt"
+                <input type="text" maxlength="512" placeholder="templates/replacement/notice.html"
                   aria-label="Managed resource path" .value=${this.archiveResourcePath}
                   @input=${(event: Event) => {
                     const input = event.currentTarget;
@@ -10692,7 +10692,7 @@ export class SmithproxyApp extends LitElement {
                   }}>
                 <span>Preserve this resource as executable. Stored files are never executed by the archive layer itself.</span>
               </label>
-              <p>Managed paths must begin with <code>pki/</code>, <code>messages/</code>, <code>scripts/</code>, or <code>ssh/</code>. Resource changes replace only the saved startup archive and require restart.</p>
+              <p>Managed paths must begin with <code>pki/</code>, <code>templates/</code>, or <code>commands/</code>. Resource changes replace only the saved startup archive and require restart.</p>
             ` : nothing}
             ${this.archiveValidation ? html`
               <label class="archive-confirm">

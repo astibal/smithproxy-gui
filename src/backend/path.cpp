@@ -88,4 +88,23 @@ std::optional<std::filesystem::path> safe_asset_path(
     return root / relative;
 }
 
+bool valid_archive_resource_path(const std::string_view path) noexcept {
+    if (path.empty() || path.size() > 512U || path.front() == '/' ||
+        path.find('\\') != std::string_view::npos ||
+        !(path.starts_with("pki/") || path.starts_with("templates/") ||
+          path.starts_with("commands/"))) {
+        return false;
+    }
+
+    std::size_t start{};
+    while (start <= path.size()) {
+        const auto end = path.find('/', start);
+        const auto part = path.substr(start, end - start);
+        if (part.empty() || part == "." || part == "..") return false;
+        if (end == std::string_view::npos) break;
+        start = end + 1U;
+    }
+    return true;
+}
+
 } // namespace smithproxy::gui

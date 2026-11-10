@@ -587,11 +587,7 @@ bool confined_to_root(const std::filesystem::path& root, const std::filesystem::
 std::optional<std::string> archive_resource_query(const char* path) {
     if(!path) return std::nullopt;
     const std::string_view value(path);
-    const bool managed_namespace = value.starts_with("pki/") ||
-        value.starts_with("messages/") || value.starts_with("scripts/") ||
-        value.starts_with("ssh/");
-    if(value.empty() || value.size() > 512U || value.front() == '/' ||
-       !managed_namespace || value.find('\\') != std::string_view::npos) return std::nullopt;
+    if(!valid_archive_resource_path(value)) return std::nullopt;
     std::string encoded;
     encoded.reserve(value.size());
     constexpr char digits[] = "0123456789ABCDEF";

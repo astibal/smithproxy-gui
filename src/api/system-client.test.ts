@@ -922,6 +922,9 @@ describe('SystemClient', () => {
     await expect(client.restoreArchive(new ArrayBuffer(1), 'rev-1', 'sha256:bad'))
       .rejects.toThrow('content hash');
     expect(() => client.archiveResourceUrl('smithproxy.cfg')).toThrow('resource path');
+    for (const legacyPath of ['messages/notice.txt', 'scripts/task.sh', 'ssh/hostkeys/key']) {
+      expect(() => client.archiveResourceUrl(legacyPath)).toThrow('resource path');
+    }
   });
 
   it('writes and removes managed CFtar resources with archive preconditions', async () => {
@@ -933,22 +936,22 @@ describe('SystemClient', () => {
     const payload = new TextEncoder().encode('notice').buffer;
 
     await expect(client.writeArchiveResource(
-      'messages/notice.txt', payload, 'rev-1', hash, false,
+      'templates/replacement/notice.html', payload, 'rev-1', hash, false,
     )).resolves.toEqual({state: 'written', contentHash: hash, restartRequired: true});
     await expect(client.deleteArchiveResource(
-      'messages/notice.txt', 'rev-1', hash,
+      'templates/replacement/notice.html', 'rev-1', hash,
     )).resolves.toEqual({state: 'written', contentHash: hash, restartRequired: true});
-    expect(client.archiveResourceUrl('messages/notice.txt')).toBe(
-      '/api/v1/config/archive/resource?path=messages%2Fnotice.txt',
+    expect(client.archiveResourceUrl('commands/scripts/collect-debug.sh')).toBe(
+      '/api/v1/config/archive/resource?path=commands%2Fscripts%2Fcollect-debug.sh',
     );
     expect(fetcher).toHaveBeenNthCalledWith(1,
-      '/api/v1/config/archive/resource/write?path=messages%2Fnotice.txt',
+      '/api/v1/config/archive/resource/write?path=templates%2Freplacement%2Fnotice.html',
       expect.objectContaining({body: payload, headers: expect.objectContaining({
         'X-Smithproxy-Expected-Revision': 'rev-1',
         'X-Smithproxy-Archive-SHA256': hash,
       })}));
     expect(fetcher).toHaveBeenNthCalledWith(2,
-      '/api/v1/config/archive/resource/delete?path=messages%2Fnotice.txt',
+      '/api/v1/config/archive/resource/delete?path=templates%2Freplacement%2Fnotice.html',
       expect.objectContaining({body: expect.any(ArrayBuffer)}));
   });
 

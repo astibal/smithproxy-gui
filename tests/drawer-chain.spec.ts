@@ -6607,7 +6607,22 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
   await page.getByRole('button', {name: 'Configuration archive', exact: true}).click();
+  await page.locator('smithproxy-gui').evaluate((application: HTMLElement & {
+    archiveInventory?: {state: 'ready'; contentHash: string; resources: []};
+    updateComplete: Promise<unknown>;
+  }) => {
+    application.archiveInventory = {
+      state: 'ready', contentHash: `sha256:${'a'.repeat(64)}`, resources: [],
+    };
+    return application.updateComplete;
+  });
   await expect(page.getByRole('heading', {name: 'Native configuration archive'})).toBeVisible();
+  const archive = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Native configuration archive'}),
+  });
+  await expect(archive).toContainText('Managed paths must begin with pki/, templates/, or commands/.');
+  await expect(archive).not.toContainText('messages/');
+  await expect(archive).not.toContainText('ssh/');
   await expect(page.getByRole('heading', {name: 'Trust and signatures'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('button', {name: 'Trust', exact: true}).click();
