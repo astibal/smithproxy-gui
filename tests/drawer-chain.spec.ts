@@ -6465,7 +6465,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await selectObjectCategory(page, 'Address objects');
   await expect(page.getByRole('button', {name: 'New address'})).toBeDisabled();
   await expect(page.getByRole('button', {name: 'New address'})).toHaveAttribute(
-    'title', 'Requires reviewed structural transactions and stable entity IDs.',
+    'title', 'Address creation is unavailable with the connected Smithproxy version.',
   );
   await selectObjectCategory(page, 'Port objects');
   await expect(page.getByRole('button', {name: 'New port'})).toBeDisabled();
@@ -6525,7 +6525,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await expect(page.getByRole('button', {name: 'New policy'})).toBeDisabled();
-  await expect(page.getByText('Requires reviewed structural transactions and stable entity IDs.')).toBeVisible();
+  await expect(page.getByText('Policy creation is unavailable with the connected Smithproxy version.')).toBeVisible();
 
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Operational events'})).toBeVisible();

@@ -2726,7 +2726,7 @@ export class SmithproxyApp extends LitElement {
     } catch (error) {
       this.localCommitPending = false;
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
-      const message = error instanceof Error ? error.message : 'Atomic commit could not be confirmed.';
+      const message = error instanceof Error ? error.message : 'Configuration commit could not be confirmed.';
       await this.loadDraft();
       this.draftCommitError = message;
     } finally {
@@ -3108,7 +3108,7 @@ export class SmithproxyApp extends LitElement {
       (candidate.op === 'create' || candidate.op === 'move') &&
       candidate.position.reference !== null && removedReferences.has(candidate.position.reference));
     if (orderedDependent) {
-      return 'Remove dependent ordered operations before removing this create operation.';
+      return 'Remove dependent draft changes before removing this pending item.';
     }
     const name = operation.fields['name'];
     if (typeof name !== 'string') return undefined;
@@ -3160,7 +3160,7 @@ export class SmithproxyApp extends LitElement {
     blocker?: string;
   }): string | undefined {
     if (!this.structuralTransactionsAvailable(entry)) {
-      return 'Stable structural transactions are unavailable for this object type.';
+      return 'This action is unavailable with the connected Smithproxy version.';
     }
     if (this.dirtyDrawerKeys.has(this.drawerKey(entry))) return 'Discard or save unsaved editor changes first.';
     if (this.draftPathsForDrawer(entry).length > 0) return 'Remove pending field edits before deleting this entry.';
@@ -3236,7 +3236,7 @@ export class SmithproxyApp extends LitElement {
     }
     if (unique.length > 256) {
       this.objectBulkDeleteConfirmation = undefined;
-      this.objectBulkMessage = 'At most 256 objects can be deleted in one atomic batch.';
+      this.objectBulkMessage = 'At most 256 objects can be deleted at once.';
       return;
     }
     const targets: Array<{
@@ -3793,7 +3793,7 @@ export class SmithproxyApp extends LitElement {
   private primitiveCloneBlocker(entry: DrawerEntry): string | undefined {
     if (!this.primitiveTransactionsAvailable() || !this.workspaceDraft || !this.snapshot ||
         !['address', 'port', 'protocol'].includes(entry.kind)) {
-      return 'Object duplication requires reviewed structural transactions and stable entity IDs.';
+      return 'Object duplication is unavailable with the connected Smithproxy version.';
     }
     const target = this.structuralDeleteTarget(entry);
     if (!target) return 'The source object is no longer present in the live configuration.';
@@ -3988,7 +3988,7 @@ export class SmithproxyApp extends LitElement {
     const prefix = this.profileOriginPrefixes().get(profile.id);
     if (!this.namedTransactionsAvailable() || !this.workspaceDraft || !type ||
         !visibleProfileCreateTypes.has(type) || !prefix) {
-      return 'Profile duplication requires a typed profile and reviewed structural transactions.';
+      return 'Profile duplication is unavailable with the connected Smithproxy version.';
     }
     const collection = profileCreateCollections[type];
     if (this.workspaceDraft.structuralOperations.some(operation =>
@@ -4147,7 +4147,7 @@ export class SmithproxyApp extends LitElement {
   private policyCloneBlocker(policy: PolicySummary): string | undefined {
     const index = this.snapshot?.policies.findIndex(item => item.id === policy.id) ?? -1;
     if (!this.policyTransactionsAvailable() || !this.workspaceDraft || index < 0) {
-      return 'Policy duplication requires reviewed structural transactions and stable entity IDs.';
+      return 'Policy duplication is unavailable with the connected Smithproxy version.';
     }
     if (this.workspaceDraft?.structuralOperations.some(operation =>
       operation.op === 'delete' && operation.collection === 'policy' && operation.entityId === policy.id)) {
@@ -4308,7 +4308,7 @@ export class SmithproxyApp extends LitElement {
   private authorityCloneBlocker(authority: CertificateAuthoritySummary): string | undefined {
     if (!this.namedTransactionsAvailable() || !this.workspaceDraft ||
         !this.originPrefix({kind: 'authority', id: authority.id, title: authority.name})) {
-      return 'Certificate-authority duplication requires reviewed structural transactions.';
+      return 'Certificate-authority duplication is unavailable with the connected Smithproxy version.';
     }
     const target = this.structuralDeleteTarget({kind: 'authority', id: authority.id, title: authority.name});
     if (target && this.pendingStructuralDelete(target)) {
@@ -7635,10 +7635,10 @@ export class SmithproxyApp extends LitElement {
 
   private policyBulkMoveBlocker(policyIds: ReadonlyArray<string>): string | undefined {
     if (!this.policyTransactionsAvailable() || !this.workspaceDraft || !this.snapshot) {
-      return 'Bulk ordering requires reviewed structural transactions and stable entity IDs.';
+      return 'Policy reordering is unavailable with the connected Smithproxy version.';
     }
     if (policyIds.length === 0) return 'Select at least one live policy.';
-    if (policyIds.length > 256) return 'At most 256 policies can be moved in one atomic batch.';
+    if (policyIds.length > 256) return 'At most 256 policies can be moved at once.';
     const selected = new Set(policyIds);
     if (policyIds.some(policyId => !this.snapshot!.policies.some(policy => policy.id === policyId))) {
       return 'A selected policy is no longer present in the live configuration.';
@@ -7657,10 +7657,10 @@ export class SmithproxyApp extends LitElement {
 
   private policyBulkDeleteBlocker(policyIds: ReadonlyArray<string>): string | undefined {
     if (!this.policyTransactionsAvailable() || !this.workspaceDraft || !this.snapshot) {
-      return 'Bulk deletion requires reviewed structural transactions and stable entity IDs.';
+      return 'Policy deletion is unavailable with the connected Smithproxy version.';
     }
     if (policyIds.length === 0) return 'Select at least one live policy.';
-    if (policyIds.length > 256) return 'At most 256 policies can be deleted in one atomic batch.';
+    if (policyIds.length > 256) return 'At most 256 policies can be deleted at once.';
     const selected = new Set(policyIds);
     for (const policyId of policyIds) {
       const index = this.snapshot.policies.findIndex(policy => policy.id === policyId);
@@ -8057,8 +8057,8 @@ export class SmithproxyApp extends LitElement {
               <small id="new-policy-blocker">${!this.collectionPresent('policy')
                 ? 'The policy collection is absent from the running configuration.'
                 : this.policyTransactionsAvailable()
-                ? 'Creates an ordered operation in the shared workspace draft.'
-                : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
+                ? 'Adds a new policy to the workspace draft.'
+                : 'Policy creation is unavailable with the connected Smithproxy version.'}</small>
             </div>
           </div>
         </div>
@@ -8118,15 +8118,15 @@ export class SmithproxyApp extends LitElement {
               ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
               @click=${() => { void this.setSelectedPoliciesEnabled(false); }}>⊘</button>
             <button class="secondary policy-icon-action" type="button" aria-label="Move selected up"
-              title=${bulkMoveBlocker ?? 'Move the selection to the first positions in one atomic batch'}
+              title=${bulkMoveBlocker ?? 'Move the selection to the first positions'}
               ?disabled=${bulkMoveBlocker !== undefined || this.draftSaving || this.draftCommitting}
               @click=${() => { void this.moveSelectedPolicies('first'); }}>⇈</button>
             <button class="secondary policy-icon-action" type="button" aria-label="Move selected down"
-              title=${bulkMoveBlocker ?? 'Move the selection to the last positions in one atomic batch'}
+              title=${bulkMoveBlocker ?? 'Move the selection to the last positions'}
               ?disabled=${bulkMoveBlocker !== undefined || this.draftSaving || this.draftCommitting}
               @click=${() => { void this.moveSelectedPolicies('last'); }}>⇊</button>
             <button class="secondary danger-button" type="button"
-              title=${bulkDeleteBlocker ?? 'Add one atomic deletion batch to the workspace draft'}
+              title=${bulkDeleteBlocker ?? 'Delete the selection when the draft is committed'}
               ?disabled=${bulkDeleteBlocker !== undefined || this.draftSaving || this.draftCommitting}
               @click=${() => { void this.deleteSelectedPolicies(); }}>
               ${deleteArmed ? `Confirm delete ${selectedCount}` : 'Delete selected'}
@@ -8263,7 +8263,7 @@ export class SmithproxyApp extends LitElement {
                   </span>
                   <span class="row-meta">
                     <span class="status ${disabled ? 'disabled' : ''}">${disabled ? 'Disabled' : 'Enabled'}</span>
-                    <span class="pending-badge" title="This policy is a pending structural create">Pending create</span>
+                    <span class="pending-badge" title="This policy will be created when the draft is committed">Pending create</span>
                   </span>
                   <span class="policy-transport">${this.policyTransportSummary(
                     text('proto', 'tcp'), list('sport'), list('dport'),
@@ -9147,9 +9147,9 @@ export class SmithproxyApp extends LitElement {
     const bulkDeleteArmed = bulkDeleteEntries.length > 0 &&
       this.objectBulkDeleteConfirmation === bulkDeleteFingerprint;
     const bulkDeleteBlocker = !this.primitiveTransactionsAvailable() && !this.structuralDraftsAvailable
-      ? 'Requires reviewed structural transactions and stable entity IDs.'
+      ? 'Object deletion is unavailable with the connected Smithproxy version.'
       : bulkDeleteEntries.length > 256
-        ? 'At most 256 objects can be deleted in one atomic batch.'
+        ? 'At most 256 objects can be deleted at once.'
       : bulkDeleteEntries.length === 0
         ? 'No visible unused configuration object is available for deletion.' : undefined;
     const filtersActive = query.length > 0 || this.objectKindFilter !== 'all' ||
@@ -9195,36 +9195,36 @@ export class SmithproxyApp extends LitElement {
           ${this.objectKindFilter === 'address' ? html`
             <button class="primary object-create-button" type="button" aria-label="New address"
               title=${!this.primitiveTransactionsAvailable()
-                ? 'Requires reviewed structural transactions and stable entity IDs.'
+                ? 'Address creation is unavailable with the connected Smithproxy version.'
                 : !this.collectionPresent('address_objects')
-                  ? 'The address object collection is not advertised by Smithproxy.'
+                  ? 'Address objects are not present in the running configuration.'
                   : 'Create a new address object'}
               ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('address_objects')}
               @click=${(event: MouseEvent) => this.openNewAddress(event.currentTarget as HTMLElement)}>+</button>
           ` : this.objectKindFilter === 'port' ? html`
             <button class="primary object-create-button" type="button" aria-label="New port"
               title=${!this.primitiveTransactionsAvailable()
-                ? 'Requires reviewed structural transactions and stable entity IDs.'
+                ? 'Port creation is unavailable with the connected Smithproxy version.'
                 : !this.collectionPresent('port_objects')
-                  ? 'The port object collection is not advertised by Smithproxy.'
+                  ? 'Port objects are not present in the running configuration.'
                   : 'Create a new port object'}
               ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('port_objects')}
               @click=${(event: MouseEvent) => this.openNewPort(event.currentTarget as HTMLElement)}>+</button>
           ` : this.objectKindFilter === 'protocol' ? html`
             <button class="primary object-create-button" type="button" aria-label="New protocol"
               title=${!this.primitiveTransactionsAvailable()
-                ? 'Requires reviewed structural transactions and stable entity IDs.'
+                ? 'Protocol creation is unavailable with the connected Smithproxy version.'
                 : !this.collectionPresent('proto_objects')
-                  ? 'The protocol object collection is not advertised by Smithproxy.'
+                  ? 'Protocol objects are not present in the running configuration.'
                   : 'Create a new protocol object'}
               ?disabled=${!this.primitiveTransactionsAvailable() || !this.collectionPresent('proto_objects')}
               @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>+</button>
           ` : this.objectKindFilter === 'profile' ? html`
             <button class="primary object-create-button" type="button" aria-label="New profile"
               title=${!this.namedTransactionsAvailable()
-                ? 'Requires reviewed named-object transactions and stable entity IDs.'
+                ? 'Profile creation is unavailable with the connected Smithproxy version.'
                 : this.availableProfileCreateTypes().length === 0
-                  ? 'No creatable profile collection is advertised by Smithproxy.'
+                  ? 'No supported profile type is present in the running configuration.'
                   : 'Create a new profile'}
               ?disabled=${!this.namedTransactionsAvailable() || this.availableProfileCreateTypes().length === 0}
               @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>+</button>
@@ -9270,7 +9270,7 @@ export class SmithproxyApp extends LitElement {
           <strong>${bulkDeleteEntries.length.toLocaleString()} visible unused configuration ${
             bulkDeleteEntries.length === 1 ? 'object' : 'objects'} deletable</strong>
           <button class="secondary danger-button" type="button"
-            title=${bulkDeleteBlocker ?? 'Add one atomic deletion batch to the workspace draft'}
+            title=${bulkDeleteBlocker ?? 'Delete the objects when the draft is committed'}
             ?disabled=${bulkDeleteBlocker !== undefined || this.draftSaving || this.draftCommitting}
             @click=${() => { void this.deleteObjectEntries(bulkDeleteEntries); }}>
             ${bulkDeleteArmed ? `Confirm delete ${bulkDeleteEntries.length}` : 'Delete visible unused'}
@@ -9312,7 +9312,7 @@ export class SmithproxyApp extends LitElement {
                 : 'Address'}</span>
               <span class="object-value">${fieldText(operation, 'value')}</span>
               <span class="row-meta"><span>${usage}</span><span class="pending-badge"
-                title="This address object is a pending structural create">Pending create</span></span>
+                title="This address object will be created when the draft is committed">Pending create</span></span>
             </button>`)}
           </div>
         </details>
@@ -9346,7 +9346,7 @@ export class SmithproxyApp extends LitElement {
                 <strong>${fieldText(operation, 'name', 'New port object')}</strong><span>Port range</span>
                 <span class="object-value">${range}</span>
                 <span class="row-meta"><span>${usage}</span><span class="pending-badge"
-                  title="This port object is a pending structural create">Pending create</span></span>
+                  title="This port object will be created when the draft is committed">Pending create</span></span>
               </button>`;
             })}
           </div>
@@ -9375,7 +9375,7 @@ export class SmithproxyApp extends LitElement {
               <strong>${fieldText(operation, 'name', 'New protocol object')}</strong><span>IP protocol</span>
               <span class="object-value">${fieldNumber(operation, 'id') ?? 'Unknown'}</span>
               <span class="row-meta"><span>${usage}</span><span class="pending-badge"
-                title="This protocol object is a pending structural create">Pending create</span></span>
+                title="This protocol object will be created when the draft is committed">Pending create</span></span>
             </button>`)}
           </div>
         </details>
@@ -9404,7 +9404,7 @@ export class SmithproxyApp extends LitElement {
               <strong>${fieldText(operation, 'name', 'New profile')}</strong>
               <span class="action">${type ?? 'profile'}</span>
               <span class="row-meta"><span class="object-value">${summary}</span><span class="pending-badge"
-                title="This profile is a pending structural create">Pending create</span></span>
+                title="This profile will be created when the draft is committed">Pending create</span></span>
               <span>${usage}</span>
             </button>`)}
           </div>
@@ -10597,7 +10597,7 @@ export class SmithproxyApp extends LitElement {
             <p>Focused system administration backed by the current Smithproxy state</p></div>
         </div>
         ${pendingConfiguration ? html`<div class="scope-note" role="status">
-          Configuration cards include pending workspace draft values. Smithproxy runtime remains unchanged until a validated atomic commit.
+          Pending draft values are shown in these cards. Running configuration remains unchanged until you commit the draft.
         </div>` : nothing}
         <div class="system-grid" data-view=${this.systemView}>
           <article class="domain-card" data-system-section="configuration">
@@ -11255,7 +11255,7 @@ export class SmithproxyApp extends LitElement {
       </div>
       <div class="impact">
         Policy order affects traffic decisions. This operation remains in the workspace draft until Smithproxy
-        validates and atomically commits it.
+        validates and commits it.
       </div>
       ${prefill ? html`
         <div class="scope-note">
@@ -12753,7 +12753,7 @@ export class SmithproxyApp extends LitElement {
                 ? 'This profile has no content_rules collection in the live configuration.'
                 : this.contentRuleTransactionsAvailable()
                 ? 'Add a content rule to the workspace draft'
-                : 'Requires reviewed structural transactions and stable entity IDs.'}
+                : 'Content-rule creation is unavailable with the connected Smithproxy version.'}
               @click=${(event: MouseEvent) => this.openNewContentRule(
                 profile.id, event.currentTarget as HTMLElement,
               )}>New content rule</button>
@@ -13608,7 +13608,7 @@ export class SmithproxyApp extends LitElement {
             ?disabled=${!this.signatureTransactionsAvailable()}
             title=${this.signatureTransactionsAvailable()
               ? 'Add a signature flow step to the workspace draft'
-              : 'Requires reviewed structural transactions and stable entity IDs.'}
+              : 'Signature-flow editing is unavailable with the connected Smithproxy version.'}
             @click=${(event: MouseEvent) => this.openNewSignatureFlow(
               signature.id, event.currentTarget as HTMLElement,
             )}>New flow step</button>
@@ -13760,7 +13760,7 @@ export class SmithproxyApp extends LitElement {
     const maximum = flowField('bytes_max');
     return html`
       <div class="privacy-note">
-        The signature and its required first flow step are saved as one atomic draft operation group.
+        The signature and its required first flow step are kept together in the workspace draft.
       </div>
       <div class="form-grid wide-form-grid section">
         <label>Signature kind</label><span>${kind === 'starttls' ? 'STARTTLS' : 'Detection'}</span>
@@ -13989,8 +13989,8 @@ export class SmithproxyApp extends LitElement {
       candidate.entityId === target.entityId) : undefined;
     const label = operation?.op === 'delete' ? 'Pending delete'
       : operation?.op === 'move' ? 'Pending move' : 'Pending';
-    const title = operation?.op === 'delete' ? 'This row is pending structural deletion'
-      : operation?.op === 'move' ? 'This row has a pending structural move'
+    const title = operation?.op === 'delete' ? 'This row will be deleted when the draft is committed'
+      : operation?.op === 'move' ? 'This row will move when the draft is committed'
         : 'This row includes pending workspace draft values';
     return html`<span class="pending-badge" title=${title}>${label}</span>`;
   }
@@ -14607,7 +14607,7 @@ export class SmithproxyApp extends LitElement {
                       this.configRevisionDrift ? 'Resolve draft' : 'Review & commit'} · ${this.draftChangeCount}`}
                     title=${this.configRevisionDrift
                       ? 'The running configuration changed after this draft was opened. Review the conflict.'
-                      : 'Review and atomically commit pending changes to the running configuration.'}
+                      : 'Review and commit pending changes to the running configuration.'}
                     @click=${() => {
                       this.discardDraftArmed = false;
                       this.activeSection = 'Draft';
@@ -14622,7 +14622,7 @@ export class SmithproxyApp extends LitElement {
                       ? this.draftChangeCount > 0
                         ? 'Save the current running revision. Pending draft changes are not included.'
                         : 'Persist the current running revision as the startup configuration.'
-                      : 'Smithproxy does not advertise the reviewed explicit-save capability.'}
+                      : 'Saving startup configuration is unavailable with the connected Smithproxy version.'}
                     @click=${() => { void this.saveRunningConfiguration(); }}>
                     ${this.configSaving
                       ? 'Saving startup…'
@@ -14735,7 +14735,7 @@ export class SmithproxyApp extends LitElement {
           <span class="status-secondary"
             title=${this.snapshot?.savedRevision
               ? `Saved revision ${this.snapshot.savedRevision}`
-              : 'Saved revision is not advertised'}>
+              : 'Saved revision is unavailable'}>
             Running config: ${this.snapshot ? this.snapshot.unsaved ? 'unsaved' : 'saved' : 'unknown'}
           </span>
           <span class="spacer"></span>
