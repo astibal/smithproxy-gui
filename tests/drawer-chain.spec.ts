@@ -6625,7 +6625,15 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Operational events'})).toBeVisible();
   const events = page.getByRole('list', {name: 'Operational events'});
-  await expect(events.getByText('Smithproxy management connection is available')).toBeVisible();
+  const readyEvent = events.getByRole('listitem').filter({
+    hasText: 'Smithproxy management connection is available',
+  });
+  await expect(readyEvent).toBeVisible();
+  await expect(readyEvent.getByText('control-plane.ready')).toBeHidden();
+  await expect(readyEvent.getByText('gui-core')).toBeHidden();
+  await readyEvent.getByText('Technical details').click();
+  await expect(readyEvent.getByText('control-plane.ready')).toBeVisible();
+  await expect(readyEvent.getByText('gui-core')).toBeVisible();
   await page.getByRole('button', {name: 'Management audit', exact: true}).click();
   const audit = page.getByRole('list', {name: 'Management audit'});
   await expect(audit.getByText('Draft change recorded')).toBeVisible();

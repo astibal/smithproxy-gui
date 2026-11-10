@@ -874,9 +874,13 @@ export class SmithproxyApp extends LitElement {
     .origin-value, .origin-id { overflow-wrap: anywhere; color: var(--app-text); }
     .origin-id { font-size: 12px; }
     .event-list { display: grid; overflow: hidden; border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
-    .event-row { display: grid; grid-template-columns: 150px 78px minmax(180px, 1fr) 100px; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
+    .event-row { display: grid; grid-template-columns: 150px 78px minmax(180px, 1fr) 140px; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .event-row:last-child { border-bottom: 0; }
     .event-time, .event-source { color: var(--app-muted); font-size: 12px; }
+    .event-context { min-width: 0; text-align: right; }
+    .event-context .audit-details { margin-top: 3px; }
+    .event-context .audit-details summary { margin-left: auto; }
+    .event-context .audit-details dl { text-align: left; }
     .event-severity { font-size: 12px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
     .event-severity.info { color: var(--app-success); }
     .event-severity.notice, .event-severity.warning { color: var(--app-warning); }
@@ -1224,6 +1228,8 @@ export class SmithproxyApp extends LitElement {
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
       .event-row { grid-template-columns: minmax(110px, 1fr) 72px; }
       .event-row > strong { grid-column: 1 / -1; }
+      .event-context { grid-column: 1 / -1; text-align: left; }
+      .event-context .audit-details summary { margin-left: 0; }
       .incident-row { grid-template-columns: minmax(100px, .7fr) minmax(140px, 1fr); }
       .incident-duration, .incident-time { display: none; }
       .alert-row { grid-template-columns: 72px minmax(0, 1fr); }
@@ -11285,7 +11291,16 @@ export class SmithproxyApp extends LitElement {
                 </time>
                 <span class="event-severity ${event.severity}">${event.severity}</span>
                 <strong>${event.message}</strong>
-                <span class="event-source" title=${event.code}>${event.category === 'backend-job' ? 'background work' : 'connectivity'}</span>
+                <div class="event-context">
+                  <span class="event-source">${event.category === 'backend-job' ? 'Background work' : 'Connectivity'}</span>
+                  <details class="audit-details">
+                    <summary>Technical details</summary>
+                    <dl>
+                      <dt>Code</dt><dd><code>${event.code}</code></dd>
+                      <dt>Source</dt><dd><code>${event.source}</code></dd>
+                    </dl>
+                  </details>
+                </div>
               </article>
             `)}
           </div>
