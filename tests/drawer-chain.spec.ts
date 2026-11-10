@@ -51,10 +51,25 @@ async function applySaslikVisualTheme(page: Page, theme: SaslikVisualTheme): Pro
 
 async function selectObjectCategory(
   page: Page,
-  category: 'Address objects' | 'Port objects' | 'Protocol objects' | 'Profiles and routing',
+  category: 'Address objects' | 'Port objects' | 'Protocol objects' | 'Profiles and routing' |
+    'Trust and signatures',
 ): Promise<void> {
-  await page.getByRole('group', {name: 'Object categories', exact: true})
+  const objectCategories = page.getByRole('group', {name: 'Object categories', exact: true});
+  if (!await objectCategories.isVisible()) {
+    await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  }
+  await objectCategories
     .getByRole('button', {name: category, exact: true}).click();
+}
+
+async function selectSecurityCategory(
+  page: Page,
+  category: 'Trust' | 'STARTTLS signatures' | 'Detection signatures',
+): Promise<Locator> {
+  await selectObjectCategory(page, 'Trust and signatures');
+  await page.getByRole('group', {name: 'Trust and signature categories'})
+    .getByRole('button', {name: category, exact: true}).click();
+  return page.getByRole('group', {name: category, exact: true});
 }
 
 async function setReferenceList(
@@ -606,6 +621,8 @@ async function mockSystemApi(
     }
     const previousRevision = draft.base_revision;
     const revision = `sha256:${'2'.repeat(64)}`;
+    state.configRevision = revision;
+    state.unsavedConfig = true;
     const committedVersion = draft.version;
     const committedOperations = draft.changes.length + draft.structural_operations.length;
     draft = {
@@ -1368,9 +1385,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await editor.getByRole('button', {name: 'Cancel'}).click();
   await expect(editor).not.toBeVisible();
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trustPosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
-  await trustPosture.getByRole('button', {name: /default · path configured/i}).click();
+  const trustPosture = await selectSecurityCategory(page, 'Trust');
+  await trustPosture.getByRole('button', {name: /default Certificate authority/i}).click();
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
   await authorityEditor.getByLabel('CA path', {exact: true}).selectOption('replace');
   await authorityEditor.getByLabel('CA path replacement').fill('/etc/smithproxy/private/new-default-ca');
@@ -2200,7 +2216,7 @@ test('chains ordered creates and moves through earlier client identifiers', asyn
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
 
-  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
   await page.getByRole('group', {name: 'Profiles and routing'})
     .getByRole('button', {name: /capture content/i}).click();
   let parent = page.getByRole('dialog', {name: 'Edit capture'});
@@ -2219,12 +2235,8 @@ test('chains ordered creates and moves through earlier client identifiers', asyn
   await expect(editor).not.toBeVisible();
   await parent.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trust = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await trust.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  const trust = await selectSecurityCategory(page, 'STARTTLS signatures');
+  await trust.getByRole('button', {name: /smtp\/starttls STARTTLS signature/i}).click();
   parent = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
   await parent.getByRole('button', {name: /1\. R · regex/i}).click();
   editor = page.getByRole('dialog', {name: 'Edit Flow R'});
@@ -2289,20 +2301,8 @@ test('shows and reopens pending security rules and flow creates in context', asy
   }, true);
   await page.goto('/');
   await expect(page.getByText('Config: Ready')).toBeVisible();
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  await expect(page.getByRole('status').filter({hasText: 'Configuration cards include pending'})).toBeVisible();
-  const trust = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await expect(trust.locator('dt', {hasText: 'Certificate authorities'})
-    .locator('xpath=following-sibling::dd[1]')).toHaveText('2');
-  await expect(trust.locator('dt', {hasText: 'STARTTLS signatures'})
-    .locator('xpath=following-sibling::dd[1]')).toHaveText('2');
-  await expect(trust.locator('dt', {hasText: 'STARTTLS flow steps'})
-    .locator('xpath=following-sibling::dd[1]')).toHaveText('4');
-
-  const pendingAuthority = trust.getByRole('group', {name: 'Certificate authorities'})
-    .getByRole('button').filter({hasText: 'pending-ca'});
+  const trust = await selectSecurityCategory(page, 'Trust');
+  const pendingAuthority = trust.getByRole('button').filter({hasText: 'pending-ca'});
   await expect(pendingAuthority).toContainText('Pending create');
   await pendingAuthority.click();
   let editor = page.getByRole('dialog', {name: 'Create certificate authority'});
@@ -2310,9 +2310,8 @@ test('shows and reopens pending security rules and flow creates in context', asy
   await expect(editor.getByLabel('New CA path')).toHaveValue('');
   await editor.getByRole('button', {name: 'Cancel'}).click();
 
-  await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
-  const pendingSignature = trust.getByRole('group', {name: 'STARTTLS signatures'})
-    .getByRole('button').filter({hasText: 'pending-smtp'});
+  const starttls = await selectSecurityCategory(page, 'STARTTLS signatures');
+  const pendingSignature = starttls.getByRole('button').filter({hasText: 'pending-smtp'});
   await expect(pendingSignature).toContainText('1 flow step');
   await pendingSignature.click();
   editor = page.getByRole('dialog', {name: 'Create signature'});
@@ -2320,7 +2319,7 @@ test('shows and reopens pending security rules and flow creates in context', asy
   await expect(editor.getByLabel('New signature first flow expression')).toHaveValue('');
   await editor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
   await page.getByRole('group', {name: 'Profiles and routing'})
     .getByRole('button', {name: /^capture content /u}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
@@ -2334,13 +2333,8 @@ test('shows and reopens pending security rules and flow creates in context', asy
   await editor.getByRole('button', {name: 'Cancel'}).click();
   await contentEditor.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const refreshedTrust = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await refreshedTrust.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await refreshedTrust.getByRole('group', {name: 'STARTTLS signatures'})
-    .getByRole('button').filter({hasText: 'smtp/starttls'}).click();
+  const refreshedTrust = await selectSecurityCategory(page, 'STARTTLS signatures');
+  await refreshedTrust.getByRole('button').filter({hasText: 'smtp/starttls'}).click();
   const signatureEditor = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
   const pendingFlow = signatureEditor.getByRole('group', {name: 'Signature flow steps'})
     .getByRole('button').filter({hasText: 'Pending'});
@@ -2355,6 +2349,8 @@ test('validates and atomically commits the draft with one administrator action',
     smithproxy: 'ready',
     validationReady: true,
     commitReady: true,
+    configRevision: `sha256:${'1'.repeat(64)}`,
+    savedConfigRevision: `sha256:${'1'.repeat(64)}`,
     validationRequests: [],
     commitRequests: [],
     initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
@@ -2373,6 +2369,9 @@ test('validates and atomically commits the draft with one administrator action',
   await expect(page.getByRole('status').filter({hasText: 'Atomic commit completed'})).toContainText(
     '1 operations · 1 warnings',
   );
+  await expect(page.getByRole('status').filter({
+    hasText: 'Configuration changed in the background.',
+  })).toHaveCount(0);
   expect(state.commitRequests).toEqual([{
     expectedVersion: 1,
     keys: ['expected_version'],
@@ -2910,18 +2909,17 @@ test('creates and deletes certificate authorities without exposing filesystem pa
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await expect(page.getByText('Config: Ready')).toBeVisible();
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const authorities = page.getByRole('group', {name: 'Certificate authorities'});
+  const authorities = await selectSecurityCategory(page, 'Trust');
 
-  await authorities.getByRole('button', {name: /default · path configured/i}).click();
+  await authorities.getByRole('button', {name: /default Certificate authority/i}).click();
   const existingEditor = page.getByRole('dialog', {name: 'Edit default'});
   await existingEditor.getByRole('button', {name: 'Delete certificate authority'}).click();
   await existingEditor.getByRole('button', {name: 'Confirm delete certificate authority'}).click();
   await expect(existingEditor).toBeHidden();
-  await expect(authorities.getByRole('button', {name: /default · path configured/i}))
+  await expect(authorities.getByRole('button', {name: /default Certificate authority/i}))
     .toContainText('Pending delete');
 
-  await authorities.getByRole('button', {name: 'New certificate authority'}).click();
+  await page.getByRole('button', {name: 'New certificate authority'}).click();
   let createEditor = page.getByRole('dialog', {name: 'Create certificate authority'});
   await createEditor.getByLabel('Name').fill('branch-ca');
   await createEditor.getByLabel('New CA path').fill('/private/pki/branch-ca.pem');
@@ -2968,9 +2966,8 @@ test('duplicates a certificate authority without exposing or copying its private
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await expect(page.getByText('Config: Ready')).toBeVisible();
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const authorities = page.getByRole('group', {name: 'Certificate authorities'});
-  await authorities.getByRole('button', {name: /default revised · path configured/i}).click();
+  const authorities = await selectSecurityCategory(page, 'Trust');
+  await authorities.getByRole('button', {name: /default revised Certificate authority/i}).click();
 
   const liveEditor = page.getByRole('dialog', {name: 'Edit default revised'});
   await liveEditor.getByRole('button', {name: 'Duplicate authority'}).click();
@@ -3019,12 +3016,8 @@ test('duplicates signature metadata but requires a new private matcher expressio
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trust = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await trust.getByRole('button', {name: /smtp\/starttls revised · 2 flow steps/i}).click();
+  const trust = await selectSecurityCategory(page, 'STARTTLS signatures');
+  await trust.getByRole('button', {name: /smtp\/starttls revised STARTTLS signature/i}).click();
 
   const liveEditor = page.getByRole('dialog', {name: 'Edit smtp/starttls revised'});
   await liveEditor.getByRole('button', {name: 'Duplicate signature'}).click();
@@ -3074,12 +3067,8 @@ test('blocks signature duplication while its ordered flow has pending structural
   }, true);
   await page.goto('/');
   await expect(page.getByText('Config: Ready')).toBeVisible();
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trust = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trust.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await trust.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  const trust = await selectSecurityCategory(page, 'STARTTLS signatures');
+  await trust.getByRole('button', {name: /smtp\/starttls STARTTLS signature/i}).click();
 
   const duplicate = page.getByRole('dialog', {name: 'Edit smtp/starttls'})
     .getByRole('button', {name: 'Duplicate signature'});
@@ -3411,7 +3400,7 @@ test('prefills every remaining typed profile while keeping private values empty'
     smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
   }, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
 
   const duplicate = async (source: RegExp, name: string) => {
@@ -3888,6 +3877,7 @@ test('reorders and deletes stable nested content rules', async ({page}) => {
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   await profiles.getByRole('button', {name: /capture content/i}).click();
   let profileEditor = page.getByRole('dialog', {name: 'Edit capture'});
@@ -4029,12 +4019,8 @@ test('reorders and deletes stable signature flow steps', async ({page}) => {
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trustPosture = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trustPosture.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await trustPosture.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  const trustPosture = await selectSecurityCategory(page, 'STARTTLS signatures');
+  await trustPosture.getByRole('button', {name: /smtp\/starttls STARTTLS signature/i}).click();
   const signatureEditor = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
   await signatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
 
@@ -4090,20 +4076,15 @@ test('reorders and deletes stable signature flow steps', async ({page}) => {
     csrf: '1',
   });
 
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const refreshedTrust = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await refreshedTrust.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await refreshedTrust.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  const refreshedTrust = await selectSecurityCategory(page, 'STARTTLS signatures');
+  await refreshedTrust.getByRole('button', {name: /smtp\/starttls STARTTLS signature/i}).click();
   const refreshedSignature = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
   await expect(refreshedSignature.getByRole('group', {name: 'Signature flow steps'})
     .getByRole('button').filter({hasText: 'Pending delete'})).toHaveCount(1);
   await refreshedSignature.getByRole('button', {name: 'Cancel'}).click();
 
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
-  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const detections = await selectSecurityCategory(page, 'Detection signatures');
+  await detections.getByRole('button', {name: /http\/request Detection signature/i}).click();
   const detectionEditor = page.getByRole('dialog', {name: 'Edit http/request'});
   await detectionEditor.getByRole('button', {name: /1\. R · regex/i}).click();
   const onlyFlowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
@@ -4122,12 +4103,8 @@ test('creates and safely reopens a signature flow step', async ({page}) => {
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trustPosture = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trustPosture.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await trustPosture.getByRole('button', {name: /smtp\/starttls · 2 flow steps/i}).click();
+  const trustPosture = await selectSecurityCategory(page, 'STARTTLS signatures');
+  await trustPosture.getByRole('button', {name: /smtp\/starttls STARTTLS signature/i}).click();
   const signatureEditor = page.getByRole('dialog', {name: 'Edit smtp/starttls'});
   await signatureEditor.getByRole('button', {name: 'New flow step'}).click();
 
@@ -4188,12 +4165,8 @@ test('creates and removes a signature with its first flow step atomically', asyn
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trustPosture = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trustPosture.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await trustPosture.getByRole('button', {name: 'New STARTTLS signature'}).click();
+  const trustPosture = await selectSecurityCategory(page, 'STARTTLS signatures');
+  await page.getByRole('button', {name: 'New STARTTLS signature'}).click();
 
   let editor = page.getByRole('dialog', {name: 'Create signature'});
   await editor.getByLabel('Category').fill('mail');
@@ -4248,12 +4221,8 @@ test('creates and removes a signature with its first flow step atomically', asyn
   expect(state.structuralRemovalRequests).toHaveLength(1);
   await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
   await expect(page.getByText('No pending changes', {exact: false})).toBeVisible();
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trustAfterRemoval = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trustAfterRemoval.getByText('Detection signatures', {exact: true}).last().click();
-  await trustAfterRemoval.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const trustAfterRemoval = await selectSecurityCategory(page, 'Detection signatures');
+  await trustAfterRemoval.getByRole('button', {name: /http\/request Detection signature/i}).click();
   const existingEditor = page.getByRole('dialog', {name: 'Edit http/request'});
   await existingEditor.getByRole('button', {name: 'Delete detection signature'}).click();
   await existingEditor.getByRole('button', {name: 'Confirm delete detection signature'}).click();
@@ -4262,7 +4231,7 @@ test('creates and removes a signature with its first flow step atomically', asyn
     expectedVersion: 2, csrf: '1',
     operation: {op: 'delete', collection: 'detection_signatures', entity_id: 'detection-signature-0'},
   });
-  await expect(trustAfterRemoval.getByRole('button', {name: /http\/request · 1 flow step/i}))
+  await expect(trustAfterRemoval.getByRole('button', {name: /http\/request Detection signature/i}))
     .toContainText('Pending delete');
   await expectNoWcagViolations(page);
 });
@@ -4275,12 +4244,8 @@ test('rejects a signature create that collides with a pending rename', async ({p
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trustPosture = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trustPosture.getByText('STARTTLS signatures', {exact: true}).last().click();
-  await trustPosture.getByRole('button', {name: 'New STARTTLS signature'}).click();
+  await selectSecurityCategory(page, 'STARTTLS signatures');
+  await page.getByRole('button', {name: 'New STARTTLS signature'}).click();
 
   const editor = page.getByRole('dialog', {name: 'Create signature'});
   await editor.getByLabel('Name').fill('imap-starttls');
@@ -4600,7 +4565,7 @@ test('shows partial capture defaults without offering an invalid nested write', 
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Traffic & captures'}).click();
+    .getByRole('button', {name: 'Captures'}).click();
 
   const captureHeader = page.getByRole('heading', {name: 'Capture posture'}).locator('..').locator('..');
   await expect(captureHeader.getByRole('button', {name: 'Edit'})).toBeDisabled();
@@ -4808,6 +4773,7 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   await expect(profiles.getByRole('button', {name: /^main routing /u}))
     .toContainText('2 overridden');
@@ -4875,7 +4841,7 @@ test('binds system, capture, and nested security editors to persistent values', 
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Traffic & captures'}).click();
+    .getByRole('button', {name: 'System settings'}).click();
 
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
@@ -4897,6 +4863,8 @@ test('binds system, capture, and nested security editors to persistent values', 
   await expect(settings.getByLabel('proxy module override')).toHaveValue('4');
   await page.keyboard.press('Escape');
 
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Captures'}).click();
   const captureCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capture posture'}),
   });
@@ -4910,11 +4878,8 @@ test('binds system, capture, and nested security editors to persistent values', 
   await expect(captures.getByLabel('Tunnel TTL')).toHaveAttribute('readonly', '');
   await page.keyboard.press('Escape');
 
-  await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Configuration'}).click();
-  const trust = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
-  await trust.getByText('Detection signatures', {exact: true}).last().click();
-  await trust.getByRole('button', {name: /http\/request · 1 flow step/u}).click();
+  const detections = await selectSecurityCategory(page, 'Detection signatures');
+  await detections.getByRole('button', {name: /http\/request Detection signature/u}).click();
   const signature = page.getByRole('dialog', {name: 'Edit http/request'});
   await expect(signature.getByRole('spinbutton', {name: 'Severity'})).toHaveValue('7');
   await expect(signature.getByRole('spinbutton', {name: 'Severity'})).toHaveAttribute('readonly', '');
@@ -4924,13 +4889,14 @@ test('binds system, capture, and nested security editors to persistent values', 
   await expect(flow.getByLabel('Byte window')).toHaveAttribute('readonly', '');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
-  await trust.getByRole('button', {name: /default · path configured/u}).click();
+  const trust = await selectSecurityCategory(page, 'Trust');
+  await trust.getByRole('button', {name: /default Certificate authority/u}).click();
   const authority = page.getByRole('dialog', {name: 'Edit default'});
   await expect(authority.getByRole('textbox', {name: 'Name'})).toHaveValue('base-ca');
   await expect(authority.getByRole('textbox', {name: 'Name'})).toHaveAttribute('readonly', '');
   await page.keyboard.press('Escape');
 
-  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   await profiles.getByRole('button', {name: /^capture content /u}).click();
   const content = page.getByRole('dialog', {name: 'Edit capture'});
@@ -5064,7 +5030,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
     .getByRole('button', {name: 'TLS cache'}).click();
   const tlsCache = page.getByRole('region', {name: 'TLS interception cache'});
   await expect(tlsCache.getByText('42', {exact: true})).toBeVisible();
-  await expect(tlsCache.getByRole('progressbar', {name: 'TLS cache utilization'}))
+  await expect(tlsCache.getByRole('progressbar', {name: 'TLS cache occupancy'}))
     .toHaveAttribute('aria-valuenow', '4.2');
 
   await page.getByRole('group', {name: 'Monitoring categories'})
@@ -6294,7 +6260,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await selectObjectCategory(page, 'Protocol objects');
   await expect(page.getByRole('button', {name: 'New protocol'})).toBeDisabled();
   await page.getByRole('group', {name: 'Configuration object categories'})
-    .getByRole('button', {name: /^All /u}).click();
+    .getByRole('button', {name: /^All \d+$/u}).click();
   await expect(page.getByRole('button', {name: /^New (address|port|protocol|profile)$/u})).toHaveCount(0);
   await expect(page.getByRole('group', {name: 'Address objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Port objects'})).toBeVisible();
@@ -6415,34 +6381,25 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(gatewayCard).toContainText('Upstream transactionSchema review required');
   await expect(page.getByText('Smithproxy key')).toBeVisible();
   await expect(page.getByText('Never exposed')).toBeVisible();
-  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
+  await page.getByRole('button', {name: 'System settings', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Traffic admission'})).toBeVisible();
   await expect(page.getByText('Fail closed')).toHaveCount(2);
+  await page.getByRole('button', {name: 'Captures', exact: true}).click();
   const capturePosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Capture posture'})});
   await expect(capturePosture).toBeVisible();
   await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
   await page.getByRole('button', {name: 'Backend', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
-  await page.getByRole('button', {name: 'Configuration', exact: true}).click();
-  const trustPosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
-  await expect(trustPosture).toBeVisible();
-  await expect(trustPosture.locator('dt', {hasText: 'STARTTLS signatures'}).locator('xpath=following-sibling::dd[1]'))
-    .toHaveText('1');
-  await expect(trustPosture.locator('dt', {hasText: 'Detection signatures'}).locator('xpath=following-sibling::dd[1]'))
-    .toHaveText('1');
-  await expect(trustPosture.getByText(/paths and expressions use write-only controls/i)).toBeVisible();
-  await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
-  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
-  const signatureEditor = page.getByRole('dialog', {name: 'Edit http/request'});
-  await expect(signatureEditor.getByLabel('Engine')).toHaveValue('http1');
-  await signatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
-  const flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
-  await expect(flowEditor.getByLabel('Expression', {exact: true})).toHaveValue('unchanged');
-  await expect(flowEditor.getByText(/never serialized to the browser/i)).toBeVisible();
-  await flowEditor.getByRole('button', {name: 'Cancel'}).click();
-  await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
-  await trustPosture.getByRole('button', {name: /default · path configured/i}).click();
+  await page.getByRole('button', {name: 'Configuration archive', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Native configuration archive'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Trust and signatures'})).toHaveCount(0);
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await page.getByRole('button', {name: 'Trust and signatures', exact: true}).click();
+  await page.getByRole('group', {name: 'Trust and signature categories'})
+    .getByRole('button', {name: 'Trust', exact: true}).click();
+  await page.getByRole('group', {name: 'Trust', exact: true})
+    .getByRole('button', {name: /default Certificate authority/i}).click();
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
   await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
   await expect(authorityEditor.getByText(/current certificate-authority path stays inside/i)).toBeVisible();
@@ -6521,7 +6478,7 @@ test('keeps absent nested settings groups visible but read-only', async ({page})
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
+  await page.getByRole('button', {name: 'System settings', exact: true}).click();
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
@@ -6552,7 +6509,7 @@ test('preserves legacy worker values while enforcing pinned worker semantics', a
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
+  await page.getByRole('button', {name: 'System settings', exact: true}).click();
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
@@ -6603,7 +6560,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
+  await page.getByRole('button', {name: 'System settings', exact: true}).click();
 
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
@@ -6712,7 +6669,7 @@ test('saves typed system and capture settings without exposing redacted values',
     has: page.getByRole('heading', {name: 'Webhook posture'}),
   });
   await expect(webhookPosture).toContainText('resolver.example');
-  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
+  await page.getByRole('button', {name: 'Captures', exact: true}).click();
   const captureCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capture posture'}),
   });
@@ -6801,19 +6758,15 @@ test('saves typed system and capture settings without exposing redacted values',
 test('edits nested signature flow metadata with write-only expressions', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  const trustPosture = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Trust and signatures'}),
-  });
-  await trustPosture.getByText('Detection signatures', {exact: true}).last().click();
-  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const trustPosture = await selectSecurityCategory(page, 'Detection signatures');
+  await trustPosture.getByRole('button', {name: /http\/request Detection signature/i}).click();
   const signatureEditor = page.getByRole('dialog', {name: 'Edit http/request'});
   await signatureEditor.getByLabel('Group').fill('web');
   await signatureEditor.getByLabel('Severity').fill('5');
   await signatureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
 
-  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  await trustPosture.getByRole('button', {name: /http\/request Detection signature/i}).click();
   const reopenedSignatureEditor = page.getByRole('dialog', {name: 'Edit http/request'});
   await reopenedSignatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
   const flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});

@@ -110,7 +110,7 @@ type ObjectSectionKind = Exclude<ObjectKindFilter, 'all'>;
 type NetworkView = 'overview' | 'neighborhood' | 'interfaces' | 'configuration';
 type MonitoringView = 'overview' | 'traffic' | 'sessions' | 'tls';
 type LogsView = 'events' | 'audit';
-type SystemView = 'configuration' | 'backend' | 'traffic' | 'appearance' | 'control-plane';
+type SystemView = 'configuration' | 'settings' | 'captures' | 'backend' | 'appearance' | 'control-plane';
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
 
@@ -147,9 +147,10 @@ const logsNavigation: ReadonlyArray<{kind: LogsView; label: string; icon: string
 ];
 
 const systemNavigation: ReadonlyArray<{kind: SystemView; label: string; icon: string}> = [
-  {kind: 'configuration', label: 'Configuration', icon: '◇'},
+  {kind: 'settings', label: 'System settings', icon: '≡'},
+  {kind: 'captures', label: 'Captures', icon: '◉'},
+  {kind: 'configuration', label: 'Configuration archive', icon: '◇'},
   {kind: 'backend', label: 'Backend', icon: '⚙'},
-  {kind: 'traffic', label: 'Traffic & captures', icon: '⇄'},
   {kind: 'appearance', label: 'Appearance', icon: '◐'},
   {kind: 'control-plane', label: 'Control plane', icon: '⌘'},
 ];
@@ -573,6 +574,9 @@ export class SmithproxyApp extends LitElement {
   private nextConfigRefreshAt = 0;
   private configSaveArmTimer: number | undefined;
   private externalConfigNoticeTimer: number | undefined;
+  // A successful local commit changes the same revision observed by the background poller.
+  // Remember it until the authoritative snapshot arrives so it is not reported as external work.
+  private locallyCommittedRevision: string | undefined;
   private drawerHistoryDepth = 0;
   private drawerHistoryNavigationPending = false;
   private drawerOrigins: HTMLElement[] = [];
@@ -781,7 +785,10 @@ export class SmithproxyApp extends LitElement {
     .trend-chart header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
     .trend-chart header strong { font-size: 13px; }
     .trend-chart header span { color: var(--app-muted); font-size: 12px; }
-    .trend-bars { display: grid; grid-template-columns: repeat(60, minmax(2px, 1fr)); align-items: end; gap: 2px; height: 100px; margin-top: 12px; }
+    .trend-plot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px; align-items: stretch; margin-top: 12px; }
+    .trend-axis-y { display: flex; flex-direction: column; justify-content: space-between; color: var(--app-muted); font-size: 10px; font-variant-numeric: tabular-nums; text-align: right; }
+    .trend-bars { display: grid; grid-template-columns: repeat(60, minmax(2px, 1fr)); align-items: end; gap: 2px; height: 100px; border-bottom: 1px solid var(--app-border); }
+    .trend-axis-x { display: flex; justify-content: space-between; margin: 4px 0 0 36px; color: var(--app-muted); font-size: 10px; }
     .trend-bar { height: max(2px, var(--bar-height)); background: var(--app-brand); opacity: .88; }
     .trend-bar.traffic { background: var(--app-success); }
     .trend-bar.unavailable { height: 100%; background: repeating-linear-gradient(135deg, var(--app-danger) 0 2px, transparent 2px 5px); opacity: .65; }
@@ -897,8 +904,9 @@ export class SmithproxyApp extends LitElement {
     .system-grid .job-card { grid-column: 1 / -1; }
     .system-grid[data-view] > [data-system-section] { display: none; }
     .system-grid[data-view='configuration'] > [data-system-section~='configuration'],
+    .system-grid[data-view='settings'] > [data-system-section~='settings'],
+    .system-grid[data-view='captures'] > [data-system-section~='captures'],
     .system-grid[data-view='backend'] > [data-system-section~='backend'],
-    .system-grid[data-view='traffic'] > [data-system-section~='traffic'],
     .system-grid[data-view='appearance'] > [data-system-section~='appearance'] { display: block; }
     .archive-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
     .archive-actions input[type='file'] { min-width: min(100%, 280px); color: var(--app-muted); }
@@ -1011,6 +1019,10 @@ export class SmithproxyApp extends LitElement {
     .secondary { padding: 8px 13px; border: 1px solid var(--app-border-strong); border-radius: 3px; background: transparent; cursor: pointer; }
     .form-grid { display: grid; grid-template-columns: minmax(120px, 0.35fr) minmax(240px, 1fr); gap: 18px 24px; max-width: 920px; }
     .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .3fr) minmax(170px, 1fr) minmax(120px, .3fr) minmax(170px, 1fr); max-width: none; }
+    .editor-group { grid-column: 1 / -1; min-width: 0; margin: 2px 0 12px; padding: 18px; border: 1px solid var(--app-border); border-radius: 3px; }
+    .editor-group legend { padding: 0 7px; color: var(--app-text); font-weight: 700; }
+    .editor-group > p { margin: 0 0 16px; color: var(--app-muted); }
+    .editor-group .form-grid { max-width: none; }
     .form-span { grid-column: 1 / -1; margin: var(--sp-space-3, 1rem) 0 0; }
     .form-grid label { align-self: center; color: var(--app-muted); }
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
@@ -1078,7 +1090,7 @@ export class SmithproxyApp extends LitElement {
     .system-state.warning { color: var(--app-warning); }
     .system-state.danger { color: var(--app-danger); }
     .draft { color: var(--app-warning); }
-    .status-action { overflow: hidden; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+    .status-action { min-width: 24px; min-height: 24px; overflow: hidden; padding: 0 3px; border: 0; background: transparent; color: inherit; font: inherit; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
     .status-action:hover { color: var(--app-text); }
     .status-action:focus-visible { outline: 2px solid var(--app-focus); outline-offset: 3px; }
     .spacer { flex: 1; }
@@ -1895,9 +1907,13 @@ export class SmithproxyApp extends LitElement {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       if (snapshot.state !== 'ready') throw new Error(snapshot.detail);
       const liveSnapshotLoaded = this.snapshot?.source === 'live';
+      const locallyCommittedRevisionLoaded = snapshot.revision !== null &&
+        snapshot.revision === this.locallyCommittedRevision;
       const externalRevisionChanged = liveSnapshotLoaded && snapshot.revision !== null &&
-        this.snapshot?.revision !== null && snapshot.revision !== this.snapshot?.revision;
+        this.snapshot?.revision !== null && snapshot.revision !== this.snapshot?.revision &&
+        !locallyCommittedRevisionLoaded;
       if (externalRevisionChanged) this.showExternalConfigNotice();
+      if (locallyCommittedRevisionLoaded || externalRevisionChanged) this.locallyCommittedRevision = undefined;
       if (liveSnapshotLoaded && (this.draftChangeCount > 0 || this.drawers.length > 0 ||
           this.draftSaving || this.draftCommitting)) {
         this.configRefreshDeferred = true;
@@ -2640,6 +2656,7 @@ export class SmithproxyApp extends LitElement {
         throw new Error('Committed draft finalization could not be verified.');
       }
       this.applyDraft(current);
+      this.locallyCommittedRevision = result.revision;
       this.draftCommitResult = result;
       this.draftValidation = undefined;
       await this.loadDraftPreflight();
@@ -9292,7 +9309,8 @@ export class SmithproxyApp extends LitElement {
           <summary><h3>${this.profileObjectFilter === 'all'
             ? 'Profiles and routing' : this.objectViewLabel()}</h3>
             <small>${profileRows.length + pendingProfileRows.length}</small></summary>
-          <div class="table" role="group" aria-label=${this.objectViewLabel()}>
+          <div class="table" role="group" aria-label=${this.profileObjectFilter === 'all'
+            ? 'Profiles and routing' : this.objectViewLabel()}>
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Value exposure</span><span>Uses</span>
             </div>
@@ -9349,7 +9367,8 @@ export class SmithproxyApp extends LitElement {
                   'detection', event.currentTarget as HTMLElement,
                 )}>New detection signature</button>` : nothing}
           </div>
-          <div class="table" role="group" aria-label=${this.objectViewLabel()}>
+          <div class="table" role="group" aria-label=${this.securityObjectFilter === 'all'
+            ? 'Trust and signatures' : this.objectViewLabel()}>
             <div class="row object-row heading" aria-hidden="true">
               <span>Name</span><span>Type</span><span>Safe summary</span><span>State</span>
             </div>
@@ -9832,7 +9851,8 @@ export class SmithproxyApp extends LitElement {
   }
 
   private formatBytes(value: number): string {
-    if (value < 1000) return `${value} B`;
+    if (!Number.isFinite(value) || value < 0) return '0 B';
+    if (value < 1000) return `${Number(value.toFixed(2)).toLocaleString()} B`;
     const units = ['kB', 'MB', 'GB', 'TB', 'PB'];
     let amount = value;
     let unit = -1;
@@ -9913,29 +9933,33 @@ export class SmithproxyApp extends LitElement {
           <div class="trend-chart" role="img"
             aria-label="Active session trend. Peak ${sessionPeak} sessions across ${history.length} samples.">
             <header><strong>Active sessions</strong><span>peak ${sessionPeak.toLocaleString()}</span></header>
-            <div class="trend-bars">
-              ${Array.from({length: emptySlots}, () => html`<span class="trend-bar empty" aria-hidden="true"></span>`)}
-              ${history.map(sample => html`<span
-                class="trend-bar ${sample.state === 'ready' ? '' : 'unavailable'}"
-                style=${`--bar-height:${sessionHeight(sample.sessionsActive).toFixed(2)}%`}
-                title="${sample.sessionsActive} sessions · ${displayState(sample.state)} · ${this.timeLabel(sample.checkedAtUnixMs)}"
-                aria-hidden="true"></span>`)}
-            </div>
+            <div class="trend-plot"><div class="trend-axis-y" aria-hidden="true"><span>${sessionPeak}</span><span>0</span></div>
+              <div class="trend-bars">
+                ${Array.from({length: emptySlots}, () => html`<span class="trend-bar empty" aria-hidden="true"></span>`)}
+                ${history.map(sample => html`<span
+                  class="trend-bar ${sample.state === 'ready' ? '' : 'unavailable'}"
+                  style=${`--bar-height:${sessionHeight(sample.sessionsActive).toFixed(2)}%`}
+                  title="${sample.sessionsActive} sessions · ${displayState(sample.state)} · ${this.timeLabel(sample.checkedAtUnixMs)}"
+                  aria-hidden="true"></span>`)}
+              </div>
+            </div><div class="trend-axis-x" aria-hidden="true"><span>5 min ago</span><span>now</span></div>
           </div>
           <div class="trend-chart" role="img"
             aria-label="Aggregate throughput trend. Peak ${this.formatBytes(throughputPeak)} per second.">
             <header><strong>Processed throughput</strong><span>${this.formatBytes(latestRate)}/s now</span></header>
-            <div class="trend-bars">
-              ${Array.from({length: emptySlots}, () => html`<span class="trend-bar empty" aria-hidden="true"></span>`)}
-              ${history.map((sample, index) => {
+            <div class="trend-plot"><div class="trend-axis-y" aria-hidden="true"><span>${this.formatBytes(throughputPeak)}/s</span><span>0</span></div>
+              <div class="trend-bars">
+                ${Array.from({length: emptySlots}, () => html`<span class="trend-bar empty" aria-hidden="true"></span>`)}
+                ${history.map((sample, index) => {
                 const rate = rates[index] ?? null;
                 const unavailable = sample.state !== 'ready';
                 return html`<span class="trend-bar traffic ${unavailable ? 'unavailable' : rate === null ? 'empty' : ''}"
                   style=${`--bar-height:${trafficHeight(rate ?? 0).toFixed(2)}%`}
                   title="${rate === null ? 'No rate' : `${this.formatBytes(rate)}/s`} · ${displayState(sample.state)} · ${this.timeLabel(sample.checkedAtUnixMs)}"
                   aria-hidden="true"></span>`;
-              })}
-            </div>
+                })}
+              </div>
+            </div><div class="trend-axis-x" aria-hidden="true"><span>5 min ago</span><span>now</span></div>
           </div>
         </div>
         <div class="privacy-note">
@@ -9970,12 +9994,13 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">Configured maximum entries</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Utilization</span>
+            <span class="metric-label">Cache occupancy</span>
             <strong class="metric-value">${utilization.toFixed(utilization === 0 ? 0 : 1)}%</strong>
-            <div class="capacity-track" role="progressbar" aria-label="TLS cache utilization"
+            <div class="capacity-track" role="progressbar" aria-label="TLS cache occupancy"
               aria-valuemin="0" aria-valuemax="100" aria-valuenow=${utilization.toFixed(1)}>
               <div class="capacity-fill" style=${`width: ${utilization}%`}></div>
             </div>
+            <span class="metric-note">A full cache rotates normally; it is not an overload condition</span>
           </article>
           <article class="metric">
             <span class="metric-label">Last successful sample</span>
@@ -10239,7 +10264,7 @@ export class SmithproxyApp extends LitElement {
           ${this.renderRuntimeHistory()}
           <div class="table">
           <table class="listener-table">
-            <thead><tr><th>Listener</th><th>Workers</th><th>Active</th><th>Total</th><th>Up</th><th>Down</th></tr></thead>
+            <thead><tr><th>Listener</th><th>Workers</th><th>Active sessions</th><th>Total sessions</th><th>Up</th><th>Down</th></tr></thead>
             <tbody>
               ${metrics.listeners.map(listener => html`
                 <tr>
@@ -10447,9 +10472,11 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
-          <div><h2>${this.systemView === 'configuration' ? 'Configuration and trust' :
+          <div><h2>${this.systemView === 'configuration' ? 'Configuration archive' :
+            this.systemView === 'settings' ? 'System settings' :
+            this.systemView === 'captures' ? 'Traffic captures' :
             this.systemView === 'backend' ? 'Management backend' :
-            this.systemView === 'traffic' ? 'Traffic and captures' : 'Appearance'}</h2>
+            'Appearance'}</h2>
             <p>Focused system administration backed by the current Smithproxy state</p></div>
           <button class="secondary" type="button" @click=${() => this.downloadDiagnostics()}>Download diagnostics</button>
         </div>
@@ -10683,7 +10710,7 @@ export class SmithproxyApp extends LitElement {
             </div>
           </article>
           ${settings ? html`
-            <article class="domain-card" data-system-section="traffic">
+            <article class="domain-card" data-system-section="settings">
               <header><div><h3>Traffic admission</h3><p>Configured listener and failure policy</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('settings', 'settings')}
                   <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
@@ -10693,12 +10720,14 @@ export class SmithproxyApp extends LitElement {
                 <dt>TPROXY / REDIRECT</dt><dd>${setting('accept_tproxy', settings.acceptTproxy) ? 'On' : 'Off'} / ${setting('accept_redirect', settings.acceptRedirect) ? 'On' : 'Off'}</dd>
                 <dt>SOCKS / CONNECT</dt><dd>${setting('accept_socks', settings.acceptSocks) ? 'On' : 'Off'} / ${setting('accept_http_connect', settings.acceptHttpConnect) ? 'On' : 'Off'}</dd>
                 <dt>Local destinations</dt><dd>${setting('extended_local_destination_protection', settings.extendedLocalDestinationProtection) ? 'Protected' : 'Allowed'}</dd>
-                <dt>Proxy authentication</dt><dd>SOCKS ${setting('socks.proxy_authorization', settings.auxiliary.socksProxyAuthorization) ? 'required' : 'anonymous'} / CONNECT ${setting('http_connect.proxy_authorization', settings.auxiliary.httpConnectProxyAuthorization) ? 'required' : 'anonymous'}</dd>
+                <dt>Proxy authentication</dt><dd class=${!setting('socks.proxy_authorization', settings.auxiliary.socksProxyAuthorization) ||
+                  !setting('http_connect.proxy_authorization', settings.auxiliary.httpConnectProxyAuthorization)
+                  ? 'system-state danger' : ''}>SOCKS ${setting('socks.proxy_authorization', settings.auxiliary.socksProxyAuthorization) ? 'required' : 'anonymous'} / CONNECT ${setting('http_connect.proxy_authorization', settings.auxiliary.httpConnectProxyAuthorization) ? 'required' : 'anonymous'}</dd>
                 <dt>Policy failure</dt><dd>${setting('policy_fail_open', settings.policyFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
                 <dt>Access request failure</dt><dd>${setting('policy_access_request_fail_open', settings.accessRequestFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
               </dl>
             </article>
-            <article class="domain-card" data-system-section="traffic">
+            <article class="domain-card" data-system-section="settings">
               <header><div><h3>Worker pools</h3><p>Configured runtime concurrency</p></div></header>
               <dl>
                 <dt>Plaintext / TLS</dt><dd>${workers(setting('plaintext_workers', settings.workers.plaintext))} / ${workers(setting('ssl_workers', settings.workers.tls))}</dd>
@@ -10708,7 +10737,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Kernel TLS</dt><dd>${setting('ssl_use_ktls', settings.kernelTls) ? 'Requested' : 'Disabled'}</dd>
               </dl>
             </article>
-            <article class="domain-card" data-system-section="traffic">
+            <article class="domain-card" data-system-section="settings">
               <header><div><h3>Listener endpoints</h3><p>Configured local ports and certificate status caches</p></div></header>
               <dl>
                 <dt>Plaintext / TLS</dt><dd>${setting('plaintext_port', settings.ports.plaintext)} / ${setting('ssl_port', settings.ports.tls)}</dd>
@@ -10718,7 +10747,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>CRL status TTL</dt><dd>${setting('ssl_crl_status_ttl', settings.crlStatusTtl).toLocaleString()} s</dd>
               </dl>
             </article>
-            <article class="domain-card" data-system-section="traffic">
+            <article class="domain-card" data-system-section="settings">
               <header><div><h3>Logging and payloads</h3><p>Destinations stay redacted</p></div></header>
               <dl>
                 <dt>Log level / console</dt><dd>${setting('log_level', settings.logging.level)} / ${setting('log_console', settings.logging.console) ? 'On' : 'Off'}</dd>
@@ -10731,7 +10760,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Syslog port / facility / level</dt><dd>${setting('syslog_port', settings.logging.syslogPort)} / ${setting('syslog_facility', settings.logging.syslogFacility)} / ${setting('syslog_level', settings.logging.syslogLevel)}</dd>
               </dl>
             </article>
-            <article class="domain-card" data-system-section="traffic">
+            <article class="domain-card" data-system-section="settings">
               <header><div><h3>Auxiliary services</h3><p>Credentials and filesystem paths stay redacted</p></div></header>
               <dl>
                 <dt>CLI port / password</dt><dd>${setting('cli.port', settings.auxiliary.cliPort)} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
@@ -10777,7 +10806,7 @@ export class SmithproxyApp extends LitElement {
             </article>
           ` : nothing}
           ${debug ? html`
-            <article class="domain-card" data-system-section="traffic">
+            <article class="domain-card" data-system-section="settings">
               <header><div><h3>Debug logging</h3><p>Potentially expensive diagnostic controls</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('settings', 'settings')}
                   <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
@@ -10793,7 +10822,7 @@ export class SmithproxyApp extends LitElement {
             </article>
           ` : nothing}
           ${captures ? html`
-            <article class="domain-card" data-system-section="traffic">
+            <article class="domain-card" data-system-section="captures">
               <header><div><h3>Capture posture</h3><p>Paths and destinations are redacted</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('captures', 'captures')}
                   <button class="secondary" type="button" ?disabled=${!captures.editable}
@@ -10816,7 +10845,7 @@ export class SmithproxyApp extends LitElement {
             </article>
           ` : nothing}
           ${securityAssets ? html`
-            <article class="domain-card" data-system-section="configuration">
+            <article class="domain-card" data-system-section="objects">
               <header><div><h3>Trust and signatures</h3><p>Paths and expressions use write-only controls</p></div></header>
               <dl>
                 <dt>Certificate authorities</dt><dd>${securityAssets.certificateAuthorityCount + pendingAuthorities.length}</dd>
@@ -12378,6 +12407,10 @@ export class SmithproxyApp extends LitElement {
             .value=${persistent('rewrite_sni_to', routing.rewriteSniTo)}
             .readOnly=${fieldReadOnly('rewrite_sni_to')} placeholder="Disabled" />
         ` : tls ? html`
+          <fieldset class="editor-group">
+            <legend>Inspection and TLS sessions</legend>
+            <p>Core interception behavior, forward secrecy, and connection reuse.</p>
+            <div class="form-grid">
           <label for="tls-inspect-${entry.id}">Inspection</label>
           ${booleanSelect(`tls-inspect-${entry.id}`, 'inspect', tls.inspect)}
           <label for="tls-use-pfs-${entry.id}">Perfect forward secrecy</label>
@@ -12390,6 +12423,12 @@ export class SmithproxyApp extends LitElement {
           ${booleanSelect(`tls-left-disable-reuse-${entry.id}`, 'left_disable_reuse', tls.leftDisableReuse, 'Disabled', 'Allowed')}
           <label for="tls-right-disable-reuse-${entry.id}">Upstream session reuse</label>
           ${booleanSelect(`tls-right-disable-reuse-${entry.id}`, 'right_disable_reuse', tls.rightDisableReuse, 'Disabled', 'Allowed')}
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Certificate validation</legend>
+            <p>Controls which upstream certificates are accepted and how revocation evidence is checked.</p>
+            <div class="form-grid">
           <label for="tls-allow-untrusted-${entry.id}">Allow untrusted issuers</label>
           ${booleanSelect(`tls-allow-untrusted-${entry.id}`, 'allow_untrusted_issuers', tls.allowUntrustedIssuers, 'Allowed', 'Rejected')}
           <label for="tls-allow-invalid-${entry.id}">Allow invalid certificates</label>
@@ -12412,6 +12451,12 @@ export class SmithproxyApp extends LitElement {
             ?disabled=${fieldReadOnly('ocsp_stapling_mode')}>
             <option value="0">Loose</option><option value="1">Strict</option><option value="2">Required</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Certificate selection and bypass</legend>
+            <p>Selects generated or custom certificates and defines explicit bypass behavior.</p>
+            <div class="form-grid">
           <label for="tls-block-alpn-${entry.id}">ALPN negotiation</label>
           ${booleanSelect(`tls-block-alpn-${entry.id}`, 'alpn_block', tls.blockAlpn, 'Blocked', 'Allowed')}
           <label for="tls-sni-cert-${entry.id}">SNI certificate lookup</label>
@@ -12430,6 +12475,12 @@ export class SmithproxyApp extends LitElement {
           <input id="tls-warning-ports-${entry.id}"
             .value=${persistentNumbers('redirect_warning_ports', tls.redirectWarningPorts).join(', ')}
             .readOnly=${fieldReadOnly('redirect_warning_ports')} placeholder="443, 44443" />
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Certificate failure handling</legend>
+            <p>Defines replacement and temporary override behavior after validation fails.</p>
+            <div class="form-grid">
           <label for="tls-failed-replacement-${entry.id}">Certificate failure replacement</label>
           ${booleanSelect(`tls-failed-replacement-${entry.id}`, 'failed_certcheck_replacement', tls.failedCertificateReplacement)}
           <label for="tls-failed-override-${entry.id}">Certificate failure override</label>
@@ -12444,6 +12495,12 @@ export class SmithproxyApp extends LitElement {
             ?disabled=${fieldReadOnly('failed_certcheck_override_timeout_type')}>
             <option value="0">Absolute expiry</option><option value="1">Idle expiry</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Timing and diagnostics</legend>
+            <p>Handshake deadlines, client-certificate response, alerts, and diagnostic output.</p>
+            <div class="form-grid">
           <label for="tls-key-log-${entry.id}">SSL key logging</label>
           ${booleanSelect(`tls-key-log-${entry.id}`, 'sslkeylog', tls.sslKeyLog)}
           <label for="tls-hello-timeout-${entry.id}">Client hello timeout</label>
@@ -12477,6 +12534,8 @@ export class SmithproxyApp extends LitElement {
               placeholder='["private.example"] (write-only)' autocomplete="off"
               .readOnly=${mappedReadOnly}></textarea>
           </div>
+            </div>
+          </fieldset>
         ` : detection ? html`
           <label for="detection-mode-${entry.id}">Detection phase</label>
           <select id="detection-mode-${entry.id}" .value=${String(persistent('mode', detection.mode))}
@@ -14206,13 +14265,6 @@ export class SmithproxyApp extends LitElement {
                         this.activeSection = 'Policy'; this.policyNavigationExpanded = true;
                       }}><span class="nav-icon" aria-hidden="true">≣</span>
                       <span class="nav-label">Rules</span></button>
-                    <button type="button" aria-label=${`Draft changes · ${this.draftChangeCount}`}
-                      aria-current=${this.activeSection === 'Draft' ? 'page' : nothing}
-                      ?disabled=${this.draftChangeCount === 0}
-                      @click=${() => {
-                        this.activeSection = 'Draft'; this.policyNavigationExpanded = true;
-                      }}><span class="nav-icon" aria-hidden="true">✎</span>
-                      <span class="nav-label">Draft changes · ${this.draftChangeCount}</span></button>
                   </div>
                 ` : nothing}
                 ${item === 'Monitoring' ? html`
