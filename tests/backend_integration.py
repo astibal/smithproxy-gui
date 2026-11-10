@@ -677,7 +677,7 @@ def main() -> int:
             events = json.loads(body)
             assert status == 200
             assert events["smithproxy_events_available"] is False
-            assert events["events"][-1]["message"] == "Smithproxy control plane is reachable"
+            assert events["events"][-1]["message"] == "Smithproxy management connection is available"
             assert events["events"][-1]["category"] == "control-plane"
             assert events["events"][-1]["code"] == "control-plane.ready"
             assert len(events["events"]) <= 60
@@ -1502,7 +1502,7 @@ def main() -> int:
             assert events[-1]["severity"] == "error"
             assert events[-1]["category"] == "control-plane"
             assert events[-1]["code"] == "control-plane.error"
-            assert events[-1]["message"] == "Smithproxy control plane changed to error"
+            assert events[-1]["message"] == "Smithproxy management connection reported an error"
             assert snapshot["smithproxy"]["availability_window"]["samples"] >= 2
             status, _, body = request(
                 configured_port, "/api/v1/metrics/summary", headers=gateway_headers)

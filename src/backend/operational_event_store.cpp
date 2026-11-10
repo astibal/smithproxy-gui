@@ -30,12 +30,12 @@ OperationalEventRecord probe_event(const ProbeSample& sample) {
         .code = code,
         .severity = sample.state == "ready" ? "info" :
                     sample.state == "starting" ? "notice" : "error",
-        .message = sample.state == "ready" ? "Smithproxy control plane is reachable" :
-                   sample.state == "starting" ? "Smithproxy probe is starting" :
-                   sample.state == "unreachable" ? "Smithproxy control plane changed to unreachable" :
-                   sample.state == "unauthorized" ? "Smithproxy control plane changed to unauthorized" :
-                   sample.state == "unconfigured" ? "Smithproxy control plane changed to unconfigured" :
-                   "Smithproxy control plane changed to error",
+        .message = sample.state == "ready" ? "Smithproxy management connection is available" :
+                   sample.state == "starting" ? "Smithproxy management check is starting" :
+                   sample.state == "unreachable" ? "Smithproxy management connection became unreachable" :
+                   sample.state == "unauthorized" ? "Smithproxy management connection was rejected" :
+                   sample.state == "unconfigured" ? "Smithproxy management connection is not configured" :
+                   "Smithproxy management connection reported an error",
     };
 }
 

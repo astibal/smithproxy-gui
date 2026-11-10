@@ -35,13 +35,13 @@ std::vector<OperationalAlert> derive_operational_alerts(
     alerts.reserve(10U);
 
     if (!configured) {
-        alerts.push_back({"control-plane-unconfigured", "notice", "Control plane is not configured",
-                          "Smithproxy API credentials have not been supplied to the GUI core."});
+        alerts.push_back({"control-plane-unconfigured", "notice", "Management connection is not configured",
+                          "Smithproxy management credentials have not been supplied to the management service."});
         return alerts;
     }
     if (status.state != "ready") {
-        alerts.push_back({"control-plane-unavailable", "critical", "Control plane is unavailable",
-                          "The GUI core cannot currently reach the authenticated Smithproxy API."});
+        alerts.push_back({"control-plane-unavailable", "critical", "Management connection is unavailable",
+                          "The management service cannot currently reach authenticated Smithproxy management."});
         return alerts;
     }
 
@@ -51,8 +51,8 @@ std::vector<OperationalAlert> derive_operational_alerts(
             if (sample.state == "ready") ++successful;
         }
         if (successful * 100U < status.history.size() * 95U) {
-            alerts.push_back({"control-plane-availability", "warning", "Control-plane availability is degraded",
-                              "Fewer than 95% of recent authenticated probes succeeded."});
+            alerts.push_back({"control-plane-availability", "warning", "Management connection is unstable",
+                              "Fewer than 95% of recent authenticated checks succeeded."});
         }
     }
 

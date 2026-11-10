@@ -264,12 +264,12 @@ export interface DnsLookup {
 
 export type EventSeverity = 'info' | 'notice' | 'warning' | 'error';
 const operationalEventVocabulary = {
-  'control-plane.ready': ['control-plane', 'info', 'Smithproxy control plane is reachable'],
-  'control-plane.starting': ['control-plane', 'notice', 'Smithproxy probe is starting'],
-  'control-plane.unreachable': ['control-plane', 'error', 'Smithproxy control plane changed to unreachable'],
-  'control-plane.unauthorized': ['control-plane', 'error', 'Smithproxy control plane changed to unauthorized'],
-  'control-plane.unconfigured': ['control-plane', 'error', 'Smithproxy control plane changed to unconfigured'],
-  'control-plane.error': ['control-plane', 'error', 'Smithproxy control plane changed to error'],
+  'control-plane.ready': ['control-plane', 'info', 'Smithproxy management connection is available'],
+  'control-plane.starting': ['control-plane', 'notice', 'Smithproxy management check is starting'],
+  'control-plane.unreachable': ['control-plane', 'error', 'Smithproxy management connection became unreachable'],
+  'control-plane.unauthorized': ['control-plane', 'error', 'Smithproxy management connection was rejected'],
+  'control-plane.unconfigured': ['control-plane', 'error', 'Smithproxy management connection is not configured'],
+  'control-plane.error': ['control-plane', 'error', 'Smithproxy management connection reported an error'],
   'config-refresh.succeeded': ['backend-job', 'info', 'Configuration refresh synchronized'],
   'config-refresh.failed': ['backend-job', 'warning', 'Configuration refresh did not converge'],
   'config-refresh.cancelled': ['backend-job', 'notice', 'Configuration refresh was cancelled'],
@@ -576,7 +576,7 @@ function parseStatus(value: unknown): SystemSnapshot {
         item.checked_at_unix_ms <= previousTimestamp ||
         (snapshotCheckedAt !== null && item.checked_at_unix_ms > snapshotCheckedAt) ||
         !isNullableNonNegativeInteger(item.latency_ms)) {
-      throw new Error('Invalid Smithproxy probe history.');
+    throw new Error('Invalid Smithproxy management-check history.');
     }
     previousTimestamp = item.checked_at_unix_ms;
     return {state: item.state, checkedAtUnixMs: item.checked_at_unix_ms, latencyMs: item.latency_ms};

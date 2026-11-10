@@ -366,7 +366,7 @@ async function mockSystemApi(
         configured: true,
         state: state.smithproxy,
         detail: state.smithproxy === 'ready'
-          ? 'Smithproxy control-plane ping is reachable; protected configuration access is reported separately'
+          ? 'Smithproxy management check succeeded; protected configuration access is reported separately'
           : 'Connection timed out',
         checked_at_unix_ms: sampledAt,
         last_success_at_unix_ms: sampledAt - 5000,
@@ -501,12 +501,12 @@ async function mockSystemApi(
       {
         id: '0-100', source_revision: 1, occurred_at_unix_ms: now() - 5000,
         category: 'control-plane', code: 'control-plane.ready', severity: 'info',
-        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+        source: 'gui-core', message: 'Smithproxy management connection is available',
       },
       ...(state.smithproxy === 'ready' ? [] : [{
         id: '1-200', source_revision: 2, occurred_at_unix_ms: now(),
         category: 'control-plane', code: 'control-plane.unreachable', severity: 'error',
-        source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
+        source: 'gui-core', message: 'Smithproxy management connection became unreachable',
       }]),
       ...(state.jobFailure ? [{
         id: 'event-job-failed', source_revision: 3, occurred_at_unix_ms: now(),
@@ -524,7 +524,7 @@ async function mockSystemApi(
     }] : [{
       id: 'stream-100', source_revision: 1, occurred_at_unix_ms: now(),
       category: 'control-plane', code: 'control-plane.ready', severity: 'info',
-      source: 'gui-core', message: 'Smithproxy control plane is reachable',
+      source: 'gui-core', message: 'Smithproxy management connection is available',
     }, ...(state.jobFailure ? [{
       id: 'stream-job-failed', source_revision: 3, occurred_at_unix_ms: now(),
       category: 'backend-job', code: 'config-refresh.failed', severity: 'warning',
@@ -544,8 +544,8 @@ async function mockSystemApi(
       title: 'Configuration refresh did not converge',
       detail: 'The authoritative configuration snapshot did not reach the committed revision before the deadline.',
     }] : []) : [{
-      id: 'control-plane-unavailable', severity: 'critical', title: 'Control plane is unavailable',
-      detail: 'The GUI core cannot currently reach the authenticated Smithproxy API.',
+      id: 'control-plane-unavailable', severity: 'critical', title: 'Management connection is unavailable',
+      detail: 'The management service cannot currently reach authenticated Smithproxy management.',
     }],
   }}));
   await page.route('**/api/v1/audit/recent', async route => route.fulfill({json: {
@@ -5271,7 +5271,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByText('Smithproxy: Unreachable')).toBeVisible();
   await expect(statusbar).toContainText('Alerts: 1 active');
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
-  await expect(activeAlerts.getByText('Control plane is unavailable', {exact: true})).toBeVisible();
+  await expect(activeAlerts.getByText('Management connection is unavailable', {exact: true})).toBeVisible();
   const degradedHealth = page.getByRole('region', {name: 'Operational health matrix'});
   await expect(degradedHealth).toContainText('require attention');
   await expect(degradedHealth.getByRole('table', {name: 'Operational subsystem health'})).toBeVisible();
@@ -6392,11 +6392,11 @@ test('filters structured job failures without exposing job identifiers', async (
   const events = page.getByRole('list', {name: 'Operational events'});
   await expect(events.getByText('Configuration refresh did not converge')).toBeVisible();
   await page.getByRole('button', {name: 'Connectivity · 1'}).click();
-  await expect(events.getByText('Smithproxy control plane is reachable')).toBeVisible();
+  await expect(events.getByText('Smithproxy management connection is available')).toBeVisible();
   await expect(events.getByText('Configuration refresh did not converge')).toBeHidden();
   await page.getByRole('button', {name: 'Background work · 1'}).click();
   await expect(events.getByText('Configuration refresh did not converge')).toBeVisible();
-  await expect(events.getByText('Smithproxy control plane is reachable')).toBeHidden();
+  await expect(events.getByText('Smithproxy management connection is available')).toBeHidden();
   await expect(page.getByText('job-01234567-89ab-4def-8123-456789abcdef')).toHaveCount(0);
   await expect(page.getByText('sha256:', {exact: false})).toHaveCount(0);
 });
@@ -6583,7 +6583,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Operational events'})).toBeVisible();
   const events = page.getByRole('list', {name: 'Operational events'});
-  await expect(events.getByText('Smithproxy control plane is reachable')).toBeVisible();
+  await expect(events.getByText('Smithproxy management connection is available')).toBeVisible();
   await page.getByRole('button', {name: 'Management audit', exact: true}).click();
   const audit = page.getByRole('list', {name: 'Management audit'});
   await expect(audit.getByText('config.draft.upsert')).toBeVisible();
@@ -6637,7 +6637,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   expect(diagnosticsText).not.toMatch(/"(detail|basePath|revision|listeners|protocols|events|alerts|auditEntries|targets|requestId)"/i);
   expect(diagnosticsText).not.toContain('policy.[0].action');
   expect(diagnosticsText).not.toContain('abc123-7');
-  expect(diagnosticsText).not.toContain('Smithproxy control plane is reachable');
+  expect(diagnosticsText).not.toContain('Smithproxy management connection is available');
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
   });

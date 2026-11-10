@@ -245,7 +245,7 @@ describe('SystemClient', () => {
       () => client({source: 'gui-core', smithproxy_events_available: false, events: [{
         id: 'event-1', source_revision: 1, occurred_at_unix_ms: future,
         category: 'control-plane', code: 'control-plane.ready', severity: 'info',
-        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+        source: 'gui-core', message: 'Smithproxy management connection is available',
       }]}).recentEvents(),
       () => client({source: 'gui-core', generated_at_unix_ms: future, alerts: []}).activeAlerts(),
       () => client({source: 'gui-core', actor_available: false, entries: [{
@@ -292,11 +292,11 @@ describe('SystemClient', () => {
       source: 'gui-core', smithproxy_events_available: false, events: [{
         id: 'event-2', source_revision: 2, occurred_at_unix_ms: 100,
         category: 'control-plane', code: 'control-plane.ready', severity: 'info',
-        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+        source: 'gui-core', message: 'Smithproxy management connection is available',
       }, {
         id: 'event-1', source_revision: 1, occurred_at_unix_ms: 101,
         category: 'control-plane', code: 'control-plane.unreachable', severity: 'error',
-        source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
+        source: 'gui-core', message: 'Smithproxy management connection became unreachable',
       }],
     }));
     await expect(eventClient.recentEvents()).rejects.toThrow('Invalid operational event entry');
@@ -358,7 +358,7 @@ describe('SystemClient', () => {
       },
     };
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse(snapshot));
-    await expect(client.status()).rejects.toThrow('Invalid Smithproxy probe history');
+    await expect(client.status()).rejects.toThrow('Invalid Smithproxy management-check history');
 
     snapshot.smithproxy.history[0]!.checked_at_unix_ms = 90;
     snapshot.smithproxy.history[1]!.checked_at_unix_ms = 100;
@@ -575,7 +575,7 @@ describe('SystemClient', () => {
         id: '4-100', source_revision: 4, occurred_at_unix_ms: 100,
         category: 'control-plane', code: 'control-plane.unreachable',
         severity: 'error', source: 'gui-core',
-        message: 'Smithproxy control plane changed to unreachable',
+        message: 'Smithproxy management connection became unreachable',
       }, {
         id: 'event-5', source_revision: 5, occurred_at_unix_ms: 101,
         category: 'backend-job', code: 'config-refresh.failed',
@@ -763,13 +763,13 @@ describe('SystemClient', () => {
       events: [{
         id: '100-ready', source_revision: 1, occurred_at_unix_ms: 100,
         category: 'control-plane', code: 'control-plane.ready', severity: 'info',
-        source: 'gui-core', message: 'Smithproxy control plane is reachable',
+        source: 'gui-core', message: 'Smithproxy management connection is available',
       }],
     })} as MessageEvent<string>);
     listeners.get('operational')?.({data: JSON.stringify({
       id: '200-error', source_revision: 2, occurred_at_unix_ms: 200,
       category: 'control-plane', code: 'control-plane.unreachable', severity: 'error',
-      source: 'gui-core', message: 'Smithproxy control plane changed to unreachable',
+      source: 'gui-core', message: 'Smithproxy management connection became unreachable',
     })} as MessageEvent<string>);
 
     expect(eventSourceFactory).toHaveBeenCalledWith('/ws001/smithproxy-gui/api/v1/events');

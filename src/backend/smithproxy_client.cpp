@@ -222,7 +222,7 @@ SmithproxyMonitor::SmithproxyMonitor(
       reviewed_transaction_schemas_(std::move(reviewed_schemas)) {
     if (config_) {
         status_.state = "starting";
-        status_.detail = "Waiting for the first Smithproxy probe";
+        status_.detail = "Waiting for the first Smithproxy management check";
         status_.runtime_metrics.state = "starting";
         status_.runtime_metrics.detail = "Waiting for the first Smithproxy metrics sample";
         status_.tls_cache_metrics.state = "starting";
@@ -1040,13 +1040,13 @@ SmithproxyStatus SmithproxyMonitor::ping() const {
     if (status_code == 200L) {
         return probe_result(
             "ready",
-            "Smithproxy control-plane ping is reachable; protected configuration access is reported separately",
+            "Smithproxy management check succeeded; protected configuration access is reported separately",
             started_at);
     }
     if (status_code == 401L || status_code == 403L) {
         return probe_result(
             "unauthorized",
-            "Smithproxy control-plane ping returned HTTP " + std::to_string(status_code),
+            "Smithproxy management check returned HTTP " + std::to_string(status_code),
             started_at);
     }
     return probe_result("error", "Smithproxy API returned HTTP " + std::to_string(status_code), started_at);

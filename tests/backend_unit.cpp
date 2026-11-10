@@ -562,7 +562,7 @@ int main() {
     assert(event_records.front().id == "event-1");
     assert(event_records.front().category == "control-plane");
     assert(event_records.front().code == "control-plane.ready");
-    assert(event_records.front().message == "Smithproxy control plane is reachable");
+    assert(event_records.front().message == "Smithproxy management connection is available");
     event_jobs.reconcile(synchronized_config);
     events.observe(event_status, event_jobs.snapshot());
     event_records = events.snapshot();
@@ -584,7 +584,7 @@ int main() {
     events.observe(event_status, event_jobs.snapshot());
     event_records = events.snapshot();
     assert(event_records.size() == 3U);
-    assert(event_records.back().message == "Smithproxy control plane changed to error");
+    assert(event_records.back().message == "Smithproxy management connection reported an error");
 
     SmithproxyStatus rotating_status;
     for (std::uint64_t sequence = 1U; sequence <= 70U; ++sequence) {
