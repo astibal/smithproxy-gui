@@ -157,8 +157,8 @@ const logsNavigation: ReadonlyArray<{kind: LogsView; label: string; icon: string
 const systemNavigation: ReadonlyArray<{kind: SystemView; label: string; icon: string}> = [
   {kind: 'settings', label: 'System settings', icon: '≡'},
   {kind: 'captures', label: 'Captures', icon: '◉'},
-  {kind: 'configuration', label: 'Configuration archive', icon: '◇'},
-  {kind: 'backend', label: 'Management', icon: '⚙'},
+  {kind: 'configuration', label: 'Startup & backups', icon: '◇'},
+  {kind: 'backend', label: 'Access & integrations', icon: '⚙'},
   {kind: 'appearance', label: 'Appearance', icon: '◐'},
   {kind: 'control-plane', label: 'Connectivity', icon: '⌘'},
 ];
@@ -10614,15 +10614,15 @@ export class SmithproxyApp extends LitElement {
         : this.systemView === 'captures'
           ? 'Review and control local and remote traffic capture'
           : this.systemView === 'backend'
-            ? 'Management API, webhook, background jobs, and diagnostics'
+            ? 'Management access, webhook integrations, background jobs, and diagnostics'
             : 'Choose how this management interface looks';
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
-          <div><h2>${this.systemView === 'configuration' ? 'Configuration archive' :
+          <div><h2>${this.systemView === 'configuration' ? 'Startup configuration & backups' :
             this.systemView === 'settings' ? 'System settings' :
             this.systemView === 'captures' ? 'Traffic captures' :
-            this.systemView === 'backend' ? 'Management service' :
+            this.systemView === 'backend' ? 'Access & integrations' :
             'Appearance'}</h2>
             <p>${systemDescription}</p></div>
         </div>

@@ -1226,7 +1226,7 @@ test('opens management settings at the selected protected configuration group', 
   await mockSystemApi(page, {smithproxy: 'ready'}, true, false);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Management', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
 
   await page.getByRole('button', {name: 'Open API settings'}).click();
   let editor = page.getByRole('dialog', {name: 'Edit System settings'});
@@ -5311,7 +5311,7 @@ test('reports a verified Saslik gateway handoff without exposing credentials', a
   await expect(statusbar).toContainText('Gateway: Verified');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Management'}).click();
+    .getByRole('button', {name: 'Access & integrations'}).click();
   await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
@@ -5345,7 +5345,7 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await expect(statusbar).toContainText('Gateway: Rejected');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Management'}).click();
+    .getByRole('button', {name: 'Access & integrations'}).click();
   await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
@@ -6135,7 +6135,7 @@ test('rejects an incoherent privileged capability graph before protected request
   await expect(statusbar).toContainText('Events: Unavailable');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Management'}).click();
+    .getByRole('button', {name: 'Access & integrations'}).click();
   await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const capabilityCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capability bootstrap'}),
@@ -6170,7 +6170,7 @@ test('polls only monitoring surfaces advertised for the current session', async 
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Management'}).click();
+    .getByRole('button', {name: 'Access & integrations'}).click();
   const eventTransport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(eventTransport).toContainText('Unavailable');
   await expect(eventTransport.getByText('Recent history', {exact: true}).locator('..'))
@@ -6224,7 +6224,7 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
   await expect(page.getByRole('region', {name: 'Data freshness'})).toContainText('5/5 current');
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Management', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
   const eventTransport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(eventTransport).toContainText('Live');
   await expect(eventTransport).toContainText('Recent history');
@@ -6272,7 +6272,7 @@ test('diagnoses an invalid event stream and recovers only after an explicit retr
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Events: Invalid');
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Management', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
   const transport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(transport).toContainText('Invalid');
   await expect(transport.getByRole('article').filter({hasText: 'Last update'}))
@@ -6357,7 +6357,7 @@ test('filters structured job failures without exposing job identifiers', async (
   await expect(page.getByRole('region', {name: 'Active operational alerts'}))
     .toContainText('Configuration refresh did not converge');
   await page.getByRole('button', {name: 'Open details for Configuration refresh did not converge'}).click();
-  await expect(page.getByRole('heading', {name: 'Management service'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Access & integrations'})).toBeVisible();
 
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
   const events = page.getByRole('list', {name: 'Operational events'});
@@ -6563,8 +6563,8 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByText('User identity unavailable.', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Management', exact: true}).click();
-  await expect(page.getByRole('heading', {name: 'Management service'})).toBeVisible();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Access & integrations'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Download diagnostics'})).toBeHidden();
   await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   await expect(page.getByRole('button', {name: 'Download diagnostics'})).toBeVisible();
@@ -6629,11 +6629,11 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const capturePosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Capture posture'})});
   await expect(capturePosture).toBeVisible();
   await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
-  await page.getByRole('button', {name: 'Management', exact: true}).click();
-  await expect(page.getByText('Management API, webhook, background jobs, and diagnostics')).toBeVisible();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  await expect(page.getByText('Management access, webhook integrations, background jobs, and diagnostics')).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
-  await page.getByRole('button', {name: 'Configuration archive', exact: true}).click();
+  await page.getByRole('button', {name: 'Startup & backups', exact: true}).click();
   await expect(page.getByText('Save, download, validate, and restore the startup configuration')).toBeVisible();
   await page.locator('smithproxy-gui').evaluate((application: HTMLElement & {
     archiveInventory?: {
@@ -6707,7 +6707,7 @@ test('organizes operational surfaces into focused administrator views', async ({
   await expect(page.getByRole('list', {name: 'Operational events'})).toHaveCount(0);
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Configuration archive', exact: true}).click();
+  await page.getByRole('button', {name: 'Startup & backups', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Augment overlays'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Appearance', exact: true}).click();
   await expect(page.getByRole('heading', {level: 2, name: 'Appearance'})).toBeVisible();
@@ -6717,7 +6717,7 @@ test('organizes operational surfaces into focused administrator views', async ({
   await expect(appearance).toContainText('Theme managed bySaslik');
   await expect(appearance).toContainText('Change the shared theme in Saslik appearance settings');
   await expect(page.getByRole('heading', {name: 'Background operations'})).toHaveCount(0);
-  await page.getByRole('button', {name: 'Management', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Background operations'})).toBeVisible();
   const diagnostics = page.locator('details.management-diagnostics');
   await expect(page.getByRole('heading', {name: 'Augment overlays'})).toHaveCount(0);
@@ -6966,7 +6966,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(debugCard.getByText('Socket eventsEnabled')).toBeHidden();
   await debugCard.getByText('Debug logging', {exact: true}).click();
   await expect(debugCard).toContainText('Socket eventsEnabled');
-  await page.getByRole('button', {name: 'Management', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
   const apiPosture = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Smithproxy API posture'}),
   });
