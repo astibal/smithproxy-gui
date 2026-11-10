@@ -10301,7 +10301,8 @@ export class SmithproxyApp extends LitElement {
         (this.sessionStateFilter === 'active') === entry.active;
       if (!stateMatches || query.length === 0) return stateMatches;
       return [entry.sourceAddress, entry.sourcePort, entry.destinationAddress,
-        entry.destinationPort, entry.protocol, entry.policy]
+        entry.destinationPort, entry.protocol, entry.policy, entry.loredStatus,
+        ...entry.siftClassifications, ...entry.loredClassifications]
         .some(value => value.toLocaleLowerCase().includes(query));
     });
     return html`
@@ -10383,16 +10384,20 @@ export class SmithproxyApp extends LitElement {
         </div>
         <div class="table">
           <table class="listener-table" aria-label="Observed proxy sessions">
-            <thead><tr><th>Status</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Policy</th><th>Rate</th><th>Transferred</th><th>Seen</th><th>Details</th></tr></thead>
+            <thead><tr><th>Status</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Application insight</th><th>Policy</th><th>Rate</th><th>Transferred</th><th>Seen</th><th>Details</th></tr></thead>
             <tbody>
               ${visibleSessions.map(entry => {
                 const inspected = this.inspectedSessionId === entry.id;
+                const classifications = [...entry.siftClassifications, ...entry.loredClassifications];
                 return html`
                 <tr class=${entry.active ? '' : 'muted'}>
                   <td><span class="system-state ${entry.active ? 'success' : ''}">${entry.active ? 'Active' : 'Closed'}</span></td>
                   <td><code>${entry.sourceAddress}:${entry.sourcePort}</code></td>
                   <td><code>${entry.destinationAddress}:${entry.destinationPort}</code></td>
                   <td>${entry.protocol}</td>
+                  <td>${classifications.length > 0
+                    ? classifications.slice(0, 2).join(' · ')
+                    : entry.loredStatus || '—'}</td>
                   <td>${entry.policy}</td>
                   <td>${this.formatBytes(entry.speedUp + entry.speedDown)}/s</td>
                   <td>${this.formatBytes(entry.bytesUp + entry.bytesDown)}</td>
@@ -10406,12 +10411,15 @@ export class SmithproxyApp extends LitElement {
                     }}>${inspected ? 'Hide' : 'Inspect'}</button></td>
                 </tr>
                 ${inspected ? html`<tr>
-                  <td class="session-detail-cell" colspan="9">
+                  <td class="session-detail-cell" colspan="10">
                     <dl class="session-detail" role="group" aria-label="Session details">
                       <div><dt>Source endpoint</dt><dd><code>${entry.sourceAddress}:${entry.sourcePort}</code></dd></div>
                       <div><dt>Destination endpoint</dt><dd><code>${entry.destinationAddress}:${entry.destinationPort}</code></dd></div>
                       <div><dt>Policy</dt><dd>${entry.policy}</dd></div>
                       <div><dt>Transport</dt><dd>${entry.protocol}</dd></div>
+                      <div><dt>SIFT classifications</dt><dd>${entry.siftClassifications.join(' · ') || 'Not reported'}</dd></div>
+                      <div><dt>LORED classifications</dt><dd>${entry.loredClassifications.join(' · ') || 'Not reported'}</dd></div>
+                      <div><dt>LORED status</dt><dd>${entry.loredStatus || 'Not reported'}</dd></div>
                       <div><dt>Upload</dt><dd>${this.formatBytes(entry.bytesUp)} · ${this.formatBytes(entry.speedUp)}/s</dd></div>
                       <div><dt>Download</dt><dd>${this.formatBytes(entry.bytesDown)} · ${this.formatBytes(entry.speedDown)}/s</dd></div>
                       <div><dt>First observed</dt><dd>${this.timeLabel(entry.firstSeenAtUnixMs)}</dd></div>
@@ -10422,14 +10430,14 @@ export class SmithproxyApp extends LitElement {
                 </tr>` : nothing}`;
               })}
               ${visibleSessions.length === 0 ? html`
-                <tr><td colspan="9">${this.liveSessions.entries.length === 0
+                <tr><td colspan="10">${this.liveSessions.entries.length === 0
                   ? 'No active or recently closed sessions are available.'
                   : 'No sessions match the current filters.'}</td></tr>
               ` : nothing}
             </tbody>
           </table>
         </div>
-        <div class="privacy-note">The authenticated GUI core exposes only bounded endpoint, policy, protocol, and counter metadata. Raw Smithproxy diagnostics remain server-side.</div>
+        <div class="privacy-note">The authenticated GUI core exposes only bounded endpoint, policy, protocol, classification, and counter metadata. Raw Smithproxy diagnostics remain server-side.</div>
       </section>
     `;
   }

@@ -1558,6 +1558,7 @@ int main() {
 
     const auto activity = parse_live_sessions(R"([
         {"oid":"private-session","origin":"tls acceptor","policy":"internal-policy",
+         "classification":{"sift":["HTTPS"],"lored":["Web browsing"],"lored_status":"classified"},
          "left":[{"host":"10.0.0.10","port":"43100","com":"tls"}],
          "right":[{"host":"private.example","port":"443","com":"tls"}],
          "stats":{"speed":{"up":100,"down":200},
@@ -1580,6 +1581,9 @@ int main() {
     assert(activity.snapshot->entries.front().source_address == "10.0.0.11");
     assert(activity.snapshot->entries.front().destination_address == "secret.example");
     assert(activity.snapshot->entries.front().policy == "other-policy");
+    assert(activity.snapshot->entries.back().sift_classifications == std::vector<std::string>{"HTTPS"});
+    assert(activity.snapshot->entries.back().lored_classifications == std::vector<std::string>{"Web browsing"});
+    assert(activity.snapshot->entries.back().lored_status == "classified");
     assert(!parse_live_sessions("not json").snapshot);
     assert(!parse_live_sessions(R"([{"left":[{"com":"tls"}],"right":[{"com":"tls"}],
         "stats":{"speed":{"up":-1,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}])").snapshot);
@@ -1589,6 +1593,13 @@ int main() {
          "stats":{"speed":{"up":0,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}},
         {"oid":"duplicate","policy":"two","left":[{"host":"10.0.0.3","port":"3","com":"tcp"}],
          "right":[{"host":"10.0.0.4","port":"4","com":"tcp"}],
+         "stats":{"speed":{"up":0,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}
+    ])").snapshot);
+    assert(!parse_live_sessions(R"([
+        {"oid":"invalid-classification","policy":"one",
+         "classification":{"sift":["HTTPS","HTTPS"],"lored":[]},
+         "left":[{"host":"10.0.0.1","port":"1","com":"tcp"}],
+         "right":[{"host":"10.0.0.2","port":"2","com":"tcp"}],
          "stats":{"speed":{"up":0,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}
     ])").snapshot);
 

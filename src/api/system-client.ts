@@ -184,6 +184,9 @@ export interface LiveSessionEntry {
   destinationPort: string;
   protocol: string;
   policy: string;
+  siftClassifications: ReadonlyArray<string>;
+  loredClassifications: ReadonlyArray<string>;
+  loredStatus: string;
   speedUp: number;
   speedDown: number;
   bytesUp: number;
@@ -736,12 +739,24 @@ function parseLiveSessions(value: unknown): LiveSessionSnapshot {
   }
   const identifiers = new Set<string>();
   const entries = value.entries.map((item): LiveSessionEntry => {
+    const classifications = (field: unknown): ReadonlyArray<string> | undefined => {
+      if (field === undefined) return [];
+      if (!Array.isArray(field) || field.length > 16 ||
+          field.some(entry => !isBoundedDisplayText(entry, 128)) ||
+          new Set(field).size !== field.length) return undefined;
+      return field as ReadonlyArray<string>;
+    };
+    const siftClassifications = isObject(item) ? classifications(item.sift_classifications) : undefined;
+    const loredClassifications = isObject(item) ? classifications(item.lored_classifications) : undefined;
     if (!isObject(item) || !isBoundedDisplayText(item.id, 128) || identifiers.has(item.id) ||
         !isBoundedDisplayText(item.source_address, 255) ||
         !isBoundedDisplayText(item.source_port, 16) ||
         !isBoundedDisplayText(item.destination_address, 255) ||
         !isBoundedDisplayText(item.destination_port, 16) ||
         !isBoundedDisplayText(item.protocol, 32) || !isBoundedDisplayText(item.policy, 128) ||
+        !siftClassifications || !loredClassifications ||
+        (item.lored_status !== undefined && item.lored_status !== '' &&
+          !isBoundedDisplayText(item.lored_status, 128)) ||
         !isNonNegativeInteger(item.speed_up) || !isNonNegativeInteger(item.speed_down) ||
         !isNonNegativeInteger(item.bytes_up) || !isNonNegativeInteger(item.bytes_down) ||
         typeof item.active !== 'boolean' || !isPlausibleTimestamp(item.first_seen_at_unix_ms) ||
@@ -763,6 +778,9 @@ function parseLiveSessions(value: unknown): LiveSessionSnapshot {
       destinationPort: item.destination_port,
       protocol: item.protocol,
       policy: item.policy,
+      siftClassifications,
+      loredClassifications,
+      loredStatus: typeof item.lored_status === 'string' ? item.lored_status : '',
       speedUp: item.speed_up,
       speedDown: item.speed_down,
       bytesUp: item.bytes_up,

@@ -2508,6 +2508,9 @@ private:
                        ",\"destination_port\":" + json_string(entry.destination_port) +
                        ",\"protocol\":" + json_string(entry.protocol) +
                        ",\"policy\":" + json_string(entry.policy) +
+                       ",\"sift_classifications\":" + string_array_json(entry.sift_classifications) +
+                       ",\"lored_classifications\":" + string_array_json(entry.lored_classifications) +
+                       ",\"lored_status\":" + json_string(entry.lored_status) +
                        ",\"speed_up\":" + std::to_string(entry.speed_up) +
                        ",\"speed_down\":" + std::to_string(entry.speed_down) +
                        ",\"bytes_up\":" + std::to_string(entry.bytes_up) +

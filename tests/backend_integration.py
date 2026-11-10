@@ -298,6 +298,10 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                     "oid": "secret-session-id",
                     "origin": "tls acceptor",
                     "policy": "confidential-policy",
+                    "classification": {
+                        "sift": ["HTTPS"], "lored": ["Web browsing"],
+                        "lored_status": "classified",
+                    },
                     "left": [{"host": "10.20.30.40", "port": "43100", "com": "tls"}],
                     "right": [{"host": "private.example", "port": "443", "com": "tls"}],
                     "stats": {
@@ -766,6 +770,15 @@ def main() -> int:
             assert b"secret-session-id" not in body
             assert b"confidential-policy" not in body
             activity_last_success = activity["last_success_at_unix_ms"]
+            status, _, body = request(
+                configured_port, "/api/v1/sessions", headers=gateway_headers)
+            sessions = json.loads(body)
+            assert status == 200
+            assert sessions["state"] == "ready"
+            assert sessions["entries"][0]["sift_classifications"] == []
+            assert sessions["entries"][1]["sift_classifications"] == ["HTTPS"]
+            assert sessions["entries"][1]["lored_classifications"] == ["Web browsing"]
+            assert sessions["entries"][1]["lored_status"] == "classified"
 
             assert request(configured_port, "/api/v1/config/snapshot")[0] == 401
             assert request(

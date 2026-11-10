@@ -451,6 +451,7 @@ describe('SystemClient', () => {
       entries: [
         {id: 'session-1', source_address: '192.0.2.10', source_port: '51342',
          destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
+         sift_classifications: ['HTTPS'], lored_classifications: ['Web browsing'], lored_status: 'classified',
          speed_up: 12, speed_down: 34, bytes_up: 120, bytes_down: 340, active: true,
          first_seen_at_unix_ms: 80, last_seen_at_unix_ms: 100, closed_at_unix_ms: null},
         {id: 'session-2', source_address: '192.0.2.11', source_port: '49000',
@@ -463,7 +464,8 @@ describe('SystemClient', () => {
 
     await expect(client.sessions()).resolves.toMatchObject({
       entries: [
-        {id: 'session-1', sourceAddress: '192.0.2.10', destinationPort: '443', active: true},
+        {id: 'session-1', sourceAddress: '192.0.2.10', destinationPort: '443', active: true,
+         siftClassifications: ['HTTPS'], loredClassifications: ['Web browsing'], loredStatus: 'classified'},
         {id: 'session-2', protocol: 'udp', policy: 'DNS', active: false, closedAtUnixMs: 90},
       ],
     });
@@ -479,6 +481,19 @@ describe('SystemClient', () => {
         destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
         speed_up: 0, speed_down: 0, bytes_up: 0, bytes_down: 0, active: true,
         first_seen_at_unix_ms: 80, last_seen_at_unix_ms: 100, closed_at_unix_ms: 90}],
+    }));
+    await expect(client.sessions()).rejects.toThrow('Invalid live session entry');
+  });
+
+  it('rejects unbounded live session classifications', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', detail: 'Current', checked_at_unix_ms: 100, last_success_at_unix_ms: 100,
+      entries: [{id: 'session-1', source_address: '192.0.2.10', source_port: '51342',
+        destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
+        sift_classifications: Array.from({length: 17}, (_, index) => `class-${index}`),
+        lored_classifications: [], lored_status: 'classified',
+        speed_up: 0, speed_down: 0, bytes_up: 0, bytes_down: 0, active: true,
+        first_seen_at_unix_ms: 80, last_seen_at_unix_ms: 100, closed_at_unix_ms: null}],
     }));
     await expect(client.sessions()).rejects.toThrow('Invalid live session entry');
   });

@@ -29,6 +29,11 @@ struct LiveSessionEntry {
     std::string destination_port;
     std::string protocol;
     std::string policy;
+    // Bounded administrator-facing labels reported by the SIFT and LORED
+    // classifiers. Raw classifier diagnostics remain inside Smithproxy.
+    std::vector<std::string> sift_classifications;
+    std::vector<std::string> lored_classifications;
+    std::string lored_status;
     std::uint64_t speed_up{};
     std::uint64_t speed_down{};
     std::uint64_t bytes_up{};

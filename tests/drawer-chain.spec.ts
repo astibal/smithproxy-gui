@@ -434,11 +434,13 @@ async function mockSystemApi(
       entries: [
         {id: 'session-1', source_address: '192.0.2.10', source_port: '51342',
          destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
+         sift_classifications: ['HTTPS'], lored_classifications: ['Web browsing'], lored_status: 'classified',
          speed_up: 512, speed_down: 256, bytes_up: 2048, bytes_down: 1024, active: true,
          first_seen_at_unix_ms: sampledAt - 30_000, last_seen_at_unix_ms: sampledAt,
          closed_at_unix_ms: null},
         {id: 'session-2', source_address: '192.0.2.11', source_port: '49820',
          destination_address: '203.0.113.53', destination_port: '53', protocol: 'udp', policy: 'DNS',
+         sift_classifications: ['DNS'], lored_classifications: [], lored_status: 'classified',
          speed_up: 0, speed_down: 0, bytes_up: 128, bytes_down: 256, active: false,
          first_seen_at_unix_ms: sampledAt - 80_000, last_seen_at_unix_ms: sampledAt - 20_000,
          closed_at_unix_ms: sampledAt - 10_000},
@@ -5047,9 +5049,12 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(sessions.getByText('192.0.2.10:51342').first()).toBeVisible();
   await expect(sessions.getByText('198.51.100.20:443')).toBeVisible();
   await expect(sessions.getByText('Policy 1')).toBeVisible();
+  await expect(sessions.getByText('HTTPS · Web browsing')).toBeVisible();
   await expect(sessions.getByText('Closed', {exact: true})).toBeVisible();
   await sessions.getByRole('button', {name: 'Inspect session 192.0.2.10 to 198.51.100.20'}).click();
   const sessionDetails = sessions.getByRole('group', {name: 'Session details'});
+  await expect(sessionDetails).toContainText('SIFT classificationsHTTPS');
+  await expect(sessionDetails).toContainText('LORED classificationsWeb browsing');
   await expect(sessionDetails).toContainText('Source endpoint192.0.2.10:51342');
   await expect(sessionDetails).toContainText('Destination endpoint198.51.100.20:443');
   await expect(sessionDetails).toContainText('Upload2.05 kB · 512 B/s');

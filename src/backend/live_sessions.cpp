@@ -13,6 +13,7 @@ namespace {
 
 constexpr std::size_t maximum_upstream_sessions = 2048U;
 constexpr std::size_t maximum_protocols = 32U;
+constexpr std::size_t maximum_classifications = 16U;
 constexpr std::size_t maximum_retained_sessions = 512U;
 constexpr auto closed_session_retention = std::chrono::minutes(5);
 
@@ -93,6 +94,53 @@ std::optional<std::string> policy(const nlohmann::json& session) {
     return std::nullopt;
 }
 
+struct SessionClassifications {
+    std::vector<std::string> sift;
+    std::vector<std::string> lored;
+    std::string lored_status;
+};
+
+// Smithproxy classification output is useful to administrators, but remains
+// untrusted diagnostic data. Accept only small printable string collections
+// and never forward the rest of the upstream classification object.
+std::optional<SessionClassifications> classifications(const nlohmann::json& session) {
+    const auto classification = session.find("classification");
+    if (classification == session.end()) return SessionClassifications{};
+    if (!classification->is_object()) return std::nullopt;
+
+    const auto read_list = [&](const char* name) -> std::optional<std::vector<std::string>> {
+        const auto values = classification->find(name);
+        if (values == classification->end()) return std::vector<std::string>{};
+        if (!values->is_array() || values->size() > maximum_classifications) return std::nullopt;
+        std::vector<std::string> result;
+        result.reserve(values->size());
+        std::unordered_set<std::string> unique;
+        for (const auto& value : *values) {
+            if (!value.is_string()) return std::nullopt;
+            const auto text = value.get<std::string>();
+            if (text.empty() || text.size() > 128U ||
+                std::ranges::any_of(text, [](const unsigned char character) {
+                    return std::iscntrl(character) != 0;
+                }) || !unique.insert(text).second) {
+                return std::nullopt;
+            }
+            result.push_back(text);
+        }
+        return result;
+    };
+
+    auto sift = read_list("sift");
+    auto lored = read_list("lored");
+    if (!sift || !lored) return std::nullopt;
+    std::string status;
+    if (classification->contains("lored_status")) {
+        auto parsed = bounded_text(*classification, "lored_status", 128U, true);
+        if (!parsed) return std::nullopt;
+        status = std::move(*parsed);
+    }
+    return SessionClassifications{std::move(*sift), std::move(*lored), std::move(status)};
+}
+
 void saturating_add(std::uint64_t& target, const std::uint64_t value) {
     const auto maximum = std::numeric_limits<std::uint64_t>::max();
     target = value > maximum - target ? maximum : target + value;
@@ -137,8 +185,9 @@ LiveSessionsParseResult parse_live_sessions(const std::string_view payload) {
         const auto source = endpoint(item, "left");
         const auto destination = endpoint(item, "right");
         const auto matched_policy = policy(item);
+        const auto classified = classifications(item);
         if (!speed_up || !speed_down || !bytes_up || !bytes_down || !id || !source ||
-            !destination || !matched_policy) {
+            !destination || !matched_policy || !classified) {
             return {std::nullopt, "Smithproxy session activity entry is invalid"};
         }
         if (!identifiers.insert(*id).second) {
@@ -153,6 +202,9 @@ LiveSessionsParseResult parse_live_sessions(const std::string_view payload) {
             .destination_port = destination->port,
             .protocol = *transport,
             .policy = *matched_policy,
+            .sift_classifications = classified->sift,
+            .lored_classifications = classified->lored,
+            .lored_status = classified->lored_status,
             .speed_up = *speed_up,
             .speed_down = *speed_down,
             .bytes_up = *bytes_up,
