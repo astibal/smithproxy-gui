@@ -10006,6 +10006,13 @@ export class SmithproxyApp extends LitElement {
     return `Closed ${this.durationLabel(Date.now() - (entry.closedAtUnixMs ?? entry.lastSeenAtUnixMs))} ago`;
   }
 
+  /** Formats a session endpoint without making an IPv6 address ambiguous with its port. */
+  private sessionEndpointLabel(address: string, port: string): string {
+    const host = address.includes(':') && !(address.startsWith('[') && address.endsWith(']'))
+      ? `[${address}]` : address;
+    return `${host}:${port}`;
+  }
+
   private renderProbeIncidents() {
     const incidents = [...probeIncidents(this.systemStatus.history)].reverse().slice(0, 5);
     const active = incidents.filter(incident => incident.recoveredAtUnixMs === null).length;
@@ -10686,11 +10693,15 @@ export class SmithproxyApp extends LitElement {
               ${visibleSessions.map(entry => {
                 const inspected = this.inspectedSessionId === entry.id;
                 const classifications = [...entry.siftClassifications, ...entry.loredClassifications];
+                const sourceEndpoint = this.sessionEndpointLabel(entry.sourceAddress, entry.sourcePort);
+                const destinationEndpoint = this.sessionEndpointLabel(
+                  entry.destinationAddress, entry.destinationPort,
+                );
                 return html`
                 <tr class=${entry.active ? '' : 'muted'}>
                   <td><span class="system-state ${entry.active ? 'success' : ''}">${entry.active ? 'Active' : 'Closed'}</span></td>
-                  <td><code>${entry.sourceAddress}:${entry.sourcePort}</code></td>
-                  <td><code>${entry.destinationAddress}:${entry.destinationPort}</code></td>
+                  <td><code>${sourceEndpoint}</code></td>
+                  <td><code>${destinationEndpoint}</code></td>
                   <td>${entry.protocol}</td>
                   <td>${classifications.length > 0
                     ? classifications.slice(0, 2).join(' · ')
@@ -10704,7 +10715,7 @@ export class SmithproxyApp extends LitElement {
                     ${this.sessionAgeLabel(entry)}
                   </td>
                   <td><button class="session-inspect" type="button" aria-expanded=${inspected}
-                    aria-label=${`${inspected ? 'Hide' : 'Inspect'} session ${entry.sourceAddress} to ${entry.destinationAddress}`}
+                    aria-label=${`${inspected ? 'Hide' : 'Inspect'} session ${sourceEndpoint} to ${destinationEndpoint}`}
                     @click=${() => {
                       this.inspectedSessionId = inspected ? undefined : entry.id;
                     }}>${inspected ? 'Hide' : 'Inspect'}</button></td>
@@ -10712,8 +10723,8 @@ export class SmithproxyApp extends LitElement {
                 ${inspected ? html`<tr>
                   <td class="session-detail-cell" colspan="10">
                     <dl class="session-detail" role="group" aria-label="Session details">
-                      <div><dt>Source endpoint</dt><dd><code>${entry.sourceAddress}:${entry.sourcePort}</code></dd></div>
-                      <div><dt>Destination endpoint</dt><dd><code>${entry.destinationAddress}:${entry.destinationPort}</code></dd></div>
+                      <div><dt>Source endpoint</dt><dd><code>${sourceEndpoint}</code></dd></div>
+                      <div><dt>Destination endpoint</dt><dd><code>${destinationEndpoint}</code></dd></div>
                       <div><dt>Policy</dt><dd>${entry.policy}</dd></div>
                       <div><dt>Transport</dt><dd>${entry.protocol}</dd></div>
                       <div><dt>SIFT classifications</dt><dd>${entry.siftClassifications.join(' · ') || 'Not reported'}</dd></div>

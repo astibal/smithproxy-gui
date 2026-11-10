@@ -442,8 +442,8 @@ async function mockSystemApi(
          speed_up: 512, speed_down: 256, bytes_up: 2048, bytes_down: 1024, active: true,
          first_seen_at_unix_ms: sampledAt - 30_000, last_seen_at_unix_ms: sampledAt,
          closed_at_unix_ms: null},
-        {id: 'session-2', source_address: '192.0.2.11', source_port: '49820',
-         destination_address: '203.0.113.53', destination_port: '53', protocol: 'udp', policy: 'DNS',
+        {id: 'session-2', source_address: '2001:db8::11', source_port: '49820',
+         destination_address: '2001:db8::53', destination_port: '53', protocol: 'udp', policy: 'DNS',
          sift_classifications: ['DNS'], lored_classifications: [], lored_status: 'classified',
          speed_up: 0, speed_down: 0, bytes_up: 128, bytes_down: 256, active: false,
          first_seen_at_unix_ms: sampledAt - 80_000, last_seen_at_unix_ms: sampledAt - 20_000,
@@ -5295,12 +5295,16 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   const sessions = activity.getByRole('table', {name: 'Observed proxy sessions'});
   await expect(sessions.getByText('192.0.2.10:51342').first()).toBeVisible();
   await expect(sessions.getByText('198.51.100.20:443')).toBeVisible();
+  await expect(sessions.getByText('[2001:db8::11]:49820')).toBeVisible();
+  await expect(sessions.getByText('[2001:db8::53]:53')).toBeVisible();
   await expect(sessions.getByText('Policy 1')).toBeVisible();
   await expect(sessions.getByText('HTTPS · Web browsing')).toBeVisible();
   await expect(sessions.getByText('Closed', {exact: true})).toBeVisible();
   await expect(sessions.getByRole('cell', {name: /^Active \d+s$/})).toBeVisible();
   await expect(sessions.getByRole('cell', {name: /^Closed \d+s ago$/})).toBeVisible();
-  await sessions.getByRole('button', {name: 'Inspect session 192.0.2.10 to 198.51.100.20'}).click();
+  await sessions.getByRole('button', {
+    name: 'Inspect session 192.0.2.10:51342 to 198.51.100.20:443',
+  }).click();
   const sessionDetails = sessions.getByRole('group', {name: 'Session details'});
   await expect(sessionDetails).toContainText('SIFT classificationsHTTPS');
   await expect(sessionDetails).toContainText('LORED classificationsWeb browsing');
@@ -5308,9 +5312,11 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(sessionDetails).toContainText('Destination endpoint198.51.100.20:443');
   await expect(sessionDetails).toContainText('Upload2.05 kB · 512 B/s');
   await expect(sessionDetails).toContainText('Download1.02 kB · 256 B/s');
-  await sessions.getByRole('button', {name: 'Hide session 192.0.2.10 to 198.51.100.20'}).click();
+  await sessions.getByRole('button', {
+    name: 'Hide session 192.0.2.10:51342 to 198.51.100.20:443',
+  }).click();
   await activity.getByRole('searchbox', {name: 'Filter observed sessions'}).fill('DNS');
-  await expect(sessions.getByText('203.0.113.53:53')).toBeVisible();
+  await expect(sessions.getByText('[2001:db8::53]:53')).toBeVisible();
   await expect(sessions.getByText('192.0.2.10:51342')).toHaveCount(0);
   await activity.getByRole('searchbox', {name: 'Filter observed sessions'}).fill('');
   await activity.getByRole('combobox', {name: 'Filter sessions by state'}).selectOption('active');
