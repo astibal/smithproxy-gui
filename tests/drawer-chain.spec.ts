@@ -5277,9 +5277,8 @@ test('shows live Smithproxy status transitions', async ({page}) => {
     .getByRole('button', {name: 'TLS cache'}).click();
   const tlsCache = page.getByRole('region', {name: 'TLS interception cache'});
   await expect(tlsCache.getByText('42', {exact: true})).toBeVisible();
-  await expect(tlsCache.getByText('Rotation policy', {exact: true})).toBeVisible();
-  await expect(tlsCache.getByText('Automatic', {exact: true})).toBeVisible();
   await expect(tlsCache).toContainText('Oldest certificates are replaced');
+  await expect(tlsCache).not.toContainText('Rotation policy');
   await expect(tlsCache).not.toContainText('Current TLS cache metrics');
   await expect(tlsCache.getByRole('progressbar')).toHaveCount(0);
 

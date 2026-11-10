@@ -10278,11 +10278,6 @@ export class SmithproxyApp extends LitElement {
           <article class="metric">
             <span class="metric-label">Cache capacity</span>
             <strong class="metric-value">${cache.capacity.toLocaleString()}</strong>
-            <span class="metric-note">Configured maximum entries</span>
-          </article>
-          <article class="metric">
-            <span class="metric-label">Rotation policy</span>
-            <strong class="metric-value">Automatic</strong>
             <span class="metric-note">Oldest certificates are replaced after the configured capacity is reached</span>
           </article>
           <article class="metric">

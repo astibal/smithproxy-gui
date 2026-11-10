@@ -306,13 +306,13 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       source: 'gui-core', generated_at_unix_ms: 100,
       alerts: [{
-        id: 'tls-cache-capacity', severity: 'warning', title: 'TLS cache capacity is high',
-        detail: 'The reported cache size is at least 90% of its configured capacity.',
+        id: 'session-activity-stale', severity: 'warning', title: 'Session activity is degraded',
+        detail: 'The last successful sample is older than the expected collection window.',
       }],
     }));
     const client = new SystemClient('/api/v1', '/', fetcher);
     await expect(client.activeAlerts()).resolves.toMatchObject({
-      generatedAtUnixMs: 100, alerts: [{id: 'tls-cache-capacity', severity: 'warning'}],
+      generatedAtUnixMs: 100, alerts: [{id: 'session-activity-stale', severity: 'warning'}],
     });
   });
 
