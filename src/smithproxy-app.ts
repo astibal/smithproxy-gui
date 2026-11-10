@@ -13342,6 +13342,10 @@ export class SmithproxyApp extends LitElement {
         in the running configuration.
       </div>`}
       <div class="form-grid wide-form-grid">
+        <fieldset class="editor-group">
+          <legend>Local capture</legend>
+          <p>Stores matching traffic on this Smithproxy instance with explicit format and quota.</p>
+          <div class="form-grid">
         <label for="captures-local-enabled">Local capture</label>
         ${booleanField('local-enabled', captures.local.enabled)}
         <label for="captures-local-format">Local format</label>
@@ -13356,6 +13360,12 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('local-directory', 'Local directory', captures.local.directoryConfigured)}
         ${writeOnlyField('local-prefix', 'Local filename prefix', captures.local.filePrefixConfigured)}
         ${writeOnlyField('local-suffix', 'Local filename suffix', captures.local.fileSuffixConfigured)}
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Remote capture tunnel</legend>
+          <p>Streams captured traffic to an external collector through the configured GRE tunnel.</p>
+          <div class="form-grid">
         <label for="captures-remote-enabled">Remote capture</label>
         ${booleanField('remote-enabled', captures.remote.enabled)}
         <label for="captures-tunnel-type">Tunnel type</label>
@@ -13376,8 +13386,16 @@ export class SmithproxyApp extends LitElement {
           .readOnly=${locked('captures.remote.tun_ttl')} />
         ${writeOnlyField('remote-destination', 'Remote destination', captures.remote.destinationConfigured)}
         ${writeOnlyField('bind-interface', 'Bound interface', captures.remote.bindInterfaceConfigured)}
+          </div>
+        </fieldset>
+        <fieldset class="editor-group">
+          <legend>Packet processing</legend>
+          <p>Controls packet normalization applied before captured traffic is written or exported.</p>
+          <div class="form-grid">
         <label for="captures-checksums">Calculate checksums</label>
         ${booleanField('checksums', captures.calculateChecksums)}
+          </div>
+        </fieldset>
       </div>
     `;
   }

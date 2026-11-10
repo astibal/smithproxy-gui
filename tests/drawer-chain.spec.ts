@@ -6774,6 +6774,9 @@ test('saves typed system and capture settings without exposing redacted values',
   });
   await captureCard.getByRole('button', {name: 'Edit'}).click();
   const captureEditor = page.getByRole('dialog', {name: 'Edit Capture settings'});
+  await expect(captureEditor.getByRole('group', {name: 'Local capture'})).toBeVisible();
+  await expect(captureEditor.getByRole('group', {name: 'Remote capture tunnel'})).toBeVisible();
+  await expect(captureEditor.getByRole('group', {name: 'Packet processing'})).toBeVisible();
   await expect(captureEditor.getByLabel('Tunnel type')).toHaveValue('gre');
   await expect(captureEditor.getByLabel('Local quota (MiB)'))
     .toHaveAttribute('max', String(Number.MAX_SAFE_INTEGER));
