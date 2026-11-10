@@ -5513,7 +5513,9 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await expect.poll(() => state.authSessionRequests).toBeGreaterThan(2);
   await expect(statusbar).toContainText('Configuration access: Rejected');
   await expect(statusbar).toContainText('Events: Unavailable');
-  await expect(interfaceCount.getByText('0', {exact: true})).toBeVisible();
+  await expect(interfaceSummary).toContainText('Unavailable');
+  await expect(interfaceSummary).toContainText('does not provide interface monitoring');
+  await expect(interfaceCount).toHaveCount(0);
   await page.waitForTimeout(200);
   expect(protectedRequests).toHaveLength(acceptedRequestCount);
 });
@@ -5543,8 +5545,9 @@ test('discards monitoring responses completed after gateway access is revoked', 
   await page.getByRole('group', {name: 'Network categories'})
     .getByRole('button', {name: 'Interfaces'}).click();
   const interfaceSummary = page.getByRole('region', {name: 'Network interfaces'});
-  await expect(interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'})
-    .getByText('0', {exact: true})).toBeVisible();
+  await expect(interfaceSummary).toContainText('Unavailable');
+  await expect(interfaceSummary).toContainText('does not provide interface monitoring');
+  await expect(interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'})).toHaveCount(0);
   expect(failedRequests).toContain('/api/v1/metrics/summary');
 });
 
