@@ -1298,6 +1298,10 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await editor.getByRole('button', {name: 'capture', exact: true}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
+  await expect(contentEditor.getByRole('group', {name: 'Payload capture'})).toBeVisible();
+  await expect(contentEditor.getByRole('group', {name: 'Webhook delivery'})).toBeVisible();
+  await expect(contentEditor.getByRole('group', {name: 'Traffic fingerprints'})).toBeVisible();
+  await expect(contentEditor.getByRole('group', {name: 'Session scope and content rules'})).toBeVisible();
   await contentEditor.getByLabel('Payload capture').selectOption('true');
   await contentEditor.getByLabel('Capture format').selectOption('smcap');
   await contentEditor.getByLabel('Webhook traffic lock').selectOption('true');
@@ -2766,6 +2770,10 @@ test('creates sensitive content SSH and script profiles without reflecting write
   let editor = page.getByRole('dialog', {name: 'Create profile'});
   await editor.getByLabel('Profile type').selectOption('content');
   await editor.getByLabel('Name').fill('branch-content');
+  await expect(editor.getByRole('group', {name: 'Payload capture'})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Webhook delivery'})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Traffic fingerprints'})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Session scope'})).toBeVisible();
   await editor.getByLabel('Payload capture').selectOption('true');
   await editor.getByLabel('Capture format').selectOption('pcap_single');
   await editor.getByLabel('Webhook', {exact: true}).selectOption('true');

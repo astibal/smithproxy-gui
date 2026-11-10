@@ -12203,6 +12203,10 @@ export class SmithproxyApp extends LitElement {
               : operation ? 'No mappings configured' : 'Save profile first'}</span><span>Edit →</span>
           </button>
         ` : type === 'content' ? html`
+          <fieldset class="editor-group">
+            <legend>Payload capture</legend>
+            <p>Controls whether traffic payloads are retained and which capture format is used.</p>
+            <div class="form-grid">
           ${booleanSelect('content-write-payload', 'Payload capture', booleanField('write_payload', false))}
           <label for="profile-create-content-format-${entry.id}">Capture format</label>
           <select id="profile-create-content-format-${entry.id}"
@@ -12210,19 +12214,39 @@ export class SmithproxyApp extends LitElement {
             <option value="smcap">SMCAP</option><option value="pcap">PCAP</option>
             <option value="pcap_single">Single PCAP</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Webhook delivery</legend>
+            <p>Forwards matching traffic to the configured webhook and optionally locks it for processing.</p>
+            <div class="form-grid">
           ${booleanSelect('content-webhook', 'Webhook', booleanField('webhook_enable', false))}
           ${booleanSelect('content-webhook-lock', 'Webhook traffic lock',
             booleanField('webhook_lock_traffic', false))}
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Traffic fingerprints</legend>
+            <p>Selects the JA4 metadata calculated for matching sessions.</p>
+            <div class="form-grid">
           ${booleanSelect('content-ja4-client', 'JA4 TLS ClientHello', booleanField('ja4_tls_ch', false))}
           ${booleanSelect('content-ja4-ignore-sni', 'JA4 ignores SNI',
             booleanField('ja4_tls_ch_ignore_sni', false))}
           ${booleanSelect('content-ja4-server', 'JA4 TLS ServerHello', booleanField('ja4_tls_sh', false))}
           ${booleanSelect('content-ja4-http', 'JA4 HTTP', booleanField('ja4_http', false))}
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Session scope</legend>
+            <p>Limits this profile with a private, write-only session expression.</p>
+            <div class="form-grid">
           ${writeOnlyMode('content-filter', 'Session filter')}
           <label for="profile-create-content-filter-${entry.id}">Filter value</label>
           <textarea id="profile-create-content-filter-${entry.id}" maxlength="65536"
             aria-label="New session filter" autocomplete="off" placeholder="Write-only expression"
             .readOnly=${readOnly}></textarea>
+            </div>
+          </fieldset>
         ` : type === 'ssh' ? html`
           <label for="profile-create-ssh-policy-${entry.id}">Upstream host-key policy</label>
           <select id="profile-create-ssh-policy-${entry.id}"
@@ -12688,6 +12712,10 @@ export class SmithproxyApp extends LitElement {
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
         ` : content ? html`
+          <fieldset class="editor-group">
+            <legend>Payload capture</legend>
+            <p>Controls whether traffic payloads are retained and which capture format is used.</p>
+            <div class="form-grid">
           <label for="content-write-payload-${entry.id}">Payload capture</label>
           ${booleanSelect(`content-write-payload-${entry.id}`, 'write_payload', content.writePayload)}
           <label for="content-format-${entry.id}">Capture format</label>
@@ -12696,10 +12724,22 @@ export class SmithproxyApp extends LitElement {
             <option value="smcap">SMCAP</option><option value="pcap">PCAP</option>
             <option value="pcap_single">Single PCAP</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Webhook delivery</legend>
+            <p>Forwards matching traffic to the configured webhook and optionally locks it for processing.</p>
+            <div class="form-grid">
           <label for="content-webhook-${entry.id}">Webhook</label>
           ${booleanSelect(`content-webhook-${entry.id}`, 'webhook_enable', content.webhookEnabled)}
           <label for="content-webhook-lock-${entry.id}">Webhook traffic lock</label>
           ${booleanSelect(`content-webhook-lock-${entry.id}`, 'webhook_lock_traffic', content.webhookLocksTraffic)}
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Traffic fingerprints</legend>
+            <p>Selects the JA4 metadata calculated for matching sessions.</p>
+            <div class="form-grid">
           <label for="content-ja4-client-${entry.id}">JA4 TLS ClientHello</label>
           ${booleanSelect(`content-ja4-client-${entry.id}`, 'ja4_tls_ch', content.ja4TlsClientHello)}
           <label for="content-ja4-ignore-sni-${entry.id}">JA4 ignores SNI</label>
@@ -12708,6 +12748,12 @@ export class SmithproxyApp extends LitElement {
           ${booleanSelect(`content-ja4-server-${entry.id}`, 'ja4_tls_sh', content.ja4TlsServerHello)}
           <label for="content-ja4-http-${entry.id}">JA4 HTTP</label>
           ${booleanSelect(`content-ja4-http-${entry.id}`, 'ja4_http', content.ja4Http)}
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Session scope and content rules</legend>
+            <p>Limits this profile with a private expression and applies ordered content replacements.</p>
+            <div class="form-grid">
           <label for="content-write-filter-${entry.id}-mode">Session filter</label>
           <div class="write-only-control">
             <select id="content-write-filter-${entry.id}-mode" ?disabled=${mappedReadOnly}>
@@ -12767,6 +12813,8 @@ export class SmithproxyApp extends LitElement {
                 </button>`;
               })}
           </div>
+            </div>
+          </fieldset>
         ` : ssh ? html`
           <label for="ssh-write-host-key-${entry.id}-mode">Host key</label>
           <div class="write-only-control">
