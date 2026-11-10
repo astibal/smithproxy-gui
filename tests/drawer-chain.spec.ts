@@ -1313,6 +1313,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await editor.getByRole('button', {name: 'default-ssh', exact: true}).click();
   const sshEditor = page.getByRole('dialog', {name: 'Edit default-ssh'});
+  await expect(sshEditor.getByRole('group', {name: 'Upstream host identity'})).toBeVisible();
+  await expect(sshEditor.getByRole('group', {name: 'Session permissions'})).toBeVisible();
+  await expect(sshEditor.getByRole('group', {name: 'Forwarding permissions'})).toBeVisible();
   await expect(sshEditor.getByLabel('Host key', {exact: true})).toHaveValue('unchanged');
   await sshEditor.getByLabel('Host key', {exact: true}).selectOption('replace');
   await sshEditor.getByLabel('Host key replacement').fill('/etc/smithproxy/new-host-key');
@@ -2787,6 +2790,9 @@ test('creates sensitive content SSH and script profiles without reflecting write
   editor = page.getByRole('dialog', {name: 'Create profile'});
   await editor.getByLabel('Profile type').selectOption('ssh');
   await editor.getByLabel('Name').fill('branch-ssh');
+  await expect(editor.getByRole('group', {name: 'Upstream host identity'})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Session permissions'})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Forwarding permissions'})).toBeVisible();
   await editor.getByLabel('Upstream host-key policy').selectOption('strict');
   await editor.getByLabel('Host-key path', {exact: true}).selectOption('replace');
   await editor.getByLabel('New host-key path').fill('/private/branch-host-key');

@@ -12248,6 +12248,10 @@ export class SmithproxyApp extends LitElement {
             </div>
           </fieldset>
         ` : type === 'ssh' ? html`
+          <fieldset class="editor-group">
+            <legend>Upstream host identity</legend>
+            <p>Defines how Smithproxy verifies and stores the upstream SSH host key.</p>
+            <div class="form-grid">
           <label for="profile-create-ssh-policy-${entry.id}">Upstream host-key policy</label>
           <select id="profile-create-ssh-policy-${entry.id}"
             .value=${stringField('hostkey_policy', 'strict')} ?disabled=${readOnly}>
@@ -12259,15 +12263,29 @@ export class SmithproxyApp extends LitElement {
           <input id="profile-create-ssh-host-key-${entry.id}" maxlength="1024"
             aria-label="New host-key path" autocomplete="off" placeholder="Write-only path"
             .readOnly=${readOnly} />
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Session permissions</legend>
+            <p>Allows or rejects interactive shells, commands, subsystems, terminals, and environment changes.</p>
+            <div class="form-grid">
           ${actionSelect('ssh-shell', 'Shell', stringField('shell', 'reject'))}
           ${actionSelect('ssh-exec', 'Exec', stringField('exec', 'reject'))}
           ${actionSelect('ssh-subsystem', 'Subsystem', stringField('subsystem', 'reject'))}
           ${actionSelect('ssh-pty', 'PTY', stringField('pty', 'reject'))}
           ${actionSelect('ssh-environment', 'Environment', stringField('environment', 'reject'))}
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Forwarding permissions</legend>
+            <p>Controls network, X11, and agent forwarding through the intercepted SSH session.</p>
+            <div class="form-grid">
           ${actionSelect('ssh-local-forward', 'Local forwarding', stringField('local_forward', 'reject'))}
           ${actionSelect('ssh-remote-forward', 'Remote forwarding', stringField('remote_forward', 'reject'))}
           ${actionSelect('ssh-x11', 'X11 forwarding', stringField('x11', 'reject'))}
           ${actionSelect('ssh-agent', 'Agent forwarding', stringField('agent', 'reject'))}
+            </div>
+          </fieldset>
         ` : html`
           <label for="profile-create-script-runtime-${entry.id}">Runtime</label>
           <select id="profile-create-script-runtime-${entry.id}"
@@ -12816,6 +12834,10 @@ export class SmithproxyApp extends LitElement {
             </div>
           </fieldset>
         ` : ssh ? html`
+          <fieldset class="editor-group">
+            <legend>Upstream host identity</legend>
+            <p>Defines how Smithproxy verifies and stores the upstream SSH host key.</p>
+            <div class="form-grid">
           <label for="ssh-write-host-key-${entry.id}-mode">Host key</label>
           <div class="write-only-control">
             <select id="ssh-write-host-key-${entry.id}-mode" ?disabled=${mappedReadOnly}>
@@ -12831,6 +12853,12 @@ export class SmithproxyApp extends LitElement {
             <option value="insecure">Insecure</option><option value="accept-new">Accept new</option>
             <option value="strict">Strict</option>
           </select>
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Session permissions</legend>
+            <p>Allows or rejects interactive shells, commands, subsystems, terminals, and environment changes.</p>
+            <div class="form-grid">
           <label for="ssh-shell-${entry.id}">Shell</label>
           ${passRejectSelect(`ssh-shell-${entry.id}`, 'shell', ssh.shell)}
           <label for="ssh-exec-${entry.id}">Exec</label>
@@ -12841,6 +12869,12 @@ export class SmithproxyApp extends LitElement {
           ${passRejectSelect(`ssh-pty-${entry.id}`, 'pty', ssh.pty)}
           <label for="ssh-environment-${entry.id}">Environment</label>
           ${passRejectSelect(`ssh-environment-${entry.id}`, 'environment', ssh.environment)}
+            </div>
+          </fieldset>
+          <fieldset class="editor-group">
+            <legend>Forwarding permissions</legend>
+            <p>Controls network, X11, and agent forwarding through the intercepted SSH session.</p>
+            <div class="form-grid">
           <label for="ssh-local-forward-${entry.id}">Local forwarding</label>
           ${passRejectSelect(`ssh-local-forward-${entry.id}`, 'local_forward', ssh.localForward)}
           <label for="ssh-remote-forward-${entry.id}">Remote forwarding</label>
@@ -12849,6 +12883,8 @@ export class SmithproxyApp extends LitElement {
           ${passRejectSelect(`ssh-x11-${entry.id}`, 'x11', ssh.x11)}
           <label for="ssh-agent-${entry.id}">Agent forwarding</label>
           ${passRejectSelect(`ssh-agent-${entry.id}`, 'agent', ssh.agent)}
+            </div>
+          </fieldset>
         ` : dns ? html`
           <label for="dns-match-${entry.id}">Match request ID</label>
           <select id="dns-match-${entry.id}" .value=${String(persistent('match_request_id', dns.matchRequestId))}
