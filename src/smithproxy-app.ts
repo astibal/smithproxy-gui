@@ -838,6 +838,10 @@ export class SmithproxyApp extends LitElement {
     .listener-table tr.listener-idle td { color: var(--app-muted); }
     .listener-table tr.muted td { color: var(--app-muted); }
     .listener-table tr.listener-unused { opacity: .62; }
+    .health-link { padding: 0; border: 0; background: transparent; color: var(--app-text);
+      font: inherit; font-weight: 650; cursor: pointer; }
+    .health-link::after { content: ' ›'; color: var(--app-muted); }
+    .health-link:hover { color: var(--app-brand); }
     .session-inspect { padding: 4px 8px; border: 1px solid var(--app-border); border-radius: 2px;
       background: transparent; color: var(--app-text); cursor: pointer; }
     .session-detail-cell { padding: 0 !important; text-align: left !important; }
@@ -9788,21 +9792,21 @@ export class SmithproxyApp extends LitElement {
   private renderOperationalHealth() {
     const items = [
       {name: 'Management API', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs,
-        lastSuccess: this.systemStatus.lastSuccessAtUnixMs, intervalMs: 5_000},
+        lastSuccess: this.systemStatus.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'connectivity'},
       {name: 'Traffic metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs,
-        lastSuccess: this.runtimeMetrics.lastSuccessAtUnixMs, intervalMs: 5_000},
+        lastSuccess: this.runtimeMetrics.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'traffic'},
       {name: 'Session activity', state: this.sessionActivity.state, checked: this.sessionActivity.checkedAtUnixMs,
-        lastSuccess: this.sessionActivity.lastSuccessAtUnixMs, intervalMs: 10_000},
+        lastSuccess: this.sessionActivity.lastSuccessAtUnixMs, intervalMs: 10_000, target: 'sessions'},
       {name: 'TLS cache', state: this.tlsCache.state, checked: this.tlsCache.checkedAtUnixMs,
-        lastSuccess: this.tlsCache.lastSuccessAtUnixMs, intervalMs: 5_000},
+        lastSuccess: this.tlsCache.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'tls'},
       {name: 'Neighborhood', state: this.neighbors.state, checked: this.neighbors.checkedAtUnixMs,
-        lastSuccess: this.neighbors.lastSuccessAtUnixMs, intervalMs: 30_000},
+        lastSuccess: this.neighbors.lastSuccessAtUnixMs, intervalMs: 30_000, target: 'neighborhood'},
       {name: 'Interfaces', state: this.interfaces.state, checked: this.interfaces.checkedAtUnixMs,
-        lastSuccess: this.interfaces.lastSuccessAtUnixMs, intervalMs: 30_000},
+        lastSuccess: this.interfaces.lastSuccessAtUnixMs, intervalMs: 30_000, target: 'interfaces'},
       ...(this.configReadAvailable || this.snapshot ? [{
         name: 'Configuration', state: this.snapshot?.state ?? 'starting',
         checked: this.snapshot?.checkedAtUnixMs ?? null,
-        lastSuccess: this.snapshot?.lastSuccessAtUnixMs ?? null, intervalMs: 30_000,
+        lastSuccess: this.snapshot?.lastSuccessAtUnixMs ?? null, intervalMs: 30_000, target: 'configuration',
       }] : []),
     ].map(item => {
       const freshness = classifyFreshness(item.lastSuccess, item.intervalMs);
@@ -9825,7 +9829,9 @@ export class SmithproxyApp extends LitElement {
             <table class="listener-table" aria-label="Operational subsystem health">
               <thead><tr><th>Subsystem</th><th>State</th><th>Last success</th><th>Checked</th></tr></thead>
               <tbody>${items.map(item => html`<tr>
-                  <td class="listener-name">${item.name}</td>
+                  <td><button class="health-link" type="button"
+                    aria-label=${`Open ${item.name} details`}
+                    @click=${() => this.openOperationalHealthDetails(item.target)}>${item.name}</button></td>
                   <td><span class="runtime-state ${item.tone}">
                     ● ${displayState(item.state)} · ${freshnessLabel(item.freshness.state)}
                   </span></td>
@@ -9835,6 +9841,23 @@ export class SmithproxyApp extends LitElement {
           </div>
         </details>
       </section>`;
+  }
+
+  /** Opens the administrator page that explains and controls a health-table subsystem. */
+  private openOperationalHealthDetails(target: string): void {
+    if (target === 'traffic' || target === 'sessions' || target === 'tls') {
+      this.activeSection = 'Monitoring';
+      this.monitoringView = target;
+      this.monitoringNavigationExpanded = true;
+    } else if (target === 'neighborhood' || target === 'interfaces') {
+      this.activeSection = 'Network';
+      this.networkView = target;
+      this.networkNavigationExpanded = true;
+    } else {
+      this.activeSection = 'System';
+      this.systemView = target === 'configuration' ? 'configuration' : 'control-plane';
+      this.systemNavigationExpanded = true;
+    }
   }
 
   private renderProbeAnalysis() {

@@ -5303,6 +5303,30 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(healthTable.getByRole('row').filter({hasText: 'TLS cache'})).toContainText('Ready · Fresh');
 });
 
+test('opens every operational health subsystem in its administrator view', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  const routes = [
+    ['Management API', () => page.getByRole('heading', {name: 'Management connectivity'})],
+    ['Traffic metrics', () => page.getByRole('region', {name: 'Runtime history'})],
+    ['Session activity', () => page.getByRole('region', {name: 'Session activity'})],
+    ['TLS cache', () => page.getByRole('region', {name: 'TLS interception cache'})],
+    ['Neighborhood', () => page.getByRole('region', {name: 'Neighborhood activity'})],
+    ['Interfaces', () => page.getByRole('region', {name: 'Interface synchronization'})],
+    ['Configuration', () => page.getByRole('heading', {name: 'Startup configuration & backups'})],
+  ] as const;
+
+  for (const [name, destination] of routes) {
+    await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
+    const health = page.getByRole('region', {name: 'Operational health matrix'});
+    const table = health.getByRole('table', {name: 'Operational subsystem health'});
+    if (!await table.isVisible()) await health.locator('summary').click();
+    await table.getByRole('button', {name: `Open ${name} details`}).click();
+    await expect(destination()).toBeVisible();
+  }
+});
+
 test('reports a verified Saslik gateway handoff without exposing credentials', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
