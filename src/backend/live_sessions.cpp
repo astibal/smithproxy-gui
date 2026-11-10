@@ -3,14 +3,33 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace smithproxy::gui {
 namespace {
 
 constexpr std::size_t maximum_upstream_sessions = 2048U;
 constexpr std::size_t maximum_protocols = 32U;
+constexpr std::size_t maximum_retained_sessions = 512U;
+constexpr auto closed_session_retention = std::chrono::minutes(5);
+
+std::optional<std::string> bounded_text(
+    const nlohmann::json& object, const char* name, const std::size_t maximum_length,
+    const bool allow_empty = false) {
+    const auto iterator = object.find(name);
+    if (iterator == object.end() || !iterator->is_string()) return std::nullopt;
+    auto value = iterator->get<std::string>();
+    if ((!allow_empty && value.empty()) || value.size() > maximum_length ||
+        std::ranges::any_of(value, [](const unsigned char character) {
+            return std::iscntrl(character) != 0;
+        })) {
+        return std::nullopt;
+    }
+    return value;
+}
 
 std::optional<std::uint64_t> counter(const nlohmann::json& object, const char* name) {
     const auto iterator = object.find(name);
@@ -39,6 +58,41 @@ std::optional<std::string> protocol(const nlohmann::json& session) {
     return std::string{"unknown"};
 }
 
+struct Endpoint {
+    std::string address;
+    std::string port;
+};
+
+std::optional<Endpoint> endpoint(const nlohmann::json& session, const char* side) {
+    const auto collection = session.find(side);
+    if (collection == session.end() || !collection->is_array() || collection->empty() ||
+        !collection->front().is_object()) {
+        return std::nullopt;
+    }
+    const auto address = bounded_text(collection->front(), "host", 255U);
+    const auto port = bounded_text(collection->front(), "port", 16U);
+    if (!address || !port) return std::nullopt;
+    return Endpoint{*address, *port};
+}
+
+std::optional<std::string> policy(const nlohmann::json& session) {
+    const auto iterator = session.find("policy");
+    if (iterator == session.end()) return std::string{"Unmatched"};
+    if (iterator->is_string()) {
+        auto value = iterator->get<std::string>();
+        if (value.empty()) return std::string{"Unmatched"};
+        if (value.size() > 128U || std::ranges::any_of(value, [](const unsigned char character) {
+                return std::iscntrl(character) != 0;
+            })) {
+            return std::nullopt;
+        }
+        return value;
+    }
+    if (iterator->is_number_unsigned()) return std::to_string(iterator->get<std::uint64_t>());
+    if (iterator->is_number_integer()) return std::to_string(iterator->get<std::int64_t>());
+    return std::nullopt;
+}
+
 void saturating_add(std::uint64_t& target, const std::uint64_t value) {
     const auto maximum = std::numeric_limits<std::uint64_t>::max();
     target = value > maximum - target ? maximum : target + value;
@@ -58,6 +112,7 @@ LiveSessionsParseResult parse_live_sessions(const std::string_view payload) {
     result.detail = "Smithproxy session activity is current";
     result.total = static_cast<std::uint64_t>(document.size());
     std::unordered_map<std::string, std::size_t> buckets;
+    std::unordered_set<std::string> identifiers;
 
     for (const auto& item : document) {
         if (!item.is_object()) {
@@ -78,9 +133,35 @@ LiveSessionsParseResult parse_live_sessions(const std::string_view payload) {
         const auto speed_down = counter(*speed, "down");
         const auto bytes_up = counter(*counters, "bytes_up");
         const auto bytes_down = counter(*counters, "bytes_down");
-        if (!speed_up || !speed_down || !bytes_up || !bytes_down) {
-            return {std::nullopt, "Smithproxy session activity counters are invalid"};
+        const auto id = bounded_text(item, "oid", 128U);
+        const auto source = endpoint(item, "left");
+        const auto destination = endpoint(item, "right");
+        const auto matched_policy = policy(item);
+        if (!speed_up || !speed_down || !bytes_up || !bytes_down || !id || !source ||
+            !destination || !matched_policy) {
+            return {std::nullopt, "Smithproxy session activity entry is invalid"};
         }
+        if (!identifiers.insert(*id).second) {
+            return {std::nullopt, "Smithproxy returned a duplicate session identifier"};
+        }
+
+        result.entries.push_back({
+            .id = *id,
+            .source_address = source->address,
+            .source_port = source->port,
+            .destination_address = destination->address,
+            .destination_port = destination->port,
+            .protocol = *transport,
+            .policy = *matched_policy,
+            .speed_up = *speed_up,
+            .speed_down = *speed_down,
+            .bytes_up = *bytes_up,
+            .bytes_down = *bytes_down,
+            .active = true,
+            .first_seen_at = {},
+            .last_seen_at = {},
+            .closed_at = std::nullopt,
+        });
 
         auto [iterator, inserted] = buckets.emplace(*transport, result.protocols.size());
         if (inserted) {
@@ -100,7 +181,49 @@ LiveSessionsParseResult parse_live_sessions(const std::string_view payload) {
     }
 
     std::ranges::sort(result.protocols, {}, &SessionActivityBucket::protocol);
+    std::ranges::sort(result.entries, {}, &LiveSessionEntry::id);
     return {std::move(result), {}};
+}
+
+void reconcile_live_sessions(
+    LiveSessions& current, const LiveSessions& previous,
+    const std::chrono::system_clock::time_point observed_at) {
+    std::unordered_map<std::string, const LiveSessionEntry*> previous_by_id;
+    previous_by_id.reserve(previous.entries.size());
+    for (const auto& entry : previous.entries) previous_by_id.emplace(entry.id, &entry);
+
+    std::unordered_set<std::string> active_ids;
+    active_ids.reserve(current.entries.size());
+    for (auto& entry : current.entries) {
+        active_ids.insert(entry.id);
+        entry.active = true;
+        entry.last_seen_at = observed_at;
+        entry.closed_at.reset();
+        const auto previous_entry = previous_by_id.find(entry.id);
+        entry.first_seen_at = previous_entry == previous_by_id.end()
+            ? observed_at : previous_entry->second->first_seen_at;
+    }
+
+    // A session missing from a successful poll has closed. Keep its last known
+    // counters for a short bounded window; failed polls never call this helper.
+    for (const auto& entry : previous.entries) {
+        if (active_ids.contains(entry.id)) continue;
+        auto retained = entry;
+        retained.active = false;
+        if (!retained.closed_at) retained.closed_at = observed_at;
+        if (*retained.closed_at <= observed_at &&
+            observed_at - *retained.closed_at <= closed_session_retention) {
+            current.entries.push_back(std::move(retained));
+        }
+    }
+
+    std::ranges::sort(current.entries, [](const auto& left, const auto& right) {
+        if (left.active != right.active) return left.active > right.active;
+        return left.last_seen_at > right.last_seen_at;
+    });
+    if (current.entries.size() > maximum_retained_sessions) {
+        current.entries.resize(maximum_retained_sessions);
+    }
 }
 
 } // namespace smithproxy::gui

@@ -407,6 +407,27 @@ async function mockSystemApi(
       ],
     }});
   });
+  await page.route('**/api/v1/sessions', async route => {
+    const sampledAt = now();
+    await route.fulfill({json: {
+      state: state.smithproxy === 'ready' ? 'ready' : 'unavailable',
+      detail: state.smithproxy === 'ready' ? 'Current live sessions' : 'Live sessions are stale',
+      checked_at_unix_ms: sampledAt,
+      last_success_at_unix_ms: collectorLastSuccess(sampledAt),
+      entries: [
+        {id: 'session-1', source_address: '192.0.2.10', source_port: '51342',
+         destination_address: '198.51.100.20', destination_port: '443', protocol: 'tls', policy: 'Policy 1',
+         speed_up: 512, speed_down: 256, bytes_up: 2048, bytes_down: 1024, active: true,
+         first_seen_at_unix_ms: sampledAt - 30_000, last_seen_at_unix_ms: sampledAt,
+         closed_at_unix_ms: null},
+        {id: 'session-2', source_address: '192.0.2.11', source_port: '49820',
+         destination_address: '203.0.113.53', destination_port: '53', protocol: 'udp', policy: 'DNS',
+         speed_up: 0, speed_down: 0, bytes_up: 128, bytes_down: 256, active: false,
+         first_seen_at_unix_ms: sampledAt - 80_000, last_seen_at_unix_ms: sampledAt - 20_000,
+         closed_at_unix_ms: sampledAt - 10_000},
+      ],
+    }});
+  });
   await page.route('**/api/v1/tls/cache/summary', async route => {
     const sampledAt = now();
     await route.fulfill({json: {
@@ -5017,8 +5038,12 @@ test('shows live Smithproxy status transitions', async ({page}) => {
     .getByRole('button', {name: 'Sessions'}).click();
   const activity = page.getByRole('region', {name: 'Session activity'});
   await expect(activity.getByRole('heading', {name: 'Live session activity'})).toBeVisible();
-  await expect(activity.getByText(/no endpoints, session ids, or policy names/i)).toBeVisible();
   await expect(activity.getByText('3.84 kB/s')).toBeVisible();
+  const sessions = activity.getByRole('table', {name: 'Observed proxy sessions'});
+  await expect(sessions.getByText('192.0.2.10:51342')).toBeVisible();
+  await expect(sessions.getByText('198.51.100.20:443')).toBeVisible();
+  await expect(sessions.getByText('Policy 1')).toBeVisible();
+  await expect(sessions.getByText('Closed', {exact: true})).toBeVisible();
   await page.getByRole('group', {name: 'Monitoring categories'})
     .getByRole('button', {name: 'Traffic'}).click();
   const runtimeHistory = page.getByRole('region', {name: 'Runtime history'});
@@ -5893,6 +5918,7 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
   const endpoints = [
     '/api/v1/metrics/summary',
     '/api/v1/sessions/activity',
+    '/api/v1/sessions',
     '/api/v1/tls/cache/summary',
     '/api/v1/network/neighbors/summary',
     '/api/v1/network/interfaces/summary',

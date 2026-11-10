@@ -75,6 +75,14 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/sessions",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "session_activity",
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/events/recent",
       "methods": ["GET", "HEAD"],
       "authentication": "management",

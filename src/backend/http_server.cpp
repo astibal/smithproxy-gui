@@ -1317,6 +1317,7 @@ private:
         if (*relative == "/api/v1/network/neighbors/summary") return neighbor_summary();
         if (*relative == "/api/v1/network/interfaces/summary") return interface_summary();
         if (*relative == "/api/v1/sessions/activity") return session_activity();
+        if (*relative == "/api/v1/sessions") return sessions();
         if (*relative == "/api/v1/events/recent") return recent_events();
         if (*relative == "/api/v1/events") return event_stream(connection);
         if (*relative == "/api/v1/alerts") return alerts();
@@ -2489,6 +2490,38 @@ private:
                     ",\"speed_up\":" + std::to_string(snapshot.speed_up) +
                     ",\"speed_down\":" + std::to_string(snapshot.speed_down) +
                     ",\"protocols\":" + protocols + "}"};
+    }
+
+    Response sessions() const {
+        const auto snapshot = monitor_.status().live_sessions;
+        std::string entries = "[";
+        for (std::size_t index = 0; index < snapshot.entries.size(); ++index) {
+            if (index != 0U) entries += ',';
+            const auto& entry = snapshot.entries[index];
+            entries += "{\"id\":" + json_string(entry.id) +
+                       ",\"source_address\":" + json_string(entry.source_address) +
+                       ",\"source_port\":" + json_string(entry.source_port) +
+                       ",\"destination_address\":" + json_string(entry.destination_address) +
+                       ",\"destination_port\":" + json_string(entry.destination_port) +
+                       ",\"protocol\":" + json_string(entry.protocol) +
+                       ",\"policy\":" + json_string(entry.policy) +
+                       ",\"speed_up\":" + std::to_string(entry.speed_up) +
+                       ",\"speed_down\":" + std::to_string(entry.speed_down) +
+                       ",\"bytes_up\":" + std::to_string(entry.bytes_up) +
+                       ",\"bytes_down\":" + std::to_string(entry.bytes_down) +
+                       ",\"active\":" + (entry.active ? "true" : "false") +
+                       ",\"first_seen_at_unix_ms\":" + timestamp_json(entry.first_seen_at) +
+                       ",\"last_seen_at_unix_ms\":" + timestamp_json(entry.last_seen_at) +
+                       ",\"closed_at_unix_ms\":" +
+                           (entry.closed_at ? timestamp_json(*entry.closed_at) : "null") + "}";
+        }
+        entries += ']';
+        return {200, "application/json; charset=utf-8",
+                "{\"state\":" + json_string(snapshot.state) +
+                    ",\"detail\":" + json_string(snapshot.detail) +
+                    ",\"checked_at_unix_ms\":" + timestamp_json(snapshot.checked_at) +
+                    ",\"last_success_at_unix_ms\":" + timestamp_json(snapshot.last_success_at) +
+                    ",\"entries\":" + entries + "}"};
     }
 
     Response static_asset(const std::string_view relative) const {

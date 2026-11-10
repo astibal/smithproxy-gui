@@ -397,6 +397,7 @@ GET /api/v1/health
 GET /api/v1/metrics/summary
 GET /api/v1/listeners
 GET /api/v1/sessions/activity
+GET /api/v1/sessions
 GET /api/v1/tls/cache/summary
 GET /api/v1/network/neighbors/summary
 GET /api/v1/events/recent
@@ -406,11 +407,13 @@ GET /api/v1/logs
 GET /api/v1/events
 ```
 
-`/sessions/activity` is intentionally aggregate-only. The GUI core groups live
-sessions by transport and exposes counts, throughput, and byte counters. Endpoint
-addresses, ports, session identifiers, and matched policy names do not cross the
-browser boundary. A future detailed session surface requires an explicit privacy
-and authorization design.
+`/sessions/activity` remains the low-cost aggregate surface. The authenticated
+`/sessions` surface exposes a bounded administrator view of active connections
+and connections closed during the preceding five minutes. GUI core accepts only
+bounded endpoint, protocol, policy, throughput, and byte-counter fields from
+Smithproxy; worker names, raw diagnostic payloads, TLS internals, and upstream
+authentication material never cross the browser boundary. At most 512 active
+and retained rows are serialized, with active rows ordered first.
 
 `/metrics/summary` includes at most 60 ordered runtime samples. Each sample
 contains only state, timestamp, active-session count, and cumulative upstream

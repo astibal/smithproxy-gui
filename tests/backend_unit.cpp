@@ -1557,9 +1557,51 @@ int main() {
     assert(activity.snapshot->protocols.size() == 1U);
     assert(activity.snapshot->protocols.front().protocol == "tls");
     assert(activity.snapshot->protocols.front().sessions == 2U);
+    assert(activity.snapshot->entries.size() == 2U);
+    assert(activity.snapshot->entries.front().id == "another-session");
+    assert(activity.snapshot->entries.front().source_address == "10.0.0.11");
+    assert(activity.snapshot->entries.front().destination_address == "secret.example");
+    assert(activity.snapshot->entries.front().policy == "other-policy");
     assert(!parse_live_sessions("not json").snapshot);
     assert(!parse_live_sessions(R"([{"left":[{"com":"tls"}],"right":[{"com":"tls"}],
         "stats":{"speed":{"up":-1,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}])").snapshot);
+    assert(!parse_live_sessions(R"([
+        {"oid":"duplicate","policy":"one","left":[{"host":"10.0.0.1","port":"1","com":"tcp"}],
+         "right":[{"host":"10.0.0.2","port":"2","com":"tcp"}],
+         "stats":{"speed":{"up":0,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}},
+        {"oid":"duplicate","policy":"two","left":[{"host":"10.0.0.3","port":"3","com":"tcp"}],
+         "right":[{"host":"10.0.0.4","port":"4","com":"tcp"}],
+         "stats":{"speed":{"up":0,"down":0},"counters":{"bytes_up":0,"bytes_down":0}}}
+    ])").snapshot);
+
+    const auto observed_at = std::chrono::system_clock::time_point{std::chrono::seconds{100}};
+    auto previous_sessions = *activity.snapshot;
+    for (auto& entry : previous_sessions.entries) {
+        entry.first_seen_at = observed_at - std::chrono::seconds{20};
+        entry.last_seen_at = observed_at - std::chrono::seconds{10};
+    }
+    auto current_sessions = *activity.snapshot;
+    current_sessions.entries.erase(current_sessions.entries.begin());
+    reconcile_live_sessions(current_sessions, previous_sessions, observed_at);
+    assert(current_sessions.entries.size() == 2U);
+    assert(current_sessions.entries.front().active);
+    assert(current_sessions.entries.front().first_seen_at == observed_at - std::chrono::seconds{20});
+    assert(!current_sessions.entries.back().active);
+    assert(current_sessions.entries.back().closed_at == observed_at);
+
+    LiveSessions after_retention;
+    reconcile_live_sessions(
+        after_retention, current_sessions, observed_at + std::chrono::minutes{6});
+    // The previously closed session expires, while the previously active
+    // session is observed closing at this successful empty poll.
+    assert(after_retention.entries.size() == 1U);
+    assert(!after_retention.entries.front().active);
+    assert(after_retention.entries.front().closed_at == observed_at + std::chrono::minutes{6});
+
+    LiveSessions fully_expired;
+    reconcile_live_sessions(
+        fully_expired, after_retention, observed_at + std::chrono::minutes{12});
+    assert(fully_expired.entries.empty());
 
     const auto neighbors = parse_neighbor_metrics(R"([
         {"hostname":"private.example","tags":"office","last_seen":1,"stats":[

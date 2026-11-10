@@ -49,7 +49,12 @@ class TransactionSmithproxy(FakeSmithproxy):
 
     def do_POST(self):
         if self.path == "/api/config/save":
-            if self.headers.get("X-API-Key") != "transaction-api-key-that-must-not-leak":
+            expected_cookie = (
+                f"__sx_api={FakeSmithproxy.auth_token}; "
+                f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
+            if self.headers.get("Cookie") != expected_cookie or \
+                    self.headers.get("csrf_token") != FakeSmithproxy.csrf_token or \
+                    self.headers.get("X-API-Key") is not None:
                 self.send_error(401)
                 return
             try:
@@ -78,8 +83,12 @@ class TransactionSmithproxy(FakeSmithproxy):
         if not self.path.startswith("/api/config/transaction/"):
             super().do_POST()
             return
-        if self.headers.get("X-API-Key") != "transaction-api-key-that-must-not-leak" or \
-                self.headers.get("Cookie") is not None:
+        expected_cookie = (
+            f"__sx_api={FakeSmithproxy.auth_token}; "
+            f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
+        if self.headers.get("Cookie") != expected_cookie or \
+                self.headers.get("csrf_token") != FakeSmithproxy.csrf_token or \
+                self.headers.get("X-API-Key") is not None:
             self.send_error(401)
             return
         try:

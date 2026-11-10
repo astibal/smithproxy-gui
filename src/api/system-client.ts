@@ -175,6 +175,32 @@ export interface SessionActivitySnapshot {
   protocols: ReadonlyArray<SessionActivityBucket>;
 }
 
+export interface LiveSessionEntry {
+  id: string;
+  sourceAddress: string;
+  sourcePort: string;
+  destinationAddress: string;
+  destinationPort: string;
+  protocol: string;
+  policy: string;
+  speedUp: number;
+  speedDown: number;
+  bytesUp: number;
+  bytesDown: number;
+  active: boolean;
+  firstSeenAtUnixMs: number;
+  lastSeenAtUnixMs: number;
+  closedAtUnixMs: number | null;
+}
+
+export interface LiveSessionSnapshot {
+  state: RuntimeMetricsState;
+  detail: string;
+  checkedAtUnixMs: number | null;
+  lastSuccessAtUnixMs: number | null;
+  entries: ReadonlyArray<LiveSessionEntry>;
+}
+
 export interface TlsCacheSnapshot {
   state: RuntimeMetricsState;
   detail: string;
@@ -346,6 +372,11 @@ function isObject(value: unknown): value is JsonObject {
 
 function isDiagnosticText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 256 &&
+    !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+function isBoundedDisplayText(value: unknown, maximumLength: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= maximumLength &&
     !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
@@ -689,6 +720,62 @@ function parseSessionActivity(value: unknown): SessionActivitySnapshot {
     speedUp: value.speed_up,
     speedDown: value.speed_down,
     protocols,
+  };
+}
+
+function parseLiveSessions(value: unknown): LiveSessionSnapshot {
+  if (!isObject(value) || !isRuntimeMetricsState(value.state) || !isDiagnosticText(value.detail) ||
+      !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
+      !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
+      !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
+      !Array.isArray(value.entries) || value.entries.length > 512) {
+    throw new Error('Invalid live session response.');
+  }
+  const identifiers = new Set<string>();
+  const entries = value.entries.map((item): LiveSessionEntry => {
+    if (!isObject(item) || !isBoundedDisplayText(item.id, 128) || identifiers.has(item.id) ||
+        !isBoundedDisplayText(item.source_address, 255) ||
+        !isBoundedDisplayText(item.source_port, 16) ||
+        !isBoundedDisplayText(item.destination_address, 255) ||
+        !isBoundedDisplayText(item.destination_port, 16) ||
+        !isBoundedDisplayText(item.protocol, 32) || !isBoundedDisplayText(item.policy, 128) ||
+        !isNonNegativeInteger(item.speed_up) || !isNonNegativeInteger(item.speed_down) ||
+        !isNonNegativeInteger(item.bytes_up) || !isNonNegativeInteger(item.bytes_down) ||
+        typeof item.active !== 'boolean' || !isPlausibleTimestamp(item.first_seen_at_unix_ms) ||
+        !isPlausibleTimestamp(item.last_seen_at_unix_ms) ||
+        !isNullableNonNegativeInteger(item.closed_at_unix_ms) ||
+        (item.closed_at_unix_ms !== null && !isPlausibleTimestamp(item.closed_at_unix_ms)) ||
+        item.first_seen_at_unix_ms > item.last_seen_at_unix_ms ||
+        (item.active && item.closed_at_unix_ms !== null) ||
+        (!item.active && item.closed_at_unix_ms === null) ||
+        (item.closed_at_unix_ms !== null && item.closed_at_unix_ms < item.last_seen_at_unix_ms)) {
+      throw new Error('Invalid live session entry.');
+    }
+    identifiers.add(item.id);
+    return {
+      id: item.id,
+      sourceAddress: item.source_address,
+      sourcePort: item.source_port,
+      destinationAddress: item.destination_address,
+      destinationPort: item.destination_port,
+      protocol: item.protocol,
+      policy: item.policy,
+      speedUp: item.speed_up,
+      speedDown: item.speed_down,
+      bytesUp: item.bytes_up,
+      bytesDown: item.bytes_down,
+      active: item.active,
+      firstSeenAtUnixMs: item.first_seen_at_unix_ms,
+      lastSeenAtUnixMs: item.last_seen_at_unix_ms,
+      closedAtUnixMs: item.closed_at_unix_ms,
+    };
+  });
+  return {
+    state: value.state,
+    detail: value.detail,
+    checkedAtUnixMs: value.checked_at_unix_ms,
+    lastSuccessAtUnixMs: value.last_success_at_unix_ms,
+    entries,
   };
 }
 
@@ -1172,6 +1259,10 @@ export class SystemClient {
 
   async sessionActivity(): Promise<SessionActivitySnapshot> {
     return parseSessionActivity(await this.#request(joinedPath(this.#apiBase, '/sessions/activity')));
+  }
+
+  async sessions(): Promise<LiveSessionSnapshot> {
+    return parseLiveSessions(await this.#request(joinedPath(this.#apiBase, '/sessions')));
   }
 
   async tlsCacheSummary(): Promise<TlsCacheSnapshot> {

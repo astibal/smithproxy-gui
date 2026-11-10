@@ -873,11 +873,14 @@ void SmithproxyMonitor::run(const std::stop_token stop_token) {
                     sessions.last_success_at = previous_sessions.last_success_at;
                     if (sessions.state == "ready") {
                         sessions.last_success_at = sessions.checked_at;
+                        reconcile_live_sessions(
+                            sessions, previous_sessions, sessions.checked_at);
                     } else {
                         sessions.total = previous_sessions.total;
                         sessions.speed_up = previous_sessions.speed_up;
                         sessions.speed_down = previous_sessions.speed_down;
                         sessions.protocols = std::move(previous_sessions.protocols);
+                        sessions.entries = std::move(previous_sessions.entries);
                     }
                     latest.live_sessions = std::move(sessions);
                 } else {

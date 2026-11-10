@@ -141,6 +141,7 @@ def main() -> None:
         "/api/v1/network/neighbors/summary": "neighbor_monitoring",
         "/api/v1/network/interfaces/summary": "interface_monitoring",
         "/api/v1/sessions/activity": "session_activity",
+        "/api/v1/sessions": "session_activity",
         "/api/v1/events/recent": "events",
         "/api/v1/events": "events",
         "/api/v1/alerts": "alerts",

@@ -45,6 +45,7 @@ import {
   type GatewaySession,
   type InterfaceSnapshot,
   type JobSnapshot,
+  type LiveSessionSnapshot,
   type NeighborSnapshot,
   type RuntimeMetricsSnapshot,
   type SessionActivitySnapshot,
@@ -296,6 +297,14 @@ const initialSessionActivity: SessionActivitySnapshot = {
   protocols: [],
 };
 
+const initialLiveSessions: LiveSessionSnapshot = {
+  state: 'starting',
+  detail: 'Waiting for the first live session sample.',
+  checkedAtUnixMs: null,
+  lastSuccessAtUnixMs: null,
+  entries: [],
+};
+
 const initialTlsCache: TlsCacheSnapshot = {
   state: 'starting',
   detail: 'Waiting for the first TLS cache sample.',
@@ -413,6 +422,7 @@ export class SmithproxyApp extends LitElement {
   @state() private gatewaySessionError: string | undefined;
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
+  @state() private liveSessions: LiveSessionSnapshot = initialLiveSessions;
   @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
   @state() private neighbors: NeighborSnapshot = initialNeighbors;
   @state() private interfaces: InterfaceSnapshot = initialInterfaces;
@@ -754,6 +764,7 @@ export class SmithproxyApp extends LitElement {
     .listener-table th { color: var(--app-muted); font-size: 12px; font-weight: 600; }
     .listener-table tbody tr:last-child td { border-bottom: 0; }
     .listener-table tr.listener-idle td { color: var(--app-muted); }
+    .listener-table tr.muted td { color: var(--app-muted); }
     .listener-table tr.listener-unused { opacity: .62; }
     .listener-name { font-weight: 650; }
     .collector-table { overflow-x: auto; margin-top: 14px; }
@@ -1338,9 +1349,10 @@ export class SmithproxyApp extends LitElement {
       const systemStatus = statusFromSnapshot(await systemClient.status());
       if (!accessIsCurrent()) return;
       this.systemStatus = systemStatus;
-      const [metrics, sessions, tlsCache, neighbors, interfaces, events, alerts, audit, jobs] = await Promise.allSettled([
+      const [metrics, sessionActivity, liveSessions, tlsCache, neighbors, interfaces, events, alerts, audit, jobs] = await Promise.allSettled([
         this.metricsAvailable ? systemClient.metricsSummary() : Promise.resolve(this.runtimeMetrics),
         this.sessionActivityAvailable ? systemClient.sessionActivity() : Promise.resolve(this.sessionActivity),
+        this.sessionActivityAvailable ? systemClient.sessions() : Promise.resolve(this.liveSessions),
         this.tlsMonitoringAvailable ? systemClient.tlsCacheSummary() : Promise.resolve(this.tlsCache),
         this.neighborMonitoringAvailable ? systemClient.neighborSummary() : Promise.resolve(this.neighbors),
         this.interfaceMonitoringAvailable ? systemClient.interfaceSummary() : Promise.resolve(this.interfaces),
@@ -1359,13 +1371,24 @@ export class SmithproxyApp extends LitElement {
           detail: metrics.reason instanceof Error ? metrics.reason.message : 'Runtime metrics are unavailable.',
         };
       }
-      if (sessions.status === 'fulfilled') {
-        this.sessionActivity = sessions.value;
+      if (sessionActivity.status === 'fulfilled') {
+        this.sessionActivity = sessionActivity.value;
       } else {
         this.sessionActivity = {
           ...this.sessionActivity,
           state: 'unavailable',
-          detail: sessions.reason instanceof Error ? sessions.reason.message : 'Session activity is unavailable.',
+          detail: sessionActivity.reason instanceof Error
+            ? sessionActivity.reason.message : 'Session activity is unavailable.',
+        };
+      }
+      if (liveSessions.status === 'fulfilled') {
+        this.liveSessions = liveSessions.value;
+      } else {
+        this.liveSessions = {
+          ...this.liveSessions,
+          state: 'unavailable',
+          detail: liveSessions.reason instanceof Error
+            ? liveSessions.reason.message : 'Live sessions are unavailable.',
         };
       }
       if (tlsCache.status === 'fulfilled') {
@@ -1440,6 +1463,11 @@ export class SmithproxyApp extends LitElement {
         state: 'unavailable',
         detail: 'Session activity is unavailable while the GUI core is offline.',
       };
+      this.liveSessions = {
+        ...this.liveSessions,
+        state: 'unavailable',
+        detail: 'Live sessions are unavailable while the GUI core is offline.',
+      };
       this.tlsCache = {
         ...this.tlsCache,
         state: 'unavailable',
@@ -1496,6 +1524,8 @@ export class SmithproxyApp extends LitElement {
     if (!this.sessionActivityAvailable) {
       this.sessionActivity = {...initialSessionActivity, state: 'unavailable',
         detail: 'Session activity is not available for this management session.'};
+      this.liveSessions = {...initialLiveSessions, state: 'unavailable',
+        detail: 'Live sessions are not available for this management session.'};
     }
     if (!this.tlsMonitoringAvailable) {
       this.tlsCache = {...initialTlsCache, state: 'unavailable',
@@ -10197,9 +10227,9 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">Last success: ${this.timeLabel(activity.lastSuccessAtUnixMs)}</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Privacy boundary</span>
-            <strong class="metric-value">Aggregated</strong>
-            <span class="metric-note">No endpoints, session IDs, or policy names</span>
+            <span class="metric-label">Recently closed</span>
+            <strong class="metric-value">${this.liveSessions.entries.filter(entry => !entry.active).length.toLocaleString()}</strong>
+            <span class="metric-note">Retained for five minutes</span>
           </article>
         </div>
         ${this.renderCollectorNotice(presentation, activity.detail, activity.lastSuccessAtUnixMs)}
@@ -10220,7 +10250,36 @@ export class SmithproxyApp extends LitElement {
             </tbody>
           </table>
         </div>
-        <div class="privacy-note">Source and destination addresses, ports, session identifiers, and policy names remain inside the GUI core.</div>
+        <div class="runtime-heading">
+          <div><h3>Observed connections</h3><p>Active sessions and recently closed sessions retained by GUI core</p></div>
+          <span class="runtime-state ${this.liveSessions.state === 'ready' ? 'success' : 'warning'}"
+            title=${this.liveSessions.detail}>● ${displayState(this.liveSessions.state)}</span>
+        </div>
+        <div class="table">
+          <table class="listener-table" aria-label="Observed proxy sessions">
+            <thead><tr><th>Status</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Policy</th><th>Rate</th><th>Transferred</th><th>Seen</th></tr></thead>
+            <tbody>
+              ${this.liveSessions.entries.map(entry => html`
+                <tr class=${entry.active ? '' : 'muted'}>
+                  <td><span class="system-state ${entry.active ? 'success' : ''}">${entry.active ? 'Active' : 'Closed'}</span></td>
+                  <td><code>${entry.sourceAddress}:${entry.sourcePort}</code></td>
+                  <td><code>${entry.destinationAddress}:${entry.destinationPort}</code></td>
+                  <td>${entry.protocol}</td>
+                  <td>${entry.policy}</td>
+                  <td>${this.formatBytes(entry.speedUp + entry.speedDown)}/s</td>
+                  <td>${this.formatBytes(entry.bytesUp + entry.bytesDown)}</td>
+                  <td title=${`First observed ${this.timeLabel(entry.firstSeenAtUnixMs)}`}>
+                    ${entry.active ? this.timeLabel(entry.lastSeenAtUnixMs) : `Closed ${this.timeLabel(entry.closedAtUnixMs)}`}
+                  </td>
+                </tr>
+              `)}
+              ${this.liveSessions.entries.length === 0 ? html`
+                <tr><td colspan="8">No active or recently closed sessions are available.</td></tr>
+              ` : nothing}
+            </tbody>
+          </table>
+        </div>
+        <div class="privacy-note">The authenticated GUI core exposes only bounded endpoint, policy, protocol, and counter metadata. Raw Smithproxy diagnostics remain server-side.</div>
       </section>
     `;
   }
