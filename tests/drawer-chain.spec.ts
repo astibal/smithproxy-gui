@@ -2372,7 +2372,7 @@ test('validates and atomically commits the draft with one administrator action',
     '1 operations · 1 warnings',
   );
   await expect(page.getByRole('status').filter({
-    hasText: 'Configuration changed in the background.',
+    hasText: 'Running configuration changed outside this workspace.',
   })).toHaveCount(0);
   expect(state.commitRequests).toEqual([{
     expectedVersion: 1,
@@ -4333,7 +4333,9 @@ test('detects an external revision while preserving and blocking the active draf
     window.dispatchEvent(new Event('online'));
   });
 
-  const notice = page.getByRole('status').filter({hasText: 'Configuration changed in the background.'});
+  const notice = page.getByRole('status').filter({
+    hasText: 'Running configuration changed outside this workspace.',
+  });
   await expect(notice).toBeVisible();
   await notice.getByRole('button', {name: 'Dismiss configuration change notice'}).click();
   await expect(notice).not.toBeVisible();
@@ -4355,7 +4357,7 @@ test('identifies the refresh action while an external configuration notice is ac
     app.externalConfigNotice = true;
   });
   await expect(page.getByRole('status').filter({
-    hasText: 'Configuration changed in the background.',
+    hasText: 'Running configuration changed outside this workspace.',
   })).toBeVisible();
   await expect(page.getByRole('button', {
     name: 'Reload externally changed configuration',

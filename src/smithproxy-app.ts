@@ -14399,7 +14399,7 @@ export class SmithproxyApp extends LitElement {
         ${this.externalConfigNotice ? html`
           <aside class="config-toast" role="status" aria-live="polite">
             <div class="config-toast-content">
-              <strong>Configuration changed in the background.</strong>
+              <strong>Running configuration changed outside this workspace.</strong>
               <button type="button" aria-label="Dismiss configuration change notice"
                 @click=${() => { this.externalConfigNotice = false; }}>×</button>
             </div>
