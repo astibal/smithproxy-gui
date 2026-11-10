@@ -4465,10 +4465,23 @@ export class SmithproxyApp extends LitElement {
     }, origin);
   }
 
-  private openSystemDrawer(kind: 'settings' | 'captures', origin?: HTMLElement): void {
+  private openSystemDrawer(
+    kind: 'settings' | 'captures', origin?: HTMLElement,
+    settingsGroup?: 'management-api' | 'webhook',
+  ): void {
     if ((kind === 'settings' && !this.snapshot?.settings) ||
         (kind === 'captures' && !this.snapshot?.captures)) return;
     this.openObjectDrawer({kind, id: kind, title: kind === 'settings' ? 'System settings' : 'Capture settings'}, origin);
+    if (kind !== 'settings' || settingsGroup === undefined) return;
+    // The shared settings drawer remains read-only until Edit is selected. We
+    // only position its existing scroll container at the task the admin chose.
+    void this.updateComplete.then(() => requestAnimationFrame(() => {
+      const body = this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) .drawer-body');
+      const target = body?.querySelector<HTMLElement>(`[data-settings-group="${settingsGroup}"]`);
+      if (!body || !target) return;
+      const bodyTop = body.getBoundingClientRect().top;
+      body.scrollTop += target.getBoundingClientRect().top - bodyTop - 12;
+    }));
   }
 
   private openObjectDrawer(entry: DrawerEntry, origin?: HTMLElement): void {
@@ -10961,7 +10974,12 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="backend">
-              <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div></header>
+              <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'management-api',
+                  )}>Open API settings</button>
+              </header>
               <dl>
                 <dt>Listener</dt><dd>${setting('accept_api', settings.acceptApi) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>API keys</dt><dd>${settings.httpApi.keyCount} configured</dd>
@@ -10976,7 +10994,12 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="backend">
-              <header><div><h3>Webhook posture</h3><p>URLs and identities are redacted</p></div></header>
+              <header><div><h3>Webhook posture</h3><p>URLs and identities are redacted</p></div>
+                <button class="secondary" type="button"
+                  @click=${(event: Event) => this.openSystemDrawer(
+                    'settings', event.currentTarget as HTMLElement, 'webhook',
+                  )}>Open webhook settings</button>
+              </header>
               <dl>
                 <dt>Webhook</dt><dd>${setting('webhook.enabled', settings.webhook.enabled) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>URL</dt><dd>${settings.webhook.urlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
@@ -13190,7 +13213,7 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('kernel-tls', 'Kernel TLS', settings.kernelTls)}
           </div>
         </fieldset>
-        <fieldset class="editor-group">
+        <fieldset class="editor-group" data-settings-group="management-api">
           <legend>Management API</legend>
           <p>Controls authenticated API access, token lifetime, and allowed management clients.</p>
           <div class="form-grid">
@@ -13223,7 +13246,7 @@ export class SmithproxyApp extends LitElement {
           .readOnly=${locked('settings.http_api.allowed_ips')} />
           </div>
         </fieldset>
-        <fieldset class="editor-group">
+        <fieldset class="editor-group" data-settings-group="webhook">
           <legend>Webhook integration</legend>
           <p>Connects Smithproxy events and Sift processing to an external service.</p>
           <div class="form-grid">

@@ -1222,6 +1222,28 @@ test('requires an explicit edit decision before live configuration fields can ch
   await expectNoWcagViolations(page);
 });
 
+test('opens management settings at the selected protected configuration group', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true, false);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Management', exact: true}).click();
+
+  await page.getByRole('button', {name: 'Open API settings'}).click();
+  let editor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await expect(editor.getByText('Protected configuration view')).toBeVisible();
+  await expect(editor.getByRole('button', {name: 'Edit', exact: true})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Management API'})).toBeInViewport();
+  await expect(editor.getByLabel('API listener')).toBeDisabled();
+  await editor.getByRole('button', {name: 'Close System settings'}).click();
+
+  await page.getByRole('button', {name: 'Open webhook settings'}).click();
+  editor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await expect(editor.getByText('Protected configuration view')).toBeVisible();
+  await expect(editor.getByRole('button', {name: 'Edit', exact: true})).toBeVisible();
+  await expect(editor.getByRole('group', {name: 'Webhook integration'})).toBeInViewport();
+  await expect(editor.getByLabel('Webhook', {exact: true})).toBeDisabled();
+});
+
 test('loads authenticated runtime configuration and saves an atomic policy draft', async ({page}) => {
   test.setTimeout(45_000);
   const state: MockState = {smithproxy: 'ready'};
