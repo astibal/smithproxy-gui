@@ -6150,6 +6150,8 @@ test('filters structured job failures without exposing job identifiers', async (
   await page.goto('/');
   await expect(page.getByRole('region', {name: 'Active operational alerts'}))
     .toContainText('Configuration refresh did not converge');
+  await page.getByRole('button', {name: 'Open details for Configuration refresh did not converge'}).click();
+  await expect(page.getByRole('heading', {name: 'Management backend'})).toBeVisible();
 
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
   const events = page.getByRole('list', {name: 'Operational events'});

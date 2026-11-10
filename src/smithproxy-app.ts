@@ -861,10 +861,11 @@ export class SmithproxyApp extends LitElement {
     .audit-operation small { display: block; overflow: hidden; color: var(--app-muted); text-overflow: ellipsis; white-space: nowrap; }
     .audit-request { overflow: hidden; color: var(--app-muted); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
     .alert-list { display: grid; margin-top: 14px; border: 1px solid var(--app-border); background: var(--app-surface); }
-    .alert-row { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 14px; padding: 12px 14px; border-left: 3px solid var(--app-warning); border-bottom: 1px solid var(--app-border); }
+    .alert-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px; border-left: 3px solid var(--app-warning); border-bottom: 1px solid var(--app-border); }
     .alert-row:last-child { border-bottom: 0; }
     .alert-row.critical { border-left-color: var(--app-danger); }
     .alert-row p { margin: 3px 0 0; color: var(--app-muted); }
+    .alert-action { min-height: 30px; padding: 4px 10px; white-space: nowrap; }
     .incident-list { display: grid; margin-top: 14px; border: 1px solid var(--app-border); background: var(--app-surface); }
     .incident-row { display: grid; grid-template-columns: 150px minmax(150px, 1fr) 110px 100px; gap: 14px; align-items: center; padding: 12px 14px; border-left: 3px solid var(--app-muted); border-bottom: 1px solid var(--app-border); }
     .incident-row:last-child { border-bottom: 0; }
@@ -1181,6 +1182,8 @@ export class SmithproxyApp extends LitElement {
       .event-row > strong { grid-column: 1 / -1; }
       .incident-row { grid-template-columns: minmax(100px, .7fr) minmax(140px, 1fr); }
       .incident-duration, .incident-time { display: none; }
+      .alert-row { grid-template-columns: 72px minmax(0, 1fr); }
+      .alert-action { grid-column: 2; justify-self: start; }
       .audit-row { grid-template-columns: minmax(110px, 1fr) 82px; }
       .audit-operation { grid-column: 1 / -1; }
       .audit-request { display: none; }
@@ -9833,11 +9836,44 @@ export class SmithproxyApp extends LitElement {
               <article class="alert-row ${alert.severity}" role="listitem">
                 <span class="event-severity ${alert.severity}">${alert.severity}</span>
                 <div><strong>${alert.title}</strong><p>${alert.detail}</p></div>
+                <button class="alert-action" type="button"
+                  aria-label="Open details for ${alert.title}"
+                  @click=${() => this.openAlertDetails(alert.id)}>Open</button>
               </article>
             `)}
           </div>
         `}
       </section>`;
+  }
+
+  /** Opens the administrator view that owns the subsystem named by an operational alert. */
+  private openAlertDetails(id: string): void {
+    if (id.startsWith('listener-metrics')) {
+      this.activeSection = 'Network';
+      this.networkView = 'configuration';
+    } else if (id.startsWith('session-activity')) {
+      this.activeSection = 'Monitoring';
+      this.monitoringView = 'sessions';
+    } else if (id.startsWith('tls-cache')) {
+      this.activeSection = 'Monitoring';
+      this.monitoringView = 'tls';
+    } else if (id.startsWith('neighborhood')) {
+      this.activeSection = 'Network';
+      this.networkView = 'neighborhood';
+    } else if (id.startsWith('interfaces')) {
+      this.activeSection = 'Network';
+      this.networkView = 'interfaces';
+    } else if (id.startsWith('configuration-refresh')) {
+      this.activeSection = 'System';
+      this.systemView = 'backend';
+    } else if (id.startsWith('configuration')) {
+      this.activeSection = 'System';
+      this.systemView = 'configuration';
+    } else {
+      this.activeSection = 'System';
+      this.systemView = 'control-plane';
+    }
+    window.scrollTo({top: 0, behavior: 'smooth'});
   }
 
   private timeLabel(value: number | null): string {
