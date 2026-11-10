@@ -5408,7 +5408,7 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await expect(gatewayCard).toContainText('Shared draftBlocked');
   await expect(gatewayCard).toContainText(/did not receive a valid trusted gateway handoff/i);
   await expect(statusbar).toContainText('Events: Unavailable');
-  await expect(statusbar).toContainText('Jobs: Unavailable');
+  await expect(statusbar).toContainText('Operations: Unavailable');
   expect(protectedRequests).toEqual([]);
 
   state.gatewayAuthenticated = true;
@@ -6367,7 +6367,7 @@ test('surfaces active backend work in the status bar and System view', async ({p
   });
   await page.goto('/');
 
-  const jobsStatus = page.locator('.statusbar button').filter({hasText: 'Jobs: 1 active'});
+  const jobsStatus = page.locator('.statusbar button').filter({hasText: 'Operations: 1 active'});
   await expect(jobsStatus).toHaveCount(1);
   await jobsStatus.click();
   const jobsCard = page.getByRole('article').filter({
@@ -6393,7 +6393,7 @@ test('rejects unreviewed backend job text before rendering it', async ({page}) =
   });
   await page.goto('/');
 
-  await expect(page.locator('.statusbar')).toContainText('Jobs: Unavailable', {timeout: 10_000});
+  await expect(page.locator('.statusbar')).toContainText('Operations: Unavailable', {timeout: 10_000});
   await expect(page.getByText('private upstream failure')).toHaveCount(0);
 });
 
@@ -6414,7 +6414,7 @@ test('filters structured job failures without exposing job identifiers', async (
   await page.goto('/');
   await expect(page.getByRole('region', {name: 'Active operational alerts'}))
     .toContainText('Configuration refresh did not converge');
-  await expect(page.locator('.statusbar')).toContainText('Jobs: 1 failed');
+  await expect(page.locator('.statusbar')).toContainText('Operations: 1 failed');
   await expect(page.locator('.system-nav-item .nav-badge')).toHaveText('1');
   await page.getByRole('button', {name: 'Open details for Configuration refresh did not converge'}).click();
   await expect(page.getByRole('heading', {name: 'Access & integrations'})).toBeVisible();
@@ -6644,7 +6644,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   });
   await expect(jobsCard).toContainText('Available');
   await expect(jobsCard).toContainText('No background operations have been recorded');
-  await expect(page.getByRole('button', {name: '● Jobs: Idle'})).toBeVisible();
+  await expect(page.getByRole('button', {name: '● Operations: Idle'})).toBeVisible();
   const [diagnosticsDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', {name: 'Download diagnostics'}).click(),

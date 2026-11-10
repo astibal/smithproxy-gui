@@ -14885,7 +14885,7 @@ export class SmithproxyApp extends LitElement {
           <button class="status-action status-secondary system-state ${jobTone}" type="button"
             title=${this.jobsError ?? 'Open the bounded background operation queue'}
             @click=${() => { this.activeSection = 'System'; this.systemView = 'backend'; }}>
-            ● Jobs: ${this.jobsError || !this.jobsAvailable
+            ● Operations: ${this.jobsError || !this.jobsAvailable
               ? 'Unavailable'
               : failedJobCount > 0 && activeJobCount > 0
                 ? `${activeJobCount} active · ${failedJobCount} failed`
