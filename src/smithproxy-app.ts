@@ -39,6 +39,7 @@ import {
   type ArchiveRestore,
   type ArchiveValidation,
   type AlertSnapshot,
+  type AuditEntry,
   type AuditSnapshot,
   type DnsLookup,
   type EventSnapshot,
@@ -887,11 +888,15 @@ export class SmithproxyApp extends LitElement {
     .logs-content .event-filters { gap: 6px; margin: 4px 0; }
     .logs-content .event-filters button { min-height: 30px; padding: 4px 9px; }
     .logs-content .event-row, .logs-content .audit-row { padding-block: 8px; }
-    .audit-row { display: grid; grid-template-columns: 150px 82px minmax(180px, 1fr) minmax(130px, .7fr); gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
+    .audit-row { display: grid; grid-template-columns: 150px 82px minmax(180px, 1fr); gap: 14px; align-items: start; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .audit-row:last-child { border-bottom: 0; }
     .audit-operation { min-width: 0; }
     .audit-operation small { display: block; overflow: hidden; color: var(--app-muted); text-overflow: ellipsis; white-space: nowrap; }
-    .audit-request { overflow: hidden; color: var(--app-muted); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .audit-details { margin-top: 7px; color: var(--app-muted); font-size: 12px; }
+    .audit-details summary { width: fit-content; cursor: pointer; }
+    .audit-details dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; margin: 8px 0 0; }
+    .audit-details dt, .audit-details dd { margin: 0; }
+    .audit-details code { overflow-wrap: anywhere; color: var(--app-muted); }
     .alert-list { display: grid; margin-top: 14px; border: 1px solid var(--app-border); background: var(--app-surface); }
     .alert-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px; border-left: 3px solid var(--app-warning); border-bottom: 1px solid var(--app-border); }
     .alert-row:last-child { border-bottom: 0; }
@@ -11134,6 +11139,16 @@ export class SmithproxyApp extends LitElement {
     const controlPlaneCount = allEvents.filter(event => event.category === 'control-plane').length;
     const jobEventCount = allEvents.length - controlPlaneCount;
     const auditEntries = [...this.managementAudit.entries].reverse();
+    const auditOperationLabel = (operation: AuditEntry['operation']): string => ({
+      'config.draft.upsert': 'Draft change recorded',
+      'config.draft.clear': 'Draft discarded',
+      'config.draft.validate': 'Draft validated',
+      'config.draft.commit': 'Configuration committed',
+      'api.mutation': 'Management request',
+    })[operation];
+    const auditOutcomeLabel = (outcome: AuditEntry['outcome']): string => ({
+      succeeded: 'Succeeded', conflict: 'Conflict', rejected: 'Rejected',
+    })[outcome];
     return html`
       <div class="content dashboard logs-content" tabindex="0">
         ${this.logsView === 'events' ? html`
@@ -11207,9 +11222,18 @@ export class SmithproxyApp extends LitElement {
                   <time class="event-time" datetime=${new Date(entry.occurredAtUnixMs).toISOString()}>
                     ${new Date(entry.occurredAtUnixMs).toLocaleString()}
                   </time>
-                  <span class="event-severity ${tone}">${entry.outcome}</span>
-                  <div class="audit-operation"><strong>${entry.operation}</strong><small title=${targets}>${targets}</small></div>
-                  <code class="audit-request" title=${entry.requestId}>${entry.requestId}</code>
+                  <span class="event-severity ${tone}">${auditOutcomeLabel(entry.outcome)}</span>
+                  <div class="audit-operation">
+                    <strong>${auditOperationLabel(entry.operation)}</strong><small title=${targets}>${targets}</small>
+                    <details class="audit-details">
+                      <summary>Technical details</summary>
+                      <dl>
+                        <dt>Request ID</dt><dd><code>${entry.requestId}</code></dd>
+                        <dt>Operation</dt><dd><code>${entry.operation}</code></dd>
+                        <dt>Authentication</dt><dd>${displayState(entry.authentication)}</dd>
+                      </dl>
+                    </details>
+                  </div>
                 </article>
               `;
             })}
