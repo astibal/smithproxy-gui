@@ -63,6 +63,7 @@ struct Response {
 };
 
 constexpr std::size_t maximum_request_body = 128U * 1024U;
+constexpr std::size_t maximum_archive_body = 272U * 1024U * 1024U;
 
 std::optional<std::size_t> indexed_draft_path(
     const std::string_view path, const std::string_view collection, const std::string_view field) {
@@ -582,6 +583,38 @@ bool confined_to_root(const std::filesystem::path& root, const std::filesystem::
     return true;
 }
 
+std::optional<std::string> archive_resource_query(const char* path) {
+    if(!path) return std::nullopt;
+    const std::string_view value(path);
+    const bool managed_namespace = value.starts_with("pki/") ||
+        value.starts_with("messages/") || value.starts_with("scripts/") ||
+        value.starts_with("ssh/");
+    if(value.empty() || value.size() > 512U || value.front() == '/' ||
+       !managed_namespace || value.find('\\') != std::string_view::npos) return std::nullopt;
+    std::string encoded;
+    encoded.reserve(value.size());
+    constexpr char digits[] = "0123456789ABCDEF";
+    for(const unsigned char character : value) {
+        if((character >= 'a' && character <= 'z') ||
+           (character >= 'A' && character <= 'Z') ||
+           (character >= '0' && character <= '9') ||
+           character == '-' || character == '_' || character == '.' || character == '~' ||
+           character == '/') {
+            encoded.push_back(static_cast<char>(character));
+        }
+        else {
+            encoded.push_back('%');
+            encoded.push_back(digits[character >> 4U]);
+            encoded.push_back(digits[character & 0x0fU]);
+        }
+    }
+    if(value.find("//") != std::string_view::npos || value.starts_with("../") ||
+       value.ends_with("/..") || value.find("/../") != std::string_view::npos ||
+       value.starts_with("./") || value.ends_with("/.") ||
+       value.find("/./") != std::string_view::npos) return std::nullopt;
+    return "/api/config/archive/resource?path=" + encoded;
+}
+
 class GuiController final : public lmh::Controller {
 public:
     GuiController(const AppConfig& config, SmithproxyMonitor& monitor)
@@ -610,8 +643,15 @@ public:
         }
         auto& state = *static_cast<RequestState*>(*ptr);
         if (*upload_data_size > 0U) {
-            if (state.request_data.size() > maximum_request_body ||
-                *upload_data_size > maximum_request_body - state.request_data.size()) {
+            const auto relative = path_below_base(url, config_.base_path);
+            const bool archive_upload = relative &&
+                (*relative == "/api/v1/config/archive/validate" ||
+                 *relative == "/api/v1/config/archive/restore" ||
+                 *relative == "/api/v1/config/archive/resource/write") &&
+                management_authenticated(connection);
+            const auto body_limit = archive_upload ? maximum_archive_body : maximum_request_body;
+            if (state.request_data.size() > body_limit ||
+                *upload_data_size > body_limit - state.request_data.size()) {
                 state.body_too_large = true;
             } else if (!state.body_too_large) {
                 state.request_data.append(upload_data, *upload_data_size);
@@ -688,6 +728,25 @@ private:
         return constant_time_equal(origin, expected_http) || constant_time_equal(origin, expected_https);
     }
 
+    bool same_origin_binary_mutation(MHD_Connection* connection) const {
+        const auto* origin = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, "Origin");
+        const auto* host = MHD_lookup_connection_value(connection, MHD_HEADER_KIND, "Host");
+        const auto* csrf = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "X-Smithproxy-GUI-CSRF");
+        const auto* fetch_site = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "Sec-Fetch-Site");
+        const auto* content_type = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE);
+        if(!origin || !host || !csrf || !content_type ||
+           std::string_view(content_type) != "application/octet-stream" ||
+           !constant_time_equal(csrf, "1")) return false;
+        if(fetch_site && std::string_view(fetch_site) != "same-origin") return false;
+        const std::string expected_http = "http://" + std::string(host);
+        const std::string expected_https = "https://" + std::string(host);
+        return constant_time_equal(origin, expected_http) ||
+               constant_time_equal(origin, expected_https);
+    }
+
     Response route_mutation(MHD_Connection* connection, const std::string_view url,
                             const std::string_view body) {
         if (url == "/healthz") {
@@ -711,7 +770,11 @@ private:
             *relative != "/api/v1/config/draft/clear" &&
             *relative != "/api/v1/config/draft/validate" &&
             *relative != "/api/v1/config/draft/commit" &&
-            *relative != "/api/v1/config/save") {
+            *relative != "/api/v1/config/save" &&
+            *relative != "/api/v1/config/archive/validate" &&
+            *relative != "/api/v1/config/archive/restore" &&
+            *relative != "/api/v1/config/archive/resource/write" &&
+            *relative != "/api/v1/config/archive/resource/delete") {
             return relative->starts_with("/api/")
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
                 : Response{405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
@@ -719,8 +782,74 @@ private:
         if (!gateway_authenticated(connection)) {
             return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
         }
-        if (!same_origin_mutation(connection)) {
+        const bool archive_upload =
+            *relative == "/api/v1/config/archive/validate" ||
+            *relative == "/api/v1/config/archive/restore" ||
+            *relative == "/api/v1/config/archive/resource/write" ||
+            *relative == "/api/v1/config/archive/resource/delete";
+        if (!(archive_upload ? same_origin_binary_mutation(connection)
+                             : same_origin_mutation(connection))) {
             return {403, "application/json; charset=utf-8", "{\"error\":\"same-origin CSRF check failed\"}"};
+        }
+        if(archive_upload) {
+            std::vector<std::string> headers;
+            if(*relative != "/api/v1/config/archive/validate") {
+                const auto* revision = MHD_lookup_connection_value(
+                    connection, MHD_HEADER_KIND, "X-Smithproxy-Expected-Revision");
+                const auto* hash = MHD_lookup_connection_value(
+                    connection, MHD_HEADER_KIND, "X-Smithproxy-Archive-SHA256");
+                const bool valid_hash = hash && std::string_view(hash).size() == 71U &&
+                    std::string_view(hash).starts_with("sha256:") &&
+                    std::all_of(hash + 7, hash + 71, [](const unsigned char value) {
+                        return (value >= '0' && value <= '9') ||
+                               (value >= 'a' && value <= 'f');
+                    });
+                if(!revision || !is_config_revision(revision) || !valid_hash) {
+                    return {400, "application/json; charset=utf-8",
+                            "{\"error\":\"invalid archive restore precondition\"}"};
+                }
+                headers.emplace_back("X-Smithproxy-Expected-Revision: " + std::string(revision));
+                headers.emplace_back("X-Smithproxy-Archive-SHA256: " + std::string(hash));
+            }
+            if(*relative == "/api/v1/config/archive/resource/write") {
+                const auto* executable = MHD_lookup_connection_value(
+                    connection, MHD_HEADER_KIND, "X-Smithproxy-Executable");
+                if(executable && std::string_view(executable) != "true" &&
+                   std::string_view(executable) != "false") {
+                    return {400, "application/json; charset=utf-8",
+                            "{\"error\":\"invalid executable resource flag\"}"};
+                }
+                headers.emplace_back(std::string("X-Smithproxy-Executable: ") +
+                                     (executable ? executable : "false"));
+            }
+            const bool resource_write =
+                *relative == "/api/v1/config/archive/resource/write" ||
+                *relative == "/api/v1/config/archive/resource/delete";
+            std::optional<std::string> resource_path;
+            if(resource_write) {
+                resource_path = archive_resource_query(MHD_lookup_connection_value(
+                    connection, MHD_GET_ARGUMENT_KIND, "path"));
+                if(!resource_path) {
+                    return {400, "application/json; charset=utf-8",
+                            "{\"error\":\"invalid archive resource path\"}"};
+                }
+            }
+            const std::string_view upstream_method = resource_write
+                ? (*relative == "/api/v1/config/archive/resource/write" ? "PUT" : "DELETE")
+                : "POST";
+            const std::string upstream_path = resource_path.value_or(
+                *relative == "/api/v1/config/archive/validate"
+                    ? "/api/config/archive/validate"
+                    : "/api/config/archive/restore");
+            const auto upstream = monitor_.archive_api(
+                upstream_method, upstream_path,
+                body, headers);
+            if(!upstream.transport_ok) {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"Smithproxy archive API unavailable\"}"};
+            }
+            return {static_cast<unsigned>(upstream.status),
+                    "application/json; charset=utf-8", upstream.body};
         }
         const auto document = nlohmann::json::parse(body, nullptr, false);
         if (*relative == "/api/v1/config/save") {
@@ -1238,6 +1367,66 @@ private:
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             return config_snapshot();
+        }
+        if (*relative == "/api/v1/config/archive") {
+            if (!gateway_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+            }
+            const auto upstream = monitor_.archive_api(
+                "GET", "/api/config/archive/resources");
+            if(!upstream.transport_ok) {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"Smithproxy archive API unavailable\"}"};
+            }
+            return {static_cast<unsigned>(upstream.status),
+                    "application/json; charset=utf-8", upstream.body};
+        }
+        if (*relative == "/api/v1/config/archive/download") {
+            if (!gateway_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+            }
+            const auto* version = MHD_lookup_connection_value(
+                connection, MHD_GET_ARGUMENT_KIND, "version");
+            const bool previous = version && std::string_view(version) == "previous";
+            if(version && std::string_view(version) != "current" && !previous) {
+                return {400, "application/json; charset=utf-8", "{\"error\":\"invalid archive version\"}"};
+            }
+            const auto upstream = monitor_.archive_api(
+                "GET", previous ? "/api/config/archive/previous/download"
+                                 : "/api/config/archive/download");
+            if(!upstream.transport_ok) {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"Smithproxy archive API unavailable\"}"};
+            }
+            if(upstream.status != 200L) {
+                return {static_cast<unsigned>(upstream.status),
+                        "application/json; charset=utf-8", upstream.body};
+            }
+            return {200, "application/vnd.smithproxy.cftar", upstream.body, "no-store",
+                    {{"Content-Disposition", std::string("attachment; filename=\"") +
+                        (previous ? "smithproxy.previous.cftar\"" : "smithproxy.cftar\"")}}};
+        }
+        if(*relative == "/api/v1/config/archive/resource") {
+            if(!gateway_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+            }
+            const auto resource_path = archive_resource_query(MHD_lookup_connection_value(
+                connection, MHD_GET_ARGUMENT_KIND, "path"));
+            if(!resource_path) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid archive resource path\"}"};
+            }
+            const auto upstream = monitor_.archive_api("GET", *resource_path);
+            if(!upstream.transport_ok) {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"Smithproxy archive API unavailable\"}"};
+            }
+            if(upstream.status != 200L) {
+                return {static_cast<unsigned>(upstream.status),
+                        "application/json; charset=utf-8", upstream.body};
+            }
+            return {200, "application/octet-stream", upstream.body, "no-store",
+                    {{"Content-Disposition", "attachment; filename=\"smithproxy-resource.bin\""}}};
         }
         if (relative->starts_with("/api/")) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"};

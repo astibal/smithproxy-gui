@@ -459,6 +459,101 @@ ConfigSaveResponse SmithproxyMonitor::save_config(
     };
 }
 
+ArchiveApiResponse SmithproxyMonitor::archive_api(
+    const std::string_view method,
+    const std::string_view path,
+    const std::string_view body,
+    const std::vector<std::string>& extra_headers) const {
+    if(!config_ || !config_enabled_) return {};
+
+    const bool allowed =
+        (method == "GET" && (path == "/api/config/archive/download" ||
+                             path == "/api/config/archive/previous/download" ||
+                             path == "/api/config/archive/resources" ||
+                             path.starts_with("/api/config/archive/resource?path="))) ||
+        (method == "POST" && (path == "/api/config/archive/validate" ||
+                              path == "/api/config/archive/restore")) ||
+        ((method == "PUT" || method == "DELETE") &&
+         path.starts_with("/api/config/archive/resource?path="));
+    if(!allowed || path.find_first_of("\r\n") != std::string_view::npos) return {};
+
+    std::optional<std::string> rejected_auth_token;
+    for(unsigned attempt = 0U; attempt < 2U; ++attempt) {
+        curl_slist* raw_headers = nullptr;
+        std::optional<UpstreamSession> session;
+        if(method == "GET") {
+            raw_headers = curl_slist_append(
+                nullptr, ("X-API-Key: " + config_->api_key).c_str());
+        }
+        else {
+            const auto session_result = upstream_session(rejected_auth_token);
+            if(!session_result.session) {
+                return {.status = 401L, .body = {}, .transport_ok = false};
+            }
+            session = *session_result.session;
+            raw_headers = append_session_headers(
+                nullptr, session->auth_token, session->csrf_token);
+        }
+        if(!raw_headers) return {};
+
+        const std::vector<std::string> values{
+            "Accept: application/json, application/vnd.smithproxy.cftar, application/octet-stream",
+            "Content-Type: application/octet-stream",
+            "Expect:",
+        };
+        for(const auto& value : values) {
+            auto* updated = curl_slist_append(raw_headers, value.c_str());
+            if(!updated) {
+                curl_slist_free_all(raw_headers);
+                return {};
+            }
+            raw_headers = updated;
+        }
+        for(const auto& value : extra_headers) {
+            if(value.find_first_of("\r\n") != std::string::npos) {
+                curl_slist_free_all(raw_headers);
+                return {};
+            }
+            auto* updated = curl_slist_append(raw_headers, value.c_str());
+            if(!updated) {
+                curl_slist_free_all(raw_headers);
+                return {};
+            }
+            raw_headers = updated;
+        }
+
+        std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+        if(!curl) {
+            curl_slist_free_all(raw_headers);
+            return {};
+        }
+        std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
+        ResponseBuffer response{.limit = 272U * 1024U * 1024U, .body = {}, .exceeded = false};
+        configure_request(curl.get(), *config_, config_->api_url + std::string(path), headers.get());
+        curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 30000L);
+        const std::string method_text(method);
+        curl_easy_setopt(curl.get(), CURLOPT_CUSTOMREQUEST, method_text.c_str());
+        if(method != "GET") {
+            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, body.data());
+            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                             static_cast<curl_off_t>(body.size()));
+        }
+        curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+        curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+        if(curl_easy_perform(curl.get()) != CURLE_OK || response.exceeded) return {};
+
+        long status{};
+        curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+        if(method != "GET" && session &&
+           (status == 401L || status == 403L) && attempt == 0U) {
+            rejected_auth_token = session->auth_token;
+            continue;
+        }
+        return {.status = status, .body = std::move(response.body), .transport_ok = true};
+    }
+    return {.status = 401L, .body = {}, .transport_ok = false};
+}
+
 TransactionResponse SmithproxyMonitor::execute_transaction(
     const DraftSnapshot& draft, const TransactionMode mode,
     const std::string_view idempotency_key) const {

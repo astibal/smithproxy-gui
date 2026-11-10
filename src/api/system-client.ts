@@ -3,6 +3,8 @@ import {boundedJson} from './bounded-json';
 import {normalizeSameOriginPath} from '../security/deployment-path';
 
 const MAX_SYSTEM_RESPONSE_BYTES = 8 * 1024 * 1024;
+const MAX_ARCHIVE_RESPONSE_BYTES = 2 * 1024 * 1024;
+const ARCHIVE_REQUEST_TIMEOUT_MS = 30_000;
 
 export type SmithproxyState =
   | 'starting'
@@ -65,6 +67,40 @@ export interface SystemCapabilities {
 export interface GatewaySession {
   mode: 'gateway' | 'disabled';
   authenticated: boolean;
+}
+
+export interface ArchiveEntry {
+  path: string;
+  size: number;
+  executable: boolean;
+}
+
+export interface ArchiveInventory {
+  state: 'ready';
+  contentHash: string;
+  resources: ReadonlyArray<ArchiveEntry>;
+}
+
+export interface ArchiveValidation {
+  state: 'valid';
+  contentHash: string;
+  archiveSize: number;
+  payloadSize: number;
+  formatVersion: number;
+  entries: ReadonlyArray<ArchiveEntry>;
+}
+
+export interface ArchiveRestore {
+  state: 'restored';
+  revision: string;
+  contentHash: string;
+  restartRequired: true;
+}
+
+export interface ArchiveResourceWrite {
+  state: 'written';
+  contentHash: string;
+  restartRequired: true;
 }
 
 export interface ProbeSample {
@@ -953,6 +989,81 @@ function parseDnsLookup(value: unknown): DnsLookup {
   };
 }
 
+function parseArchiveHash(value: unknown): string {
+  if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/u.test(value)) {
+    throw new Error('Invalid configuration archive content hash.');
+  }
+  return value;
+}
+
+function parseArchiveEntries(value: unknown, label: string): ReadonlyArray<ArchiveEntry> {
+  if (!Array.isArray(value) || value.length > 4096) {
+    throw new Error(`Invalid configuration archive ${label}.`);
+  }
+  return value.map(entry => {
+    if (!isObject(entry) || typeof entry.path !== 'string' || entry.path.length === 0 ||
+        entry.path.length > 512 || entry.path.startsWith('/') || entry.path.includes('\\') ||
+        entry.path.split('/').some(part => part.length === 0 || part === '.' || part === '..') ||
+        !Number.isSafeInteger(entry.size) || (entry.size as number) < 0 ||
+        typeof entry.executable !== 'boolean') {
+      throw new Error(`Invalid configuration archive ${label} entry.`);
+    }
+    return {path: entry.path, size: entry.size as number, executable: entry.executable};
+  });
+}
+
+function parseArchiveInventory(value: unknown): ArchiveInventory {
+  if (!isObject(value) || value.state !== 'ready') {
+    throw new Error('Invalid configuration archive inventory.');
+  }
+  return {
+    state: 'ready',
+    contentHash: parseArchiveHash(value.content_hash),
+    resources: parseArchiveEntries(value.resources, 'resource'),
+  };
+}
+
+function parseArchiveValidation(value: unknown): ArchiveValidation {
+  if (!isObject(value) || value.state !== 'valid' ||
+      !Number.isSafeInteger(value.archive_size) || (value.archive_size as number) <= 0 ||
+      !Number.isSafeInteger(value.payload_size) || (value.payload_size as number) <= 0 ||
+      !Number.isSafeInteger(value.format_version) || (value.format_version as number) <= 0) {
+    throw new Error('Invalid configuration archive validation response.');
+  }
+  return {
+    state: 'valid',
+    contentHash: parseArchiveHash(value.content_hash),
+    archiveSize: value.archive_size as number,
+    payloadSize: value.payload_size as number,
+    formatVersion: value.format_version as number,
+    entries: parseArchiveEntries(value.entries, 'validation'),
+  };
+}
+
+function parseArchiveRestore(value: unknown): ArchiveRestore {
+  if (!isObject(value) || value.state !== 'restored' || value.restart_required !== true ||
+      typeof value.revision !== 'string' || value.revision.length === 0 || value.revision.length > 256) {
+    throw new Error('Invalid configuration archive restore response.');
+  }
+  return {
+    state: 'restored',
+    revision: value.revision,
+    contentHash: parseArchiveHash(value.content_hash),
+    restartRequired: true,
+  };
+}
+
+function parseArchiveResourceWrite(value: unknown): ArchiveResourceWrite {
+  if (!isObject(value) || value.state !== 'written' || value.restart_required !== true) {
+    throw new Error('Invalid configuration resource write response.');
+  }
+  return {
+    state: 'written',
+    contentHash: parseArchiveHash(value.content_hash),
+    restartRequired: true,
+  };
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -991,6 +1102,64 @@ export class SystemClient {
 
   async authSession(): Promise<GatewaySession> {
     return parseGatewaySession(await this.#request(joinedPath(this.#apiBase, '/auth/session')));
+  }
+
+  async archiveInventory(): Promise<ArchiveInventory> {
+    return parseArchiveInventory(
+      await this.#request(joinedPath(this.#apiBase, '/config/archive')),
+    );
+  }
+
+  archiveDownloadUrl(version: 'current' | 'previous'): string {
+    return `${joinedPath(this.#apiBase, '/config/archive/download')}?version=${version}`;
+  }
+
+  archiveResourceUrl(path: string): string {
+    this.#validateArchiveResourcePath(path);
+    return `${joinedPath(this.#apiBase, '/config/archive/resource')}?${new URLSearchParams({path})}`;
+  }
+
+  async validateArchive(payload: ArrayBuffer): Promise<ArchiveValidation> {
+    return parseArchiveValidation(await this.#archiveMutation('/validate', payload));
+  }
+
+  async restoreArchive(
+    payload: ArrayBuffer,
+    expectedRevision: string,
+    contentHash: string,
+  ): Promise<ArchiveRestore> {
+    if (expectedRevision.length === 0 || expectedRevision.length > 256 || /[\r\n]/u.test(expectedRevision)) {
+      throw new Error('Invalid expected configuration revision.');
+    }
+    parseArchiveHash(contentHash);
+    return parseArchiveRestore(await this.#archiveMutation('/restore', payload, {
+      'X-Smithproxy-Expected-Revision': expectedRevision,
+      'X-Smithproxy-Archive-SHA256': contentHash,
+    }));
+  }
+
+  async writeArchiveResource(
+    path: string,
+    payload: ArrayBuffer,
+    expectedRevision: string,
+    archiveHash: string,
+    executable = false,
+  ): Promise<ArchiveResourceWrite> {
+    this.#validateArchiveResourcePath(path);
+    return parseArchiveResourceWrite(await this.#resourceMutation(
+      'write', path, payload, expectedRevision, archiveHash, executable,
+    ));
+  }
+
+  async deleteArchiveResource(
+    path: string,
+    expectedRevision: string,
+    archiveHash: string,
+  ): Promise<ArchiveResourceWrite> {
+    this.#validateArchiveResourcePath(path);
+    return parseArchiveResourceWrite(await this.#resourceMutation(
+      'delete', path, new ArrayBuffer(0), expectedRevision, archiveHash, false,
+    ));
   }
 
   async status(): Promise<SystemSnapshot> {
@@ -1120,6 +1289,91 @@ export class SystemClient {
       });
       if (!response.ok) throw httpStatusError(response, 'System API');
       return await boundedJson(response, MAX_SYSTEM_RESPONSE_BYTES, 'System');
+    } finally {
+      globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
+    }
+  }
+
+  async #archiveMutation(
+    suffix: '/validate' | '/restore',
+    payload: ArrayBuffer,
+    extraHeaders: Readonly<Record<string, string>> = {},
+  ): Promise<unknown> {
+    const controller = new AbortController();
+    this.#pendingRequests.add(controller);
+    const timeout = globalThis.setTimeout(() => controller.abort(), ARCHIVE_REQUEST_TIMEOUT_MS);
+    try {
+      const response = await this.#fetch(joinedPath(this.#apiBase, `/config/archive${suffix}`), {
+        method: 'POST',
+        body: payload,
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/octet-stream',
+          'X-Smithproxy-GUI-CSRF': '1',
+          ...extraHeaders,
+        },
+        redirect: 'error',
+        signal: controller.signal,
+      });
+      if (!response.ok) throw httpStatusError(response, 'Configuration archive API');
+      return await boundedJson(response, MAX_ARCHIVE_RESPONSE_BYTES, 'Configuration archive');
+    } finally {
+      globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
+    }
+  }
+
+  #validateArchiveResourcePath(path: string): void {
+    const managedNamespace = ['pki/', 'messages/', 'scripts/', 'ssh/']
+      .some(prefix => path.startsWith(prefix));
+    if (path.length === 0 || path.length > 512 || path.startsWith('/') || path.includes('\\') ||
+        !managedNamespace ||
+        path.split('/').some(part => part.length === 0 || part === '.' || part === '..')) {
+      throw new Error('Invalid configuration archive resource path.');
+    }
+  }
+
+  async #resourceMutation(
+    operation: 'write' | 'delete',
+    path: string,
+    payload: ArrayBuffer,
+    expectedRevision: string,
+    archiveHash: string,
+    executable: boolean,
+  ): Promise<unknown> {
+    if (expectedRevision.length === 0 || expectedRevision.length > 256 || /[\r\n]/u.test(expectedRevision)) {
+      throw new Error('Invalid expected configuration revision.');
+    }
+    parseArchiveHash(archiveHash);
+    const controller = new AbortController();
+    this.#pendingRequests.add(controller);
+    const timeout = globalThis.setTimeout(() => controller.abort(), ARCHIVE_REQUEST_TIMEOUT_MS);
+    try {
+      const query = new URLSearchParams({path});
+      const response = await this.#fetch(
+        `${joinedPath(this.#apiBase, `/config/archive/resource/${operation}`)}?${query}`,
+        {
+          method: 'POST',
+          body: payload,
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/octet-stream',
+            'X-Smithproxy-GUI-CSRF': '1',
+            'X-Smithproxy-Expected-Revision': expectedRevision,
+            'X-Smithproxy-Archive-SHA256': archiveHash,
+            'X-Smithproxy-Executable': executable ? 'true' : 'false',
+          },
+          redirect: 'error',
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) throw httpStatusError(response, 'Configuration resource API');
+      return await boundedJson(response, MAX_ARCHIVE_RESPONSE_BYTES, 'Configuration resource');
     } finally {
       globalThis.clearTimeout(timeout);
       this.#pendingRequests.delete(controller);

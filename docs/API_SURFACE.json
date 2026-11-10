@@ -219,6 +219,62 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/config/archive",
+      "methods": ["GET", "HEAD"],
+      "authentication": "gateway",
+      "csrf": false,
+      "feature": "config_read",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/archive/download",
+      "methods": ["GET", "HEAD"],
+      "authentication": "gateway",
+      "csrf": false,
+      "feature": "config_read",
+      "response_media_type": "application/vnd.smithproxy.cftar"
+    },
+    {
+      "path": "/api/v1/config/archive/resource",
+      "methods": ["GET", "HEAD"],
+      "authentication": "gateway",
+      "csrf": false,
+      "feature": "config_read",
+      "response_media_type": "application/octet-stream"
+    },
+    {
+      "path": "/api/v1/config/archive/validate",
+      "methods": ["POST"],
+      "authentication": "gateway",
+      "csrf": true,
+      "feature": "config_save",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/archive/restore",
+      "methods": ["POST"],
+      "authentication": "gateway",
+      "csrf": true,
+      "feature": "config_save",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/archive/resource/write",
+      "methods": ["POST"],
+      "authentication": "gateway",
+      "csrf": true,
+      "feature": "config_save",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/config/archive/resource/delete",
+      "methods": ["POST"],
+      "authentication": "gateway",
+      "csrf": true,
+      "feature": "config_save",
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/config/draft/clear",
       "methods": ["POST"],
       "authentication": "gateway",

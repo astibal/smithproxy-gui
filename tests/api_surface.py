@@ -58,7 +58,10 @@ def main() -> None:
     require(isinstance(endpoints, list), "endpoints must be an array")
 
     allowed_authentication = {"public", "management", "gateway"}
-    allowed_media_types = {"application/json", "text/event-stream"}
+    allowed_media_types = {
+        "application/json", "text/event-stream", "application/octet-stream",
+        "application/vnd.smithproxy.cftar",
+    }
     documented: dict[str, tuple[str, ...]] = {}
     for endpoint in endpoints:
         require(isinstance(endpoint, dict), "every endpoint must be an object")
@@ -114,6 +117,13 @@ def main() -> None:
         "/api/v1/config/draft/validate",
         "/api/v1/config/draft/commit",
         "/api/v1/config/save",
+        "/api/v1/config/archive",
+        "/api/v1/config/archive/download",
+        "/api/v1/config/archive/resource",
+        "/api/v1/config/archive/validate",
+        "/api/v1/config/archive/restore",
+        "/api/v1/config/archive/resource/write",
+        "/api/v1/config/archive/resource/delete",
         "/api/v1/config/draft/clear",
     }, "trusted-gateway endpoint boundary drifted")
     require(all(item["authentication"] == "management" for item in endpoints
@@ -149,6 +159,13 @@ def main() -> None:
         "/api/v1/config/draft/validate": "draft_preflight",
         "/api/v1/config/draft/commit": "config_write",
         "/api/v1/config/save": "config_save",
+        "/api/v1/config/archive": "config_read",
+        "/api/v1/config/archive/download": "config_read",
+        "/api/v1/config/archive/resource": "config_read",
+        "/api/v1/config/archive/validate": "config_save",
+        "/api/v1/config/archive/restore": "config_save",
+        "/api/v1/config/archive/resource/write": "config_save",
+        "/api/v1/config/archive/resource/delete": "config_save",
         "/api/v1/config/draft/clear": "drafts",
     }, "endpoint capability mapping drifted")
 

@@ -35,6 +35,9 @@ import type {
 } from './api/models';
 import {
   SystemClient,
+  type ArchiveInventory,
+  type ArchiveRestore,
+  type ArchiveValidation,
   type AlertSnapshot,
   type AuditSnapshot,
   type DnsLookup,
@@ -52,7 +55,7 @@ import {
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {persistentConfigurationValues} from './config/persistent-values';
-import {describeCidr} from './config/cidr';
+import {describeCidr, normalizeCidr} from './config/cidr';
 import {isConfigGroupName} from './config/config-name';
 import {describeFqdn, parseFqdn} from './config/fqdn';
 import {referenceNameSummary} from './config/reference-summary';
@@ -98,8 +101,13 @@ type FqdnEvaluation = Pick<DnsLookup, 'name' | 'state' | 'addresses'> & {
 type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 type PolicyStatusFilter = 'all' | 'enabled' | 'disabled';
+type PolicyDensity = 'dense' | 'standard' | 'comfortable';
 type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile' | 'security';
 type ObjectSectionKind = Exclude<ObjectKindFilter, 'all'>;
+type NetworkView = 'overview' | 'neighborhood' | 'interfaces' | 'configuration';
+type MonitoringView = 'overview' | 'traffic' | 'sessions' | 'tls';
+type LogsView = 'events' | 'audit';
+type SystemView = 'configuration' | 'backend' | 'traffic' | 'appearance' | 'control-plane';
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
 
@@ -114,6 +122,33 @@ const objectNavigation: ReadonlyArray<{
   {kind: 'protocol', label: 'Protocol objects', icon: '#'},
   {kind: 'profile', label: 'Profiles and routing', icon: '≋'},
   {kind: 'security', label: 'Trust and signatures', icon: '⌁'},
+];
+
+const networkNavigation: ReadonlyArray<{kind: NetworkView; label: string; icon: string}> = [
+  {kind: 'overview', label: 'Activity', icon: '≋'},
+  {kind: 'neighborhood', label: 'Neighborhood', icon: '⌘'},
+  {kind: 'interfaces', label: 'Interfaces', icon: '⇄'},
+  {kind: 'configuration', label: 'Listeners', icon: '≡'},
+];
+
+const monitoringNavigation: ReadonlyArray<{kind: MonitoringView; label: string; icon: string}> = [
+  {kind: 'overview', label: 'Health', icon: '●'},
+  {kind: 'traffic', label: 'Traffic', icon: '↕'},
+  {kind: 'sessions', label: 'Sessions', icon: '≈'},
+  {kind: 'tls', label: 'TLS cache', icon: '◇'},
+];
+
+const logsNavigation: ReadonlyArray<{kind: LogsView; label: string; icon: string}> = [
+  {kind: 'events', label: 'Operational events', icon: '≡'},
+  {kind: 'audit', label: 'Management audit', icon: '✓'},
+];
+
+const systemNavigation: ReadonlyArray<{kind: SystemView; label: string; icon: string}> = [
+  {kind: 'configuration', label: 'Configuration', icon: '◇'},
+  {kind: 'backend', label: 'Backend', icon: '⚙'},
+  {kind: 'traffic', label: 'Traffic & captures', icon: '⇄'},
+  {kind: 'appearance', label: 'Appearance', icon: '◐'},
+  {kind: 'control-plane', label: 'Control plane', icon: '⌘'},
 ];
 
 interface CollectorPresentation {
@@ -395,6 +430,8 @@ export class SmithproxyApp extends LitElement {
   @state() private policyListQuery = '';
   @state() private policyStatusFilter: PolicyStatusFilter = 'all';
   @state() private policyActionFilter = 'all';
+  @state() private policyDensity: PolicyDensity = 'standard';
+  @state() private policyColumnWidths: ReadonlyArray<number> = [180, 160, 160, 90, 90, 210];
   @state() private selectedPolicyIds = new Set<string>();
   @state() private policyBulkAction: (typeof policyActions)[number] = 'accept';
   @state() private policyBulkNat: (typeof policyNatModes)[number] = 'auto';
@@ -406,6 +443,15 @@ export class SmithproxyApp extends LitElement {
   @state() private objectListQuery = '';
   @state() private objectKindFilter: ObjectKindFilter = 'all';
   @state() private objectNavigationExpanded = false;
+  @state() private policyNavigationExpanded = false;
+  @state() private networkNavigationExpanded = false;
+  @state() private networkView: NetworkView = 'overview';
+  @state() private monitoringNavigationExpanded = false;
+  @state() private monitoringView: MonitoringView = 'overview';
+  @state() private logsNavigationExpanded = false;
+  @state() private logsView: LogsView = 'events';
+  @state() private systemNavigationExpanded = false;
+  @state() private systemView: SystemView = 'configuration';
   @state() private expandedObjectSections = new Set<ObjectSectionKind>([
     'address', 'port', 'protocol', 'profile', 'security',
   ]);
@@ -442,7 +488,6 @@ export class SmithproxyApp extends LitElement {
   @state() private draftValidationError: string | undefined;
   @state() private draftValidating = false;
   @state() private draftCommitting = false;
-  @state() private draftCommitArmed = false;
   @state() private draftCommitError: string | undefined;
   @state() private draftCommitResult: DraftCommit | undefined;
   @state() private draftRemovalArmedKey: string | undefined;
@@ -455,12 +500,23 @@ export class SmithproxyApp extends LitElement {
   @state() private configRefreshDeferred = false;
   @state() private configRefreshInFlight = false;
   @state() private configRevisionDrift = false;
+  @state() private externalConfigNotice = false;
   @state() private configSaveArmed = false;
   @state() private configSaving = false;
   @state() private configSaveError: string | undefined;
   @state() private searchQuery = '';
   @state() private authIdentityEditors = new Map<string, AuthIdentityEditorState>();
   @state() private fqdnEvaluations = new Map<string, FqdnEvaluation>();
+  @state() private archiveInventory: ArchiveInventory | undefined;
+  @state() private archiveValidation: ArchiveValidation | undefined;
+  @state() private archiveRestore: ArchiveRestore | undefined;
+  @state() private archiveFileName = '';
+  @state() private archiveBusy = false;
+  @state() private archiveRestoreAcknowledged = false;
+  @state() private archiveError: string | undefined;
+  @state() private archiveResourcePath = '';
+  @state() private archiveResourceExecutable = false;
+  @state() private archiveResourceDeleteArmed: string | undefined;
 
   private readonly drawerStore = new DrawerStore();
   private runtime: RuntimeConfig | undefined;
@@ -479,6 +535,7 @@ export class SmithproxyApp extends LitElement {
   private eventStreamDegradedTimer: number | undefined;
   private nextConfigRefreshAt = 0;
   private configSaveArmTimer: number | undefined;
+  private externalConfigNoticeTimer: number | undefined;
   private drawerHistoryDepth = 0;
   private drawerHistoryNavigationPending = false;
   private drawerOrigins: HTMLElement[] = [];
@@ -495,6 +552,8 @@ export class SmithproxyApp extends LitElement {
   private readonly profileCreatePrefills = new Map<string, ProfileCreatePrefill>();
   private readonly authorityCreatePrefills = new Map<string, AuthorityCreatePrefill>();
   private readonly signatureCreatePrefills = new Map<string, SignatureCreatePrefill>();
+  private archivePayload: ArrayBuffer | undefined;
+  private archiveResourcePayload: ArrayBuffer | undefined;
   private pendingReturnFocus: HTMLElement | undefined;
   private searchReturnSection = 'Dashboard';
   private managementApiAvailable = false;
@@ -569,10 +628,15 @@ export class SmithproxyApp extends LitElement {
     nav button[aria-current='page'] { background: var(--app-raised); color: var(--app-text); box-shadow: inset 3px 0 var(--app-brand); }
     .nav-icon { color: var(--app-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-align: center; }
     .nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .nav-badge { position: absolute; top: 50%; right: 10px; min-width: 20px; padding: 1px 5px; translate: 0 -50%; border: 1px solid var(--app-border); border-radius: 9px; color: var(--app-muted); font-size: 10px; font-variant-numeric: tabular-nums; pointer-events: none; text-align: center; }
+    .nav-badge { position: absolute; top: 20px; right: 10px; min-width: 20px; padding: 1px 5px; translate: 0 -50%; border: 1px solid var(--app-border); border-radius: 9px; color: var(--app-muted); font-size: 10px; font-variant-numeric: tabular-nums; pointer-events: none; text-align: center; }
     nav button[aria-current='page'] + .nav-badge { border-color: color-mix(in srgb, var(--app-brand) 55%, var(--app-border)); color: var(--app-text); }
     .nav-expand { position: absolute; right: 34px; rotate: 0deg; transition: rotate 120ms ease; }
-    .object-nav-toggle[aria-expanded='true'] .nav-expand { rotate: 90deg; }
+    .object-nav-toggle[aria-expanded='true'] .nav-expand,
+    .network-nav-toggle[aria-expanded='true'] .nav-expand,
+    .monitoring-nav-toggle[aria-expanded='true'] .nav-expand,
+    .logs-nav-toggle[aria-expanded='true'] .nav-expand,
+    .policy-nav-toggle[aria-expanded='true'] .nav-expand,
+    .system-nav-toggle[aria-expanded='true'] .nav-expand { rotate: 90deg; }
     .object-subnav { display: grid; gap: 2px; margin: 2px 0 6px 16px; padding-left: 7px; border-left: 1px solid var(--app-border); }
     .object-subnav[hidden] { display: none; }
     .object-subnav button { grid-template-columns: 14px minmax(0, 1fr); padding: 8px; border-radius: 2px; font-size: 13px; }
@@ -587,6 +651,19 @@ export class SmithproxyApp extends LitElement {
     .config-workflow .save-required { border-color: var(--app-warning); background: var(--app-warning); color: #17120a; }
     .config-workflow .save-confirm { border-color: var(--app-danger); background: var(--app-danger); color: #19070b; }
     .config-workflow-error { max-width: 180px; overflow: hidden; color: var(--app-danger); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .config-state { color: var(--app-muted); font-size: 12px; white-space: nowrap; }
+    .config-state.danger { color: var(--app-danger); font-weight: 700; }
+    .config-state.warning { color: var(--app-warning); font-weight: 650; }
+    .config-refresh { min-width: 28px; padding: 4px; border: 0; background: transparent; font-size: 19px; }
+    .config-refresh:hover { background: transparent; color: var(--app-text); }
+    .config-refresh.drift { color: var(--app-warning); animation: config-attention 2.4s ease-in-out infinite; }
+    @keyframes config-attention { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+    .config-toast { position: fixed; z-index: 20; top: 16px; left: 50%; width: min(440px, calc(100vw - 32px)); overflow: hidden; translate: -50% 0; border: 1px solid var(--app-warning); border-radius: 4px; background: var(--app-surface); box-shadow: 0 10px 32px #0008; }
+    .config-toast-content { display: flex; gap: 14px; align-items: center; padding: 11px 13px; }
+    .config-toast-content strong { flex: 1; }
+    .config-toast button { padding: 2px 7px; border: 0; background: transparent; color: var(--app-muted); font-size: 18px; }
+    .config-toast-progress { height: 3px; background: var(--app-warning); transform-origin: left; animation: toast-expiry 5s linear forwards; }
+    @keyframes toast-expiry { from { transform: scaleX(1); } to { transform: scaleX(0); } }
     .search { width: min(300px, 32vw); padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
 
     .workspace { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
@@ -613,6 +690,7 @@ export class SmithproxyApp extends LitElement {
     .structural-action small { color: var(--app-muted); }
     .list-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 0 0 12px; }
     .object-create-button { width: 42px; height: 38px; padding: 0; font-size: 22px; line-height: 1; }
+    .object-create-button + .list-filter { margin-left: 8px; }
     .list-filter { display: grid; min-width: 150px; gap: 4px; color: var(--app-muted); font-size: 12px; }
     .list-filters > .list-filter:first-of-type { flex: 1 1 260px; }
     .list-filter input, .list-filter select { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
@@ -621,10 +699,19 @@ export class SmithproxyApp extends LitElement {
     .policy-bulk-actions strong { margin-right: auto; }
     .policy-bulk-actions select { min-height: 34px; padding: 6px 9px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
     .policy-bulk-actions .validation { flex-basis: 100%; }
+    .policy-view-options { display: flex; gap: 8px; align-items: end; }
+    .policy-view-options label { display: grid; gap: 3px; color: var(--app-muted); font-size: 11px; }
+    .policy-view-options select { min-height: 34px; padding: 5px 8px; border: 1px solid var(--app-border); background: var(--app-input); color: var(--app-text); }
+    .policy-bulk-primary, .policy-bulk-fields { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .policy-bulk-primary { flex-basis: 100%; padding-bottom: 8px; border-bottom: 1px solid var(--app-border); }
+    .policy-bulk-primary strong { margin-right: auto; }
+    .policy-bulk-fields { flex-basis: 100%; }
+    .policy-icon-action { min-width: 34px; padding-inline: 8px; font-size: 16px; }
     .primary { padding: 8px 13px; border: 1px solid var(--app-brand); border-radius: 3px; background: var(--app-brand); color: var(--app-on-brand); font-weight: 650; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .55; }
 
-    .dashboard { display: grid; gap: 18px; }
+    .dashboard { display: grid; align-content: start; gap: 14px; }
+    .dashboard > .section-head { margin-bottom: 0; }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
     .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .metric { min-height: 116px; padding: 15px 16px; }
@@ -699,6 +786,10 @@ export class SmithproxyApp extends LitElement {
     .event-severity.error, .event-severity.critical { color: var(--app-danger); }
     .event-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
     .event-filters button[aria-pressed='true'] { border-color: var(--app-brand); color: var(--app-text); }
+    .logs-content .privacy-note, .logs-content .origin-note { padding-block: 7px; }
+    .logs-content .event-filters { gap: 6px; margin: 4px 0; }
+    .logs-content .event-filters button { min-height: 30px; padding: 4px 9px; }
+    .logs-content .event-row, .logs-content .audit-row { padding-block: 8px; }
     .audit-row { display: grid; grid-template-columns: 150px 82px minmax(180px, 1fr) minmax(130px, .7fr); gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
     .audit-row:last-child { border-bottom: 0; }
     .audit-operation { min-width: 0; }
@@ -746,6 +837,23 @@ export class SmithproxyApp extends LitElement {
     .system-grid .domain-card dl { grid-template-columns: minmax(110px, .6fr) minmax(150px, 1fr); }
     .system-grid .domain-card dd { overflow-wrap: anywhere; }
     .system-grid .job-card { grid-column: 1 / -1; }
+    .system-grid[data-view] > [data-system-section] { display: none; }
+    .system-grid[data-view='configuration'] > [data-system-section~='configuration'],
+    .system-grid[data-view='backend'] > [data-system-section~='backend'],
+    .system-grid[data-view='traffic'] > [data-system-section~='traffic'],
+    .system-grid[data-view='appearance'] > [data-system-section~='appearance'] { display: block; }
+    .archive-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
+    .archive-actions input[type='file'] { min-width: min(100%, 280px); color: var(--app-muted); }
+    .archive-confirm { display: flex; gap: 8px; align-items: start; margin-top: 14px; color: var(--app-muted); }
+    .archive-confirm input { margin-top: 2px; }
+    .archive-resources { max-height: 190px; overflow: auto; margin-top: 14px; border: 1px solid var(--app-border); }
+    .archive-resource { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 12px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--app-border); }
+    .archive-resource:last-child { border-bottom: 0; }
+    .archive-resource code { overflow-wrap: anywhere; }
+    .archive-resource span { color: var(--app-muted); font-variant-numeric: tabular-nums; }
+    .archive-resource-actions { display: flex; gap: 6px; }
+    .archive-resource-actions .secondary, .archive-resource-actions .danger { padding: 4px 8px; }
+    .archive-resource-editor { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(220px, 1fr) auto; gap: 8px; align-items: center; margin-top: 14px; }
     .job-list { display: grid; gap: 8px; margin-top: 16px; }
     .job-row { display: grid; grid-template-columns: minmax(145px, .8fr) minmax(170px, 1fr) minmax(120px, .7fr) 64px; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--app-border); background: var(--app-canvas); }
     .job-row small { overflow: hidden; color: var(--app-muted); text-overflow: ellipsis; white-space: nowrap; }
@@ -764,9 +872,19 @@ export class SmithproxyApp extends LitElement {
     .policy-table-row:not(.heading):hover { background: var(--app-raised); }
     .policy-row-select { display: grid; place-items: center; }
     .policy-row-select input { width: 16px; height: 16px; margin: 0; accent-color: var(--app-brand); }
-    .policy-row-main { display: grid; grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px minmax(170px, .9fr); gap: 16px; align-items: center; min-width: 0; padding: 12px 14px 12px 0; border: 0; background: transparent; color: var(--app-text); text-align: left; cursor: pointer; }
+    .policy-row-main { display: grid; grid-template-columns: var(--policy-columns, minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(110px, 1fr) 90px 80px minmax(170px, .9fr)); gap: 16px; align-items: center; min-width: max-content; padding: 12px 14px 12px 0; border: 0; background: transparent; color: var(--app-text); text-align: left; cursor: pointer; }
     .policy-row-main.heading { color: var(--app-muted); font-size: 12px; cursor: default; }
     .policy-row-main strong { font-weight: 650; }
+    .policy-column-heading { position: relative; min-width: 0; }
+    .policy-column-resizer { position: absolute; top: -8px; right: -9px; bottom: -8px; width: 10px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; }
+    .policy-column-resizer::after { position: absolute; top: 20%; bottom: 20%; left: 4px; width: 1px; background: var(--app-border); content: ''; }
+    .policy-column-resizer:hover::after { background: var(--app-brand); }
+    .table.policy-density-dense .policy-row-main { gap: 8px; padding-block: 5px; font-size: 12px; }
+    .table.policy-density-dense .policy-row-main small { font-size: 10px; }
+    .table.policy-density-dense .policy-row-select { min-height: 30px; }
+    .table.policy-density-comfortable .policy-row-main { gap: 20px; padding-block: 17px; }
+    .table.policy-density-comfortable .policy-identity small { margin-top: 5px; }
+    .table[class*='policy-density-'] { overflow-x: auto; }
     .policy-identity { display: grid; min-width: 0; gap: 2px; }
     .policy-identity strong, .policy-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .policy-identity small { color: var(--app-muted); font-size: 11px; }
@@ -1012,6 +1130,19 @@ export class SmithproxyApp extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     try {
+      const density = window.localStorage.getItem('smithproxy.policy-density');
+      if (density === 'dense' || density === 'standard' || density === 'comfortable') {
+        this.policyDensity = density;
+      }
+      const widths = JSON.parse(window.localStorage.getItem('smithproxy.policy-columns') ?? 'null') as unknown;
+      if (Array.isArray(widths) && widths.length === 6 &&
+          widths.every(width => typeof width === 'number' && width >= 70 && width <= 480)) {
+        this.policyColumnWidths = widths;
+      }
+    } catch {
+      // Browser privacy settings may disable local storage; the standard view remains usable.
+    }
+    try {
       this.runtime = readRuntimeConfig(this);
       this.mode = this.runtime.mode;
       this.systemClient = new SystemClient(this.runtime.apiBase, this.runtime.basePath);
@@ -1034,6 +1165,7 @@ export class SmithproxyApp extends LitElement {
   disconnectedCallback(): void {
     this.clearSystemProbe();
     this.disconnectEventStream();
+    if (this.externalConfigNoticeTimer !== undefined) window.clearTimeout(this.externalConfigNoticeTimer);
     this.systemClient?.cancelPendingRequests();
     this.configClient?.cancelPendingRequests();
     this.draftClient?.cancelPendingRequests();
@@ -1470,7 +1602,6 @@ export class SmithproxyApp extends LitElement {
     this.draftValidationError = undefined;
     this.draftValidating = false;
     this.draftCommitting = false;
-    this.draftCommitArmed = false;
     this.draftCommitError = undefined;
     this.draftCommitResult = undefined;
     this.draftRemovalArmedKey = undefined;
@@ -1681,13 +1812,15 @@ export class SmithproxyApp extends LitElement {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       if (snapshot.state !== 'ready') throw new Error(snapshot.detail);
       const liveSnapshotLoaded = this.snapshot?.source === 'live';
+      const externalRevisionChanged = liveSnapshotLoaded && snapshot.revision !== null &&
+        this.snapshot?.revision !== null && snapshot.revision !== this.snapshot?.revision;
+      if (externalRevisionChanged) this.showExternalConfigNotice();
       if (liveSnapshotLoaded && (this.draftChangeCount > 0 || this.drawers.length > 0 ||
           this.draftSaving || this.draftCommitting)) {
         this.configRefreshDeferred = true;
         if (snapshot.revision && this.snapshot?.revision && snapshot.revision !== this.snapshot.revision) {
           this.configRevisionDrift = true;
           this.draftValidation = undefined;
-          this.draftCommitArmed = false;
         }
         this.configError = undefined;
         return;
@@ -1707,7 +1840,6 @@ export class SmithproxyApp extends LitElement {
         snapshot.revision !== draftBaseRevision;
       if (this.configRevisionDrift) {
         this.draftValidation = undefined;
-        this.draftCommitArmed = false;
       }
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
@@ -1716,6 +1848,15 @@ export class SmithproxyApp extends LitElement {
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.configRefreshInFlight = false;
     }
+  }
+
+  private showExternalConfigNotice(): void {
+    this.externalConfigNotice = true;
+    if (this.externalConfigNoticeTimer !== undefined) window.clearTimeout(this.externalConfigNoticeTimer);
+    this.externalConfigNoticeTimer = window.setTimeout(() => {
+      this.externalConfigNotice = false;
+      this.externalConfigNoticeTimer = undefined;
+    }, 5_000);
   }
 
   private async retryConfigurationAccess(): Promise<void> {
@@ -1757,6 +1898,128 @@ export class SmithproxyApp extends LitElement {
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.configSaving = false;
     }
+  }
+
+  private async loadArchiveInventory(): Promise<void> {
+    if (!this.systemClient || this.archiveBusy) return;
+    this.archiveBusy = true;
+    this.archiveError = undefined;
+    try {
+      this.archiveInventory = await this.systemClient.archiveInventory();
+    } catch (error) {
+      this.archiveInventory = undefined;
+      this.archiveError = error instanceof Error
+        ? error.message : 'Configuration archive inventory is unavailable.';
+    } finally {
+      this.archiveBusy = false;
+    }
+  }
+
+  private async selectArchive(event: Event): Promise<void> {
+    const input = event.currentTarget;
+    if (!(input instanceof HTMLInputElement)) return;
+    const file = input.files?.item(0);
+    this.archivePayload = undefined;
+    this.archiveValidation = undefined;
+    this.archiveRestore = undefined;
+    this.archiveRestoreAcknowledged = false;
+    this.archiveError = undefined;
+    this.archiveFileName = file?.name ?? '';
+    if (!file || !this.systemClient) return;
+    this.archiveBusy = true;
+    try {
+      const payload = await file.arrayBuffer();
+      const validation = await this.systemClient.validateArchive(payload);
+      this.archivePayload = payload;
+      this.archiveValidation = validation;
+    } catch (error) {
+      this.archiveError = error instanceof Error
+        ? error.message : 'Configuration archive validation failed.';
+    } finally {
+      this.archiveBusy = false;
+    }
+  }
+
+  private async restoreSelectedArchive(): Promise<void> {
+    const revision = this.snapshot?.revision;
+    if (!this.systemClient || !this.archivePayload || !this.archiveValidation || !revision ||
+        !this.archiveRestoreAcknowledged || this.archiveBusy) return;
+    this.archiveBusy = true;
+    this.archiveError = undefined;
+    let restored = false;
+    try {
+      this.archiveRestore = await this.systemClient.restoreArchive(
+        this.archivePayload,
+        revision,
+        this.archiveValidation.contentHash,
+      );
+      restored = true;
+    } catch (error) {
+      this.archiveError = error instanceof Error
+        ? error.message : 'Configuration archive restore failed.';
+    } finally {
+      this.archiveBusy = false;
+    }
+    if (restored) await this.loadArchiveInventory();
+  }
+
+  private async selectArchiveResource(event: Event): Promise<void> {
+    const input = event.currentTarget;
+    if (!(input instanceof HTMLInputElement)) return;
+    const file = input.files?.item(0);
+    this.archiveResourcePayload = file ? await file.arrayBuffer() : undefined;
+    this.archiveError = undefined;
+  }
+
+  private async writeArchiveResource(): Promise<void> {
+    const revision = this.snapshot?.revision;
+    const archiveHash = this.archiveInventory?.contentHash;
+    if (!this.systemClient || !this.archiveResourcePayload || !revision || !archiveHash ||
+        this.archiveBusy) return;
+    this.archiveBusy = true;
+    this.archiveError = undefined;
+    try {
+      await this.systemClient.writeArchiveResource(
+        this.archiveResourcePath.trim(),
+        this.archiveResourcePayload,
+        revision,
+        archiveHash,
+        this.archiveResourceExecutable,
+      );
+      this.archiveResourcePayload = undefined;
+      this.archiveResourcePath = '';
+      this.archiveResourceExecutable = false;
+    } catch (error) {
+      this.archiveError = error instanceof Error
+        ? error.message : 'Configuration resource could not be written.';
+      return;
+    } finally {
+      this.archiveBusy = false;
+    }
+    await this.loadArchiveInventory();
+  }
+
+  private async deleteArchiveResource(path: string): Promise<void> {
+    const revision = this.snapshot?.revision;
+    const archiveHash = this.archiveInventory?.contentHash;
+    if (!this.systemClient || !revision || !archiveHash || this.archiveBusy) return;
+    if (this.archiveResourceDeleteArmed !== path) {
+      this.archiveResourceDeleteArmed = path;
+      return;
+    }
+    this.archiveBusy = true;
+    this.archiveError = undefined;
+    try {
+      await this.systemClient.deleteArchiveResource(path, revision, archiveHash);
+      this.archiveResourceDeleteArmed = undefined;
+    } catch (error) {
+      this.archiveError = error instanceof Error
+        ? error.message : 'Configuration resource could not be removed.';
+      return;
+    } finally {
+      this.archiveBusy = false;
+    }
+    await this.loadArchiveInventory();
   }
 
   private systemStatusTitle(): string {
@@ -1956,7 +2219,6 @@ export class SmithproxyApp extends LitElement {
     }
     if (previousVersion !== snapshot.version) {
       this.draftValidationError = undefined;
-      this.draftCommitArmed = false;
       this.draftCommitError = undefined;
       this.draftCommitResult = undefined;
       this.draftRemovalArmedKey = undefined;
@@ -2256,19 +2518,19 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async commitDraft(): Promise<void> {
-    const preflight = this.draftPreflight;
-    const validation = this.draftValidation;
-    const validationMatches = validation &&
-      validation.draftVersion === this.draftVersion &&
-      validation.baseRevision === preflight?.baseRevision &&
-      validation.validatedOperations === this.draftChangeCount;
+    let preflight = this.draftPreflight;
     if (!this.configWriteAvailable || !this.draftClient || !preflight?.commitAvailable ||
-        !validationMatches || this.draftChangeCount === 0 || this.draftCommitting ||
+        !preflight.validationAvailable || this.draftChangeCount === 0 || this.draftCommitting ||
         this.draftSaving || this.draftValidating) return;
-    if (!this.draftCommitArmed) {
-      this.draftCommitArmed = true;
-      this.draftCommitError = undefined;
-      return;
+
+    const validationMatches = () => this.draftValidation !== undefined &&
+      this.draftValidation.draftVersion === this.draftVersion &&
+      this.draftValidation.baseRevision === this.draftPreflight?.baseRevision &&
+      this.draftValidation.validatedOperations === this.draftChangeCount;
+    if (!validationMatches()) {
+      await this.validateDraft();
+      preflight = this.draftPreflight;
+      if (!preflight?.commitAvailable || !validationMatches()) return;
     }
 
     const expectedVersion = this.draftVersion;
@@ -2276,7 +2538,6 @@ export class SmithproxyApp extends LitElement {
     const expectedOperations = this.draftChangeCount;
     const accessEpoch = this.configurationAccessEpoch;
     this.draftCommitting = true;
-    this.draftCommitArmed = false;
     this.draftCommitError = undefined;
     this.draftCommitResult = undefined;
     try {
@@ -4089,8 +4350,52 @@ export class SmithproxyApp extends LitElement {
   private enableDrawerEditing(entry: DrawerEntry): void {
     const key = this.drawerKey(entry);
     if (this.drawerStartsEditable(entry) || this.editingDrawerKeys.has(key)) return;
+    const body = this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) .drawer-body');
+    const scrollTop = body?.scrollTop ?? 0;
     this.editingDrawerKeys = new Set(this.editingDrawerKeys).add(key);
-    void this.updateComplete.then(() => this.focusActiveDrawer());
+    void this.updateComplete.then(() => {
+      const nextBody = this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) .drawer-body');
+      if (nextBody) nextBody.scrollTop = scrollTop;
+      // Editing must never drop focus into a live configuration field. Keep
+      // keyboard users on a harmless drawer control after the view rerenders.
+      this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) [data-close-drawer]')
+        ?.focus({preventScroll: true});
+    });
+  }
+
+  private setPolicyDensity(density: PolicyDensity): void {
+    this.policyDensity = density;
+    try {
+      window.localStorage.setItem('smithproxy.policy-density', density);
+    } catch {
+      // The preference is optional; keep the selected density for this page lifetime.
+    }
+  }
+
+  private policyColumnStyle(): string {
+    return `--policy-columns:${this.policyColumnWidths.map(width => `${width}px`).join(' ')}`;
+  }
+
+  private beginPolicyColumnResize(index: number, event: PointerEvent): void {
+    event.preventDefault();
+    const startX = event.clientX;
+    const initial = this.policyColumnWidths[index] ?? 100;
+    const move = (nextEvent: PointerEvent) => {
+      const widths = [...this.policyColumnWidths];
+      widths[index] = Math.max(70, Math.min(480, initial + nextEvent.clientX - startX));
+      this.policyColumnWidths = widths;
+    };
+    const finish = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      try {
+        window.localStorage.setItem('smithproxy.policy-columns', JSON.stringify(this.policyColumnWidths));
+      } catch {
+        // Column widths remain active for this page lifetime when storage is unavailable.
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', finish, {once: true});
   }
 
   /**
@@ -4935,6 +5240,7 @@ export class SmithproxyApp extends LitElement {
     const name = nameInput?.value.trim() ?? '';
     const type = typeInput?.value ?? '';
     const value = valueInput?.value.trim() ?? '';
+    const normalizedValue = type === 'cidr' ? normalizeCidr(value) : value;
     const addressTypes = new Set(['cidr', 'fqdn']);
     if (!isConfigGroupName(name) ||
         value.length === 0 || value.length > 1024 ||
@@ -4942,14 +5248,15 @@ export class SmithproxyApp extends LitElement {
       this.drawerError = 'A configuration-safe name, type, and address value are required.';
       return;
     }
-    if (type === 'cidr' && !describeCidr(value)) {
-      this.drawerError = 'CIDR address objects require a valid IPv4 or IPv6 prefix.';
+    if (type === 'cidr' && !normalizedValue) {
+      this.drawerError = 'CIDR address objects require a valid IPv4 or IPv6 address or prefix.';
       return;
     }
     if (type === 'fqdn' && !parseFqdn(value)) {
       this.drawerError = 'FQDN address objects require a valid ASCII DNS host name.';
       return;
     }
+    const storedValue = normalizedValue ?? value;
     const duplicateLive = this.snapshot?.addresses.some(address =>
       address.name === name || this.addressDisplayName(address) === name);
     const duplicateDraft = this.workspaceDraft?.structuralOperations.some(operation =>
@@ -4961,7 +5268,7 @@ export class SmithproxyApp extends LitElement {
     }
     const existing = this.pendingAddressCreate(entry);
     if (existing?.fields['name'] === name && existing.fields['type'] === type &&
-        existing.fields['value'] === value) {
+        existing.fields['value'] === storedValue) {
       this.drawerError = undefined;
       this.markDrawerSaved(entry);
       return;
@@ -4971,15 +5278,15 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     const accessEpoch = this.configurationAccessEpoch;
     try {
-      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+      const draft = await this.submitDraftMutation(version => this.draftClient!.upsertOperation(version, {
         op: 'create',
         localId: entry.id,
         collection: 'address_objects',
         clientId: entry.id,
         parentId: null,
         position: {kind: 'last', reference: null},
-        fields: {name, type, value},
-      });
+        fields: {name, type, value: storedValue},
+      }));
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.primitiveCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
@@ -4987,7 +5294,7 @@ export class SmithproxyApp extends LitElement {
       await this.loadDraftPreflight();
     } catch (error) {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
-      const message = error instanceof Error ? error.message : 'Address object could not be added to the draft.';
+      const message = this.draftMutationMessage(error, 'Address object could not be added to the draft.');
       await this.loadDraft();
       this.drawerError = message;
     } finally {
@@ -5088,10 +5395,10 @@ export class SmithproxyApp extends LitElement {
     this.draftError = undefined;
     const accessEpoch = this.configurationAccessEpoch;
     try {
-      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+      const draft = await this.submitDraftMutation(version => this.draftClient!.upsertOperation(version, {
         op: 'create', localId: entry.id, collection, clientId: entry.id,
         parentId: null, position: {kind: 'last', reference: null}, fields,
-      });
+      }));
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.primitiveCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
@@ -5101,7 +5408,7 @@ export class SmithproxyApp extends LitElement {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       const fallback = port ? 'Port object could not be added to the draft.'
         : 'Protocol object could not be added to the draft.';
-      const message = error instanceof Error ? error.message : fallback;
+      const message = this.draftMutationMessage(error, fallback);
       await this.loadDraft();
       this.drawerError = message;
     } finally {
@@ -5607,9 +5914,9 @@ export class SmithproxyApp extends LitElement {
     const accessEpoch = this.configurationAccessEpoch;
     this.draftError = undefined;
     try {
-      const draft = removePaths.length > 0
-        ? await this.draftClient.reconcile(this.draftVersion, upserts, removePaths)
-        : await this.draftClient.upsertMany(this.draftVersion, upserts);
+      const draft = await this.submitDraftMutation(version => removePaths.length > 0
+        ? this.draftClient!.reconcile(version, upserts, removePaths)
+        : this.draftClient!.upsertMany(version, upserts));
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.applyDraft(draft);
       await this.loadDraftPreflight();
@@ -5627,11 +5934,36 @@ export class SmithproxyApp extends LitElement {
       this.captureDrawerInitialChanges(entry);
     } catch (error) {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
-      const message = error instanceof Error ? error.message : 'Draft change could not be saved.';
+      const message = this.draftMutationMessage(error, 'Draft change could not be saved.');
       await this.loadDraft();
       this.draftError = message;
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  private draftMutationMessage(error: unknown, fallback: string): string {
+    return error instanceof Error ? error.message : fallback;
+  }
+
+  private async submitDraftMutation<T>(mutation: (version: number) => Promise<T>): Promise<T> {
+    try {
+      return await mutation(this.draftVersion);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (!/HTTP 409\b/u.test(message)) throw error;
+      await this.loadDraft();
+      return mutation(this.draftVersion);
+    }
+  }
+
+  private async saveToDraftAndClose(entry: DrawerEntry, index: number): Promise<void> {
+    await this.saveToDraft(entry);
+    const key = this.drawerKey(entry);
+    const stillOpen = this.drawerStore.entries[index];
+    if (stillOpen && this.drawerKey(stillOpen) === key && !this.dirtyDrawerKeys.has(key) &&
+        !this.drawerError && !this.draftError) {
+      this.closeDrawer(index);
     }
   }
 
@@ -6023,11 +6355,26 @@ export class SmithproxyApp extends LitElement {
       if (index < 0 || !name || !enabled || !destination || !action || !protocol || !sources ||
           !sourcePorts || !destinationPorts || !features || !nat ||
           [...references.values()].some(value => !value)) return undefined;
-      const list = (input: HTMLInputElement) => input.value.split(',').map(value => value.trim()).filter(Boolean);
-      const sourceValues = list(sources);
-      const sourcePortValues = list(sourcePorts);
-      const destinations = list(destination);
-      const destinationPortValues = list(destinationPorts);
+      // Reference-list editors keep their pending selection in component state.
+      // Read that state directly instead of depending on a hidden input having
+      // completed another Lit render before Save to draft is selected.
+      const currentPolicy = this.snapshot.policies[index]!;
+      const sourceValues = this.previewReferenceNames(
+        entry, `policy-sources-${entry.id}`,
+        this.persistentListValue(`policy.[${index}].src`, currentPolicy.sources.map(item => item.name), 'string'),
+      );
+      const sourcePortValues = this.previewReferenceNames(
+        entry, `policy-source-ports-${entry.id}`,
+        this.persistentListValue(`policy.[${index}].sport`, currentPolicy.sourcePorts, 'string'),
+      );
+      const destinations = this.previewReferenceNames(
+        entry, `destination-${entry.id}`,
+        this.persistentListValue(`policy.[${index}].dst`, currentPolicy.destinations.map(item => item.name), 'string'),
+      );
+      const destinationPortValues = this.previewReferenceNames(
+        entry, `policy-destination-ports-${entry.id}`,
+        this.persistentListValue(`policy.[${index}].dport`, currentPolicy.destinationPorts, 'string'),
+      );
       const featureValues = [...features.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')]
         .map(item => item.value);
       const normalizedName = name.value.trim();
@@ -6088,6 +6435,8 @@ export class SmithproxyApp extends LitElement {
       const value = this.renderRoot.querySelector<HTMLInputElement>(`#address-value-${entry.id}`);
       if (index < 0 || !name || !type || !value) return undefined;
       const normalizedName = name.value.trim();
+      const rawValue = value.value.trim();
+      const normalizedValue = type.value === 'cidr' ? normalizeCidr(rawValue) : rawValue;
       const currentName = this.persistentValue(`address_objects.[${index}].name`, this.snapshot.addresses[index]!.name);
       if (normalizedName.length === 0 || normalizedName.length > 128 || value.value.trim().length === 0 ||
           !['cidr', 'fqdn'].includes(type.value)) {
@@ -6098,14 +6447,15 @@ export class SmithproxyApp extends LitElement {
         this.draftError = 'A configuration-safe address object name is required.';
         return undefined;
       }
-      if (type.value === 'cidr' && !describeCidr(value.value)) {
-        this.draftError = 'CIDR address objects require a valid IPv4 or IPv6 prefix.';
+      if (type.value === 'cidr' && !normalizedValue) {
+        this.draftError = 'CIDR address objects require a valid IPv4 or IPv6 address or prefix.';
         return undefined;
       }
       if (type.value === 'fqdn' && !parseFqdn(value.value)) {
         this.draftError = 'FQDN address objects require a valid ASCII DNS host name.';
         return undefined;
       }
+      const storedValue = normalizedValue ?? rawValue;
       if (this.duplicateConfigurationName('address', entry.id, normalizedName)) {
         this.draftError = 'Address object names must be unique.';
         return undefined;
@@ -6113,7 +6463,7 @@ export class SmithproxyApp extends LitElement {
       return [
         {path: `address_objects.[${index}].name`, value: normalizedName},
         {path: `address_objects.[${index}].type`, value: type.value},
-        {path: `address_objects.[${index}].value`, value: value.value.trim()},
+        {path: `address_objects.[${index}].value`, value: storedValue},
         ...this.renamedReferenceChanges('address', entry.id, currentName, normalizedName),
       ];
     }
@@ -6819,10 +7169,8 @@ export class SmithproxyApp extends LitElement {
     const persistentValues = this.snapshot
       ? persistentConfigurationValues(this.snapshot) : new Map<string, ConfigValue>();
     const pendingCount = changes.length + structuralOperations.length;
-    const commitReady = !this.configRevisionDrift && this.draftPreflight?.commitAvailable && this.draftValidation &&
-      this.draftValidation.draftVersion === this.draftVersion &&
-      this.draftValidation.baseRevision === this.draftPreflight.baseRevision &&
-      this.draftValidation.validatedOperations === pendingCount;
+    const commitAvailable = !this.configRevisionDrift && this.draftPreflight?.commitAvailable &&
+      this.draftPreflight.validationAvailable;
     return html`
       <div class="content" tabindex="0">
         <div class="section-head">
@@ -6850,49 +7198,17 @@ export class SmithproxyApp extends LitElement {
         ${pendingCount > 0 ? html`
           <section class="preflight" aria-label="Draft preflight">
             <div class="preflight-heading">
-              <h3>Validation and impact preflight</h3>
+              <h3>Review changes</h3>
               <div class="preflight-actions">
-                <button class="secondary" type="button"
-                  ?disabled=${this.configRevisionDrift || !this.draftPreflight?.validationAvailable || this.draftValidating ||
-                    this.draftCommitting}
-                  @click=${() => this.validateDraft()}>
-                  ${this.draftValidating ? 'Validating…' : 'Validate with Smithproxy'}
-                </button>
                 <button class="primary" type="button"
-                  ?disabled=${!commitReady || this.draftCommitting || this.draftSaving ||
+                  ?disabled=${!commitAvailable || this.draftCommitting || this.draftSaving ||
                     this.draftValidating}
                   @click=${() => this.commitDraft()}>
-                  ${this.draftCommitting
-                    ? 'Committing…'
-                    : this.draftCommitArmed
-                      ? `Confirm atomic commit · ${pendingCount}`
-                      : 'Commit configuration'}
+                  ${this.draftCommitting || this.draftValidating ? 'Committing…' : 'Commit configuration'}
                 </button>
               </div>
             </div>
             ${this.draftPreflight ? html`
-              <div class="preflight-grid">
-                <div class="preflight-check">
-                  <small>GUI schema validation</small><strong class="runtime-state success">Valid</strong>
-                </div>
-                <div class="preflight-check">
-                  <small>Smithproxy validation</small>
-                  ${this.draftValidation ? html`
-                    <strong class="runtime-state success">Validated</strong>
-                  ` : this.draftPreflight.validationAvailable ? html`
-                    <strong class="runtime-state warning">Ready</strong>
-                  ` : html`
-                    <strong class="runtime-state warning">Unavailable</strong>
-                  `}
-                </div>
-                <div class="preflight-check">
-                  <small>Atomic commit</small>
-                  <strong class="runtime-state ${commitReady ? 'success' : 'warning'}">
-                    ${commitReady ? 'Ready' : this.configRevisionDrift ? 'Revision changed' : this.draftPreflight.commitAvailable
-                      ? 'Validation required' : 'Blocked'}
-                  </strong>
-                </div>
-              </div>
               <div class="preflight-sections" aria-label="Affected configuration sections">
                 ${this.draftPreflight.sections.map(section => html`
                   <span class="preflight-section">
@@ -7530,18 +7846,30 @@ export class SmithproxyApp extends LitElement {
       <div class="content" tabindex="0">
         <div class="section-head">
           <div><h2>Policies</h2><p>Traffic decisions and inspection behavior</p></div>
-          <div class="structural-action">
-            <button class="primary" type="button"
-              ?disabled=${!this.policyTransactionsAvailable() || !this.collectionPresent('policy')}
-              aria-describedby="new-policy-blocker"
-              @click=${(event: MouseEvent) => this.openNewPolicy(event.currentTarget as HTMLElement)}>
-              New policy
-            </button>
-            <small id="new-policy-blocker">${!this.collectionPresent('policy')
-              ? 'The policy collection is absent from the running configuration.'
-              : this.policyTransactionsAvailable()
-              ? 'Creates an ordered operation in the shared workspace draft.'
-              : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
+          <div class="policy-view-options">
+            <label>Row density
+              <select aria-label="Policy row density" .value=${this.policyDensity}
+                @change=${(event: Event) => this.setPolicyDensity(
+                  (event.currentTarget as HTMLSelectElement).value as PolicyDensity,
+                )}>
+                <option value="dense">Dense</option>
+                <option value="standard">Standard</option>
+                <option value="comfortable">Comfortable</option>
+              </select>
+            </label>
+            <div class="structural-action">
+              <button class="primary" type="button"
+                ?disabled=${!this.policyTransactionsAvailable() || !this.collectionPresent('policy')}
+                aria-describedby="new-policy-blocker"
+                @click=${(event: MouseEvent) => this.openNewPolicy(event.currentTarget as HTMLElement)}>
+                New policy
+              </button>
+              <small id="new-policy-blocker">${!this.collectionPresent('policy')
+                ? 'The policy collection is absent from the running configuration.'
+                : this.policyTransactionsAvailable()
+                ? 'Creates an ordered operation in the shared workspace draft.'
+                : 'Requires reviewed structural transactions and stable entity IDs.'}</small>
+            </div>
           </div>
         </div>
         <div class="inventory-summary" aria-label="Policy inventory summary">
@@ -7585,17 +7913,40 @@ export class SmithproxyApp extends LitElement {
           </span>
         </div>
         <div class="policy-bulk-actions" role="group" aria-label="Policy bulk actions">
-          <strong>${selectedCount.toLocaleString()} selected</strong>
-          <button class="secondary" type="button"
-            ?disabled=${selectableVisiblePolicyIds.length === 0 || !bulkDraftReady || this.draftSaving || this.draftCommitting}
-            @click=${() => this.selectPolicies(selectableVisiblePolicyIds)}>Select visible</button>
+          <div class="policy-bulk-primary">
+            <strong>${selectedCount.toLocaleString()} selected</strong>
+            <button class="secondary" type="button"
+              ?disabled=${selectableVisiblePolicyIds.length === 0 || !bulkDraftReady || this.draftSaving || this.draftCommitting}
+              @click=${() => this.selectPolicies(selectableVisiblePolicyIds)}>Select visible</button>
           ${selectedCount > 0 ? html`
-            <button class="secondary" type="button"
+            <button class="secondary policy-icon-action" type="button" aria-label="Enable selected"
+              title="Enable selected policies"
               ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
-              @click=${() => { void this.setSelectedPoliciesEnabled(true); }}>Enable selected</button>
-            <button class="secondary" type="button"
+              @click=${() => { void this.setSelectedPoliciesEnabled(true); }}>✓</button>
+            <button class="secondary policy-icon-action" type="button" aria-label="Disable selected"
+              title="Disable selected policies"
               ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
-              @click=${() => { void this.setSelectedPoliciesEnabled(false); }}>Disable selected</button>
+              @click=${() => { void this.setSelectedPoliciesEnabled(false); }}>⊘</button>
+            <button class="secondary policy-icon-action" type="button" aria-label="Move selected up"
+              title=${bulkMoveBlocker ?? 'Move the selection to the first positions in one atomic batch'}
+              ?disabled=${bulkMoveBlocker !== undefined || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.moveSelectedPolicies('first'); }}>⇈</button>
+            <button class="secondary policy-icon-action" type="button" aria-label="Move selected down"
+              title=${bulkMoveBlocker ?? 'Move the selection to the last positions in one atomic batch'}
+              ?disabled=${bulkMoveBlocker !== undefined || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.moveSelectedPolicies('last'); }}>⇊</button>
+            <button class="secondary danger-button" type="button"
+              title=${bulkDeleteBlocker ?? 'Add one atomic deletion batch to the workspace draft'}
+              ?disabled=${bulkDeleteBlocker !== undefined || this.draftSaving || this.draftCommitting}
+              @click=${() => { void this.deleteSelectedPolicies(); }}>
+              ${deleteArmed ? `Confirm delete ${selectedCount}` : 'Delete selected'}
+            </button>
+            <button class="secondary" type="button"
+              @click=${() => this.selectPolicies([])}>Clear selection</button>
+          ` : nothing}
+          </div>
+          ${selectedCount > 0 ? html`
+          <div class="policy-bulk-fields" aria-label="Change selected policy fields">
             <select aria-label="Set selected policy action" .value=${this.policyBulkAction}
               ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
               @change=${(event: Event) => {
@@ -7664,30 +8015,33 @@ export class SmithproxyApp extends LitElement {
             <button class="secondary" type="button"
               ?disabled=${!bulkDraftReady || this.draftSaving || this.draftCommitting}
               @click=${() => { void this.setSelectedPoliciesProfile(); }}>Apply profile</button>
-            <button class="secondary" type="button"
-              title=${bulkMoveBlocker ?? 'Move the selection to the first positions in one atomic batch'}
-              ?disabled=${bulkMoveBlocker !== undefined || this.draftSaving || this.draftCommitting}
-              @click=${() => { void this.moveSelectedPolicies('first'); }}>Move selected first</button>
-            <button class="secondary" type="button"
-              title=${bulkMoveBlocker ?? 'Move the selection to the last positions in one atomic batch'}
-              ?disabled=${bulkMoveBlocker !== undefined || this.draftSaving || this.draftCommitting}
-              @click=${() => { void this.moveSelectedPolicies('last'); }}>Move selected last</button>
-            <button class="secondary danger-button" type="button"
-              title=${bulkDeleteBlocker ?? 'Add one atomic deletion batch to the workspace draft'}
-              ?disabled=${bulkDeleteBlocker !== undefined || this.draftSaving || this.draftCommitting}
-              @click=${() => { void this.deleteSelectedPolicies(); }}>
-              ${deleteArmed ? `Confirm delete ${selectedCount}` : 'Delete selected'}
-            </button>
-            <button class="secondary" type="button"
-              @click=${() => this.selectPolicies([])}>Clear selection</button>
+          </div>
           ` : nothing}
           ${this.policyBulkMessage ? html`<span class="validation" role="status">${this.policyBulkMessage}</span>` : nothing}
         </div>
-        <div class="table" role="group" aria-label="Policies">
-          <div class="policy-table-row heading" aria-hidden="true">
-            <span></span><div class="policy-row-main heading">
-              <span>Name</span><span>Source</span><span>Destination</span><span>Action</span><span>Status</span>
-              <span>Transport</span>
+        <div class=${`table policy-density-${this.policyDensity}`} role="group" aria-label="Policies">
+          <div class="policy-table-row heading">
+            <span></span><div class="policy-row-main heading" style=${this.policyColumnStyle()}>
+              ${['Name', 'Source', 'Destination', 'Action', 'Status', 'Transport'].map((label, index) => html`
+                <span class="policy-column-heading">${label}${index < 5 ? html`
+                  <span class="policy-column-resizer" role="separator" tabindex="0"
+                    aria-label=${`Resize ${label} column`} aria-orientation="vertical"
+                    aria-valuemin="70" aria-valuemax="480"
+                    aria-valuenow=${String(this.policyColumnWidths[index] ?? 100)}
+                    @pointerdown=${(event: PointerEvent) => this.beginPolicyColumnResize(index, event)}
+                    @keydown=${(event: KeyboardEvent) => {
+                      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                      event.preventDefault();
+                      const widths = [...this.policyColumnWidths];
+                      widths[index] = Math.max(70, Math.min(480,
+                        (widths[index] ?? 100) + (event.key === 'ArrowRight' ? 10 : -10)));
+                      this.policyColumnWidths = widths;
+                      try {
+                        window.localStorage.setItem('smithproxy.policy-columns', JSON.stringify(widths));
+                      } catch { /* The in-memory width remains active. */ }
+                    }}></span>
+                ` : nothing}</span>
+              `)}
             </div>
           </div>
           ${visiblePolicyRows.map(row => {
@@ -7704,7 +8058,7 @@ export class SmithproxyApp extends LitElement {
               const disabled = operation.fields['disabled'] === true;
               return html`<div class="policy-table-row">
                 <span class="policy-row-select" title="Pending policies are edited through their create drawer"></span>
-                <button class="policy-row-main" type="button"
+                <button class="policy-row-main" style=${this.policyColumnStyle()} type="button"
                   @click=${(event: MouseEvent) => this.openDraftStructuralOperation(
                     operation.localId, event.currentTarget as HTMLElement,
                   )}>
@@ -7757,7 +8111,7 @@ export class SmithproxyApp extends LitElement {
                     policy.id, (event.currentTarget as HTMLInputElement).checked,
                   )} />
               </label>
-              <button class="policy-row-main" type="button"
+              <button class="policy-row-main" style=${this.policyColumnStyle()} type="button"
                 @click=${(event: MouseEvent) => this.openPolicy(policy, event.currentTarget as HTMLElement)}>
                 <span class="policy-identity" title=${profiles}>
                   <strong>${name}</strong>
@@ -8675,7 +9029,7 @@ export class SmithproxyApp extends LitElement {
               ?disabled=${!this.namedTransactionsAvailable() || this.availableProfileCreateTypes().length === 0}
               @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>+</button>
           ` : nothing}
-          <label class="list-filter">Name, value, or type
+          <label class="list-filter"><span>Search:</span>
             <input type="search" aria-label="Filter object list" .value=${this.objectListQuery}
               @input=${(event: Event) => {
                 this.objectListQuery = (event.currentTarget as HTMLInputElement).value.slice(0, 128);
@@ -9019,8 +9373,18 @@ export class SmithproxyApp extends LitElement {
       metrics.state, metrics.lastSuccessAtUnixMs, 5_000,
     );
     const listeners = orderListenerWorkloads(metrics.listeners);
+    if (this.networkView === 'neighborhood') {
+      return html`<div class="content dashboard" tabindex="0">${this.renderNeighborSummary()}</div>`;
+    }
+    if (this.networkView === 'interfaces') {
+      return html`<div class="content dashboard" tabindex="0">${this.renderInterfaceSummary()}</div>`;
+    }
+    if (this.networkView === 'configuration') {
+      return html`<div class="content dashboard" tabindex="0">${this.renderNetworkConfiguration()}</div>`;
+    }
     return html`
       <div class="content dashboard" tabindex="0">
+        ${this.renderRuntimeSummary()}
         <div class="section-head">
           <div><h2>Network activity</h2><p>Neighborhood, listener workload, and interface synchronization</p></div>
         </div>
@@ -9053,8 +9417,6 @@ export class SmithproxyApp extends LitElement {
             </div>
           ` : html`<div class="metrics-message">No listener samples are available yet.</div>`}
         </section>
-        ${this.renderInterfaceSummary()}
-        ${this.renderNetworkConfiguration()}
       </div>
     `;
   }
@@ -9370,7 +9732,7 @@ export class SmithproxyApp extends LitElement {
     return html`
       <section class="runtime-summary" aria-label="Runtime metrics summary">
         <div class="runtime-heading">
-          <div><h3>Runtime traffic</h3><p>Aggregated counters reported by Smithproxy listeners</p></div>
+          <div><h3>Runtime traffic</h3></div>
           <span class="runtime-state ${presentation.tone}" title=${metrics.detail}>
             ● ${presentation.label}
           </span>
@@ -9392,7 +9754,7 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">${this.formatBytes(metrics.totals.bytesUp)} up · ${this.formatBytes(metrics.totals.bytesDown)} down</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Listener workers</span>
+            <span class="metric-label">Workers</span>
             <strong class="metric-value">${metrics.totals.workers.toLocaleString()}</strong>
             <span class="metric-note">Last success: ${this.timeLabel(metrics.lastSuccessAtUnixMs)}</span>
           </article>
@@ -9561,36 +9923,10 @@ export class SmithproxyApp extends LitElement {
     const emptySlots = Math.max(0, 60 - history.length);
     return html`
       <div class="content dashboard" tabindex="0">
-        <div class="section-head">
-          <div><h2>Control plane</h2><p>Ping reachability; protected configuration access is reported separately</p></div>
-        </div>
-        <div class="metric-grid">
-          <article class="metric">
-            <span class="metric-label">Control-plane ping</span>
-            <strong class="metric-value ${statusTone(this.systemStatus)}">${displayState(this.systemStatus.smithproxy)}</strong>
-            <span class="metric-note">${this.systemStatus.detail}</span>
-          </article>
-          <article class="metric">
-            <span class="metric-label">Probe latency</span>
-            <strong class="metric-value">${this.systemStatus.latencyMs === null ? '—' : `${this.systemStatus.latencyMs} ms`}</strong>
-            <span class="metric-note">Last API ping round trip</span>
-          </article>
-          <article class="metric">
-            <span class="metric-label">Window availability</span>
-            <strong class="metric-value">${this.availabilityLabel()}</strong>
-            <span class="metric-note">${this.systemStatus.availabilitySuccessful} / ${this.systemStatus.availabilitySamples} successful probes</span>
-          </article>
-          <article class="metric">
-            <span class="metric-label">GUI core uptime</span>
-            <strong class="metric-value">${this.uptimeLabel()}</strong>
-            <span class="metric-note">${this.systemStatus.totalProbes} probes · ${this.systemStatus.consecutiveFailures} consecutive failures</span>
-          </article>
-        </div>
+        ${this.renderRuntimeSummary()}
         ${this.renderOperationalHealth()}
         ${this.renderActiveAlerts()}
         ${this.renderConfigurationInventory()}
-        ${this.renderRuntimeSummary()}
-        ${this.renderTlsCache()}
         <section class="monitor-panel" aria-label="Probe history">
           <h3>Recent probe history</h3>
           <p>Up to five minutes at the current five-second sampling interval. Last success: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}.</p>
@@ -9608,6 +9944,50 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private renderSystemControlPlane() {
+    const history = this.systemStatus.history;
+    const successes = history.filter(sample => sample.state === 'ready').length;
+    return html`
+      <div class="content dashboard" tabindex="0">
+        <div class="section-head">
+          <div><h2>Control plane</h2><p>Live reachability between the GUI core and Smithproxy</p></div>
+        </div>
+        <div class="metric-grid">
+          <article class="metric">
+            <span class="metric-label">Smithproxy API</span>
+            <strong class="metric-value">${displayState(this.systemStatus.smithproxy)}</strong>
+            <span class="metric-note">${this.systemStatus.detail}</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Probe latency</span>
+            <strong class="metric-value">${this.systemStatus.latencyMs === null ? '—' : `${this.systemStatus.latencyMs} ms`}</strong>
+            <span class="metric-note">Last API ping round trip</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">Window availability</span>
+            <strong class="metric-value">${this.availabilityLabel()}</strong>
+            <span class="metric-note">${successes} / ${history.length} successful probes</span>
+          </article>
+          <article class="metric">
+            <span class="metric-label">GUI core uptime</span>
+            <strong class="metric-value">${this.uptimeLabel()}</strong>
+            <span class="metric-note">${history.length} recent probes</span>
+          </article>
+        </div>
+        <section class="monitor-panel" aria-label="Probe history">
+          <h3>Recent probe history</h3>
+          <p>Up to five minutes at the current five-second sampling interval. Last success: ${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}.</p>
+          <div class="probe-history" role="img" aria-label="${history.length} probe samples">
+            ${Array.from({length: Math.max(0, 60 - history.length)}, () => html`<span class="probe" aria-hidden="true"></span>`)}
+            ${history.map(sample => html`<span class="probe ${sample.state}"
+              title="${displayState(sample.state)} · ${sample.latencyMs ?? '—'} ms · ${this.timeLabel(sample.checkedAtUnixMs)}"
+              aria-hidden="true"></span>`)}
+          </div>
+          ${this.renderProbeAnalysis()}
+        </section>
+      </div>`;
   }
 
   private renderCollectorMatrix() {
@@ -9650,17 +10030,17 @@ export class SmithproxyApp extends LitElement {
       };
     });
     return html`
-      <section class="monitor-panel" aria-label="Collector health matrix">
+      <section class="monitor-panel" aria-label="Data freshness">
         <div class="runtime-heading">
-          <div><h3>Collector health matrix</h3><p>Reported state and interval-aware data freshness</p></div>
+          <div><h3>Data freshness</h3><p>Current status of runtime data shown in this GUI</p></div>
           <span class="runtime-state">${collectors.filter(item =>
             item.presentation.current).length}/${collectors.length} current</span>
         </div>
-        <div class="table collector-table" tabindex="0" aria-label="Scrollable collector health table">
-          <table class="listener-table" aria-label="Collector health">
+        <div class="table collector-table" tabindex="0" aria-label="Scrollable data freshness table">
+          <table class="listener-table" aria-label="Data freshness">
             <thead><tr>
-              <th>Collector</th><th>Reported state</th><th>Data freshness</th>
-              <th>Expected cadence</th><th>Last success</th>
+              <th>Data source</th><th>Status</th><th>Freshness</th>
+              <th>Refresh interval</th><th>Last update</th>
             </tr></thead>
             <tbody>
               ${collectors.map(item => {
@@ -9742,21 +10122,24 @@ export class SmithproxyApp extends LitElement {
 
   private renderMonitoring() {
     const metrics = this.runtimeMetrics;
+    if (this.monitoringView === 'sessions') {
+      return html`<div class="content dashboard" tabindex="0">${this.renderSessionActivity()}</div>`;
+    }
+    if (this.monitoringView === 'tls') {
+      return html`<div class="content dashboard" tabindex="0">${this.renderTlsCache()}</div>`;
+    }
+    const traffic = this.monitoringView === 'traffic';
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
-          <div><h2>Listener monitoring</h2><p>Live aggregate counters from the Smithproxy runtime</p></div>
+          <div><h2>${traffic ? 'Traffic monitoring' : 'Monitoring overview'}</h2><p>${traffic
+            ? 'Live aggregate counters from the Smithproxy runtime'
+            : 'Actionable health, freshness, and incident state'}</p></div>
         </div>
-        ${this.renderActiveAlerts()}
-        ${this.renderEventStreamHealth()}
-        ${this.renderCollectorMatrix()}
-        ${this.renderProbeAnalysis()}
-        ${this.renderProbeIncidents()}
-        ${this.renderRuntimeSummary()}
-        ${this.renderRuntimeHistory()}
-        ${this.renderTlsCache()}
-        ${this.renderSessionActivity()}
-        <div class="table">
+        ${traffic ? html`
+          ${this.renderRuntimeSummary()}
+          ${this.renderRuntimeHistory()}
+          <div class="table">
           <table class="listener-table">
             <thead><tr><th>Listener</th><th>Workers</th><th>Active</th><th>Total</th><th>Up</th><th>Down</th></tr></thead>
             <tbody>
@@ -9773,7 +10156,13 @@ export class SmithproxyApp extends LitElement {
               ${metrics.listeners.length === 0 ? html`<tr><td colspan="6">No listener samples are available yet.</td></tr>` : nothing}
             </tbody>
           </table>
-        </div>
+          </div>
+        ` : html`
+          ${this.renderActiveAlerts()}
+          ${this.renderCollectorMatrix()}
+          ${this.renderProbeAnalysis()}
+          ${this.renderProbeIncidents()}
+        `}
       </div>
     `;
   }
@@ -9837,6 +10226,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private renderSystem() {
+    if (this.systemView === 'control-plane') return this.renderSystemControlPlane();
     const settings = this.snapshot?.settings;
     const debug = this.snapshot?.debug;
     const captures = this.snapshot?.captures;
@@ -9862,6 +10252,9 @@ export class SmithproxyApp extends LitElement {
     const capabilityTone = this.capabilityBootstrapState === 'ready' ? 'success' :
       this.capabilityBootstrapState === 'unavailable' ? 'danger' : 'warning';
     const enabledCapabilityCount = this.enabledCapabilityCount();
+    const currentArchiveUrl = this.systemClient?.archiveDownloadUrl('current');
+    const previousArchiveUrl = this.systemClient?.archiveDownloadUrl('previous');
+    const archiveEntries = this.archiveValidation?.entries ?? this.archiveInventory?.resources ?? [];
     const pendingConfiguration = this.draftObjects.has('settings:settings') ||
       this.draftObjects.has('captures:captures') ||
       [...this.draftObjects].some(key => key.startsWith('authority:') || key.startsWith('authority-create:') ||
@@ -9870,14 +10263,17 @@ export class SmithproxyApp extends LitElement {
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
-          <div><h2>System integration</h2><p>Non-sensitive diagnostics for this GUI instance</p></div>
+          <div><h2>${this.systemView === 'configuration' ? 'Configuration and trust' :
+            this.systemView === 'backend' ? 'Management backend' :
+            this.systemView === 'traffic' ? 'Traffic and captures' : 'Appearance'}</h2>
+            <p>Focused system administration backed by the current Smithproxy state</p></div>
           <button class="secondary" type="button" @click=${() => this.downloadDiagnostics()}>Download diagnostics</button>
         </div>
         ${pendingConfiguration ? html`<div class="scope-note" role="status">
           Configuration cards include pending workspace draft values. Smithproxy runtime remains unchanged until a validated atomic commit.
         </div>` : nothing}
-        <div class="system-grid">
-          <article class="domain-card">
+        <div class="system-grid" data-view=${this.systemView}>
+          <article class="domain-card" data-system-section="configuration">
             <header>
               <div><h3>Running configuration</h3><p>Runtime state compared with the last explicit save</p></div>
               <span class="runtime-state ${this.snapshot?.unsaved ? 'warning' : this.snapshot ? 'success' : 'warning'}">
@@ -9896,7 +10292,115 @@ export class SmithproxyApp extends LitElement {
               </p>
             ` : nothing}
           </article>
-          <article class="domain-card">
+          <article class="domain-card job-card" data-system-section="configuration">
+            <header>
+              <div><h3>Native configuration archive</h3><p>Portable CFtar startup configuration and managed resources</p></div>
+              <span class="runtime-state ${this.archiveRestore ? 'warning' : this.archiveInventory ? 'success' : 'warning'}">
+                ● ${this.archiveRestore ? 'Restart required' : this.archiveInventory ? 'Ready' : 'Not loaded'}
+              </span>
+            </header>
+            <dl>
+              <dt>Current archive</dt><dd title=${this.archiveInventory?.contentHash ?? ''}>
+                ${this.archiveInventory ? `${this.archiveInventory.resources.length} managed resources` : 'Inventory unavailable'}
+              </dd>
+              <dt>Selected file</dt><dd>${this.archiveFileName || 'None'}</dd>
+              <dt>Validation</dt><dd>${this.archiveValidation
+                ? `CFtar v${this.archiveValidation.formatVersion} · ${this.archiveValidation.entries.length} entries`
+                : this.archiveFileName ? this.archiveBusy ? 'Validating…' : 'Not valid' : 'Select an archive first'}</dd>
+              ${this.archiveValidation ? html`
+                <dt>Archive size</dt><dd>${this.formatBytes(this.archiveValidation.archiveSize)}</dd>
+                <dt>Content SHA-256</dt><dd title=${this.archiveValidation.contentHash}>
+                  ${this.archiveValidation.contentHash.slice(0, 22)}…
+                </dd>
+              ` : nothing}
+            </dl>
+            <div class="archive-actions">
+              <button class="secondary" type="button" ?disabled=${this.archiveBusy}
+                @click=${() => { void this.loadArchiveInventory(); }}>
+                ${this.archiveBusy && !this.archiveFileName ? 'Loading…' : 'Refresh inventory'}
+              </button>
+              ${currentArchiveUrl ? html`<a class="secondary" href=${currentArchiveUrl} download>Download current</a>` : nothing}
+              ${previousArchiveUrl ? html`<a class="secondary" href=${previousArchiveUrl} download>Download previous</a>` : nothing}
+              <label>
+                <span class="sr-only">Select CFtar archive to validate</span>
+                <input type="file" accept=".cftar,application/vnd.smithproxy.cftar,application/x-tar"
+                  ?disabled=${this.archiveBusy} @change=${(event: Event) => { void this.selectArchive(event); }}>
+              </label>
+            </div>
+            ${archiveEntries.length > 0 ? html`
+              <div class="archive-resources" aria-label="Configuration archive entries">
+                ${archiveEntries.map(entry => html`<div class="archive-resource">
+                  <code>${entry.path}</code><span>${this.formatBytes(entry.size)}${entry.executable ? ' · executable' : ''}</span>
+                  ${!this.archiveValidation && this.archiveInventory ? html`<span class="archive-resource-actions">
+                    <a class="secondary" href=${this.systemClient?.archiveResourceUrl(entry.path) ?? '#'} download>Download</a>
+                    <button class="${this.archiveResourceDeleteArmed === entry.path ? 'danger' : 'secondary'}"
+                      type="button" ?disabled=${this.archiveBusy || !this.configSaveAvailable}
+                      @click=${() => { void this.deleteArchiveResource(entry.path); }}>
+                      ${this.archiveResourceDeleteArmed === entry.path ? 'Confirm remove' : 'Remove'}
+                    </button>
+                  </span>` : nothing}
+                </div>`)}
+              </div>
+            ` : nothing}
+            ${this.archiveInventory && !this.archiveValidation ? html`
+              <div class="archive-resource-editor">
+                <input type="text" maxlength="512" placeholder="messages/notice.txt"
+                  aria-label="Managed resource path" .value=${this.archiveResourcePath}
+                  @input=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.archiveResourcePath = input.value;
+                  }}>
+                <input type="file" ?disabled=${this.archiveBusy}
+                  aria-label="Managed resource file"
+                  @change=${(event: Event) => { void this.selectArchiveResource(event); }}>
+                <button class="primary" type="button"
+                  ?disabled=${this.archiveBusy || !this.configSaveAvailable || !this.archiveResourcePayload || !this.archiveResourcePath.trim() || !this.snapshot?.revision}
+                  @click=${() => { void this.writeArchiveResource(); }}>Add or replace resource</button>
+              </div>
+              <label class="archive-confirm">
+                <input type="checkbox" .checked=${this.archiveResourceExecutable}
+                  @change=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.archiveResourceExecutable = input.checked;
+                  }}>
+                <span>Preserve this resource as executable. Stored files are never executed by the archive layer itself.</span>
+              </label>
+              <p>Managed paths must begin with <code>pki/</code>, <code>messages/</code>, <code>scripts/</code>, or <code>ssh/</code>. Resource changes replace only the saved startup archive and require restart.</p>
+            ` : nothing}
+            ${this.archiveValidation ? html`
+              <label class="archive-confirm">
+                <input type="checkbox" .checked=${this.archiveRestoreAcknowledged}
+                  ?disabled=${this.archiveBusy || Boolean(this.archiveRestore)}
+                  @change=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.archiveRestoreAcknowledged = input.checked;
+                  }}>
+                <span>I understand this replaces the saved startup archive. Running configuration is not reloaded; a controlled restart is required.</span>
+              </label>
+              <div class="archive-actions">
+                <button class="danger" type="button"
+                  ?disabled=${!this.archiveRestoreAcknowledged || this.archiveBusy || !this.configSaveAvailable || Boolean(this.archiveRestore) || !this.snapshot?.revision}
+                  @click=${() => { void this.restoreSelectedArchive(); }}>
+                  ${this.archiveBusy ? 'Restoring…' : 'Restore validated archive'}
+                </button>
+                <button class="secondary" type="button" ?disabled=${this.archiveBusy}
+                  @click=${() => {
+                    this.archivePayload = undefined;
+                    this.archiveValidation = undefined;
+                    this.archiveFileName = '';
+                    this.archiveRestoreAcknowledged = false;
+                  }}>Clear selection</button>
+              </div>
+            ` : nothing}
+            ${this.archiveRestore ? html`<div class="metrics-message warning" role="status">
+              Archive restored at revision ${this.archiveRestore.revision}. Restart Smithproxy to activate it.
+            </div>` : nothing}
+            ${this.archiveError ? html`<div class="metrics-message danger" role="alert">${this.archiveError}</div>` : nothing}
+          </article>
+          <div data-system-section="backend">
+            ${this.renderEventStreamHealth()}
+          </div>
+          <article class="domain-card" data-system-section="backend">
             <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
             <dl>
               <dt>Status</dt><dd>${displayState(this.systemStatus.core)}</dd>
@@ -9905,7 +10409,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Base path</dt><dd>${this.runtime?.basePath ?? 'discovering'}</dd>
             </dl>
           </article>
-          <article class="domain-card">
+          <article class="domain-card" data-system-section="backend">
             <header>
               <div><h3>Capability bootstrap</h3><p>Browser trust and feature boundary</p></div>
               <span class="runtime-state ${capabilityTone}" title=${this.capabilityError ?? ''}>
@@ -9921,7 +10425,7 @@ export class SmithproxyApp extends LitElement {
             </dl>
             ${this.capabilityError ? html`<p role="status">${this.capabilityError}</p>` : nothing}
           </article>
-          <article class="domain-card">
+          <article class="domain-card" data-system-section="backend">
             <header><div><h3>Smithproxy API</h3><p>Server-side authenticated connection</p></div></header>
             <dl>
               <dt>Status</dt><dd>${displayState(this.systemStatus.smithproxy)}</dd>
@@ -9930,7 +10434,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Credential handling</dt><dd>GUI core only</dd>
             </dl>
           </article>
-          <article class="domain-card">
+          <article class="domain-card" data-system-section="appearance">
             <header><div><h3>Appearance</h3><p>Saslik appearance contract v1</p></div></header>
             <dl>
               <dt>Application scope</dt><dd>smithproxy-gui</dd>
@@ -9938,7 +10442,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Fallback</dt><dd>Petroleum dark</dd>
             </dl>
           </article>
-          <article class="domain-card">
+          <article class="domain-card" data-system-section="backend">
             <header><div><h3>Security boundary</h3><p>Browser requests stay on the current origin</p></div></header>
             <dl>
               <dt>Browser credentials</dt><dd>Same origin</dd>
@@ -9946,7 +10450,7 @@ export class SmithproxyApp extends LitElement {
               <dt>External redirects</dt><dd>Rejected</dd>
             </dl>
           </article>
-          <article class="domain-card">
+          <article class="domain-card" data-system-section="backend">
             <header>
               <div><h3>Saslik gateway</h3><p>Trusted per-instance request handoff</p></div>
               <span class="runtime-state ${gateway.tone}" title=${gateway.detail}>● ${gateway.label}</span>
@@ -9966,7 +10470,7 @@ export class SmithproxyApp extends LitElement {
             </dl>
             <p role="status">${gateway.detail}</p>
           </article>
-          <article class="domain-card">
+          <article class="domain-card" data-system-section="configuration">
             <header><div><h3>Augment overlays</h3><p>Persistent and effective value provenance</p></div></header>
             <dl>
               <dt>Capability</dt><dd>${this.snapshot?.augmentSupport ? 'Available' : 'Not advertised'}</dd>
@@ -9974,7 +10478,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Editing target</dt><dd>Persistent config</dd>
             </dl>
           </article>
-          <article class="domain-card job-card">
+          <article class="domain-card job-card" data-system-section="backend">
             <header>
               <div><h3>Backend jobs</h3><p>Bounded, redacted control-plane work queue</p></div>
               <span class="runtime-state ${this.jobsError ? 'danger' : this.jobsAvailable ? 'success' : 'warning'}">
@@ -9995,7 +10499,7 @@ export class SmithproxyApp extends LitElement {
             </div>
           </article>
           ${settings ? html`
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="traffic">
               <header><div><h3>Traffic admission</h3><p>Configured listener and failure policy</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('settings', 'settings')}
                   <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
@@ -10010,7 +10514,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Access request failure</dt><dd>${setting('policy_access_request_fail_open', settings.accessRequestFailOpen) ? 'Fail open' : 'Fail closed'}</dd>
               </dl>
             </article>
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="traffic">
               <header><div><h3>Worker pools</h3><p>Configured runtime concurrency</p></div></header>
               <dl>
                 <dt>Plaintext / TLS</dt><dd>${workers(setting('plaintext_workers', settings.workers.plaintext))} / ${workers(setting('ssl_workers', settings.workers.tls))}</dd>
@@ -10020,7 +10524,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Kernel TLS</dt><dd>${setting('ssl_use_ktls', settings.kernelTls) ? 'Requested' : 'Disabled'}</dd>
               </dl>
             </article>
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="traffic">
               <header><div><h3>Listener endpoints</h3><p>Configured local ports and certificate status caches</p></div></header>
               <dl>
                 <dt>Plaintext / TLS</dt><dd>${setting('plaintext_port', settings.ports.plaintext)} / ${setting('ssl_port', settings.ports.tls)}</dd>
@@ -10030,7 +10534,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>CRL status TTL</dt><dd>${setting('ssl_crl_status_ttl', settings.crlStatusTtl).toLocaleString()} s</dd>
               </dl>
             </article>
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="traffic">
               <header><div><h3>Logging and payloads</h3><p>Destinations stay redacted</p></div></header>
               <dl>
                 <dt>Log level / console</dt><dd>${setting('log_level', settings.logging.level)} / ${setting('log_console', settings.logging.console) ? 'On' : 'Off'}</dd>
@@ -10043,7 +10547,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Syslog port / facility / level</dt><dd>${setting('syslog_port', settings.logging.syslogPort)} / ${setting('syslog_facility', settings.logging.syslogFacility)} / ${setting('syslog_level', settings.logging.syslogLevel)}</dd>
               </dl>
             </article>
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="traffic">
               <header><div><h3>Auxiliary services</h3><p>Credentials and filesystem paths stay redacted</p></div></header>
               <dl>
                 <dt>CLI port / password</dt><dd>${setting('cli.port', settings.auxiliary.cliPort)} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
@@ -10058,7 +10562,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Web rating key</dt><dd>${settings.auxiliary.webRatingKeyConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
               </dl>
             </article>
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="backend">
               <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div></header>
               <dl>
                 <dt>Listener</dt><dd>${setting('accept_api', settings.acceptApi) ? 'Enabled' : 'Disabled'}</dd>
@@ -10073,7 +10577,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>PAM login</dt><dd>${setting('http_api.pam_login', settings.httpApi.pamLogin) ? 'Enabled' : 'Disabled'}</dd>
               </dl>
             </article>
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="backend">
               <header><div><h3>Webhook posture</h3><p>URLs and identities are redacted</p></div></header>
               <dl>
                 <dt>Webhook</dt><dd>${setting('webhook.enabled', settings.webhook.enabled) ? 'Enabled' : 'Disabled'}</dd>
@@ -10089,7 +10593,7 @@ export class SmithproxyApp extends LitElement {
             </article>
           ` : nothing}
           ${debug ? html`
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="traffic">
               <header><div><h3>Debug logging</h3><p>Potentially expensive diagnostic controls</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('settings', 'settings')}
                   <button class="secondary" type="button" @click=${(event: Event) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>Edit</button>
@@ -10105,7 +10609,7 @@ export class SmithproxyApp extends LitElement {
             </article>
           ` : nothing}
           ${captures ? html`
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="traffic">
               <header><div><h3>Capture posture</h3><p>Paths and destinations are redacted</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('captures', 'captures')}
                   <button class="secondary" type="button" ?disabled=${!captures.editable}
@@ -10128,7 +10632,7 @@ export class SmithproxyApp extends LitElement {
             </article>
           ` : nothing}
           ${securityAssets ? html`
-            <article class="domain-card">
+            <article class="domain-card" data-system-section="configuration">
               <header><div><h3>Trust and signatures</h3><p>Paths and expressions use write-only controls</p></div></header>
               <dl>
                 <dt>Certificate authorities</dt><dd>${securityAssets.certificateAuthorityCount + pendingAuthorities.length}</dd>
@@ -10237,11 +10741,12 @@ export class SmithproxyApp extends LitElement {
     const jobEventCount = allEvents.length - controlPlaneCount;
     const auditEntries = [...this.managementAudit.entries].reverse();
     return html`
-      <div class="content dashboard" tabindex="0">
+      <div class="content dashboard logs-content" tabindex="0">
+        ${this.logsView === 'events' ? html`
         <div class="section-head">
           <div>
             <h2>Operational events</h2>
-            <p>Bounded, privacy-safe control-plane and backend-job transitions from the GUI core.</p>
+            <p>Recent control-plane and backend-job events.</p>
           </div>
           <span class="runtime-state ${this.eventsError ? 'danger' : 'success'}">
             ${this.eventsError ? 'Unavailable' : this.eventCategoryFilter === 'all'
@@ -10250,8 +10755,7 @@ export class SmithproxyApp extends LitElement {
           </span>
         </div>
         <div class="privacy-note">
-          Smithproxy event-ring messages require a future authenticated Smithproxy HTTP API.
-          This view intentionally does not parse the administrative CLI or expose arbitrary log text.
+          Configuration values and secrets are omitted from operational events.
         </div>
         <div class="event-filters" role="group" aria-label="Operational event category">
           ${([
@@ -10281,20 +10785,19 @@ export class SmithproxyApp extends LitElement {
             `)}
           </div>
         `}
-
+        ` : html`
         <div class="section-head section">
           <div>
             <h2>Management audit</h2>
-            <p>Bounded, redacted GUI-core records for management mutation attempts.</p>
+            <p>Recent management changes and their outcomes.</p>
           </div>
           <span class="runtime-state ${this.auditError ? 'danger' : 'success'}">
             ${this.auditError ? 'Unavailable' : `${auditEntries.length} records`}
           </span>
         </div>
         <div class="origin-note">
-          <strong>Actor attribution unavailable.</strong>
-          The current Saslik gateway contract authenticates the request but does not yet provide a reviewed user identity header.
-          Request IDs, operation names and configuration paths are recorded; values and secrets are never included.
+          <strong>User identity is unavailable for these records.</strong>
+          Request IDs, operations and affected paths are retained; values and secrets are omitted.
         </div>
         ${this.auditError ? html`<div class="metrics-message">${this.auditError}</div>` : nothing}
         ${auditEntries.length === 0 ? html`
@@ -10319,6 +10822,7 @@ export class SmithproxyApp extends LitElement {
               `;
             })}
           </div>
+        `}
         `}
       </div>
     `;
@@ -13213,13 +13717,17 @@ export class SmithproxyApp extends LitElement {
                         ? 'Create content rule' : entry.kind === 'signature-flow-create'
                           ? 'Create signature flow step' : entry.kind === 'signature-create'
                             ? 'Create signature' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+          ${protectedView ? html`
+            <button class="primary" type="button" data-enable-edit
+              @click=${() => this.enableDrawerEditing(entry)}>Edit</button>
+          ` : nothing}
           ${active ? html`
             <button class="icon-button" type="button"
               aria-label=${this.focusMode ? 'Exit focus mode' : 'Enter focus mode'}
               title=${this.focusMode ? 'Exit focus mode' : 'Focus mode'}
               @click=${() => { this.focusMode = !this.focusMode; }}>⛶</button>
           ` : nothing}
-          <button class="icon-button" type="button" aria-label=${closeLabel}
+          <button class="icon-button" type="button" data-close-drawer aria-label=${closeLabel}
             @click=${() => this.requestCloseDrawer(index)}>×</button>
         </header>
         ${keyed(`${this.drawerKey(entry)}:${editing ? 'edit' : 'view'}`, html`
@@ -13313,17 +13821,13 @@ export class SmithproxyApp extends LitElement {
                 Duplicate signature
               </button>
             ` : nothing}
-            ${protectedView ? html`
-              <button class="primary" type="button" data-enable-edit
-                @click=${() => this.enableDrawerEditing(entry)}>Edit</button>
-            ` : nothing}
             <button class="secondary" type="button" @click=${() => this.requestCloseDrawer(index)}>
               ${editing ? 'Cancel' : 'Close'}
             </button>
             ${editing ? html`
               <button class="primary" type="button"
                 ?disabled=${readOnly || this.draftSaving || this.draftCommitting}
-                @click=${() => this.saveToDraft(entry)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
+                @click=${() => this.saveToDraftAndClose(entry, index)}>${this.draftSaving ? 'Saving…' : 'Save to draft'}</button>
             ` : nothing}
           `}
         </footer>
@@ -13350,6 +13854,7 @@ export class SmithproxyApp extends LitElement {
       (this.snapshot?.securityAssets?.certificateAuthorities.length ?? 0) +
       (this.snapshot?.securityAssets?.signatures.length ?? 0);
     const navigationBadge = (item: string): string | undefined => {
+      if (item === 'Draft') return this.draftChangeCount.toLocaleString();
       if (item === 'Objects') return this.snapshot ? objectCount.toLocaleString() : undefined;
       if (item === 'Policy') return this.snapshot ? this.snapshot.policies.length.toLocaleString() : undefined;
       if (item === 'Monitoring') return activeAlertCount > 0 ? activeAlertCount.toLocaleString() : undefined;
@@ -13358,33 +13863,118 @@ export class SmithproxyApp extends LitElement {
       if (item === 'System') return activeJobCount > 0 ? activeJobCount.toLocaleString() : undefined;
       return undefined;
     };
+    const visibleNavigation = navigation;
     const sectionTitle = this.activeSection === 'Objects' ? this.objectViewLabel() : this.activeSection;
     return html`
       <div class="shell" @keydown=${this.handleKeydown}>
         <aside class="sidebar">
           <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
           <nav aria-label="Primary navigation">
-            ${navigation.map((item, index) => html`
-              <div class="nav-item ${item === 'Objects' ? 'object-nav-item' : ''}">
-                <button type="button" class=${item === 'Objects' ? 'object-nav-toggle' : nothing}
-                  aria-current=${this.activeSection === item ? 'page' : nothing}
-                  aria-expanded=${item === 'Objects' ? String(this.objectNavigationExpanded) : nothing}
+            ${visibleNavigation.map((item, index) => html`
+              <div class="nav-item ${['Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'].includes(item)
+                ? `${item.toLowerCase()}-nav-item` : ''}">
+                <button type="button" class=${['Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'].includes(item)
+                  ? `${item.toLowerCase()}-nav-toggle` : nothing}
+                  aria-current=${this.activeSection === item || (item === 'Policy' && this.activeSection === 'Draft')
+                    ? 'page' : nothing}
+                  aria-expanded=${item === 'Objects' ? String(this.objectNavigationExpanded) :
+                    item === 'Network' ? String(this.networkNavigationExpanded) :
+                    item === 'Policy' ? String(this.policyNavigationExpanded) :
+                    item === 'Monitoring' ? String(this.monitoringNavigationExpanded) :
+                    item === 'Logs' ? String(this.logsNavigationExpanded) :
+                    item === 'System' ? String(this.systemNavigationExpanded) : nothing}
                   title=${item} @click=${() => {
                     if (item === 'Objects') {
                       const wasActive = this.activeSection === 'Objects';
                       this.activeSection = 'Objects';
                       this.objectNavigationExpanded = wasActive ? !this.objectNavigationExpanded : true;
+                      this.networkNavigationExpanded = false;
+                      this.policyNavigationExpanded = false;
+                      this.monitoringNavigationExpanded = false;
+                      this.logsNavigationExpanded = false;
+                      this.systemNavigationExpanded = false;
+                    } else if (item === 'Network') {
+                      const wasActive = this.activeSection === 'Network';
+                      this.activeSection = 'Network';
+                      this.networkView = 'overview';
+                      this.networkNavigationExpanded = wasActive ? !this.networkNavigationExpanded : true;
+                      this.objectNavigationExpanded = false;
+                      this.policyNavigationExpanded = false;
+                      this.monitoringNavigationExpanded = false;
+                      this.logsNavigationExpanded = false;
+                      this.systemNavigationExpanded = false;
+                    } else if (item === 'Monitoring') {
+                      const wasActive = this.activeSection === 'Monitoring';
+                      this.activeSection = 'Monitoring';
+                      this.monitoringView = 'overview';
+                      this.monitoringNavigationExpanded = wasActive ? !this.monitoringNavigationExpanded : true;
+                      this.networkNavigationExpanded = false;
+                      this.objectNavigationExpanded = false;
+                      this.policyNavigationExpanded = false;
+                      this.logsNavigationExpanded = false;
+                      this.systemNavigationExpanded = false;
+                    } else if (item === 'Policy') {
+                      const wasActive = this.activeSection === 'Policy' || this.activeSection === 'Draft';
+                      this.activeSection = 'Policy';
+                      this.policyNavigationExpanded = wasActive ? !this.policyNavigationExpanded : true;
+                      this.networkNavigationExpanded = false;
+                      this.objectNavigationExpanded = false;
+                      this.monitoringNavigationExpanded = false;
+                      this.logsNavigationExpanded = false;
+                      this.systemNavigationExpanded = false;
+                    } else if (item === 'Logs') {
+                      const wasActive = this.activeSection === 'Logs';
+                      this.activeSection = 'Logs';
+                      this.logsView = 'events';
+                      this.logsNavigationExpanded = wasActive ? !this.logsNavigationExpanded : true;
+                      this.networkNavigationExpanded = false;
+                      this.objectNavigationExpanded = false;
+                      this.monitoringNavigationExpanded = false;
+                      this.policyNavigationExpanded = false;
+                      this.systemNavigationExpanded = false;
+                    } else if (item === 'System') {
+                      const wasActive = this.activeSection === 'System';
+                      this.activeSection = 'System';
+                      this.systemView = 'configuration';
+                      this.networkNavigationExpanded = false;
+                      this.objectNavigationExpanded = false;
+                      this.monitoringNavigationExpanded = false;
+                      this.policyNavigationExpanded = false;
+                      this.logsNavigationExpanded = false;
+                      this.systemNavigationExpanded = wasActive ? !this.systemNavigationExpanded : true;
+                      if (this.configSaveAvailable && !this.archiveInventory && !this.archiveBusy) {
+                        void this.loadArchiveInventory();
+                      }
                     } else {
                       this.activeSection = item;
+                      this.networkNavigationExpanded = false;
                       this.objectNavigationExpanded = false;
+                      this.monitoringNavigationExpanded = false;
+                      this.policyNavigationExpanded = false;
+                      this.logsNavigationExpanded = false;
+                      this.systemNavigationExpanded = false;
                     }
                   }}>
-                  <span class="nav-icon" aria-hidden="true">${['⌂', '⌁', '◇', '≣', '⌁', '≡', '⚙'][index]}</span>
+                  <span class="nav-icon" aria-hidden="true">
+                    ${item === 'Draft' ? '✎' : ['⌂', '⌁', '◇', '≣', '⌁', '≡', '⚙'][index]}
+                  </span>
                   <span class="nav-label">${item}</span>
-                  ${item === 'Objects' ? html`<span class="nav-expand" aria-hidden="true">›</span>` : nothing}
+                  ${['Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'].includes(item)
+                    ? html`<span class="nav-expand" aria-hidden="true">›</span>` : nothing}
                 </button>
                 ${navigationBadge(item)
                   ? html`<span class="nav-badge" aria-hidden="true">${navigationBadge(item)}</span>` : nothing}
+                ${item === 'Network' ? html`
+                  <div class="object-subnav" role="group" aria-label="Network categories"
+                    ?hidden=${!this.networkNavigationExpanded}>
+                    ${networkNavigation.map(category => html`<button type="button"
+                      aria-current=${this.activeSection === 'Network' && this.networkView === category.kind ? 'page' : nothing}
+                      @click=${() => {
+                        this.activeSection = 'Network'; this.networkView = category.kind;
+                        this.networkNavigationExpanded = true;
+                      }}><span class="nav-icon" aria-hidden="true">${category.icon}</span>
+                      <span class="nav-label">${category.label}</span></button>`)}
+                  </div>` : nothing}
                 ${item === 'Objects' ? html`
                   <div class="object-subnav" role="group" aria-label="Object categories"
                     ?hidden=${!this.objectNavigationExpanded}>
@@ -13399,6 +13989,58 @@ export class SmithproxyApp extends LitElement {
                     `)}
                   </div>
                 ` : nothing}
+                ${item === 'Policy' ? html`
+                  <div class="object-subnav" role="group" aria-label="Policy categories"
+                    ?hidden=${!this.policyNavigationExpanded}>
+                    <button type="button" aria-label="Policy rules"
+                      aria-current=${this.activeSection === 'Policy' ? 'page' : nothing}
+                      @click=${() => {
+                        this.activeSection = 'Policy'; this.policyNavigationExpanded = true;
+                      }}><span class="nav-icon" aria-hidden="true">≣</span>
+                      <span class="nav-label">Rules</span></button>
+                    <button type="button" aria-label=${`Draft changes · ${this.draftChangeCount}`}
+                      aria-current=${this.activeSection === 'Draft' ? 'page' : nothing}
+                      ?disabled=${this.draftChangeCount === 0}
+                      @click=${() => {
+                        this.activeSection = 'Draft'; this.policyNavigationExpanded = true;
+                      }}><span class="nav-icon" aria-hidden="true">✎</span>
+                      <span class="nav-label">Draft changes · ${this.draftChangeCount}</span></button>
+                  </div>
+                ` : nothing}
+                ${item === 'Monitoring' ? html`
+                  <div class="object-subnav" role="group" aria-label="Monitoring categories"
+                    ?hidden=${!this.monitoringNavigationExpanded}>
+                    ${monitoringNavigation.map(category => html`<button type="button"
+                      aria-current=${this.activeSection === 'Monitoring' && this.monitoringView === category.kind ? 'page' : nothing}
+                      @click=${() => {
+                        this.activeSection = 'Monitoring'; this.monitoringView = category.kind;
+                        this.monitoringNavigationExpanded = true;
+                      }}><span class="nav-icon" aria-hidden="true">${category.icon}</span>
+                      <span class="nav-label">${category.label}</span></button>`)}
+                  </div>` : nothing}
+                ${item === 'Logs' ? html`
+                  <div class="object-subnav" role="group" aria-label="Log categories"
+                    ?hidden=${!this.logsNavigationExpanded}>
+                    ${logsNavigation.map(category => html`<button type="button"
+                      aria-current=${this.activeSection === 'Logs' && this.logsView === category.kind ? 'page' : nothing}
+                      @click=${() => {
+                        this.activeSection = 'Logs'; this.logsView = category.kind;
+                        this.logsNavigationExpanded = true;
+                      }}><span class="nav-icon" aria-hidden="true">${category.icon}</span>
+                      <span class="nav-label">${category.label}</span></button>`)}
+                  </div>` : nothing}
+                ${item === 'System' ? html`
+                  <div class="object-subnav" role="group" aria-label="System categories"
+                    ?hidden=${!this.systemNavigationExpanded}>
+                    ${systemNavigation.map(category => html`<button type="button"
+                      aria-current=${this.activeSection === 'System' && this.systemView === category.kind ? 'page' : nothing}
+                      @click=${() => {
+                        this.activeSection = 'System'; this.systemView = category.kind;
+                        this.systemNavigationExpanded = true;
+                      }}><span class="nav-icon" aria-hidden="true">${category.icon}</span>
+                      <span class="nav-label">${category.label}</span></button>`)}
+                  </div>
+                ` : nothing}
               </div>
             `)}
           </nav>
@@ -13407,11 +14049,22 @@ export class SmithproxyApp extends LitElement {
           <header class="topbar">
             <h1>${sectionTitle}</h1>
             <p>${sectionDescriptions[this.activeSection] ?? 'Smithproxy management'}</p>
-            ${this.snapshot?.source === 'live' && (this.draftChangeCount > 0 || this.snapshot.unsaved) ? html`
+            ${this.snapshot?.source === 'live' ? html`
               <div class="config-workflow" aria-label="Configuration changes">
+                <span class="config-state ${this.snapshot.unsaved ? 'danger' : ''}">
+                  ${this.snapshot.unsaved ? '● Running configuration unsaved' : 'Running configuration saved'}
+                </span>
+                <span class="config-state ${this.draftChangeCount > 0 ? 'warning' : ''}">
+                  ${this.draftChangeCount > 0
+                    ? `${this.draftChangeCount} draft change${this.draftChangeCount === 1 ? '' : 's'}`
+                    : 'No draft changes'}
+                </span>
                 ${this.draftChangeCount > 0 ? html`
                   <button class="primary" type="button"
                     ?disabled=${this.drawers.length > 0}
+                    aria-label=${`Review draft · ${this.draftChangeCount}${
+                      this.configRevisionDrift ? ' · live changed' : ''} — ${
+                      this.configRevisionDrift ? 'Resolve draft' : 'Review & commit'} · ${this.draftChangeCount}`}
                     title=${this.configRevisionDrift
                       ? 'The running configuration changed after this draft was opened. Review the conflict.'
                       : 'Review, validate, and atomically commit pending changes to the running configuration.'}
@@ -13422,7 +14075,7 @@ export class SmithproxyApp extends LitElement {
                     ${this.configRevisionDrift ? 'Resolve draft' : 'Review & commit'} · ${this.draftChangeCount}
                   </button>
                 ` : nothing}
-                ${this.snapshot.unsaved ? html`
+                ${this.snapshot?.source === 'live' && this.snapshot.unsaved ? html`
                   <button class="primary ${this.configSaveArmed ? 'save-confirm' : 'save-required'}" type="button"
                     ?disabled=${!this.configSaveAvailable || this.configSaving || this.draftCommitting}
                     title=${this.configSaveAvailable
@@ -13444,14 +14097,16 @@ export class SmithproxyApp extends LitElement {
               </div>
             ` : nothing}
             ${this.configReadAvailable && this.draftChangeCount === 0 ? html`
-              <button class="secondary config-refresh" type="button"
+              <button class="config-refresh ${this.configError ? 'danger' : ''} ${
+                this.configRevisionDrift ? 'drift' : ''}" type="button"
+                aria-label="Refresh config"
                 title=${this.drawers.length > 0
                   ? 'Close the active editor before refreshing configuration.'
                   : this.configError ?? 'Reload the authenticated Smithproxy configuration snapshot.'}
                 ?disabled=${this.configRefreshInFlight || this.drawers.length > 0 || this.draftSaving ||
                   this.draftCommitting}
                 @click=${() => { void this.refreshConfiguration(true); }}>
-                ${this.configRefreshInFlight ? 'Refreshing…' : this.configError ? 'Retry config' : 'Refresh config'}
+                ${this.configRefreshInFlight ? '…' : '↻'}
               </button>
             ` : nothing}
             <input class="search" type="search" aria-label="Search" maxlength="128"
@@ -13463,6 +14118,16 @@ export class SmithproxyApp extends LitElement {
             ${this.drawers.map((entry, index) => this.renderDrawer(entry, index))}
           </div>
         </main>
+        ${this.externalConfigNotice ? html`
+          <aside class="config-toast" role="status" aria-live="polite">
+            <div class="config-toast-content">
+              <strong>Configuration changed in the background.</strong>
+              <button type="button" aria-label="Dismiss configuration change notice"
+                @click=${() => { this.externalConfigNotice = false; }}>×</button>
+            </div>
+            <div class="config-toast-progress" aria-hidden="true"></div>
+          </aside>
+        ` : nothing}
         <footer class="statusbar" aria-label="System status" tabindex="0"
           aria-description="On narrow screens, scroll horizontally to inspect every status.">
           ${this.snapshot?.unsaved ? html`
@@ -13486,21 +14151,28 @@ export class SmithproxyApp extends LitElement {
           </button>
           <button class="status-action status-secondary system-state ${this.freshnessTone(controlFreshness.state)}" type="button"
             title="Last successful authenticated control-plane probe: ${this.sampleAgeLabel(this.systemStatus.lastSuccessAtUnixMs)}"
-            @click=${() => { this.activeSection = 'Monitoring'; }}>
+            @click=${() => { this.activeSection = 'Monitoring'; this.monitoringView = 'overview'; }}>
             ● Freshness: ${freshnessLabel(controlFreshness.state)}
           </button>
           <button class="status-action status-secondary system-state ${streamTone}" type="button"
             title=${this.eventStreamError ?? this.eventsError ?? 'Open operational event transport health'}
-            @click=${() => { this.activeSection = 'Monitoring'; }}>
+            @click=${() => { this.activeSection = 'System'; this.systemView = 'backend'; }}>
             ● Events: ${displayState(this.eventStreamState)}
           </button>
           <button class="status-action status-secondary system-state ${jobTone}" type="button"
             title=${this.jobsError ?? 'Open the bounded backend job queue'}
-            @click=${() => { this.activeSection = 'System'; }}>
+            @click=${() => { this.activeSection = 'System'; this.systemView = 'backend'; }}>
             ● Jobs: ${this.jobsError || !this.jobsAvailable
               ? 'Unavailable' : activeJobCount > 0 ? `${activeJobCount} active` : 'Idle'}
           </button>
-          <span class="status-secondary ${this.draftChangeCount ? 'draft' : ''}">Draft: ${this.draftChangeCount} changes</span>
+          <button class="status-action status-secondary ${this.draftChangeCount ? 'draft' : ''}" type="button"
+            ?disabled=${this.draftChangeCount === 0}
+            title=${this.draftChangeCount > 0
+              ? 'Open pending configuration changes'
+              : 'No pending configuration changes'}
+            @click=${() => { this.activeSection = 'Draft'; }}>
+            Draft: ${this.draftChangeCount} changes
+          </button>
           <span class="status-secondary" title=${this.configError ?? this.snapshot?.detail ?? ''}>
             Config: ${this.snapshot
               ? `${displayState(this.snapshot.state)}${this.configError ? ' · refresh failed' : ''}`

@@ -79,10 +79,11 @@ function formatIpv6(value: bigint): string {
 
 export function parseCidr(value: string): CidrInfo | undefined {
   const pieces = value.trim().split('/');
-  if (pieces.length !== 2) return undefined;
-  const [address = '', rawPrefix = ''] = pieces;
+  if (pieces.length < 1 || pieces.length > 2) return undefined;
+  const [address = '', suppliedPrefix] = pieces;
   const family = address.includes(':') ? 'IPv6' : 'IPv4';
   const bits = family === 'IPv6' ? 128 : 32;
+  const rawPrefix = suppliedPrefix ?? String(bits);
   const parsedAddress = family === 'IPv6' ? parseIpv6(address) : parseIpv4(address);
   const prefix = parsePrefix(rawPrefix, bits);
   if (parsedAddress === undefined || prefix === undefined) return undefined;
@@ -92,6 +93,13 @@ export function parseCidr(value: string): CidrInfo | undefined {
   const last = network | hostMask;
   const format = family === 'IPv6' ? formatIpv6 : formatIpv4;
   return {family, prefix, network: format(network), last: format(last), addressCount: 1n << BigInt(hostBits)};
+}
+
+export function normalizeCidr(value: string): string | undefined {
+  const trimmed = value.trim();
+  const info = parseCidr(trimmed);
+  if (!info) return undefined;
+  return trimmed.includes('/') ? trimmed : `${info.network}/${info.prefix}`;
 }
 
 export function describeCidr(value: string): string | undefined {

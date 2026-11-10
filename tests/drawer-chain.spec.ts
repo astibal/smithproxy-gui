@@ -1124,7 +1124,8 @@ test('requires an explicit edit decision before live configuration fields can ch
   await edit.click();
   await expect(name).toBeEditable();
   await expect(action).toBeEnabled();
-  await expect(name).toBeFocused();
+  await expect(name).not.toBeFocused();
+  await expect(editor.getByRole('button', {name: 'Close Policy 1'})).toBeFocused();
   await expect(editor.getByRole('button', {name: 'Save to draft'})).toBeVisible();
   await expectNoWcagViolations(page);
 });
@@ -1143,7 +1144,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(policyRow).toContainText('TLS inspect');
   await expect(policyRow).toContainText('tcp · any → https');
   await policyRow.click();
-  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  let editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await expect(editor.getByText('Validation ready')).toBeVisible();
   await expect(editor.getByRole('heading', {name: 'Identity and outcome'})).toBeVisible();
   await expect(editor.getByRole('heading', {name: 'Traffic match'})).toBeVisible();
@@ -1178,20 +1179,21 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   const action = editor.getByLabel('Action');
   await action.selectOption('reject');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor).not.toBeVisible();
   const updatedPolicyRow = page.getByRole('button', {name: /Office outbound office office, internet reject/i});
   await expect(updatedPolicyRow).toContainText('office, internet');
   await expect(updatedPolicyRow).not.toContainText('office +1');
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await expect(page.getByText('Config: Ready')).toBeVisible();
+  await updatedPolicyRow.click();
+  editor = page.getByRole('dialog', {name: 'Edit Office outbound'});
   await editor.getByRole('button', {name: /tcp/i}).click();
   const protocolEditor = page.getByRole('dialog', {name: 'Edit tcp'});
   await expect(protocolEditor).toBeVisible();
   await protocolEditor.getByLabel('IP protocol number').fill('17');
   await protocolEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(protocolEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(protocolEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await protocolEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('group', {name: 'Destination ports', exact: true})
     .getByRole('button', {name: 'https', exact: true}).click();
   const portEditor = page.getByRole('dialog', {name: 'Edit https'});
@@ -1204,9 +1206,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await portEditor.getByLabel('Start').fill('8443');
   await portEditor.getByLabel('End').fill('8443');
   await portEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(portEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(portEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await portEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'inspect', exact: true}).click();
   const tlsEditor = page.getByRole('dialog', {name: 'Edit inspect'});
   await expect(tlsEditor).toBeVisible();
@@ -1228,12 +1229,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await tlsEditor.getByLabel('SNI bypass list', {exact: true}).selectOption('replace');
   await tlsEditor.getByLabel('SNI bypass list replacement').fill('["internal.example", "*.private.example"]');
   await tlsEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(tlsEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(tlsEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await expect(tlsEditor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('unchanged');
-  await expect(tlsEditor.getByLabel('SNI bypass list replacement')).toHaveValue('');
-  await expect(tlsEditor.getByText(/Current SNI bypass values stay inside the GUI core/i)).toBeVisible();
-  await tlsEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'capture', exact: true}).click();
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
   await contentEditor.getByLabel('Payload capture').selectOption('true');
@@ -1243,13 +1240,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await contentEditor.getByLabel('Session filter', {exact: true}).selectOption('replace');
   await contentEditor.getByLabel('Session filter replacement').fill('policy == "office-secret"');
   await contentEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(contentEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(contentEditor.getByLabel('Session filter', {exact: true})).toHaveValue('unchanged');
-  await expect(contentEditor.getByLabel('Session filter replacement')).toHaveValue('');
-  await expect(contentEditor.getByRole('group', {name: 'Content rules'})
-    .getByRole('button', {name: /Rule \d/i})).toHaveCount(2);
+  await expect(contentEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await contentEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'default-ssh', exact: true}).click();
   const sshEditor = page.getByRole('dialog', {name: 'Edit default-ssh'});
   await expect(sshEditor.getByLabel('Host key', {exact: true})).toHaveValue('unchanged');
@@ -1259,11 +1251,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await sshEditor.getByLabel('Exec').selectOption('pass');
   await sshEditor.getByLabel('Local forwarding').selectOption('pass');
   await sshEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(sshEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(sshEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await expect(sshEditor.getByLabel('Host key', {exact: true})).toHaveValue('unchanged');
-  await expect(sshEditor.getByLabel('Host key replacement')).toHaveValue('');
-  await sshEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'audit', exact: true}).click();
   const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
   await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
@@ -1271,31 +1260,26 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await scriptEditor.getByLabel('Module path replacement').fill('/opt/smithproxy/new-audit.py');
   await scriptEditor.getByLabel('Runtime').selectOption('go');
   await scriptEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(scriptEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(scriptEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
-  await expect(scriptEditor.getByLabel('Module path replacement')).toHaveValue('');
-  await scriptEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'detect', exact: true}).click();
   const detectionEditor = page.getByRole('dialog', {name: 'Edit detect'});
   await detectionEditor.getByLabel('Detection phase').selectOption('2');
   await detectionEditor.getByLabel('L7 engines').selectOption('false');
   await detectionEditor.getByLabel('Knowledge base').selectOption('true');
   await detectionEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(detectionEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(detectionEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await detectionEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'resolver', exact: true}).click();
   const dnsEditor = page.getByRole('dialog', {name: 'Edit resolver'});
   await dnsEditor.getByLabel('Match request ID').selectOption('false');
   await dnsEditor.getByLabel('Randomize upstream ID').selectOption('false');
   await dnsEditor.getByLabel('Cached responses').selectOption('true');
   await dnsEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(dnsEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(dnsEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await dnsEditor.getByRole('button', {name: 'Cancel'}).click();
   await editor.getByRole('button', {name: 'main', exact: true}).click();
-  const routingEditor = page.getByRole('dialog', {name: 'Edit main'});
+  let routingEditor = page.getByRole('dialog', {name: 'Edit main'});
   await routingEditor.getByLabel('Destination addresses').fill('internet, office');
   await routingEditor.getByLabel('Load balancing').selectOption('sticky-l4');
   await routingEditor.getByLabel('Rewrite SNI match').fill('old.example');
@@ -1304,8 +1288,10 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await routingEditor.getByLabel('Rewrite SNI target').fill('new.example');
   await routingEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(routingEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(routingEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
+  await editor.getByRole('button', {name: 'main', exact: true}).click();
+  routingEditor = page.getByRole('dialog', {name: 'Edit main'});
   await routingEditor.getByRole('button', {name: 'internet', exact: true}).click();
   const internetEditor = page.getByRole('dialog', {name: 'Edit internet'});
   await expect(internetEditor).toBeVisible();
@@ -1321,7 +1307,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(editor).not.toHaveAttribute('inert', '');
   await editor.getByRole('group', {name: 'Sources', exact: true})
     .getByRole('button', {name: 'office', exact: true}).click();
-  const addressEditor = page.getByRole('dialog', {name: 'Edit office'});
+  const addressEditor = page.getByRole('dialog', {name: 'Edit office', exact: true});
   await expect(addressEditor).toBeVisible();
   await expect(addressEditor.locator('.address-insight')).toHaveText(
     'IPv4 /24 · 256 addresses · 10.0.0.0 – 10.0.0.255',
@@ -1329,16 +1315,14 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await addressEditor.getByLabel('Address').fill('10.0.1.37/33');
   await expect(addressEditor.locator('.address-insight')).toHaveText('Enter a valid IPv4 or IPv6 CIDR.');
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(addressEditor.getByText(/require a valid IPv4 or IPv6 prefix/i)).toBeVisible();
+  await expect(addressEditor).toBeVisible();
   await addressEditor.getByLabel('Address').fill('10.0.1.37/23');
   await expect(addressEditor.locator('.address-insight')).toHaveText(
     'IPv4 /23 · 512 addresses · 10.0.0.0 – 10.0.1.255',
   );
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(addressEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
   await expect(addressEditor).not.toBeVisible();
+  await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await editor.getByRole('button', {name: 'Cancel'}).click();
   await expect(editor).not.toBeVisible();
   await page.getByRole('button', {name: 'System', exact: true}).click();
@@ -1348,19 +1332,13 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await authorityEditor.getByLabel('CA path', {exact: true}).selectOption('replace');
   await authorityEditor.getByLabel('CA path replacement').fill('/etc/smithproxy/private/new-default-ca');
   await authorityEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(authorityEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(authorityEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
-  await expect(authorityEditor.getByLabel('CA path replacement')).toHaveValue('');
-  await authorityEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: /Review draft · \d+/u}).click();
   await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
   const preflight = page.getByRole('region', {name: 'Draft preflight'});
-  await expect(preflight.getByText('GUI schema validation')).toBeVisible();
-  await expect(preflight.getByText('Valid', {exact: true})).toBeVisible();
-  await expect(preflight.getByText('Smithproxy validation')).toBeVisible();
-  await expect(preflight.getByText('Atomic commit')).toBeVisible();
-  await expect(preflight.getByText('Blocked', {exact: true})).toBeVisible();
+  await expect(preflight.getByRole('heading', {name: 'Review changes'})).toBeVisible();
+  await expect(preflight.getByRole('button', {name: 'Commit configuration'})).toBeDisabled();
   await expect(preflight.getByLabel('Affected configuration sections')).toContainText('policy');
   await expect(preflight).toContainText('Smithproxy transaction schemas are not reviewed by this GUI core.');
   await expectNoWcagViolations(page);
@@ -1442,8 +1420,8 @@ test('saves only fields changed since the editor opened', async ({page}) => {
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
 
-  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
-  const nat = editor.getByLabel('NAT', {exact: true});
+  let editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  let nat = editor.getByLabel('NAT', {exact: true});
   const features = editor.getByRole('group', {name: 'Features'});
   await expect(nat).toHaveValue('');
   await expect(nat.locator('option:checked')).toHaveText('Legacy value: (empty)');
@@ -1457,6 +1435,9 @@ test('saves only fields changed since the editor opened', async ({page}) => {
   ]]);
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
 
+  await page.getByRole('button', {name: /Office minimal draft office internet reject/i}).click();
+  editor = page.getByRole('dialog', {name: 'Edit Office minimal draft'});
+  nat = editor.getByLabel('NAT', {exact: true});
   await nat.selectOption('auto');
   await nat.selectOption('');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
@@ -1493,7 +1474,7 @@ test('renames referenced configuration entities atomically across pending refere
     {path: 'policy.[0].dst', value: ['public-internet']},
     {path: 'routing.[0].dnat_address', value: ['public-internet']},
   ]);
-  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(addressEditor).not.toBeVisible();
 
   const ports = page.getByRole('group', {name: 'Port objects'});
   await ports.getByRole('button').filter({hasText: 'https'}).click();
@@ -1505,7 +1486,7 @@ test('renames referenced configuration entities atomically across pending refere
     {path: 'policy.[0].dport', value: ['web-tls']},
     {path: 'routing.[0].dnat_port', value: ['web-tls']},
   ]);
-  await portEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(portEditor).not.toBeVisible();
 
   const protocols = page.getByRole('group', {name: 'Protocol objects'});
   await protocols.getByRole('button').filter({hasText: 'tcp'}).click();
@@ -1516,7 +1497,7 @@ test('renames referenced configuration entities atomically across pending refere
     {path: 'proto_objects.[0].name', value: 'tcp-stream'},
     {path: 'policy.[0].proto', value: 'tcp-stream'},
   ]);
-  await protocolEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(protocolEditor).not.toBeVisible();
 
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   await profiles.getByRole('button').filter({hasText: 'inspect'}).click();
@@ -1663,7 +1644,7 @@ test('removes ordinary pending values when editors restore the live configuratio
     changes: [],
     removePaths: ['policy.[0].action'],
   });
-  await policyEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(policyEditor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'Edit settings.ssl_workers'}).click();
   const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
@@ -1746,7 +1727,7 @@ test('removes a pending rename only after its draft reference changes', async ({
   }]);
 });
 
-test('validates the immutable workspace draft through the Smithproxy transaction', async ({page}) => {
+test('keeps the immutable workspace draft blocked without atomic commit transport', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
     validationReady: true,
@@ -1759,18 +1740,9 @@ test('validates the immutable workspace draft through the Smithproxy transaction
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
 
   const preflight = page.getByRole('region', {name: 'Draft preflight'});
-  await expect(preflight.getByText('Ready', {exact: true})).toBeVisible();
-  await preflight.getByRole('button', {name: 'Validate with Smithproxy'}).click();
-  await expect(preflight.getByText('Validated', {exact: true})).toBeVisible();
-  await expect(preflight.getByRole('status')).toContainText(
-    'Smithproxy validated 1 operations · 1 warnings · restart required.',
-  );
+  await expect(preflight.getByRole('button', {name: 'Commit configuration'})).toBeDisabled();
   await expect(preflight).toContainText('The GUI core atomic commit transport is not enabled yet.');
-  expect(state.validationRequests).toEqual([{
-    expectedVersion: 1,
-    keys: ['expected_version'],
-    csrf: '1',
-  }]);
+  expect(state.validationRequests).toEqual([]);
   await expectNoWcagViolations(page);
 });
 
@@ -2183,8 +2155,7 @@ test('chains ordered creates and moves through earlier client identifiers', asyn
   await editor.getByLabel('Name').fill('before-pending-policy');
   await editor.getByLabel('Placement').selectOption('before:client:chain-policy');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
-  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('group', {name: 'Profiles and routing'})
@@ -2202,8 +2173,7 @@ test('chains ordered creates and moves through earlier client identifiers', asyn
   await editor.getByLabel('Placement', {exact: true}).selectOption('before:client:chain-rule');
   await editor.getByLabel('New content match expression').fill('CHAIN-RULE');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
-  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
   await parent.getByRole('button', {name: 'Cancel'}).click();
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
@@ -2224,7 +2194,7 @@ test('chains ordered creates and moves through earlier client identifiers', asyn
   await editor.getByLabel('Placement', {exact: true}).selectOption('before:client:chain-flow');
   await editor.getByLabel('New signature flow expression').fill('CHAIN-FLOW');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(6);
   expect(state.structuralMutationRequests!.map(request => request.operation.position)).toEqual([
@@ -2337,7 +2307,7 @@ test('shows and reopens pending security rules and flow creates in context', asy
   await expect(editor.getByLabel('New signature flow expression')).toHaveValue('');
 });
 
-test('requires bound validation and explicit confirmation before atomic commit', async ({page}) => {
+test('validates and atomically commits the draft with one administrator action', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
     validationReady: true,
@@ -2352,14 +2322,8 @@ test('requires bound validation and explicit confirmation before atomic commit',
 
   const preflight = page.getByRole('region', {name: 'Draft preflight'});
   const commit = preflight.getByRole('button', {name: 'Commit configuration'});
-  await expect(commit).toBeDisabled();
-  await preflight.getByRole('button', {name: 'Validate with Smithproxy'}).click();
   await expect(commit).toBeEnabled();
   await commit.click();
-  const confirm = preflight.getByRole('button', {name: 'Confirm atomic commit · 1'});
-  await expect(confirm).toBeVisible();
-  await expect(page.getByText('Draft: 1 changes')).toBeVisible();
-  await confirm.click();
 
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByText('No pending changes')).toBeVisible();
@@ -2367,6 +2331,11 @@ test('requires bound validation and explicit confirmation before atomic commit',
     '1 operations · 1 warnings',
   );
   expect(state.commitRequests).toEqual([{
+    expectedVersion: 1,
+    keys: ['expected_version'],
+    csrf: '1',
+  }]);
+  expect(state.validationRequests).toEqual([{
     expectedVersion: 1,
     keys: ['expected_version'],
     csrf: '1',
@@ -2525,7 +2494,7 @@ test('creates and reopens an address object through a structural drawer', async 
   await editor.getByLabel('Type').selectOption('cidr');
   await editor.getByLabel('Address', {exact: true}).fill('192.0.2.0/24');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
   const request = state.structuralMutationRequests![0]!;
   expect(request.expectedVersion).toBe(0);
@@ -2537,7 +2506,6 @@ test('creates and reopens an address object through a structural drawer', async 
   expect(request.operation.local_id).toMatch(/^create-address-[0-9a-f-]{36}$/u);
   expect(request.operation.client_id).toBe(request.operation.local_id);
 
-  await editor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(table).toContainText('address_objects · create');
@@ -2576,8 +2544,7 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
   expect(state.structuralMutationRequests).toEqual([]);
   await editor.getByLabel('Name').fill('branch-tls');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
-  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
 
   await selectObjectCategory(page, 'Protocol objects');
   await page.getByRole('button', {name: 'New protocol'}).click();
@@ -2593,7 +2560,7 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
   expect(state.structuralMutationRequests).toHaveLength(1);
   await editor.getByLabel('IP protocol number').fill('17');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(2);
   expect(state.structuralMutationRequests![0]).toMatchObject({
@@ -2613,7 +2580,6 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
     csrf: '1',
   });
 
-  await editor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 2'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   const portRow = table.getByRole('row').filter({hasText: 'port_objects · create'});
@@ -2675,9 +2641,7 @@ test('creates complete typed routing detection and DNS profiles', async ({page})
   await editor.getByLabel('Rewrite SNI match').fill('public.example');
   await editor.getByLabel('Rewrite SNI target').fill('private.example');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
-  await expect(editor.getByLabel('Profile type')).toBeDisabled();
-  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'New profile'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
@@ -2688,7 +2652,7 @@ test('creates complete typed routing detection and DNS profiles', async ({page})
   await editor.getByLabel('Detection engines').selectOption('false');
   await editor.getByLabel('Knowledge base').selectOption('true');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'New profile'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
@@ -2698,7 +2662,7 @@ test('creates complete typed routing detection and DNS profiles', async ({page})
   await editor.getByLabel('Randomize response ID').selectOption('true');
   await editor.getByLabel('Cached responses').selectOption('false');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(3);
   expect(state.structuralMutationRequests![0]).toMatchObject({
@@ -2762,9 +2726,7 @@ test('creates sensitive content SSH and script profiles without reflecting write
   await editor.getByLabel('Session filter', {exact: true}).selectOption('replace');
   await editor.getByLabel('New session filter').fill('PRIVATE-CONTENT-FILTER');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
-  await expect(editor.getByLabel('New session filter')).toHaveValue('');
-  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'New profile'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
@@ -2776,8 +2738,7 @@ test('creates sensitive content SSH and script profiles without reflecting write
   await editor.getByLabel('Exec').selectOption('pass');
   await editor.getByLabel('Subsystem').selectOption('pass');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByLabel('New host-key path')).toHaveValue('');
-  await editor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(editor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'New profile'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
@@ -2787,7 +2748,7 @@ test('creates sensitive content SSH and script profiles without reflecting write
   await editor.getByLabel('Module path', {exact: true}).selectOption('replace');
   await editor.getByLabel('New script module path').fill('/private/branch.py');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByLabel('New script module path')).toHaveValue('');
+  await expect(editor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(3);
   expect(state.structuralMutationRequests![0]).toMatchObject({
@@ -2818,7 +2779,6 @@ test('creates sensitive content SSH and script profiles without reflecting write
     },
   });
 
-  await editor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 3'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   for (const secret of ['PRIVATE-CONTENT-FILTER', '/private/branch-host-key', '/private/branch.py']) {
@@ -2855,8 +2815,7 @@ test('creates a complete fail-closed TLS profile with a redacted SNI bypass list
   await editor.getByLabel('SNI bypass list', {exact: true}).selectOption('replace');
   await editor.getByLabel('New SNI bypass list').fill('["private.example"]');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
-  await expect(editor.getByLabel('New SNI bypass list')).toHaveValue('');
+  await expect(editor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
@@ -2882,7 +2841,6 @@ test('creates a complete fail-closed TLS profile with a redacted SNI bypass list
     .toMatch(/^create-profile-[0-9a-f-]{36}$/u);
   expect(Object.keys(state.structuralMutationRequests![0]!.operation.fields as object)).toHaveLength(32);
 
-  await editor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(table).toContainText('tls_profiles · create');
@@ -2925,8 +2883,7 @@ test('creates and deletes certificate authorities without exposing filesystem pa
   await createEditor.getByLabel('Name').fill('branch-ca');
   await createEditor.getByLabel('New CA path').fill('/private/pki/branch-ca.pem');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
+  await expect(createEditor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(2);
   expect(state.structuralMutationRequests![0]).toMatchObject({
@@ -2942,7 +2899,6 @@ test('creates and deletes certificate authorities without exposing filesystem pa
   expect(state.structuralMutationRequests![1]!.operation.local_id)
     .toMatch(/^create-authority-[0-9a-f-]{36}$/u);
 
-  await createEditor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 2'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(table).toContainText('tls_ca · delete');
@@ -2988,8 +2944,7 @@ test('duplicates a certificate authority without exposing or copying its private
 
   await createEditor.getByLabel('New CA path').fill('/private/pki/default-copy.pem');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
+  await expect(createEditor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
     expectedVersion: 1, csrf: '1', operation: {
@@ -3046,8 +3001,7 @@ test('duplicates signature metadata but requires a new private matcher expressio
 
   await createEditor.getByLabel('New signature first flow expression').fill('PRIVATE-COPY-MATCHER');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(createEditor.getByLabel('New signature first flow expression')).toHaveValue('');
+  await expect(createEditor).not.toBeVisible();
   expect(state.structuralBatchMutationRequests).toHaveLength(1);
   expect(state.structuralBatchMutationRequests![0]).toMatchObject({
     expectedVersion: 1,
@@ -3155,7 +3109,7 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   await setReferenceList(editor, 'Sources', []);
   await setReferenceList(editor, 'Destinations', []);
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
+  await expect(editor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
   const request = state.structuralMutationRequests![0]!;
   expect(request.expectedVersion).toBe(0);
@@ -3170,7 +3124,6 @@ test('creates an ordered policy and opens referenced objects from its drawer', a
   expect(request.operation.local_id).toMatch(/^create-policy-[0-9a-f-]{36}$/u);
   expect(request.operation.client_id).toBe(request.operation.local_id);
 
-  await editor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(table).toContainText('policy · create');
@@ -3224,7 +3177,7 @@ test('duplicates a real policy into an explicit draft create without baking augm
   await createEditor.getByLabel('NAT', {exact: true}).selectOption('auto');
   await expectNoWcagViolations(page);
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
@@ -3275,7 +3228,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
   );
   expect(state.structuralMutationRequests).toEqual([]);
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor).not.toBeVisible();
   expect(state.structuralMutationRequests![0]).toMatchObject({
     expectedVersion: 1,
     operation: {
@@ -3284,7 +3237,6 @@ test('duplicates real primitive objects into explicit creates without baking aug
     },
     csrf: '1',
   });
-  await createEditor.getByRole('button', {name: 'Cancel'}).click();
   await liveEditor.getByRole('button', {name: 'Cancel'}).click();
 
   await page.getByRole('group', {name: 'Port objects'})
@@ -3296,7 +3248,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
   await expect(createEditor.getByLabel('First port')).toHaveValue('443');
   await expect(createEditor.getByLabel('Last port')).toHaveValue('8443');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor).not.toBeVisible();
   expect(state.structuralMutationRequests![1]).toMatchObject({
     expectedVersion: 2,
     operation: {
@@ -3304,7 +3256,6 @@ test('duplicates real primitive objects into explicit creates without baking aug
       fields: {name: 'https-copy', start: 443, end: 8443},
     },
   });
-  await createEditor.getByRole('button', {name: 'Cancel'}).click();
   await liveEditor.getByRole('button', {name: 'Cancel'}).click();
 
   await page.getByRole('group', {name: 'Protocol objects'})
@@ -3319,7 +3270,7 @@ test('duplicates real primitive objects into explicit creates without baking aug
   expect(state.structuralMutationRequests).toHaveLength(2);
   await createEditor.getByLabel('IP protocol number').fill('17');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor).not.toBeVisible();
   expect(state.structuralMutationRequests![2]).toMatchObject({
     expectedVersion: 3,
     operation: {
@@ -3360,7 +3311,7 @@ test('duplicates a typed profile from persistent and pending values without augm
   expect(state.structuralMutationRequests).toEqual([]);
 
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
     expectedVersion: 1,
@@ -3396,7 +3347,7 @@ test('omits write-only values and nested rules from a duplicated content profile
   await expect(createEditor.getByLabel('Webhook', {exact: true})).toHaveValue('true');
 
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(createEditor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
     operation: {
@@ -3503,8 +3454,7 @@ test('links policy references to objects created earlier in the same draft', asy
     'IPv4 /24 · 256 addresses · 198.51.100.0 – 198.51.100.255',
   );
   await addressEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(addressEditor.getByText('Saved to draft')).toBeVisible();
-  await addressEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(addressEditor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: 'New policy'}).click();
@@ -3520,7 +3470,7 @@ test('links policy references to objects created earlier in the same draft', asy
   await addressEditor.getByRole('button', {name: 'Cancel'}).click();
 
   await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(policyEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(policyEditor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(2);
   expect(state.structuralMutationRequests![0]).toMatchObject({
     expectedVersion: 0,
@@ -3533,6 +3483,43 @@ test('links policy references to objects created earlier in the same draft', asy
     },
   });
   await expectNoWcagViolations(page);
+});
+
+test('keeps repeated object creation and policy reference edits connected to draft review', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    structuralDraftsReady: true, structuralMutationRequests: [], draftMutationBatches: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Address objects');
+
+  for (const [name, value] of [['branch-one', '192.0.2.1'], ['branch-two', '192.0.2.2']] as const) {
+    await page.getByRole('button', {name: 'New address'}).click();
+    const editor = page.getByRole('dialog', {name: 'Create address object'});
+    await editor.getByLabel('Name').fill(name);
+    await editor.getByLabel('Address', {exact: true}).fill(value);
+    await editor.getByRole('button', {name: 'Save to draft'}).click();
+    await expect(editor).not.toBeVisible();
+    await page.getByRole('button', {name: `Review draft · ${state.structuralMutationRequests!.length}`}).click();
+    await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
+    await page.getByRole('button', {name: 'Objects', exact: true}).click();
+    await selectObjectCategory(page, 'Address objects');
+  }
+
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1.*accept/i}).click();
+  const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await setReferenceList(policyEditor, 'Sources', ['office', 'branch-two']);
+  await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(policyEditor).not.toBeVisible();
+  await page.getByRole('button', {name: 'Review draft · 3'}).click();
+
+  await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
+  expect(state.draftMutationBatches).toEqual([[
+    {path: 'policy.[0].src', value: ['office', 'branch-two']},
+  ]]);
 });
 
 test('confirms policy deletion and blocks removal of referenced objects', async ({page}) => {
@@ -3800,8 +3787,7 @@ test('blocks deletion when a new policy references the object in the same draft'
   await policyEditor.getByLabel('Name').fill('pending-profile-reference');
   await policyEditor.getByLabel('Detection profile').selectOption('unused-detection');
   await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(policyEditor.getByText('Saved to draft')).toBeVisible();
-  await policyEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(policyEditor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
@@ -3833,8 +3819,7 @@ test('blocks deletion when a pending policy edit adds the reference', async ({pa
   const policyEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await policyEditor.getByLabel('Detection profile').selectOption('unused-detection');
   await policyEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(policyEditor.getByText('Saved to draft')).toBeVisible();
-  await policyEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(policyEditor).not.toBeVisible();
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
@@ -3948,9 +3933,7 @@ test('creates and safely reopens a nested content rule', async ({page}) => {
   await createEditor.getByLabel('Replacement', {exact: true}).selectOption('replace');
   await createEditor.getByLabel('New content replacement expression').fill('secret-replacement');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(createEditor.getByLabel('New content match expression')).toHaveValue('');
-  await expect(createEditor.getByLabel('New content replacement expression')).toHaveValue('');
+  await expect(createEditor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
@@ -3968,7 +3951,6 @@ test('creates and safely reopens a nested content rule', async ({page}) => {
   expect(state.structuralMutationRequests![0]!.operation.local_id)
     .toMatch(/^create-content-rule-[0-9a-f-]{36}$/u);
 
-  await createEditor.getByRole('button', {name: 'Cancel'}).click();
   const ruleRows = profileEditor.getByRole('group', {name: 'Content rules'}).locator('button.reference');
   await expect(ruleRows).toHaveCount(3);
   await expect(ruleRows.nth(0)).toContainText('empty replacement');
@@ -4116,8 +4098,7 @@ test('creates and safely reopens a signature flow step', async ({page}) => {
   await createEditor.getByLabel('Byte window').fill('64');
   await createEditor.getByLabel('New signature flow expression').fill('PRIVATE-FLOW');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText('Saved to draft')).toBeVisible();
-  await expect(createEditor.getByLabel('New signature flow expression')).toHaveValue('');
+  await expect(createEditor).not.toBeVisible();
 
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
@@ -4132,7 +4113,6 @@ test('creates and safely reopens a signature flow step', async ({page}) => {
   expect(state.structuralMutationRequests![0]!.operation.local_id)
     .toMatch(/^create-signature-flow-[0-9a-f-]{36}$/u);
 
-  await createEditor.getByRole('button', {name: 'Cancel'}).click();
   const flowRows = signatureEditor.getByRole('group', {name: 'Signature flow steps'})
     .locator('button.reference');
   await expect(flowRows).toHaveCount(3);
@@ -4186,8 +4166,7 @@ test('creates and removes a signature with its first flow step atomically', asyn
   await editor.getByLabel('Byte window').fill('256');
   await editor.getByLabel('New signature first flow expression').fill('PRIVATE-STARTTLS');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('Saved to draft')).toBeVisible();
-  await expect(editor.getByLabel('New signature first flow expression')).toHaveValue('');
+  await expect(editor).not.toBeVisible();
 
   expect(state.structuralBatchMutationRequests).toHaveLength(1);
   const request = state.structuralBatchMutationRequests![0]!;
@@ -4206,7 +4185,6 @@ test('creates and removes a signature with its first flow step atomically', asyn
   });
   expect(request.operations[1]!.parent_id).toBe(request.operations[0]!.client_id);
 
-  await editor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 2'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(table).not.toContainText('PRIVATE-STARTTLS');
@@ -4274,6 +4252,7 @@ test('rejects validation metadata that is not bound to the complete draft', asyn
   const state: MockState = {
     smithproxy: 'ready',
     validationReady: true,
+    commitReady: true,
     validationOperationDelta: 1,
     initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
   };
@@ -4282,12 +4261,11 @@ test('rejects validation metadata that is not bound to the complete draft', asyn
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
 
   const preflight = page.getByRole('region', {name: 'Draft preflight'});
-  await preflight.getByRole('button', {name: 'Validate with Smithproxy'}).click();
+  await preflight.getByRole('button', {name: 'Commit configuration'}).click();
   await expect(preflight.getByRole('alert')).toHaveText(
     'Smithproxy validation does not match the current workspace draft.',
   );
   await expect(preflight.getByText('Validated', {exact: true})).toHaveCount(0);
-  await expect(preflight.getByText('Ready', {exact: true})).toBeVisible();
 });
 
 test('refreshes live configuration only outside an active edit transaction', async ({page}) => {
@@ -4345,13 +4323,16 @@ test('detects an external revision while preserving and blocking the active draf
     window.dispatchEvent(new Event('online'));
   });
 
+  const notice = page.getByRole('status').filter({hasText: 'Configuration changed in the background.'});
+  await expect(notice).toBeVisible();
+  await notice.getByRole('button', {name: 'Dismiss configuration change notice'}).click();
+  await expect(notice).not.toBeVisible();
   const review = page.getByRole('button', {name: 'Review draft · 1 · live changed'});
   await expect(review).toBeVisible();
   await review.click();
   await expect(page.getByRole('alert')).toContainText('Live configuration changed.');
   const preflight = page.getByRole('region', {name: 'Draft preflight'});
-  await expect(preflight.getByRole('button', {name: 'Validate with Smithproxy'})).toBeDisabled();
-  await expect(preflight.getByText('Revision changed', {exact: true})).toBeVisible();
+  await expect(preflight.getByRole('button', {name: 'Commit configuration'})).toBeDisabled();
   await expect(page.getByText('Draft: 1 changes')).toBeVisible();
 });
 
@@ -4379,7 +4360,7 @@ test('recovers live configuration automatically after a transient API failure', 
   await page.goto('/');
 
   await expect.poll(() => state.configFetches).toBe(1);
-  await expect(page.getByRole('button', {name: 'Retry config'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Refresh config'})).toBeVisible();
   await expect(page.locator('.statusbar')).toContainText('Config: Unavailable');
 
   await page.evaluate(() => {
@@ -4407,16 +4388,10 @@ test('recovers from a concurrent draft writer without losing either change set',
   await editor.getByLabel('Name').fill('Concurrent policy edit');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
 
-  await expect(editor.getByRole('status')).toContainText('HTTP 409');
-  await expect(page.getByText('Draft: 1 changes')).toBeVisible();
-  expect(state.draftMutationVersions).toEqual([0]);
-
-  await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByRole('status')).toHaveText('Saved to draft');
+  await expect(editor).not.toBeVisible();
   expect(state.draftMutationVersions).toEqual([0, 1]);
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
 
-  await editor.getByRole('button', {name: 'Cancel'}).click();
   await page.getByRole('button', {name: 'Review draft · 2'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(changes).toContainText('settings.policy_fail_open');
@@ -4565,6 +4540,8 @@ test('shows partial capture defaults without offering an invalid nested write', 
   }, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Traffic & captures'}).click();
 
   const captureHeader = page.getByRole('heading', {name: 'Capture posture'}).locator('..').locator('..');
   await expect(captureHeader.getByRole('button', {name: 'Edit'})).toBeDisabled();
@@ -4690,9 +4667,7 @@ test('renders and protects augment-owned list overlay chains', async ({page}) =>
   });
   await editor.getByRole('button', {name: 'Save to draft'}).click();
 
-  await expect(editor.getByRole('status')).toContainText(
-    'policy.[0].src is owned by an active augment layer',
-  );
+  await expect(editor).not.toBeVisible();
   expect(state.draftMutationVersions).toEqual([]);
 });
 
@@ -4741,8 +4716,11 @@ test('keeps persistent, effective, and pending values distinct in overlay chains
     changes: [],
     removePaths: ['policy.[0].action'],
   }]);
-  await expect(editor.getByRole('combobox', {name: 'Action', exact: true})).toHaveValue('accept');
-  await expect(editor.getByRole('button', {name: /Remove \d+ draft change/u})).toHaveCount(0);
+  await expect(editor).not.toBeVisible();
+  await page.getByRole('button', {name: /Policy 1 office internet accept .* overridden/i}).click();
+  const reopenedEditor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  await expect(reopenedEditor.getByRole('combobox', {name: 'Action', exact: true})).toHaveValue('accept');
+  await expect(reopenedEditor.getByRole('button', {name: /Remove \d+ draft change/u})).toHaveCount(0);
 });
 
 test('binds every profile editor to augment-owned persistent values', async ({page}) => {
@@ -4837,6 +4815,8 @@ test('binds system, capture, and nested security editors to persistent values', 
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Traffic & captures'}).click();
 
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
@@ -4871,6 +4851,8 @@ test('binds system, capture, and nested security editors to persistent values', 
   await expect(captures.getByLabel('Tunnel TTL')).toHaveAttribute('readonly', '');
   await page.keyboard.press('Escape');
 
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Configuration'}).click();
   const trust = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
   await trust.getByText('Detection signatures', {exact: true}).last().click();
   await trust.getByRole('button', {name: /http\/request · 1 flow step/u}).click();
@@ -4906,7 +4888,7 @@ test('restores drawer routes and manages focus across the chain', async ({page})
   await page.goto('/');
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /Policy 1 office/i}).click();
-  await expect(page.locator('#policy-name-policy-0')).toBeFocused();
+  await expect(page.locator('#policy-name-policy-0')).not.toBeFocused();
   await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe('policy:policy-0');
   const workspaceBox = await page.locator('.workspace').boundingBox();
   const policyBox = await page.locator('.drawer').first().boundingBox();
@@ -4917,7 +4899,9 @@ test('restores drawer routes and manages focus across the chain', async ({page})
 
   const reference = page.getByRole('button', {name: 'office', exact: true});
   await reference.click();
-  await expect(page.locator('#address-name-address-0')).toBeFocused();
+  await expect(page.locator('#address-name-address-0')).not.toBeFocused();
+  await expect(page.getByRole('dialog', {name: 'Edit office'}).getByRole('button', {name: 'Close office'}))
+    .toBeFocused();
   await expect.poll(() => new URL(page.url()).searchParams.get('edit')).toBe(
     'policy:policy-0,address:address-0',
   );
@@ -4940,7 +4924,7 @@ test('restores drawer routes and manages focus across the chain', async ({page})
   await page.reload();
   await expect(page.getByRole('dialog', {name: 'Edit Policy 1', exact: true, includeHidden: true})).toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
-  await expect(page.locator('#address-name-address-0')).toBeFocused();
+  await expect(page.locator('#address-name-address-0')).not.toBeFocused();
   await page.goBack();
   await expect(page.getByRole('dialog', {name: 'Edit office'})).not.toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Edit Policy 1'})).toBeVisible();
@@ -4981,14 +4965,12 @@ test('requires an explicit decision before closing unsaved drawer changes', asyn
   const reopened = page.getByRole('dialog', {name: 'Edit Policy 1'});
   await reopened.getByLabel('Name').fill('Saved policy');
   await reopened.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(reopened.getByRole('status')).toHaveText('Saved to draft');
+  await expect(reopened).not.toBeVisible();
   await expect.poll(() => page.evaluate(() => {
     const event = new Event('beforeunload', {cancelable: true});
     window.dispatchEvent(event);
     return event.defaultPrevented;
   })).toBe(false);
-  await reopened.getByRole('button', {name: 'Cancel'}).click();
-  await expect(reopened).not.toBeVisible();
 });
 
 test('shows live Smithproxy status transitions', async ({page}) => {
@@ -5004,30 +4986,41 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).toContainText('Freshness: Fresh');
   await expect(statusbar).toContainText('Events: Live');
   await expect(statusbar).toContainText('Events: Connecting', {timeout: 4_000});
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Control plane'}).click();
   const pingMetric = page.getByText('Control-plane ping').locator('..');
   await expect(pingMetric).toContainText('protected configuration access is reported separately');
   await expect(page.getByText('Probe latency').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
   await expect(page.getByRole('region', {name: 'Probe history'})).toBeVisible();
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   const incidentTimeline = page.getByRole('region', {name: 'Control-plane incident timeline'});
-  await expect(incidentTimeline.getByText('● Clear', {exact: true})).toBeVisible();
   await expect(incidentTimeline).toContainText('No control-plane incident was observed');
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   const activeAlerts = page.getByRole('region', {name: 'Active operational alerts'});
   await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
-  await expect(page.getByText(/control-plane health and listener counters are live/i)).toBeVisible();
   await expect(page.getByRole('region', {name: 'Runtime metrics summary'}).getByText('4', {exact: true})).toBeVisible();
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await page.getByRole('group', {name: 'Monitoring categories'})
+    .getByRole('button', {name: 'TLS cache'}).click();
   const tlsCache = page.getByRole('region', {name: 'TLS interception cache'});
   await expect(tlsCache.getByText('42', {exact: true})).toBeVisible();
   await expect(tlsCache.getByRole('progressbar', {name: 'TLS cache utilization'}))
     .toHaveAttribute('aria-valuenow', '4.2');
 
-  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
-  await expect(page.getByRole('heading', {name: 'Listener monitoring'})).toBeVisible();
+  await page.getByRole('group', {name: 'Monitoring categories'})
+    .getByRole('button', {name: 'Traffic'}).click();
+  await expect(page.getByRole('heading', {name: 'Traffic monitoring'})).toBeVisible();
   await expect(page.getByRole('cell', {name: 'tcp'}).first()).toBeVisible();
   await expect(page.getByRole('cell', {name: 'tls'}).first()).toBeVisible();
+  await page.getByRole('group', {name: 'Monitoring categories'})
+    .getByRole('button', {name: 'Sessions'}).click();
   const activity = page.getByRole('region', {name: 'Session activity'});
   await expect(activity.getByRole('heading', {name: 'Live session activity'})).toBeVisible();
   await expect(activity.getByText(/no endpoints, session ids, or policy names/i)).toBeVisible();
   await expect(activity.getByText('3.84 kB/s')).toBeVisible();
+  await page.getByRole('group', {name: 'Monitoring categories'})
+    .getByRole('button', {name: 'Traffic'}).click();
   const runtimeHistory = page.getByRole('region', {name: 'Runtime history'});
   await expect(runtimeHistory.getByRole('img', {name: /Active session trend. Peak 4 sessions/i})).toBeVisible();
   await expect(runtimeHistory.getByRole('img', {name: /Aggregate throughput trend/i})).toBeVisible();
@@ -5037,7 +5030,12 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Unreachable')).toBeVisible();
   await expect(statusbar).toContainText('Alerts: 1 active');
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   await expect(activeAlerts.getByText('Control plane is unavailable', {exact: true})).toBeVisible();
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Control plane'}).click();
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await expect(incidentTimeline.getByText('Incident active', {exact: true})).toBeVisible();
   await expect(incidentTimeline.getByText('1 failed probe', {exact: true})).toBeVisible();
 
@@ -5045,7 +5043,12 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
   await expect(statusbar).toContainText('Alerts: Clear');
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   await expect(activeAlerts.getByText('● Clear', {exact: true})).toBeVisible();
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Control plane'}).click();
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await expect(incidentTimeline).toContainText('No control-plane incident was observed');
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   const health = page.getByRole('region', {name: 'Operational health matrix'});
@@ -5065,6 +5068,8 @@ test('reports a verified Saslik gateway handoff without exposing credentials', a
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Gateway: Verified');
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Backend'}).click();
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
   });
@@ -5096,6 +5101,8 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Gateway: Rejected');
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Backend'}).click();
   const gatewayCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Saslik gateway'}),
   });
@@ -5116,6 +5123,8 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await expect.poll(() => protectedRequests.length).toBeGreaterThan(0);
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('group', {name: 'Network categories'})
+    .getByRole('button', {name: 'Interfaces'}).click();
   const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
   const interfaceCount = interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'});
   await expect(interfaceCount.getByText('3', {exact: true})).toBeVisible();
@@ -5153,7 +5162,8 @@ test('discards monitoring responses completed after gateway access is revoked', 
   await page.waitForTimeout(1_100);
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
-  await expect(page.getByText('No listener samples are available yet.')).toBeVisible();
+  await page.getByRole('group', {name: 'Network categories'})
+    .getByRole('button', {name: 'Interfaces'}).click();
   const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
   await expect(interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'})
     .getByText('0', {exact: true})).toBeVisible();
@@ -5221,7 +5231,7 @@ test('does not present an unavailable snapshot as an empty live configuration', 
   await expect(page.getByRole('heading', {name: 'Configuration unavailable'})).toBeVisible();
   await expect(page.getByText('Smithproxy configuration parser rejected an optional section')).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCount(0);
-  await expect(page.getByRole('button', {name: 'Retry config'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Refresh config'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Retry access'})).toHaveCount(0);
 });
 
@@ -5394,7 +5404,7 @@ test('moves selected live policies last in one atomic batch while preserving the
 
   const actions = page.getByRole('group', {name: 'Policy bulk actions'});
   await actions.getByRole('button', {name: 'Select visible'}).click();
-  await actions.getByRole('button', {name: 'Move selected last'}).click();
+  await actions.getByRole('button', {name: 'Move selected down'}).click();
 
   await expect(actions.getByText('2 policies moved last in the workspace draft.')).toBeVisible();
   await expect(page.getByRole('button', {name: 'Review draft · 3'})).toBeVisible();
@@ -5425,7 +5435,7 @@ test('does not retain a bulk policy move when the selection is already at the ed
 
   await page.getByRole('checkbox', {name: 'Select policy Policy 1'}).check();
   const actions = page.getByRole('group', {name: 'Policy bulk actions'});
-  await actions.getByRole('button', {name: 'Move selected first'}).click();
+  await actions.getByRole('button', {name: 'Move selected up'}).click();
 
   await expect(actions.getByText('Selected policies are already first.')).toBeVisible();
   await expect(actions.getByText('0 selected')).toBeVisible();
@@ -5831,6 +5841,8 @@ test('rejects an incoherent privileged capability graph before protected request
   await expect(statusbar).toContainText('Config: Unavailable');
   await expect(statusbar).toContainText('Events: Unavailable');
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Backend'}).click();
   const capabilityCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capability bootstrap'}),
   });
@@ -5862,12 +5874,16 @@ test('polls only monitoring surfaces advertised for the current session', async 
   expect(requests).not.toContain('/api/v1/audit/recent');
   expect(requests).not.toContain('/api/v1/network/interfaces/summary');
 
-  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('group', {name: 'System categories'})
+    .getByRole('button', {name: 'Backend'}).click();
   const eventTransport = page.getByRole('region', {name: 'Operational event transport'});
   await expect(eventTransport).toContainText('Unavailable');
   await expect(eventTransport).toContainText('Not advertised');
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('group', {name: 'Network categories'})
+    .getByRole('button', {name: 'Interfaces'}).click();
   await expect(page.getByRole('region', {name: 'Interface synchronization'}))
     .toContainText('Unavailable · Last data no data');
 });
@@ -5901,12 +5917,7 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
   expect(pending.size).toBe(0);
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
-  const eventTransport = page.getByRole('region', {name: 'Operational event transport'});
-  await expect(eventTransport).toContainText('Live');
-  await expect(eventTransport).toContainText('Recovery snapshot');
-  await expect(eventTransport.getByRole('article').filter({hasText: 'Last validated payload'}))
-    .not.toContainText('Never');
-  const collectorHealth = page.getByRole('table', {name: 'Collector health'});
+  const collectorHealth = page.getByRole('table', {name: 'Data freshness'});
   await expect(collectorHealth.getByRole('row')).toHaveCount(6);
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Runtime metrics'}))
     .toContainText('Ready');
@@ -5914,7 +5925,15 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
     .toContainText('Fresh');
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Network interfaces'}))
     .toContainText('Fresh');
-  await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('5/5 current');
+  await expect(page.getByRole('region', {name: 'Data freshness'})).toContainText('5/5 current');
+
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Backend', exact: true}).click();
+  const eventTransport = page.getByRole('region', {name: 'Operational event transport'});
+  await expect(eventTransport).toContainText('Live');
+  await expect(eventTransport).toContainText('Recovery snapshot');
+  await expect(eventTransport.getByRole('article').filter({hasText: 'Last validated payload'}))
+    .not.toContainText('Never');
 });
 
 test('marks delayed aggregate collectors and retained values as stale', async ({page}) => {
@@ -5927,21 +5946,26 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
   await page.goto('/');
 
   const runtime = page.getByRole('region', {name: 'Runtime metrics summary'});
-  const tls = page.getByRole('region', {name: 'TLS interception cache'});
   await expect(runtime).toContainText('Ready · Stale');
   await expect(runtime).toContainText('values are not current');
-  await expect(tls).toContainText('Ready · Stale');
+
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await page.getByRole('button', {name: 'TLS cache', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'TLS interception cache'})).toContainText('Ready · Stale');
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toContainText('Ready · Stale');
-  await expect(page.getByRole('region', {name: 'Interface synchronization'})).toContainText('Ready · Stale');
   await expect(page.getByRole('region', {name: 'Listener workload'}).getByText('Last known')).toHaveCount(2);
+  await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Interface synchronization'})).toContainText('Ready · Stale');
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await page.getByRole('button', {name: 'Sessions', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Session activity'})).toContainText('Ready · Stale');
-  const collectorHealth = page.getByRole('table', {name: 'Collector health'});
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  const collectorHealth = page.getByRole('table', {name: 'Data freshness'});
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Stale'})).toHaveCount(5);
-  await expect(page.getByRole('region', {name: 'Collector health matrix'})).toContainText('0/5 current');
+  await expect(page.getByRole('region', {name: 'Data freshness'})).toContainText('0/5 current');
 });
 
 test('diagnoses an invalid event stream and recovers only after an explicit retry', async ({page}) => {
@@ -5951,7 +5975,8 @@ test('diagnoses an invalid event stream and recovers only after an explicit retr
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Events: Invalid');
-  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Backend', exact: true}).click();
   const transport = page.getByRole('region', {name: 'Operational event transport'});
   await expect(transport).toContainText('Invalid');
   await expect(transport.getByRole('article').filter({hasText: 'Last validated payload'}))
@@ -6050,12 +6075,14 @@ test('filters structured job failures without exposing job identifiers', async (
 });
 
 test('keeps a dated timestamp visible on every mobile log row', async ({page}) => {
-  await page.setViewportSize({width: 360, height: 740});
   await mockSystemApi(page, {smithproxy: 'ready'});
   await page.goto('/');
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
 
   for (const listName of ['Operational events', 'Management audit']) {
+    await page.setViewportSize({width: 1280, height: 800});
+    await page.getByRole('button', {name: listName, exact: true}).click();
+    await page.setViewportSize({width: 360, height: 740});
     const rows = page.getByRole('list', {name: listName}).getByRole('listitem');
     await expect(rows).not.toHaveCount(0);
     for (let index = 0; index < await rows.count(); index += 1) {
@@ -6098,17 +6125,12 @@ test('persists the exact running revision only after explicit confirmation', asy
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-
-  const card = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Running configuration'}),
-  });
-  await card.getByRole('button', {name: 'Save running config'}).click();
-  await expect(card.getByRole('button', {name: 'Confirm save to startup'})).toBeVisible();
+  await page.getByRole('button', {name: 'Save startup'}).click();
+  await expect(page.getByRole('button', {name: 'Confirm save to startup'})).toBeVisible();
   expect(state.configSaveRequests).toEqual([]);
 
-  await card.getByRole('button', {name: 'Confirm save to startup'}).click();
-  await expect(card).toContainText('Saved');
+  await page.getByRole('button', {name: 'Confirm save to startup'}).click();
+  await expect(page.getByText('Running configuration saved')).toBeVisible();
   expect(state.configSaveRequests).toEqual([{
     expectedRevision: runningRevision, csrf: '1',
   }]);
@@ -6120,16 +6142,6 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await expect(page.getByRole('heading', {level: 2, name: 'Network activity'})).toBeVisible();
-  const configuredListeners = page.getByRole('region', {name: 'Configured network listeners'});
-  const listenerConfig = configuredListeners.getByRole('table', {
-    name: 'Configured listener ports and workers',
-  });
-  const liveTls = listenerConfig.getByRole('row', {name: /^TLS /u});
-  await expect(liveTls.getByRole('cell').nth(1)).toHaveText('50,443');
-  await expect(liveTls.getByRole('cell').nth(2)).toHaveText('4');
-  const ingressConfig = configuredListeners.getByRole('table', {name: 'Configured ingress modes'});
-  await expect(ingressConfig.getByRole('row').filter({hasText: 'SOCKS'})).toContainText('Disabled');
-  await expect(ingressConfig.getByRole('row').filter({hasText: 'SOCKS'})).toContainText('Anonymous access');
   const neighborhood = page.getByRole('region', {name: 'Neighborhood activity'});
   await expect(neighborhood.getByText('8', {exact: true})).toBeVisible();
   await expect(neighborhood.getByText(/hostnames, tags, labels, and per-endpoint timelines remain/i)).toBeVisible();
@@ -6141,15 +6153,19 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(workloadRows.nth(2).getByRole('cell')).toHaveText([
     'tls', 'Active', '1', '1', '7', '512 B', '256 B',
   ]);
-  await expect(page.locator(
-    'section[aria-label="Neighborhood activity"] ~ section[aria-label="Listener workload"]',
-  )).toBeVisible();
-  await expect(page.locator(
-    'section[aria-label="Listener workload"] ~ section[aria-label="Interface synchronization"]',
-  )).toBeVisible();
-  await expect(page.locator(
-    'section[aria-label="Interface synchronization"] ~ section[aria-label="Configured network listeners"]',
-  )).toBeVisible();
+  await page.getByRole('button', {name: 'Listeners', exact: true}).click();
+  const configuredListeners = page.getByRole('region', {name: 'Configured network listeners'});
+  const listenerConfig = configuredListeners.getByRole('table', {
+    name: 'Configured listener ports and workers',
+  });
+  const liveTls = listenerConfig.getByRole('row', {name: /^TLS /u});
+  await expect(liveTls.getByRole('cell').nth(1)).toHaveText('50,443');
+  await expect(liveTls.getByRole('cell').nth(2)).toHaveText('4');
+  const ingressConfig = configuredListeners.getByRole('table', {name: 'Configured ingress modes'});
+  await expect(ingressConfig.getByRole('row').filter({hasText: 'SOCKS'})).toContainText('Disabled');
+  await expect(ingressConfig.getByRole('row').filter({hasText: 'SOCKS'})).toContainText('Anonymous access');
+  await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Interface synchronization'})).toBeVisible();
   await expectNoWcagViolations(page);
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
@@ -6222,15 +6238,15 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('heading', {name: 'Operational events'})).toBeVisible();
   const events = page.getByRole('list', {name: 'Operational events'});
   await expect(events.getByText('Smithproxy control plane is reachable')).toBeVisible();
-  await expect(page.getByText(/does not parse the administrative CLI/i)).toBeVisible();
+  await page.getByRole('button', {name: 'Management audit', exact: true}).click();
   const audit = page.getByRole('list', {name: 'Management audit'});
   await expect(audit.getByText('config.draft.upsert')).toBeVisible();
   await expect(audit.getByText('policy.[0].action')).toBeVisible();
   await expect(audit.getByText('abc123-7')).toBeVisible();
-  await expect(page.getByText('Actor attribution unavailable.')).toBeVisible();
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
-  await expect(page.getByRole('heading', {name: 'System integration'})).toBeVisible();
+  await page.getByRole('button', {name: 'Backend', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Management backend'})).toBeVisible();
   const capabilityCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capability bootstrap'}),
   });
@@ -6283,13 +6299,16 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(gatewayCard).toContainText('Upstream transactionSchema review required');
   await expect(page.getByText('Smithproxy key')).toBeVisible();
   await expect(page.getByText('Never exposed')).toBeVisible();
+  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Traffic admission'})).toBeVisible();
   await expect(page.getByText('Fail closed')).toHaveCount(2);
-  await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
-  await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
   const capturePosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Capture posture'})});
   await expect(capturePosture).toBeVisible();
   await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
+  await page.getByRole('button', {name: 'Backend', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
+  await page.getByRole('button', {name: 'Configuration', exact: true}).click();
   const trustPosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Trust and signatures'})});
   await expect(trustPosture).toBeVisible();
   await expect(trustPosture.locator('dt', {hasText: 'STARTTLS signatures'}).locator('xpath=following-sibling::dd[1]'))
@@ -6313,6 +6332,37 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(authorityEditor.getByText(/current certificate-authority path stays inside/i)).toBeVisible();
 });
 
+test('organizes operational surfaces into focused administrator views', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Interface synchronization'})).toBeVisible();
+  await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toHaveCount(0);
+  await page.getByRole('button', {name: 'Neighborhood', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toBeVisible();
+
+  await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
+  await page.getByRole('button', {name: 'TLS cache', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'TLS interception cache'})).toBeVisible();
+  await page.getByRole('button', {name: 'Sessions', exact: true}).click();
+  await expect(page.getByRole('region', {name: 'Session activity'})).toBeVisible();
+
+  await page.getByRole('button', {name: 'Logs', exact: true}).click();
+  await page.getByRole('button', {name: 'Management audit', exact: true}).click();
+  await expect(page.getByRole('list', {name: 'Management audit'})).toBeVisible();
+  await expect(page.getByRole('list', {name: 'Operational events'})).toHaveCount(0);
+
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Appearance', exact: true}).click();
+  await expect(page.getByRole('heading', {level: 2, name: 'Appearance'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Backend jobs'})).toHaveCount(0);
+  await page.getByRole('button', {name: 'Backend', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Backend jobs'})).toBeVisible();
+  await expectNoWcagViolations(page);
+});
+
 test('projects pending listener settings into Network and opens their real editor', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready',
@@ -6325,6 +6375,7 @@ test('projects pending listener settings into Network and opens their real edito
   }, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('button', {name: 'Listeners', exact: true}).click();
 
   const configured = page.getByRole('region', {name: 'Configured network listeners'});
   const tls = configured.getByRole('table', {name: 'Configured listener ports and workers'})
@@ -6338,7 +6389,7 @@ test('projects pending listener settings into Network and opens their real edito
   await expect(configured.getByText('Pending', {exact: true})).toBeVisible();
 
   await configured.getByRole('button', {name: 'Edit listener configuration'}).click();
-  const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+  let editor = page.getByRole('dialog', {name: 'Edit System settings'});
   await expect(editor.getByLabel('TLS port', {exact: true})).toHaveValue('5443');
   await expect(editor.getByLabel('TLS workers', {exact: true})).toHaveValue('8');
   await expect(editor.getByLabel('SOCKS listener')).toHaveValue('true');
@@ -6354,6 +6405,7 @@ test('keeps absent nested settings groups visible but read-only', async ({page})
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
@@ -6384,11 +6436,12 @@ test('preserves legacy worker values while enforcing pinned worker semantics', a
   await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });
   await trafficCard.getByRole('button', {name: 'Edit'}).click();
-  const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+  let editor = page.getByRole('dialog', {name: 'Edit System settings'});
 
   await expect(editor.getByLabel('Plaintext workers')).toHaveAttribute('min', '0');
   await expect(editor.getByLabel('SOCKS workers')).toHaveAttribute('min', '0');
@@ -6402,6 +6455,10 @@ test('preserves legacy worker values while enforcing pinned worker semantics', a
   await expect.poll(() => state.draftMutationBatches).toEqual([[
     {path: 'settings.policy_fail_open', value: true},
   ]]);
+
+  await expect(editor).not.toBeVisible();
+  await trafficCard.getByRole('button', {name: 'Edit'}).click();
+  editor = page.getByRole('dialog', {name: 'Edit System settings'});
 
   await editor.getByLabel('Plaintext workers').fill('-1');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
@@ -6430,6 +6487,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
 
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
@@ -6508,11 +6566,8 @@ test('saves typed system and capture settings without exposing redacted values',
   await settingsEditor.getByLabel('proxy module override').fill('8');
   await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(11);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(settingsEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(settingsEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await expect(settingsEditor.getByLabel('HTTP API keys replacement')).toHaveValue('');
-  await expect(settingsEditor.getByLabel('HTTP API keys', {exact: true})).toHaveValue('unchanged');
-  await settingsEditor.getByRole('button', {name: 'Cancel'}).click();
 
   await expect(page.getByText(/Configuration cards include pending workspace draft values.*runtime remains unchanged/u))
     .toBeVisible();
@@ -6528,6 +6583,11 @@ test('saves typed system and capture settings without exposing redacted values',
     has: page.getByRole('heading', {name: 'Listener endpoints'}),
   });
   await expect(listenerCard).toContainText('Plaintext / TLS50080 / 5443');
+  const debugCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Debug logging'}),
+  });
+  await expect(debugCard).toContainText('Socket eventsEnabled');
+  await page.getByRole('button', {name: 'Backend', exact: true}).click();
   const apiPosture = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Smithproxy API posture'}),
   });
@@ -6536,11 +6596,7 @@ test('saves typed system and capture settings without exposing redacted values',
     has: page.getByRole('heading', {name: 'Webhook posture'}),
   });
   await expect(webhookPosture).toContainText('resolver.example');
-  const debugCard = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Debug logging'}),
-  });
-  await expect(debugCard).toContainText('Socket eventsEnabled');
-
+  await page.getByRole('button', {name: 'Traffic & captures', exact: true}).click();
   const captureCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capture posture'}),
   });
@@ -6556,10 +6612,8 @@ test('saves typed system and capture settings without exposing redacted values',
   await captureEditor.getByLabel('Local directory replacement').fill('/new/private/captures');
   await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(captureEditor.getByText('Saved to draft')).toBeVisible();
+  await expect(captureEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
-  await expect(captureEditor.getByLabel('Local directory replacement')).toHaveValue('');
-  await captureEditor.getByRole('button', {name: 'Cancel'}).click();
   await expect(captureCard).toContainText('Local captureEnabled');
   await expect(captureCard).toContainText('Format / quotasmcap / 1024 MiB');
   await expect(captureCard).toContainText('TTL / bound interface32 / No');
@@ -6643,17 +6697,17 @@ test('edits nested signature flow metadata with write-only expressions', async (
   await signatureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
 
-  await signatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
+  await trustPosture.getByRole('button', {name: /http\/request · 1 flow step/i}).click();
+  const reopenedSignatureEditor = page.getByRole('dialog', {name: 'Edit http/request'});
+  await reopenedSignatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
   const flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
   await flowEditor.getByLabel('Byte window').fill('512');
   await flowEditor.getByLabel('Expression', {exact: true}).selectOption('replace');
   await flowEditor.getByLabel('Signature expression replacement').fill('^PRIVATE[0-9]+$');
   await flowEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(page.getByText('Draft: 4 changes')).toBeVisible();
-  await expect(flowEditor.getByLabel('Signature expression replacement')).toHaveValue('');
-  await expect(flowEditor.getByLabel('Expression', {exact: true})).toHaveValue('unchanged');
-  await flowEditor.getByRole('button', {name: 'Cancel'}).click();
-  await signatureEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(flowEditor).not.toBeVisible();
+  await reopenedSignatureEditor.getByRole('button', {name: 'Cancel'}).click();
 
   await page.getByRole('button', {name: 'Review draft · 4'}).click();
   const changes = page.getByRole('table', {name: 'Pending draft changes'});
@@ -6686,8 +6740,7 @@ test('rotates nested content rules without exposing expressions', async ({page})
   await ruleEditor.getByLabel('Replacement expression').selectOption('clear');
   await ruleEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(page.getByText('Draft: 4 changes')).toBeVisible();
-  await expect(ruleEditor.getByLabel('Content match replacement')).toHaveValue('');
-  await ruleEditor.getByRole('button', {name: 'Cancel'}).click();
+  await expect(ruleEditor).not.toBeVisible();
   await contentEditor.getByRole('button', {name: 'Cancel'}).click();
 
   await page.getByRole('button', {name: 'Review draft · 4'}).click();
@@ -6807,7 +6860,7 @@ test('searches the complete readable configuration without unsafe markup', async
   await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
   await expect(page.locator('smithproxy-gui script')).toHaveCount(0);
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('heading', {name: 'Control plane', level: 2})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Dashboard', level: 1})).toBeVisible();
 });
 
 test('finds pending structural creates without indexing write-only values', async ({page}) => {
@@ -6928,7 +6981,10 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
   await expect(page.getByRole('heading', {name: 'Search results'})).toBeVisible();
   await page.keyboard.press('Escape');
 
+  await page.setViewportSize({width: 1280, height: 800});
   await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
+  await page.setViewportSize({width: 390, height: 844});
   const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
   await expect(interfaceSummary).toBeVisible();
   await expect.poll(() => interfaceSummary.evaluate(element =>
@@ -7038,6 +7094,7 @@ test.describe('Saslik visual regression', () => {
 
       await expect(page).toHaveScreenshot(`${theme}-dashboard.png`, {
         animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
+        mask: [page.getByText(/^Events:/)],
       });
 
       await page.getByRole('button', {name: 'Policy', exact: true}).click();
@@ -7047,6 +7104,7 @@ test.describe('Saslik visual regression', () => {
       await expect(page.getByRole('dialog', {name: 'Edit office'})).toBeVisible();
       await expect(page).toHaveScreenshot(`${theme}-nested-editors.png`, {
         animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
+        mask: [page.getByText(/^Events:/)],
       });
     });
   }
@@ -7067,6 +7125,7 @@ test.describe('Saslik visual regression', () => {
 
       await expect(page).toHaveScreenshot(`${theme}-mobile-policy.png`, {
         animations: 'disabled', caret: 'hide', maxDiffPixelRatio: 0.001,
+        mask: [page.getByText(/^Events:/)],
       });
     });
   }
@@ -7083,7 +7142,8 @@ test('meets automated WCAG rules across primary and nested views', async ({page}
   await expectNoWcagViolations(page);
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
-  await expect(page.getByRole('table', {name: 'Collector health'})).toBeVisible();
+  await page.getByRole('button', {name: 'Health', exact: true}).click();
+  await expect(page.getByRole('table', {name: 'Data freshness'})).toBeVisible();
   await expectNoWcagViolations(page);
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();

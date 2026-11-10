@@ -54,6 +54,12 @@ struct ConfigSaveResponse {
     bool changed{};
 };
 
+struct ArchiveApiResponse {
+    long status{};
+    std::string body;
+    bool transport_ok{};
+};
+
 class SmithproxyMonitor {
 public:
     explicit SmithproxyMonitor(
@@ -74,6 +80,13 @@ public:
     [[nodiscard]] bool note_config_committed(std::string_view committed_revision);
     [[nodiscard]] bool note_config_saved(std::string_view revision);
     [[nodiscard]] ConfigSaveResponse save_config(std::string_view expected_revision) const;
+    // Restricted pass-through for the reviewed native-archive API. Paths are
+    // allow-listed in the implementation; callers cannot turn GUI core into a
+    // generic authenticated Smithproxy proxy.
+    [[nodiscard]] ArchiveApiResponse archive_api(
+        std::string_view method, std::string_view path,
+        std::string_view body = {},
+        const std::vector<std::string>& extra_headers = {}) const;
     [[nodiscard]] bool configured() const noexcept { return config_.has_value(); }
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 

@@ -806,6 +806,99 @@ describe('SystemClient', () => {
     await expect(client.sessionActivity()).rejects.toThrow('Inconsistent session activity totals');
   });
 
+  it('loads the CFtar inventory without resource contents', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'ready', content_hash: `sha256:${'a'.repeat(64)}`,
+      resources: [{path: 'pki/ca/default/cert.pem', size: 123, executable: false}],
+    }));
+    const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
+
+    await expect(client.archiveInventory()).resolves.toEqual({
+      state: 'ready', contentHash: `sha256:${'a'.repeat(64)}`,
+      resources: [{path: 'pki/ca/default/cert.pem', size: 123, executable: false}],
+    });
+    expect(client.archiveDownloadUrl('previous')).toBe(
+      '/ws001/smithproxy-gui/api/v1/config/archive/download?version=previous',
+    );
+  });
+
+  it('validates and restores exact CFtar bytes with explicit preconditions', async () => {
+    const hash = `sha256:${'b'.repeat(64)}`;
+    const payload = new Uint8Array([0, 1, 2, 255]).buffer;
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string>;
+      if (headers['X-Smithproxy-Expected-Revision']) {
+        return jsonResponse({
+          state: 'restored', revision: 'rev-2', content_hash: hash, restart_required: true,
+        });
+      }
+      return jsonResponse({
+        state: 'valid', content_hash: hash, archive_size: 4, payload_size: 2,
+        format_version: 1, entries: [{path: 'smithproxy.cfg', size: 2, executable: false}],
+      });
+    });
+    const client = new SystemClient('/api/v1', '/', fetcher);
+
+    await expect(client.validateArchive(payload)).resolves.toMatchObject({
+      state: 'valid', contentHash: hash, archiveSize: 4, formatVersion: 1,
+    });
+    await expect(client.restoreArchive(payload, 'rev-1', hash)).resolves.toEqual({
+      state: 'restored', revision: 'rev-2', contentHash: hash, restartRequired: true,
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(1, '/api/v1/config/archive/validate',
+      expect.objectContaining({method: 'POST', body: payload, credentials: 'same-origin'}));
+    expect(fetcher).toHaveBeenNthCalledWith(2, '/api/v1/config/archive/restore',
+      expect.objectContaining({headers: expect.objectContaining({
+        'Content-Type': 'application/octet-stream',
+        'X-Smithproxy-GUI-CSRF': '1',
+        'X-Smithproxy-Expected-Revision': 'rev-1',
+        'X-Smithproxy-Archive-SHA256': hash,
+      })}));
+  });
+
+  it('rejects malformed CFtar metadata and restore preconditions', async () => {
+    const malformed = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', content_hash: `sha256:${'c'.repeat(64)}`,
+      resources: [{path: '../secret', size: 1, executable: false}],
+    }));
+    await expect(malformed.archiveInventory()).rejects.toThrow('resource entry');
+
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({}));
+    await expect(client.restoreArchive(new ArrayBuffer(1), 'rev\ninjected', `sha256:${'d'.repeat(64)}`))
+      .rejects.toThrow('Invalid expected configuration revision');
+    await expect(client.restoreArchive(new ArrayBuffer(1), 'rev-1', 'sha256:bad'))
+      .rejects.toThrow('content hash');
+    expect(() => client.archiveResourceUrl('smithproxy.cfg')).toThrow('resource path');
+  });
+
+  it('writes and removes managed CFtar resources with archive preconditions', async () => {
+    const hash = `sha256:${'e'.repeat(64)}`;
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'written', content_hash: hash, restart_required: true,
+    }));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+    const payload = new TextEncoder().encode('notice').buffer;
+
+    await expect(client.writeArchiveResource(
+      'messages/notice.txt', payload, 'rev-1', hash, false,
+    )).resolves.toEqual({state: 'written', contentHash: hash, restartRequired: true});
+    await expect(client.deleteArchiveResource(
+      'messages/notice.txt', 'rev-1', hash,
+    )).resolves.toEqual({state: 'written', contentHash: hash, restartRequired: true});
+    expect(client.archiveResourceUrl('messages/notice.txt')).toBe(
+      '/api/v1/config/archive/resource?path=messages%2Fnotice.txt',
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(1,
+      '/api/v1/config/archive/resource/write?path=messages%2Fnotice.txt',
+      expect.objectContaining({body: payload, headers: expect.objectContaining({
+        'X-Smithproxy-Expected-Revision': 'rev-1',
+        'X-Smithproxy-Archive-SHA256': hash,
+      })}));
+    expect(fetcher).toHaveBeenNthCalledWith(2,
+      '/api/v1/config/archive/resource/delete?path=messages%2Fnotice.txt',
+      expect.objectContaining({body: expect.any(ArrayBuffer)}));
+  });
+
   it('rejects malformed responses and unsafe endpoint configuration', async () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({status: 'ok'}));
     await expect(client.health()).rejects.toThrow('Invalid health response');

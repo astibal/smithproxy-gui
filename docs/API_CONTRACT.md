@@ -262,6 +262,26 @@ same-origin CSRF boundary. It never includes workspace draft changes. Smithproxy
 must explicitly advertise support; absence of that flag keeps the control
 disabled and the GUI never discovers support by attempting a mutating request.
 
+Native CFtar administration is exposed through the same trusted gateway:
+
+```http
+GET  /api/v1/config/archive
+GET  /api/v1/config/archive/download?version=current|previous
+GET  /api/v1/config/archive/resource?path=...
+POST /api/v1/config/archive/validate
+POST /api/v1/config/archive/restore
+POST /api/v1/config/archive/resource/write?path=...
+POST /api/v1/config/archive/resource/delete?path=...
+```
+
+The browser never receives the Smithproxy API key and never fetches resource
+contents while building the inventory. Archive validation precedes restore;
+restore carries the displayed running revision and validated archive SHA-256.
+Resource writes carry the running revision and current archive SHA-256. Both
+operations replace only durable startup state and explicitly report that a
+controlled restart is required. Binary mutations use the gateway, exact-origin
+CSRF checks, bounded bodies, and `application/octet-stream`.
+
 When the draft is empty, the core binds it to the latest verified configuration
 revision. Changing that binding increments the draft version, so a browser that
 loaded an older or unbound draft cannot submit changes under a new revision.
