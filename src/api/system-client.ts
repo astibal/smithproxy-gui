@@ -1104,14 +1104,27 @@ function parseArchiveHash(value: unknown): string {
   return value;
 }
 
-function parseArchiveEntries(value: unknown, label: string): ReadonlyArray<ArchiveEntry> {
+function validArchiveEntryPath(path: string): boolean {
+  return path.length > 0 && path.length <= 1024 && !path.startsWith('/') && !path.includes('\\') &&
+    !/[\u0000-\u001f\u007f]/u.test(path) &&
+    !path.split('/').some(part => part.length === 0 || part === '.' || part === '..');
+}
+
+function managedArchiveResourcePath(path: string): boolean {
+  return validArchiveEntryPath(path) && ['pki/', 'templates/', 'commands/']
+    .some(prefix => path.startsWith(prefix) && path.length > prefix.length);
+}
+
+function parseArchiveEntries(
+  value: unknown,
+  label: string,
+  validPath: (path: string) => boolean = validArchiveEntryPath,
+): ReadonlyArray<ArchiveEntry> {
   if (!Array.isArray(value) || value.length > 4096) {
     throw new Error(`Invalid configuration archive ${label}.`);
   }
   return value.map(entry => {
-    if (!isObject(entry) || typeof entry.path !== 'string' || entry.path.length === 0 ||
-        entry.path.length > 512 || entry.path.startsWith('/') || entry.path.includes('\\') ||
-        entry.path.split('/').some(part => part.length === 0 || part === '.' || part === '..') ||
+    if (!isObject(entry) || typeof entry.path !== 'string' || !validPath(entry.path) ||
         !Number.isSafeInteger(entry.size) || (entry.size as number) < 0 ||
         typeof entry.executable !== 'boolean') {
       throw new Error(`Invalid configuration archive ${label} entry.`);
@@ -1127,7 +1140,7 @@ function parseArchiveInventory(value: unknown): ArchiveInventory {
   return {
     state: 'ready',
     contentHash: parseArchiveHash(value.content_hash),
-    resources: parseArchiveEntries(value.resources, 'resource'),
+    resources: parseArchiveEntries(value.resources, 'resource', managedArchiveResourcePath),
   };
 }
 
@@ -1439,14 +1452,9 @@ export class SystemClient {
   }
 
   #validateArchiveResourcePath(path: string): void {
-    const managedNamespace = ['pki/', 'templates/', 'commands/']
-      .some(prefix => path.startsWith(prefix));
     // Match the native CFtar path contract before a request crosses the API
     // boundary. This produces one predictable client error for every caller.
-    if (path.length === 0 || path.length > 1024 || path.startsWith('/') || path.includes('\\') ||
-        /[\u0000-\u001f\u007f]/u.test(path) ||
-        !managedNamespace ||
-        path.split('/').some(part => part.length === 0 || part === '.' || part === '..')) {
+    if (!managedArchiveResourcePath(path)) {
       throw new Error('Invalid configuration archive resource path.');
     }
   }

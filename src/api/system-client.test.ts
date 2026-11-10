@@ -930,6 +930,26 @@ describe('SystemClient', () => {
     expect(() => client.archiveResourceUrl(`pki/${'a'.repeat(1021)}`)).toThrow('resource path');
   });
 
+  it('enforces the native CFtar path contract on archive responses', async () => {
+    const hash = `sha256:${'f'.repeat(64)}`;
+    const longResource = `templates/${'a'.repeat(1014)}`;
+    const valid = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', content_hash: hash,
+      resources: [{path: longResource, size: 1, executable: false}],
+    }));
+    await expect(valid.archiveInventory()).resolves.toMatchObject({
+      resources: [{path: longResource}],
+    });
+
+    for (const path of ['smithproxy.cfg', 'pki/', 'commands/task\nname']) {
+      const malformed = new SystemClient('/api/v1', '/', async () => jsonResponse({
+        state: 'ready', content_hash: hash,
+        resources: [{path, size: 1, executable: false}],
+      }));
+      await expect(malformed.archiveInventory()).rejects.toThrow('resource entry');
+    }
+  });
+
   it('writes and removes managed CFtar resources with archive preconditions', async () => {
     const hash = `sha256:${'e'.repeat(64)}`;
     const fetcher = vi.fn(async () => jsonResponse({
