@@ -5342,7 +5342,7 @@ test('opens every operational health subsystem in its administrator view', async
     ['Session activity', () => page.getByRole('region', {name: 'Session activity'})],
     ['TLS cache', () => page.getByRole('region', {name: 'TLS interception cache'})],
     ['Neighborhood', () => page.getByRole('region', {name: 'Neighborhood activity'})],
-    ['Interfaces', () => page.getByRole('region', {name: 'Interface synchronization'})],
+    ['Interfaces', () => page.getByRole('region', {name: 'Network interfaces'})],
     ['Configuration', () => page.getByRole('heading', {name: 'Startup configuration & backups'})],
   ] as const;
 
@@ -5422,7 +5422,7 @@ test('fails closed and diagnoses a rejected Saslik gateway handoff', async ({pag
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await page.getByRole('group', {name: 'Network categories'})
     .getByRole('button', {name: 'Interfaces'}).click();
-  const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
+  const interfaceSummary = page.getByRole('region', {name: 'Network interfaces'});
   const interfaceCount = interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'});
   await expect(interfaceCount.getByText('3', {exact: true})).toBeVisible();
 
@@ -5461,7 +5461,7 @@ test('discards monitoring responses completed after gateway access is revoked', 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await page.getByRole('group', {name: 'Network categories'})
     .getByRole('button', {name: 'Interfaces'}).click();
-  const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
+  const interfaceSummary = page.getByRole('region', {name: 'Network interfaces'});
   await expect(interfaceSummary.getByRole('article').filter({hasText: 'Interfaces'})
     .getByText('0', {exact: true})).toBeVisible();
   expect(failedRequests).toContain('/api/v1/metrics/summary');
@@ -6232,7 +6232,7 @@ test('polls only monitoring surfaces advertised for the current session', async 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await page.getByRole('group', {name: 'Network categories'})
     .getByRole('button', {name: 'Interfaces'}).click();
-  await expect(page.getByRole('region', {name: 'Interface synchronization'}))
+  await expect(page.getByRole('region', {name: 'Network interfaces'}))
     .toContainText('Unavailable · Last data no data');
 });
 
@@ -6309,7 +6309,7 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
   await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toContainText('Ready · Stale');
   await expect(page.getByRole('region', {name: 'Listener workload'}).getByText('Last known')).toHaveCount(2);
   await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
-  await expect(page.getByRole('region', {name: 'Interface synchronization'})).toContainText('Ready · Stale');
+  await expect(page.getByRole('region', {name: 'Network interfaces'})).toContainText('Ready · Stale');
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await page.getByRole('button', {name: 'Sessions', exact: true}).click();
@@ -6548,7 +6548,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(ingressConfig.getByRole('row').filter({hasText: 'SOCKS'})).toContainText('Disabled');
   await expect(ingressConfig.getByRole('row').filter({hasText: 'SOCKS'})).toContainText('Anonymous access');
   await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
-  await expect(page.getByRole('region', {name: 'Interface synchronization'})).toBeVisible();
+  await expect(page.getByRole('region', {name: 'Network interfaces'})).toBeVisible();
   await expectNoWcagViolations(page);
 
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
@@ -6760,7 +6760,16 @@ test('organizes operational surfaces into focused administrator views', async ({
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
-  await expect(page.getByRole('region', {name: 'Interface synchronization'})).toBeVisible();
+  const interfaces = page.getByRole('region', {name: 'Network interfaces'});
+  await expect(interfaces).toBeVisible();
+  await expect(interfaces.getByText('IPv4 addresses', {exact: true}).locator('..')).toContainText('3');
+  await expect(interfaces.getByText('IPv6 addresses', {exact: true}).locator('..')).toContainText('2');
+  const synchronizationDiagnostics = interfaces.locator('details.diagnostic-section').filter({
+    hasText: 'Synchronization diagnostics',
+  });
+  await expect(synchronizationDiagnostics).not.toHaveAttribute('open', '');
+  await synchronizationDiagnostics.locator('summary').click();
+  await expect(synchronizationDiagnostics).toContainText('Event datagrams15');
   await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Neighborhood', exact: true}).click();
   await expect(page.getByRole('region', {name: 'Neighborhood activity'})).toBeVisible();
@@ -7450,7 +7459,7 @@ test('declares the Saslik appearance contract and remains usable on mobile', asy
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
   await page.setViewportSize({width: 390, height: 844});
-  const interfaceSummary = page.getByRole('region', {name: 'Interface synchronization'});
+  const interfaceSummary = page.getByRole('region', {name: 'Network interfaces'});
   await expect(interfaceSummary).toBeVisible();
   await expect.poll(() => interfaceSummary.evaluate(element =>
     element.scrollWidth <= element.clientWidth)).toBe(true);

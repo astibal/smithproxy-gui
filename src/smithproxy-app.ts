@@ -9730,9 +9730,9 @@ export class SmithproxyApp extends LitElement {
       interfaces.state, interfaces.lastSuccessAtUnixMs, 30_000,
     );
     return html`
-      <section class="runtime-summary" aria-label="Interface synchronization">
+      <section class="runtime-summary" aria-label="Network interfaces">
         <div class="runtime-heading">
-          <div><h3>Interface synchronization</h3><p>Privacy-safe netlink monitor health and inventory totals</p></div>
+          <div><h3>Network interfaces</h3><p>Current interface and address inventory</p></div>
           <span class="runtime-state ${presentation.tone}"
             title=${interfaces.detail}>● ${presentation.label}</span>
         </div>
@@ -9740,7 +9740,7 @@ export class SmithproxyApp extends LitElement {
           <article class="metric">
             <span class="metric-label">Interfaces</span>
             <strong class="metric-value">${interfaces.interfaces.toLocaleString()}</strong>
-            <span class="metric-note">Generation ${interfaces.generation.toLocaleString()}</span>
+            <span class="metric-note">Reported by the connected Smithproxy instance</span>
           </article>
           <article class="metric">
             <span class="metric-label">Addresses</span>
@@ -9748,20 +9748,45 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">${interfaces.ipv4Addresses.toLocaleString()} IPv4 · ${interfaces.ipv6Addresses.toLocaleString()} IPv6</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Synchronizations</span>
-            <strong class="metric-value">${interfaces.synchronizationSuccesses.toLocaleString()}</strong>
-            <span class="metric-note">${interfaces.synchronizationAttempts.toLocaleString()} attempts · ${interfaces.synchronizationErrors.toLocaleString()} errors</span>
+            <span class="metric-label">IPv4 addresses</span>
+            <strong class="metric-value">${interfaces.ipv4Addresses.toLocaleString()}</strong>
+            <span class="metric-note">Currently assigned addresses</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Changed events</span>
-            <strong class="metric-value">${interfaces.changedEventDatagrams.toLocaleString()}</strong>
-            <span class="metric-note">${interfaces.eventDatagrams.toLocaleString()} event datagrams · ${interfaces.synchronizationRunning ? 'sync running' : 'sync idle'}</span>
+            <span class="metric-label">IPv6 addresses</span>
+            <strong class="metric-value">${interfaces.ipv6Addresses.toLocaleString()}</strong>
+            <span class="metric-note">Currently assigned addresses</span>
           </article>
         </div>
-        ${interfaces.lastErrorCode === null ? nothing : html`
-          <div class="metrics-message" role="status">Stable diagnostic code: ${interfaces.lastErrorCode}</div>`}
+        ${interfaces.synchronizationErrors > 0 ? html`
+          <div class="metrics-message warning" role="status">
+            Interface inventory reported ${interfaces.synchronizationErrors.toLocaleString()}
+            synchronization error${interfaces.synchronizationErrors === 1 ? '' : 's'}.
+          </div>` : nothing}
         ${this.renderCollectorNotice(presentation, interfaces.detail, interfaces.lastSuccessAtUnixMs)}
-        <div class="privacy-note">Interface names, indexes, addresses, routes, namespaces, and raw kernel errors never leave the management service.</div>
+        <details class="diagnostic-section">
+          <summary>
+            <div><h4>Synchronization diagnostics</h4><p>Internal collection state for troubleshooting</p></div>
+            <span class="runtime-state ${interfaces.synchronizationErrors > 0 ? 'warning' : 'success'}">
+              ${interfaces.synchronizationErrors > 0 ? 'Attention' : 'Healthy'}
+            </span>
+          </summary>
+          <div class="diagnostic-content">
+            <dl>
+              <dt>Generation</dt><dd>${interfaces.generation.toLocaleString()}</dd>
+              <dt>Attempts</dt><dd>${interfaces.synchronizationAttempts.toLocaleString()}</dd>
+              <dt>Successful</dt><dd>${interfaces.synchronizationSuccesses.toLocaleString()}</dd>
+              <dt>Errors</dt><dd>${interfaces.synchronizationErrors.toLocaleString()}</dd>
+              <dt>Current state</dt><dd>${interfaces.synchronizationRunning ? 'Running' : 'Idle'}</dd>
+              <dt>Event datagrams</dt><dd>${interfaces.eventDatagrams.toLocaleString()}</dd>
+              <dt>Changed events</dt><dd>${interfaces.changedEventDatagrams.toLocaleString()}</dd>
+              <dt>Last error code</dt><dd>${interfaces.lastErrorCode ?? 'None'}</dd>
+            </dl>
+            <p class="privacy-note">
+              Interface names, indexes, addresses, routes, namespaces, and raw kernel errors remain inside the management service.
+            </p>
+          </div>
+        </details>
       </section>
     `;
   }
