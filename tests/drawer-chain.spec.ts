@@ -6343,7 +6343,9 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Backend', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Management backend'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Download diagnostics'})).toBeHidden();
   await page.getByRole('heading', {name: 'Management diagnostics'}).click();
+  await expect(page.getByRole('button', {name: 'Download diagnostics'})).toBeVisible();
   const capabilityCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Capability bootstrap'}),
   });

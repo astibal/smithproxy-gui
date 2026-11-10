@@ -780,6 +780,7 @@ export class SmithproxyApp extends LitElement {
     .management-diagnostics > summary > div { flex: 1; min-width: 0; }
     .management-diagnostics > summary h3 { margin: 0; }
     .management-diagnostics > summary p { margin: 3px 0 0; color: var(--app-muted); }
+    .management-diagnostics-actions { display: flex; justify-content: flex-end; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--app-border); }
     .management-diagnostics-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--app-border); }
     .management-diagnostics-grid .domain-card { margin: 0; background: var(--app-canvas); }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
@@ -10551,7 +10552,6 @@ export class SmithproxyApp extends LitElement {
             this.systemView === 'backend' ? 'Management backend' :
             'Appearance'}</h2>
             <p>Focused system administration backed by the current Smithproxy state</p></div>
-          <button class="secondary" type="button" @click=${() => this.downloadDiagnostics()}>Download diagnostics</button>
         </div>
         ${pendingConfiguration ? html`<div class="scope-note" role="status">
           Configuration cards include pending workspace draft values. Smithproxy runtime remains unchanged until a validated atomic commit.
@@ -10707,6 +10707,10 @@ export class SmithproxyApp extends LitElement {
               <span class="runtime-state ${this.capabilityBootstrapState === 'ready' && gateway.tone !== 'danger'
                 ? 'success' : 'warning'}">Advanced</span>
             </summary>
+            <div class="management-diagnostics-actions">
+              <button class="secondary" type="button"
+                @click=${() => this.downloadDiagnostics()}>Download diagnostics</button>
+            </div>
             <div class="management-diagnostics-grid">
               <article class="domain-card">
                 <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
