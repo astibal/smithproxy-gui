@@ -10599,6 +10599,9 @@ export class SmithproxyApp extends LitElement {
     const presentation = this.collectorPresentation(
       activity.state, activity.lastSuccessAtUnixMs, 10_000,
     );
+    const livePresentation = this.collectorPresentation(
+      this.liveSessions.state, this.liveSessions.lastSuccessAtUnixMs, 10_000,
+    );
     const query = this.sessionListQuery.trim().toLocaleLowerCase();
     const visibleSessions = this.liveSessions.entries.filter(entry => {
       const stateMatches = this.sessionStateFilter === 'all' ||
@@ -10636,7 +10639,9 @@ export class SmithproxyApp extends LitElement {
           <article class="metric">
             <span class="metric-label">Recently closed</span>
             <strong class="metric-value">${this.liveSessions.entries.filter(entry => !entry.active).length.toLocaleString()}</strong>
-            <span class="metric-note">Retained for ${this.durationLabel(this.liveSessions.closedRetentionSeconds * 1000)}</span>
+            <span class="metric-note">${this.liveSessions.closedRetentionSeconds > 0
+              ? `Retained for ${this.durationLabel(this.liveSessions.closedRetentionSeconds * 1000)}`
+              : 'Retention window unavailable'}</span>
           </article>
         </div>
         ${this.renderCollectorNotice(presentation, activity.lastSuccessAtUnixMs)}
@@ -10659,10 +10664,11 @@ export class SmithproxyApp extends LitElement {
         </div>
         <div class="runtime-heading">
           <div><h3>Observed connections</h3><p>Active and recently closed proxy sessions</p></div>
-          <span class="runtime-state ${this.liveSessions.state === 'ready' ? 'success' : 'warning'}">
-            ● ${displayState(this.liveSessions.state)}
+          <span class="runtime-state ${livePresentation.tone}" aria-label="Observed connections status">
+            ● ${livePresentation.label}
           </span>
         </div>
+        ${this.renderCollectorNotice(livePresentation, this.liveSessions.lastSuccessAtUnixMs)}
         <div class="list-filters" role="search" aria-label="Filter observed sessions">
           <label class="list-filter">Endpoint, protocol, or policy
             <input type="search" aria-label="Filter observed sessions"

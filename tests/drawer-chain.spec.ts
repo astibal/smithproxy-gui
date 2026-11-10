@@ -6394,7 +6394,10 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await page.getByRole('button', {name: 'Sessions', exact: true}).click();
-  await expect(page.getByRole('region', {name: 'Session activity'})).toContainText('Ready · Stale');
+  const sessionActivity = page.getByRole('region', {name: 'Session activity'});
+  await expect(sessionActivity).toContainText('Ready · Stale');
+  await expect(sessionActivity.getByLabel('Observed connections status')).toContainText('Ready · Stale');
+  await expect(sessionActivity.locator('.metrics-message')).toHaveCount(2);
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   const collectionDiagnostics = page.getByRole('group', {name: 'Data collection diagnostics'});
   await expect(collectionDiagnostics).toContainText('0/5 current');
