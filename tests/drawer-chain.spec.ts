@@ -5240,6 +5240,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   const connectionMetric = page.getByText('Smithproxy connection', {exact: true}).locator('..');
   await expect(connectionMetric).toContainText('Ready');
   await expect(connectionMetric).toContainText('Last successful check');
+  await expect(page.getByText('Management service uptime', {exact: true})).toBeVisible();
   await expect(page.getByText('Response time').locator('..').getByText('12 ms', {exact: true})).toBeVisible();
   await expect(page.getByRole('region', {name: 'Connectivity check history'})).toBeVisible();
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
@@ -5257,6 +5258,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(tlsCache.getByText('Rotation policy', {exact: true})).toBeVisible();
   await expect(tlsCache.getByText('Automatic', {exact: true})).toBeVisible();
   await expect(tlsCache).toContainText('Oldest certificates are replaced');
+  await expect(tlsCache).not.toContainText('Current TLS cache metrics');
   await expect(tlsCache.getByRole('progressbar')).toHaveCount(0);
 
   await page.getByRole('group', {name: 'Monitoring categories'})
@@ -6349,6 +6351,7 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
   const runtime = page.getByRole('region', {name: 'Runtime metrics summary'});
   await expect(runtime).toContainText('Ready · Stale');
   await expect(runtime).toContainText('values are not current');
+  await expect(runtime).not.toContainText('Current listener metrics');
 
   await page.getByRole('button', {name: 'Monitoring', exact: true}).click();
   await page.getByRole('button', {name: 'TLS cache', exact: true}).click();
@@ -6369,6 +6372,8 @@ test('marks delayed aggregate collectors and retained values as stale', async ({
   const collectorHealth = page.getByRole('table', {name: 'Data freshness'});
   await expect(collectorHealth).toBeVisible();
   await expect(collectorHealth.getByRole('row').filter({hasText: 'Stale'})).toHaveCount(5);
+  await expect(collectorHealth.getByRole('row').filter({hasText: 'Runtime metrics'}))
+    .toContainText('Current listener metrics');
 });
 
 test('diagnoses an invalid event stream and recovers only after an explicit retry', async ({page}) => {

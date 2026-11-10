@@ -9660,11 +9660,11 @@ export class SmithproxyApp extends LitElement {
         </div>
         ${this.renderNeighborSummary()}
         ${this.metricsAvailable ? html`
-        ${this.renderCollectorNotice(presentation, metrics.detail, metrics.lastSuccessAtUnixMs)}
+        ${this.renderCollectorNotice(presentation, metrics.lastSuccessAtUnixMs)}
         <section class="runtime-summary" aria-label="Listener workload">
           <div class="runtime-heading">
             <div><h3>Listener workload</h3><p>Active workloads first; unused listeners remain visible at the bottom</p></div>
-            <span class="runtime-state ${presentation.tone}" title=${metrics.detail}>● ${presentation.label}</span>
+            <span class="runtime-state ${presentation.tone}">● ${presentation.label}</span>
           </div>
           ${listeners.length > 0 ? html`
             <div class="table network-config-table" tabindex="0">
@@ -9708,8 +9708,7 @@ export class SmithproxyApp extends LitElement {
       <section class="runtime-summary" aria-label="Neighborhood activity">
         <div class="runtime-heading">
           <div><h3>Neighborhood activity</h3><p>Privacy-safe aggregates for recently observed endpoints</p></div>
-          <span class="runtime-state ${presentation.tone}"
-            title=${neighbors.detail}>● ${presentation.label}</span>
+          <span class="runtime-state ${presentation.tone}">● ${presentation.label}</span>
         </div>
         <div class="metric-grid">
           <article class="metric">
@@ -9733,7 +9732,7 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">Last success: ${this.timeLabel(neighbors.lastSuccessAtUnixMs)}</span>
           </article>
         </div>
-        ${this.renderCollectorNotice(presentation, neighbors.detail, neighbors.lastSuccessAtUnixMs)}
+        ${this.renderCollectorNotice(presentation, neighbors.lastSuccessAtUnixMs)}
         <div class="privacy-note">Hostnames, tags, labels, and per-endpoint timelines remain inside the management service.</div>
       </section>
     `;
@@ -9754,8 +9753,7 @@ export class SmithproxyApp extends LitElement {
       <section class="runtime-summary" aria-label="Network interfaces">
         <div class="runtime-heading">
           <div><h3>Network interfaces</h3><p>Current interface and address inventory</p></div>
-          <span class="runtime-state ${presentation.tone}"
-            title=${interfaces.detail}>● ${presentation.label}</span>
+          <span class="runtime-state ${presentation.tone}">● ${presentation.label}</span>
         </div>
         <div class="metric-grid">
           <article class="metric">
@@ -9784,7 +9782,7 @@ export class SmithproxyApp extends LitElement {
             Interface inventory reported ${interfaces.synchronizationErrors.toLocaleString()}
             synchronization error${interfaces.synchronizationErrors === 1 ? '' : 's'}.
           </div>` : nothing}
-        ${this.renderCollectorNotice(presentation, interfaces.detail, interfaces.lastSuccessAtUnixMs)}
+        ${this.renderCollectorNotice(presentation, interfaces.lastSuccessAtUnixMs)}
         <details class="diagnostic-section">
           <summary>
             <div><h4>Synchronization diagnostics</h4><p>Internal collection state for troubleshooting</p></div>
@@ -9867,11 +9865,12 @@ export class SmithproxyApp extends LitElement {
 
   private renderCollectorNotice(
     presentation: CollectorPresentation,
-    detail: string,
     lastSuccessAtUnixMs: number | null,
   ) {
     if (presentation.current) return nothing;
-    const reason = presentation.reportedReady ? 'Collector updates are delayed.' : detail;
+    const reason = presentation.reportedReady
+      ? 'Monitoring updates are delayed.'
+      : 'Monitoring data is currently unavailable.';
     const dataStatus = lastSuccessAtUnixMs === null
       ? 'No successful aggregate sample is available; values are not current.'
       : `Displaying the last successful aggregate sample from ${this.timeLabel(lastSuccessAtUnixMs)}; values are not current.`;
@@ -10149,7 +10148,7 @@ export class SmithproxyApp extends LitElement {
       <section class="runtime-summary" aria-label="Runtime metrics summary">
         <div class="runtime-heading">
           <div><h3>Runtime traffic</h3></div>
-          <span class="runtime-state ${presentation.tone}" title=${metrics.detail}>
+          <span class="runtime-state ${presentation.tone}">
             ● ${presentation.label}
           </span>
         </div>
@@ -10175,7 +10174,7 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">Last success: ${this.timeLabel(metrics.lastSuccessAtUnixMs)}</span>
           </article>
         </div>
-        ${this.renderCollectorNotice(presentation, metrics.detail, metrics.lastSuccessAtUnixMs)}
+        ${this.renderCollectorNotice(presentation, metrics.lastSuccessAtUnixMs)}
       </section>
     `;
   }
@@ -10262,8 +10261,7 @@ export class SmithproxyApp extends LitElement {
       <section class="runtime-summary" aria-label="TLS interception cache">
         <div class="runtime-heading">
           <div><h3>TLS interception cache</h3><p>Aggregate certificate cache health without domain disclosure</p></div>
-          <span class="runtime-state ${presentation.tone}"
-            title=${cache.detail}>● ${presentation.label}</span>
+          <span class="runtime-state ${presentation.tone}">● ${presentation.label}</span>
         </div>
         <div class="metric-grid">
           <article class="metric">
@@ -10284,10 +10282,10 @@ export class SmithproxyApp extends LitElement {
           <article class="metric">
             <span class="metric-label">Last successful sample</span>
             <strong class="metric-value">${this.timeLabel(cache.lastSuccessAtUnixMs)}</strong>
-            <span class="metric-note">${cache.detail}</span>
+            <span class="metric-note">Monitoring refreshes every five seconds</span>
           </article>
         </div>
-        ${this.renderCollectorNotice(presentation, cache.detail, cache.lastSuccessAtUnixMs)}
+        ${this.renderCollectorNotice(presentation, cache.lastSuccessAtUnixMs)}
       </section>
     `;
   }
@@ -10378,7 +10376,7 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">${successes} / ${history.length} successful checks</span>
           </article>
           <article class="metric">
-            <span class="metric-label">Management uptime</span>
+            <span class="metric-label">Management service uptime</span>
             <strong class="metric-value">${this.uptimeLabel()}</strong>
             <span class="metric-note">${history.length} recent checks</span>
           </article>
@@ -10451,13 +10449,13 @@ export class SmithproxyApp extends LitElement {
           <table class="listener-table" aria-label="Data freshness">
             <thead><tr>
               <th>Data source</th><th>Status</th><th>Freshness</th>
-              <th>Refresh interval</th><th>Last update</th>
+              <th>Refresh interval</th><th>Last update</th><th>Technical detail</th>
             </tr></thead>
             <tbody>
               ${collectors.map(item => {
                 return html`<tr>
                   <td class="listener-name">${item.name}</td>
-                  <td><span class="runtime-state ${item.presentation.tone}" title=${item.detail}>
+                  <td><span class="runtime-state ${item.presentation.tone}">
                     ● ${displayState(item.state)}
                   </span></td>
                   <td><span class="runtime-state ${this.freshnessTone(item.freshness)}">
@@ -10467,6 +10465,7 @@ export class SmithproxyApp extends LitElement {
                   <td title=${this.timeLabel(item.lastSuccessAtUnixMs)}>
                     ${this.sampleAgeLabel(item.lastSuccessAtUnixMs)}
                   </td>
+                  <td>${item.detail}</td>
                 </tr>`;
               })}
             </tbody>
@@ -10605,7 +10604,7 @@ export class SmithproxyApp extends LitElement {
       <section class="runtime-summary" aria-label="Session activity">
         <div class="runtime-heading">
           <div><h3>Session activity</h3><p>Current traffic grouped by transport</p></div>
-          <span class="runtime-state ${presentation.tone}" title=${activity.detail}>
+          <span class="runtime-state ${presentation.tone}">
             ● ${presentation.label}
           </span>
         </div>
@@ -10631,7 +10630,7 @@ export class SmithproxyApp extends LitElement {
             <span class="metric-note">Retained for five minutes</span>
           </article>
         </div>
-        ${this.renderCollectorNotice(presentation, activity.detail, activity.lastSuccessAtUnixMs)}
+        ${this.renderCollectorNotice(presentation, activity.lastSuccessAtUnixMs)}
         <div class="table">
           <table class="listener-table">
             <thead><tr><th>Transport</th><th>Sessions</th><th>Current up</th><th>Current down</th><th>Transferred</th></tr></thead>
@@ -10651,8 +10650,9 @@ export class SmithproxyApp extends LitElement {
         </div>
         <div class="runtime-heading">
           <div><h3>Observed connections</h3><p>Active and recently closed proxy sessions</p></div>
-          <span class="runtime-state ${this.liveSessions.state === 'ready' ? 'success' : 'warning'}"
-            title=${this.liveSessions.detail}>● ${displayState(this.liveSessions.state)}</span>
+          <span class="runtime-state ${this.liveSessions.state === 'ready' ? 'success' : 'warning'}">
+            ● ${displayState(this.liveSessions.state)}
+          </span>
         </div>
         <div class="list-filters" role="search" aria-label="Filter observed sessions">
           <label class="list-filter">Endpoint, protocol, or policy
