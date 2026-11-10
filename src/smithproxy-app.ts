@@ -582,6 +582,11 @@ export class SmithproxyApp extends LitElement {
     .topbar { display: flex; gap: 16px; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--app-border); background: color-mix(in srgb, var(--app-surface) 88%, transparent); }
     .topbar h1 { margin: 0; font-size: 18px; }
     .topbar p { flex: 1; margin: 0; color: var(--app-muted); }
+    .config-workflow { display: flex; flex: 0 0 auto; gap: 7px; align-items: center; }
+    .config-workflow button { min-height: 38px; white-space: nowrap; }
+    .config-workflow .save-required { border-color: var(--app-warning); background: var(--app-warning); color: #17120a; }
+    .config-workflow .save-confirm { border-color: var(--app-danger); background: var(--app-danger); color: #19070b; }
+    .config-workflow-error { max-width: 180px; overflow: hidden; color: var(--app-danger); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .search { width: min(300px, 32vw); padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
 
     .workspace { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
@@ -951,6 +956,9 @@ export class SmithproxyApp extends LitElement {
       .structural-action { max-width: 190px; }
       .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .topbar p { display: none; }
+      .config-workflow { justify-self: end; }
+      .config-workflow button { min-height: 34px; padding: 6px 9px; }
+      .config-workflow-error { display: none; }
       .topbar .search { display: block; grid-column: 1 / -1; width: 100%; max-width: none; }
       .content { padding: 14px; }
       .drawer { inset: 0; }
@@ -9883,22 +9891,9 @@ export class SmithproxyApp extends LitElement {
                 ? 'Explicit Smithproxy save required' : this.snapshot ? 'Matches saved configuration' : 'Unavailable'}</dd>
             </dl>
             ${this.snapshot?.unsaved ? html`
-              <div class="structural-action">
-                <button class=${this.configSaveArmed ? 'danger' : 'primary'} type="button"
-                  ?disabled=${!this.configSaveAvailable || this.configSaving || this.draftCommitting}
-                  title=${this.configSaveAvailable
-                    ? 'Persist the current running revision as the startup configuration.'
-                    : 'Smithproxy does not advertise the reviewed explicit-save capability.'}
-                  @click=${() => { void this.saveRunningConfiguration(); }}>
-                  ${this.configSaving ? 'Saving…' : this.configSaveArmed ? 'Confirm save to startup' : 'Save running config'}
-                </button>
-                <small>${this.configSaveArmed
-                  ? 'This persists the current running revision. Workspace draft changes are not included.'
-                  : this.configSaveAvailable
-                  ? 'Requires a second click; saves only the running revision.'
-                  : 'Explicit save is not advertised by this Smithproxy runtime.'}</small>
-              </div>
-              ${this.configSaveError ? html`<div class="metrics-message danger" role="alert">${this.configSaveError}</div>` : nothing}
+              <p class="metric-note">
+                Save the running revision to startup configuration from the configuration controls in the top bar.
+              </p>
             ` : nothing}
           </article>
           <article class="domain-card">
@@ -13375,11 +13370,6 @@ export class SmithproxyApp extends LitElement {
                   aria-current=${this.activeSection === item ? 'page' : nothing}
                   aria-expanded=${item === 'Objects' ? String(this.objectNavigationExpanded) : nothing}
                   title=${item} @click=${() => {
-                    if (item !== 'System') {
-                      this.configSaveArmed = false;
-                      if (this.configSaveArmTimer !== undefined) window.clearTimeout(this.configSaveArmTimer);
-                      this.configSaveArmTimer = undefined;
-                    }
                     if (item === 'Objects') {
                       const wasActive = this.activeSection === 'Objects';
                       this.activeSection = 'Objects';
@@ -13417,16 +13407,41 @@ export class SmithproxyApp extends LitElement {
           <header class="topbar">
             <h1>${sectionTitle}</h1>
             <p>${sectionDescriptions[this.activeSection] ?? 'Smithproxy management'}</p>
-            ${this.snapshot?.source === 'live' && this.draftChangeCount > 0 ? html`
-              <button class="secondary ${this.configRevisionDrift ? 'draft' : ''}" type="button"
-                ?disabled=${this.drawers.length > 0}
-                title=${this.configRevisionDrift
-                  ? 'Smithproxy configuration changed after this draft was opened.'
-                  : 'Review the shared workspace draft.'}
-                @click=${() => {
-                  this.discardDraftArmed = false;
-                  this.activeSection = 'Draft';
-                }}>Review draft · ${this.draftChangeCount}${this.configRevisionDrift ? ' · live changed' : ''}</button>
+            ${this.snapshot?.source === 'live' && (this.draftChangeCount > 0 || this.snapshot.unsaved) ? html`
+              <div class="config-workflow" aria-label="Configuration changes">
+                ${this.draftChangeCount > 0 ? html`
+                  <button class="primary" type="button"
+                    ?disabled=${this.drawers.length > 0}
+                    title=${this.configRevisionDrift
+                      ? 'The running configuration changed after this draft was opened. Review the conflict.'
+                      : 'Review, validate, and atomically commit pending changes to the running configuration.'}
+                    @click=${() => {
+                      this.discardDraftArmed = false;
+                      this.activeSection = 'Draft';
+                    }}>
+                    ${this.configRevisionDrift ? 'Resolve draft' : 'Review & commit'} · ${this.draftChangeCount}
+                  </button>
+                ` : nothing}
+                ${this.snapshot.unsaved ? html`
+                  <button class="primary ${this.configSaveArmed ? 'save-confirm' : 'save-required'}" type="button"
+                    ?disabled=${!this.configSaveAvailable || this.configSaving || this.draftCommitting}
+                    title=${this.configSaveAvailable
+                      ? this.draftChangeCount > 0
+                        ? 'Save the current running revision. Pending draft changes are not included.'
+                        : 'Persist the current running revision as the startup configuration.'
+                      : 'Smithproxy does not advertise the reviewed explicit-save capability.'}
+                    @click=${() => { void this.saveRunningConfiguration(); }}>
+                    ${this.configSaving
+                      ? 'Saving startup…'
+                      : this.configSaveArmed
+                        ? 'Confirm save to startup'
+                        : 'Save startup'}
+                  </button>
+                ` : nothing}
+                ${this.configSaveError ? html`
+                  <span class="config-workflow-error" role="alert" title=${this.configSaveError}>Save failed</span>
+                ` : nothing}
+              </div>
             ` : nothing}
             ${this.configReadAvailable && this.draftChangeCount === 0 ? html`
               <button class="secondary config-refresh" type="button"
