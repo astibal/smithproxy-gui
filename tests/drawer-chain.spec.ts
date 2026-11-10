@@ -5229,9 +5229,9 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).not.toContainText('API:');
   await expect(statusbar).not.toContainText('Revision ');
   await expect(statusbar).toContainText('Events: Connecting', {timeout: 4_000});
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('group', {name: 'System categories'})
-    .getByRole('button', {name: 'Connectivity'}).click();
+  await statusbar.getByRole('button', {name: /Freshness: Fresh/u}).click();
+  await expect(page.getByRole('heading', {level: 2, name: 'Management connectivity'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Connectivity'})).toHaveAttribute('aria-current', 'page');
   const connectionMetric = page.getByText('Smithproxy connection', {exact: true}).locator('..');
   await expect(connectionMetric).toContainText('Ready');
   await expect(connectionMetric).toContainText('Last successful check');

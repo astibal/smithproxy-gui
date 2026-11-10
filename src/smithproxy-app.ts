@@ -14874,7 +14874,11 @@ export class SmithproxyApp extends LitElement {
           </button>
           <button class="status-action status-secondary system-state ${this.freshnessTone(controlFreshness.state)}" type="button"
             title="Last successful management connectivity check: ${this.sampleAgeLabel(this.systemStatus.lastSuccessAtUnixMs)}"
-            @click=${() => { this.activeSection = 'Monitoring'; this.monitoringView = 'overview'; }}>
+            @click=${() => {
+              this.activeSection = 'System';
+              this.systemView = 'control-plane';
+              this.systemNavigationExpanded = true;
+            }}>
             ● Freshness: ${freshnessLabel(controlFreshness.state)}
           </button>
           <button class="status-action status-secondary system-state ${streamTone}" type="button"
