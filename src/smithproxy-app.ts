@@ -685,8 +685,9 @@ export class SmithproxyApp extends LitElement {
     .system-nav-toggle[aria-expanded='true'] .nav-expand { rotate: 90deg; }
     .object-subnav { display: grid; gap: 2px; margin: 2px 0 6px 8px; padding-left: 5px; border-left: 1px solid var(--app-border); }
     .object-subnav[hidden] { display: none; }
-    .object-subnav button { grid-template-columns: 14px minmax(0, 1fr); padding: 8px; border-radius: 2px; font-size: 13px; }
+    .object-subnav button { grid-template-columns: 14px minmax(0, 1fr) auto; padding: 8px; border-radius: 2px; font-size: 13px; }
     .object-subnav button[aria-current='page'] { box-shadow: none; color: var(--app-text); }
+    .object-subnav .nav-count { min-width: 20px; padding: 1px 5px; border: 1px solid var(--app-border); border-radius: 9px; color: var(--app-muted); font-size: 10px; font-variant-numeric: tabular-nums; text-align: center; }
     .nested-subnav { display: grid; gap: 1px; margin: -1px 0 3px 13px; padding-left: 5px; border-left: 1px solid var(--app-border); }
     .nested-subnav button { grid-template-columns: 10px minmax(0, 1fr); padding: 6px 7px; font-size: 12px; }
 
@@ -14304,6 +14305,19 @@ export class SmithproxyApp extends LitElement {
       if (item === 'System') return activeJobCount > 0 ? activeJobCount.toLocaleString() : undefined;
       return undefined;
     };
+    const objectNavigationCount = (category: (typeof objectNavigation)[number]): string | undefined => {
+      if (!this.snapshot) return undefined;
+      if (category.kind === 'all') return objectCount.toLocaleString();
+      if (category.kind === 'address') return this.snapshot.addresses.length.toLocaleString();
+      if (category.kind === 'port') return this.snapshot.ports.length.toLocaleString();
+      if (category.kind === 'protocol') return this.snapshot.protocols.length.toLocaleString();
+      if (category.kind === 'profile') return profileCount.toLocaleString();
+      const securityAssets = this.snapshot.securityAssets;
+      if (category.securityFilter === 'trust') {
+        return (securityAssets?.certificateAuthorities.length ?? 0).toLocaleString();
+      }
+      return (securityAssets?.signatures.length ?? 0).toLocaleString();
+    };
     // Draft is a global configuration workspace, not a child of whichever
     // object type happened to produce its first pending operation.
     const visibleNavigation = this.draftChangeCount > 0
@@ -14432,6 +14446,9 @@ export class SmithproxyApp extends LitElement {
                         @click=${() => this.selectObjectView(category.kind, category.securityFilter ?? 'all')}>
                         <span class="nav-icon" aria-hidden="true">${category.icon}</span>
                         <span class="nav-label">${category.label}</span>
+                        ${objectNavigationCount(category) !== undefined ? html`
+                          <span class="nav-count" aria-hidden="true">${objectNavigationCount(category)}</span>
+                        ` : nothing}
                       </button>
                       ${category.kind === 'profile' && this.activeSection === 'Objects' &&
                         this.objectKindFilter === 'profile' ? html`

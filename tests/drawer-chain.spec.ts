@@ -1593,6 +1593,12 @@ test('navigates object categories as dedicated views', async ({page}) => {
   await expect(objects).toHaveAttribute('aria-expanded', 'true');
   const categories = page.getByRole('group', {name: 'Object categories', exact: true});
   await expect(categories).toBeVisible();
+  await expect(categories.getByTitle('Address objects').locator('.nav-count')).toHaveText('2');
+  await expect(categories.getByTitle('Port objects').locator('.nav-count')).toHaveText('1');
+  await expect(categories.getByTitle('Protocol objects').locator('.nav-count')).toHaveText('1');
+  await expect(categories.getByTitle('Profiles and routing').locator('.nav-count')).toHaveText('7');
+  await expect(categories.getByTitle('Trust').locator('.nav-count')).toHaveText('1');
+  await expect(categories.getByTitle('Signatures').locator('.nav-count')).toHaveText('2');
 
   await categories.getByRole('button', {name: 'Address objects'}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'Address objects'})).toBeVisible();
