@@ -9564,7 +9564,7 @@ export class SmithproxyApp extends LitElement {
         security: scalar(
           'http_connect.proxy_authorization', settings.auxiliary.httpConnectProxyAuthorization,
         ) ? 'Authentication required' : 'Anonymous access'},
-      {name: 'Smithproxy API', enabled: scalar('accept_api', settings.acceptApi),
+      {name: 'Management API', enabled: scalar('accept_api', settings.acceptApi),
         security: scalar('http_api.loopback_only', settings.httpApi.loopbackOnly)
           ? 'Loopback only' : 'Remote access allowed'},
     ];
@@ -10927,7 +10927,7 @@ export class SmithproxyApp extends LitElement {
               </span>
             </header>
             ${this.jobsError ? html`<p role="alert">${this.jobsError}</p>` : nothing}
-            <div class="job-list" aria-label="Recent backend jobs">
+            <div class="job-list" aria-label="Recent background operations">
               ${[...this.backendJobs.jobs].reverse().slice(0, 5).map(job => html`
                 <div class="job-row" title=${job.id}>
                   <strong>${job.type === 'config-refresh' ? 'Configuration refresh' : job.type}</strong>
@@ -13185,7 +13185,7 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('accept-redirect', 'REDIRECT listener', settings.acceptRedirect)}
         ${booleanField('accept-socks', 'SOCKS listener', settings.acceptSocks)}
         ${booleanField('accept-http-connect', 'HTTP CONNECT listener', settings.acceptHttpConnect)}
-        ${booleanField('accept-api', 'Smithproxy API listener', settings.acceptApi)}
+        ${booleanField('accept-api', 'Management API listener', settings.acceptApi)}
         ${booleanField('local-destination-protection', 'Protect local destinations', settings.extendedLocalDestinationProtection)}
         ${booleanField('socks-proxy-authorization', 'Require SOCKS authentication', settings.auxiliary.socksProxyAuthorization)}
         ${booleanField('http-connect-proxy-authorization', 'Require HTTP CONNECT authentication', settings.auxiliary.httpConnectProxyAuthorization)}
@@ -14879,7 +14879,7 @@ export class SmithproxyApp extends LitElement {
             ● Events: ${displayState(this.eventStreamState)}
           </button>
           <button class="status-action status-secondary system-state ${jobTone}" type="button"
-            title=${this.jobsError ?? 'Open the bounded backend job queue'}
+            title=${this.jobsError ?? 'Open the bounded background operation queue'}
             @click=${() => { this.activeSection = 'System'; this.systemView = 'backend'; }}>
             ● Jobs: ${this.jobsError || !this.jobsAvailable
               ? 'Unavailable' : activeJobCount > 0 ? `${activeJobCount} active` : 'Idle'}
