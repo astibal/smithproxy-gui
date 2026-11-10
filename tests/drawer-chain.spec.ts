@@ -4490,13 +4490,13 @@ test('refreshes live configuration only outside an active edit transaction', asy
   await advanceRefreshWindow();
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect(page.locator('.statusbar')).toContainText('Config: Ready');
-  await expect(page.locator('.statusbar')).toContainText('refresh paused');
+  await expect(page.locator('.statusbar')).toContainText('update waiting');
   await expect.poll(() => state.configFetches).toBe(4);
 
   await page.getByRole('dialog', {name: 'Edit Policy 1'})
     .getByRole('button', {name: 'Cancel'}).click();
   await expect.poll(() => state.configFetches).toBe(5);
-  await expect(page.locator('.statusbar')).not.toContainText('refresh paused');
+  await expect(page.locator('.statusbar')).not.toContainText('update waiting');
 });
 
 test('detects an external revision while preserving and blocking the active draft', async ({page}) => {
@@ -4563,7 +4563,7 @@ test('loads the first live snapshot when an existing draft arrives first', async
 
   await expect(page.getByText('Config: Ready')).toBeVisible();
   await expect(page.getByRole('button', {name: 'Review draft · 1 · live changed'})).toBeVisible();
-  await expect(page.locator('.statusbar')).not.toContainText('refresh paused');
+  await expect(page.locator('.statusbar')).not.toContainText('update waiting');
 });
 
 test('recovers live configuration automatically after a transient API failure', async ({page}) => {

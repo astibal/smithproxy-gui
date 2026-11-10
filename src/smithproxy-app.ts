@@ -2224,6 +2224,21 @@ export class SmithproxyApp extends LitElement {
     };
   }
 
+  /** Describes configuration access without exposing gateway implementation details globally. */
+  private configurationAccessDetail(gateway: ReturnType<SmithproxyApp['gatewayStatus']>): string {
+    if (gateway.label === 'Unavailable') {
+      return 'Configuration access is unavailable. Open access diagnostics for details.';
+    }
+    if (gateway.label === 'Discovering') return 'Checking whether configuration access is available.';
+    if (gateway.label === 'Disabled') {
+      return 'Configuration changes are unavailable until trusted management access is configured.';
+    }
+    if (gateway.label === 'Rejected') {
+      return 'This management session is not allowed to read or change configuration.';
+    }
+    return 'Configuration access is verified.';
+  }
+
   /** Opens the detailed trust diagnostics behind a configuration-access warning. */
   private openManagementDiagnostics(): void {
     this.activeSection = 'System';
@@ -14926,16 +14941,19 @@ export class SmithproxyApp extends LitElement {
             @click=${() => { this.activeSection = 'Draft'; }}>
             Draft: ${this.draftChangeCount} changes
           </button>
-          <span class="status-secondary" title=${this.configError ?? this.snapshot?.detail ?? ''}>
+          <span class="status-secondary" title=${this.configRefreshDeferred
+            ? 'The current view is held while an editor or draft is active. Pending updates will load afterward.'
+            : this.configError ?? this.snapshot?.detail ?? ''}>
             Config: ${this.snapshot
               ? `${displayState(this.snapshot.state)}${this.configError ? ' · refresh failed' : ''}`
               : this.configError ? 'Unavailable'
               : this.configReadAvailable ? 'Loading' : 'Unavailable'}
-            ${this.configRefreshDeferred ? ' · refresh paused' : ''}
+            ${this.configRefreshDeferred ? ' · update waiting' : ''}
           </span>
           ${gateway.label !== 'Verified' ? html`
             <button class="status-action status-secondary system-state ${gateway.tone}" type="button"
-              title=${gateway.detail} @click=${() => this.openManagementDiagnostics()}>
+              title=${this.configurationAccessDetail(gateway)}
+              @click=${() => this.openManagementDiagnostics()}>
               ● Configuration access: ${configurationAccessLabel}
             </button>
           ` : nothing}
