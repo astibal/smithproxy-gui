@@ -792,6 +792,7 @@ export class SmithproxyApp extends LitElement {
     .management-diagnostics-actions { display: flex; justify-content: flex-end; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--app-border); }
     .management-diagnostics-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--app-border); }
     .management-diagnostics-grid .domain-card { margin: 0; background: var(--app-canvas); }
+    .management-diagnostics-stream { grid-column: 1 / -1; }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
     .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .metric { min-height: 116px; padding: 15px 16px; }
@@ -10895,9 +10896,6 @@ export class SmithproxyApp extends LitElement {
               </details>
             ` : nothing}
           </article>
-          <div data-system-section="backend">
-            ${this.renderEventStreamHealth()}
-          </div>
           <article class="domain-card" data-system-section="backend">
             <header><div><h3>Smithproxy connection</h3><p>Authenticated management link</p></div></header>
             <dl>
@@ -10916,7 +10914,7 @@ export class SmithproxyApp extends LitElement {
           </article>
           <details class="domain-card management-diagnostics" data-system-section="backend">
             <summary>
-              <div><h3>Management diagnostics</h3><p>GUI core, capability, trust, and gateway internals</p></div>
+              <div><h3>Management diagnostics</h3><p>Event delivery, GUI core, capability, trust, and gateway internals</p></div>
               <span class="runtime-state ${this.capabilityBootstrapState === 'ready' && gateway.tone !== 'danger'
                 ? 'success' : 'warning'}">Advanced</span>
             </summary>
@@ -10925,6 +10923,9 @@ export class SmithproxyApp extends LitElement {
                 @click=${() => this.downloadDiagnostics()}>Download diagnostics</button>
             </div>
             <div class="management-diagnostics-grid">
+              <div class="management-diagnostics-stream">
+                ${this.renderEventStreamHealth()}
+              </div>
               <article class="domain-card">
                 <header><div><h3>GUI core</h3><p>Local API and frontend host</p></div></header>
                 <dl>

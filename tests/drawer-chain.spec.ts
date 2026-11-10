@@ -6227,6 +6227,7 @@ test('polls only monitoring surfaces advertised for the current session', async 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Access & integrations'}).click();
+  await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const eventTransport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(eventTransport).toContainText('Unavailable');
   await expect(eventTransport.getByText('Recent history', {exact: true}).locator('..'))
@@ -6284,6 +6285,7 @@ test('loads independent monitoring surfaces concurrently', async ({page}) => {
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const eventTransport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(eventTransport).toContainText('Live');
   await expect(eventTransport).toContainText('Recent history');
@@ -6334,6 +6336,7 @@ test('diagnoses an invalid event stream and recovers only after an explicit retr
   await expect(statusbar).toContainText('Events: Invalid');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  await page.getByRole('heading', {name: 'Management diagnostics'}).click();
   const transport = page.getByRole('region', {name: 'Operational event delivery'});
   await expect(transport).toContainText('Invalid');
   await expect(transport.getByRole('article').filter({hasText: 'Last update'}))
