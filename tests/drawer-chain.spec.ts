@@ -6414,6 +6414,8 @@ test('filters structured job failures without exposing job identifiers', async (
   await page.goto('/');
   await expect(page.getByRole('region', {name: 'Active operational alerts'}))
     .toContainText('Configuration refresh did not converge');
+  await expect(page.locator('.statusbar')).toContainText('Jobs: 1 failed');
+  await expect(page.locator('.system-nav-item .nav-badge')).toHaveText('1');
   await page.getByRole('button', {name: 'Open details for Configuration refresh did not converge'}).click();
   await expect(page.getByRole('heading', {name: 'Access & integrations'})).toBeVisible();
 

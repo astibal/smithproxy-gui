@@ -14510,7 +14510,8 @@ export class SmithproxyApp extends LitElement {
       job.state === 'queued' || job.state === 'running' || job.state === 'cancelling').length;
     const failedJobCount = this.backendJobs.jobs.filter(job => job.state === 'failed').length;
     const jobTone = this.jobsError ? 'danger' : !this.jobsAvailable ? 'warning' :
-      activeJobCount > 0 ? 'warning' : failedJobCount > 0 ? 'danger' : 'success';
+      failedJobCount > 0 ? 'danger' : activeJobCount > 0 ? 'warning' : 'success';
+    const attentionJobCount = activeJobCount + failedJobCount;
     const attentionEventCount = this.operationalEvents.events.filter(event =>
       event.severity === 'warning' || event.severity === 'error').length;
     const profileCount = this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0;
@@ -14525,7 +14526,8 @@ export class SmithproxyApp extends LitElement {
       if (item === 'Monitoring') return activeAlertCount > 0 ? activeAlertCount.toLocaleString() : undefined;
       if (item === 'Logs') return attentionEventCount > 0
         ? attentionEventCount.toLocaleString() : undefined;
-      if (item === 'System') return activeJobCount > 0 ? activeJobCount.toLocaleString() : undefined;
+      if (item === 'System') return attentionJobCount > 0
+        ? attentionJobCount.toLocaleString() : undefined;
       return undefined;
     };
     const objectNavigationCount = (category: (typeof objectNavigation)[number]): string | undefined => {
@@ -14884,7 +14886,12 @@ export class SmithproxyApp extends LitElement {
             title=${this.jobsError ?? 'Open the bounded background operation queue'}
             @click=${() => { this.activeSection = 'System'; this.systemView = 'backend'; }}>
             ● Jobs: ${this.jobsError || !this.jobsAvailable
-              ? 'Unavailable' : activeJobCount > 0 ? `${activeJobCount} active` : 'Idle'}
+              ? 'Unavailable'
+              : failedJobCount > 0 && activeJobCount > 0
+                ? `${activeJobCount} active · ${failedJobCount} failed`
+                : failedJobCount > 0
+                  ? `${failedJobCount} failed`
+                  : activeJobCount > 0 ? `${activeJobCount} active` : 'Idle'}
           </button>
           <button class="status-action status-secondary ${this.draftChangeCount ? 'draft' : ''}" type="button"
             ?disabled=${this.draftChangeCount === 0}
