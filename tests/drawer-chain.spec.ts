@@ -52,7 +52,7 @@ async function applySaslikVisualTheme(page: Page, theme: SaslikVisualTheme): Pro
 async function selectObjectCategory(
   page: Page,
   category: 'Address objects' | 'Port objects' | 'Protocol objects' | 'Profiles and routing' |
-    'Trust and signatures',
+    'Trust' | 'Signatures',
 ): Promise<void> {
   const objectCategories = page.getByRole('group', {name: 'Object categories', exact: true});
   if (!await objectCategories.isVisible()) {
@@ -66,9 +66,12 @@ async function selectSecurityCategory(
   page: Page,
   category: 'Trust' | 'STARTTLS signatures' | 'Detection signatures',
 ): Promise<Locator> {
-  await selectObjectCategory(page, 'Trust and signatures');
-  await page.getByRole('group', {name: 'Trust and signature categories'})
-    .getByRole('button', {name: category, exact: true}).click();
+  if (category === 'Trust') await selectObjectCategory(page, 'Trust');
+  else {
+    await selectObjectCategory(page, 'Signatures');
+    await page.getByRole('group', {name: 'Signature categories'})
+      .getByRole('button', {name: category, exact: true}).click();
+  }
   return page.getByRole('group', {name: category, exact: true});
 }
 
@@ -5342,7 +5345,7 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
   const inventory = page.getByRole('region', {name: 'Configuration workspace'});
   await expect(inventory).toContainText('Running config saved · No draft changes');
   const shortcuts = inventory.getByRole('group', {name: 'Configuration shortcuts'});
-  await expect(shortcuts.getByRole('button')).toHaveCount(4);
+  await expect(shortcuts.getByRole('button')).toHaveCount(5);
   await expect(inventory.getByText('Total', {exact: true})).toHaveCount(0);
   await expectNoWcagViolations(page);
 
@@ -5357,9 +5360,12 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCount(0);
 
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
-  await shortcuts.getByRole('button', {name: 'Trust and signatures', exact: true}).click();
-  await expect(page.getByRole('heading', {level: 1, name: 'Trust and signatures'})).toBeVisible();
-  await expect(page.getByRole('group', {name: 'Trust and signatures'})).toBeVisible();
+  await shortcuts.getByRole('button', {name: 'Trust', exact: true}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'Trust'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Trust', exact: true})).toBeVisible();
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
+  await shortcuts.getByRole('button', {name: 'Signatures', exact: true}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'All signatures'})).toBeVisible();
 });
 
 test('opens focused profile, trust, and signature views from shallow object navigation', async ({page}) => {
@@ -5378,12 +5384,15 @@ test('opens focused profile, trust, and signature views from shallow object navi
   await expect(page.getByRole('group', {name: 'Content profiles'})).toContainText('capture');
   await expect(page.getByRole('group', {name: 'Content profiles'})).not.toContainText('inspect');
 
-  await page.getByRole('button', {name: 'Trust and signatures', exact: true}).click();
-  const security = page.getByRole('group', {name: 'Trust and signature categories'});
-  await security.getByRole('button', {name: 'Trust', exact: true}).click();
+  await page.getByRole('button', {name: 'Trust', exact: true}).click();
   await expect(page.getByRole('group', {name: 'Trust', exact: true})).toContainText('default');
   await expect(page.getByRole('group', {name: 'Trust', exact: true})).not.toContainText('smtp/starttls');
 
+  await page.getByRole('button', {name: 'Signatures', exact: true}).click();
+  const security = page.getByRole('group', {name: 'Signature categories'});
+  await expect(page.getByRole('group', {name: 'All signatures'})).toContainText('smtp/starttls');
+  await expect(page.getByRole('group', {name: 'All signatures'}))
+    .not.toContainText('Certificate authority');
   await security.getByRole('button', {name: 'STARTTLS signatures', exact: true}).click();
   await expect(page.getByRole('group', {name: 'STARTTLS signatures', exact: true}))
     .toContainText('smtp/starttls');
@@ -6443,9 +6452,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('heading', {name: 'Native configuration archive'})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Trust and signatures'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
-  await page.getByRole('button', {name: 'Trust and signatures', exact: true}).click();
-  await page.getByRole('group', {name: 'Trust and signature categories'})
-    .getByRole('button', {name: 'Trust', exact: true}).click();
+  await page.getByRole('button', {name: 'Trust', exact: true}).click();
   await page.getByRole('group', {name: 'Trust', exact: true})
     .getByRole('button', {name: /default Certificate authority/i}).click();
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});

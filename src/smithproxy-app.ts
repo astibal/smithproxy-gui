@@ -107,6 +107,7 @@ type SessionStateFilter = 'all' | 'active' | 'closed';
 type PolicyDensity = 'dense' | 'standard' | 'comfortable';
 type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile' | 'security';
 type ObjectSectionKind = Exclude<ObjectKindFilter, 'all'>;
+type SecurityObjectFilter = 'all' | 'trust' | 'signatures' | 'starttls' | 'detection';
 type NetworkView = 'overview' | 'neighborhood' | 'interfaces' | 'configuration';
 type MonitoringView = 'overview' | 'traffic' | 'sessions' | 'tls';
 type LogsView = 'events' | 'audit';
@@ -118,13 +119,15 @@ const objectNavigation: ReadonlyArray<{
   kind: ObjectKindFilter;
   label: string;
   icon: string;
+  securityFilter?: SecurityObjectFilter;
 }> = [
   {kind: 'all', label: 'All objects', icon: '◇'},
   {kind: 'address', label: 'Address objects', icon: '@'},
   {kind: 'port', label: 'Port objects', icon: ':'},
   {kind: 'protocol', label: 'Protocol objects', icon: '#'},
   {kind: 'profile', label: 'Profiles and routing', icon: '≋'},
-  {kind: 'security', label: 'Trust and signatures', icon: '⌁'},
+  {kind: 'security', label: 'Trust', icon: '⌁', securityFilter: 'trust'},
+  {kind: 'security', label: 'Signatures', icon: '≈', securityFilter: 'signatures'},
 ];
 
 const networkNavigation: ReadonlyArray<{kind: NetworkView; label: string; icon: string}> = [
@@ -237,7 +240,6 @@ type ProfileCreateType =
   'routing' | 'tls' | 'detection' | 'dns' | 'authentication' | 'content' | 'ssh' | 'script';
 type PolicyReferenceKind = 'protocol' | ProfileCreateType;
 type ProfileObjectFilter = 'all' | Exclude<ProfileCreateType, 'authentication'>;
-type SecurityObjectFilter = 'all' | 'trust' | 'starttls' | 'detection';
 
 const profileCreateCollections: Readonly<Record<ProfileCreateType, DraftCreateOperation['collection']>> = {
   routing: 'routing',
@@ -264,8 +266,7 @@ const profileObjectNavigation: ReadonlyArray<{kind: ProfileObjectFilter; label: 
   {kind: 'script', label: 'Script'},
 ];
 const securityObjectNavigation: ReadonlyArray<{kind: SecurityObjectFilter; label: string}> = [
-  {kind: 'all', label: 'All trust and signatures'},
-  {kind: 'trust', label: 'Trust'},
+  {kind: 'signatures', label: 'All signatures'},
   {kind: 'starttls', label: 'STARTTLS signatures'},
   {kind: 'detection', label: 'Detection signatures'},
 ];
@@ -3694,14 +3695,15 @@ export class SmithproxyApp extends LitElement {
     if (this.objectKindFilter === 'security' && this.securityObjectFilter !== 'all') {
       return securityObjectNavigation.find(item => item.kind === this.securityObjectFilter)?.label ?? 'Trust';
     }
+    if (this.objectKindFilter === 'security') return 'Trust and signatures';
     return objectNavigation.find(item => item.kind === this.objectKindFilter)?.label ?? 'Objects';
   }
 
-  private selectObjectView(kind: ObjectKindFilter): void {
+  private selectObjectView(kind: ObjectKindFilter, securityFilter: SecurityObjectFilter = 'all'): void {
     this.activeSection = 'Objects';
     this.objectKindFilter = kind;
     if (kind !== 'profile') this.profileObjectFilter = 'all';
-    if (kind !== 'security') this.securityObjectFilter = 'all';
+    this.securityObjectFilter = kind === 'security' ? securityFilter : 'all';
     this.objectNavigationExpanded = true;
     this.objectBulkMessage = undefined;
     this.objectBulkDeleteConfirmation = undefined;
@@ -8932,8 +8934,9 @@ export class SmithproxyApp extends LitElement {
       this.objectKindFilter === 'all' || this.objectKindFilter === kind;
     const profileTypeMatches = (type: string | undefined) =>
       this.profileObjectFilter === 'all' || this.profileObjectFilter === type;
-    const securityTypeMatches = (type: Exclude<SecurityObjectFilter, 'all'>) =>
-      this.securityObjectFilter === 'all' || this.securityObjectFilter === type;
+    const securityTypeMatches = (type: 'trust' | 'starttls' | 'detection') =>
+      this.securityObjectFilter === 'all' || this.securityObjectFilter === type ||
+      (this.securityObjectFilter === 'signatures' && type !== 'trust');
     const usageMatches = (used: boolean) => this.objectUsageFilter === 'all' ||
       (this.objectUsageFilter === 'used') === used;
     const queryMatches = (values: ReadonlyArray<string | number>) =>
@@ -10092,8 +10095,11 @@ export class SmithproxyApp extends LitElement {
           </div>
         </section>`;
     }
-    const open = (section: 'Objects' | 'Policy', objectKind: ObjectKindFilter = 'all') => {
-      if (section === 'Objects') this.selectObjectView(objectKind);
+    const open = (
+      section: 'Objects' | 'Policy', objectKind: ObjectKindFilter = 'all',
+      securityFilter: SecurityObjectFilter = 'all',
+    ) => {
+      if (section === 'Objects') this.selectObjectView(objectKind, securityFilter);
       else this.activeSection = section;
     };
     const runningState = snapshot.unsaved ? 'Running config unsaved' : 'Running config saved';
@@ -10116,8 +10122,10 @@ export class SmithproxyApp extends LitElement {
             @click=${() => open('Objects')}>Objects</button>
           <button class="secondary" type="button" title="Inspection, content, and routing behavior"
             @click=${() => open('Objects', 'profile')}>Profiles</button>
-          <button class="secondary" type="button" title="TLS authorities and detection rules"
-            @click=${() => open('Objects', 'security')}>Trust and signatures</button>
+          <button class="secondary" type="button" title="Certificate authorities and trust roots"
+            @click=${() => open('Objects', 'security', 'trust')}>Trust</button>
+          <button class="secondary" type="button" title="STARTTLS and traffic detection rules"
+            @click=${() => open('Objects', 'security', 'signatures')}>Signatures</button>
         </div>
       </section>`;
   }
@@ -14318,9 +14326,12 @@ export class SmithproxyApp extends LitElement {
                     ?hidden=${!this.objectNavigationExpanded}>
                     ${objectNavigation.map(category => html`
                       <button type="button"
-                        aria-current=${this.activeSection === 'Objects' && this.objectKindFilter === category.kind
-                          ? 'page' : nothing}
-                        title=${category.label} @click=${() => this.selectObjectView(category.kind)}>
+                        aria-current=${this.activeSection === 'Objects' && this.objectKindFilter === category.kind &&
+                          (category.kind !== 'security' || this.securityObjectFilter === category.securityFilter ||
+                            (category.securityFilter === 'signatures' &&
+                              ['starttls', 'detection'].includes(this.securityObjectFilter))) ? 'page' : nothing}
+                        title=${category.label}
+                        @click=${() => this.selectObjectView(category.kind, category.securityFilter ?? 'all')}>
                         <span class="nav-icon" aria-hidden="true">${category.icon}</span>
                         <span class="nav-label">${category.label}</span>
                       </button>
@@ -14336,14 +14347,14 @@ export class SmithproxyApp extends LitElement {
                             <span class="nav-label">${profile.label}</span></button>`)}
                         </div>
                       ` : nothing}
-                      ${category.kind === 'security' && this.activeSection === 'Objects' &&
-                        this.objectKindFilter === 'security' ? html`
-                        <div class="nested-subnav" role="group" aria-label="Trust and signature categories">
+                      ${category.kind === 'security' && category.securityFilter === 'signatures' &&
+                        this.activeSection === 'Objects' && this.objectKindFilter === 'security' &&
+                        this.securityObjectFilter !== 'trust' ? html`
+                        <div class="nested-subnav" role="group" aria-label="Signature categories">
                           ${securityObjectNavigation.map(security => html`<button type="button"
                             aria-current=${this.securityObjectFilter === security.kind ? 'page' : nothing}
                             @click=${() => {
-                              this.selectObjectView('security');
-                              this.securityObjectFilter = security.kind;
+                              this.selectObjectView('security', security.kind);
                             }}><span class="nav-icon" aria-hidden="true">·</span>
                             <span class="nav-label">${security.label}</span></button>`)}
                         </div>
