@@ -9776,6 +9776,13 @@ export class SmithproxyApp extends LitElement {
     return minutes < 60 ? `${minutes}m ${remainder}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   }
 
+  private sessionAgeLabel(entry: LiveSessionSnapshot['entries'][number]): string {
+    if (entry.active) {
+      return `Active ${this.durationLabel(Date.now() - entry.firstSeenAtUnixMs)}`;
+    }
+    return `Closed ${this.durationLabel(Date.now() - (entry.closedAtUnixMs ?? entry.lastSeenAtUnixMs))} ago`;
+  }
+
   private renderProbeIncidents() {
     const incidents = [...probeIncidents(this.systemStatus.history)].reverse().slice(0, 5);
     const active = incidents.filter(incident => incident.recoveredAtUnixMs === null).length;
@@ -10401,8 +10408,10 @@ export class SmithproxyApp extends LitElement {
                   <td>${entry.policy}</td>
                   <td>${this.formatBytes(entry.speedUp + entry.speedDown)}/s</td>
                   <td>${this.formatBytes(entry.bytesUp + entry.bytesDown)}</td>
-                  <td title=${`First observed ${this.timeLabel(entry.firstSeenAtUnixMs)}`}>
-                    ${entry.active ? this.timeLabel(entry.lastSeenAtUnixMs) : `Closed ${this.timeLabel(entry.closedAtUnixMs)}`}
+                  <td title=${entry.active
+                    ? `First observed ${this.timeLabel(entry.firstSeenAtUnixMs)} · Last observed ${this.timeLabel(entry.lastSeenAtUnixMs)}`
+                    : `First observed ${this.timeLabel(entry.firstSeenAtUnixMs)} · Closed ${this.timeLabel(entry.closedAtUnixMs)}`}>
+                    ${this.sessionAgeLabel(entry)}
                   </td>
                   <td><button class="session-inspect" type="button" aria-expanded=${inspected}
                     aria-label=${`${inspected ? 'Hide' : 'Inspect'} session ${entry.sourceAddress} to ${entry.destinationAddress}`}

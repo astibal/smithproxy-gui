@@ -5053,6 +5053,8 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(sessions.getByText('Policy 1')).toBeVisible();
   await expect(sessions.getByText('HTTPS · Web browsing')).toBeVisible();
   await expect(sessions.getByText('Closed', {exact: true})).toBeVisible();
+  await expect(sessions.getByRole('cell', {name: /^Active \d+s$/})).toBeVisible();
+  await expect(sessions.getByRole('cell', {name: /^Closed \d+s ago$/})).toBeVisible();
   await sessions.getByRole('button', {name: 'Inspect session 192.0.2.10 to 198.51.100.20'}).click();
   const sessionDetails = sessions.getByRole('group', {name: 'Session details'});
   await expect(sessionDetails).toContainText('SIFT classificationsHTTPS');
