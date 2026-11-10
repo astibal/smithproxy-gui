@@ -14550,8 +14550,7 @@ export class SmithproxyApp extends LitElement {
               : 'Saved revision is not advertised'}>
             Running config: ${this.snapshot ? this.snapshot.unsaved ? 'unsaved' : 'saved' : 'unknown'}
           </span>
-          <span class="status-tertiary">API: ${this.apiVersion}</span><span class="spacer"></span>
-          <span class="status-tertiary">Revision ${this.snapshot?.revision ?? 'runtime'}</span>
+          <span class="spacer"></span>
         </footer>
       </div>
     `;

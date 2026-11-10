@@ -5014,6 +5014,8 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(statusbar).toContainText('Gateway: Disabled');
   await expect(statusbar).toContainText('Freshness: Fresh');
   await expect(statusbar).toContainText('Events: Live');
+  await expect(statusbar).not.toContainText('API:');
+  await expect(statusbar).not.toContainText('Revision ');
   await expect(statusbar).toContainText('Events: Connecting', {timeout: 4_000});
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
