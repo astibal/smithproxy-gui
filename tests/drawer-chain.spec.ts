@@ -2587,7 +2587,7 @@ test('blocks removal of pending ordered anchors until position dependents are re
   const anchorRemove = anchorRow.getByRole('button', {name: /Remove create operation/u});
   await expect(anchorRemove).toBeDisabled();
   await expect(anchorRemove).toHaveAttribute(
-    'title', 'Remove dependent ordered operations before removing this create operation.',
+    'title', 'Remove dependent draft changes before removing this pending item.',
   );
 
   await dependentRow.getByRole('button', {name: /Remove move operation/u}).click();
@@ -6891,8 +6891,12 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(settingsEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
 
-  await expect(page.getByText(/Configuration cards include pending workspace draft values.*runtime remains unchanged/u))
-    .toBeVisible();
+  const pendingSystemValues = page.getByRole('status').filter({
+    hasText: 'Pending draft values are shown in these cards.',
+  });
+  await expect(pendingSystemValues).toContainText(
+    'Running configuration remains unchanged until you commit the draft.',
+  );
   await expect(trafficCard).toContainText('Policy failureFail open');
   await expect(trafficCard).toContainText('Local destinationsAllowed');
   await expect(trafficCard).toContainText('Proxy authenticationSOCKS required / CONNECT required');

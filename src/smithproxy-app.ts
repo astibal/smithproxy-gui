@@ -14511,7 +14511,6 @@ export class SmithproxyApp extends LitElement {
                     ?hidden=${!this.objectNavigationExpanded}>
                     ${objectNavigation.map(category => html`
                       <button type="button"
-                        aria-label=${category.label}
                         aria-current=${this.activeSection === 'Objects' && this.objectKindFilter === category.kind &&
                           (category.kind !== 'security' || this.securityObjectFilter === category.securityFilter ||
                             (category.securityFilter === 'signatures' &&
