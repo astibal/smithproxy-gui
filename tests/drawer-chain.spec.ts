@@ -4644,7 +4644,7 @@ test('keeps unsupported named-key edits read-only without blocking real object f
   await expect(editor.getByLabel('Name')).toHaveAttribute('readonly', '');
   await expect(editor.getByLabel('Type')).toBeEnabled();
   await expect(editor.getByLabel('Address')).toBeEditable();
-  await expect(editor).toContainText('Renaming this existing object is not available');
+  await expect(editor).toContainText('This Smithproxy version cannot rename an existing object safely');
 });
 
 test('does not offer a first script profile when its config collection is absent', async ({page}) => {
@@ -6150,7 +6150,8 @@ test('polls only monitoring surfaces advertised for the current session', async 
     .getByRole('button', {name: 'Management'}).click();
   const eventTransport = page.getByRole('region', {name: 'Operational event transport'});
   await expect(eventTransport).toContainText('Unavailable');
-  await expect(eventTransport).toContainText('Not advertised');
+  await expect(eventTransport.getByText('Recovery snapshot', {exact: true}).locator('..'))
+    .toContainText('Unavailable');
 
   await page.getByRole('button', {name: 'Network', exact: true}).click();
   await page.getByRole('group', {name: 'Network categories'})

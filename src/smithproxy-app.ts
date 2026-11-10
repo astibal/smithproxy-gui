@@ -6237,8 +6237,8 @@ export class SmithproxyApp extends LitElement {
   private renderNamedRenameNotice(path: string) {
     return this.originReadOnly(path, false) && this.valueOrigin(path)?.editable !== false
       ? html`<div class="scope-note">
-        Renaming this existing object is not available through the current Smithproxy transaction
-        contract. Duplicate it with a new name and update its references instead.
+        This Smithproxy version cannot rename an existing object safely. Duplicate it with a new
+        name and update its references instead.
       </div>`
       : nothing;
   }
@@ -9959,7 +9959,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private revisionLabel(value: string | null | undefined): string {
-    return value ? `${value.slice(0, 15)}…` : 'Not advertised';
+    return value ? `${value.slice(0, 15)}…` : 'Unavailable';
   }
 
   private uptimeLabel(): string {
@@ -10311,7 +10311,7 @@ export class SmithproxyApp extends LitElement {
   private renderEventStreamHealth() {
     const tone = this.eventStreamState === 'live' ? 'success' :
       this.eventStreamState === 'invalid' || this.eventStreamError ? 'danger' : 'warning';
-    const recoveryLabel = !this.eventsAvailable ? 'Not advertised' :
+    const recoveryLabel = !this.eventsAvailable ? 'Unavailable' :
       this.eventsError ? 'Unavailable' : 'Available';
     return html`
       <section class="monitor-panel" aria-label="Operational event transport">
@@ -10830,7 +10830,7 @@ export class SmithproxyApp extends LitElement {
           <article class="domain-card" data-system-section="configuration">
             <header><div><h3>Augment overlays</h3><p>Persistent and effective value provenance</p></div></header>
             <dl>
-              <dt>Capability</dt><dd>${this.snapshot?.augmentSupport ? 'Available' : 'Not advertised'}</dd>
+              <dt>Overlay support</dt><dd>${this.snapshot?.augmentSupport ? 'Available' : 'Unavailable'}</dd>
               <dt>Tracked values</dt><dd>${this.snapshot?.valueOrigins.length ?? 0}</dd>
               <dt>Editing target</dt><dd>Persistent config</dd>
             </dl>
@@ -10839,7 +10839,7 @@ export class SmithproxyApp extends LitElement {
             <header>
               <div><h3>Background operations</h3><p>Recent management work that may take time to complete</p></div>
               <span class="runtime-state ${this.jobsError ? 'danger' : this.jobsAvailable ? 'success' : 'warning'}">
-                ● ${this.jobsError ? 'Unavailable' : this.jobsAvailable ? 'Available' : 'Not advertised'}
+                ● ${this.jobsError ? 'Unavailable' : this.jobsAvailable ? 'Available' : 'Unavailable'}
               </span>
             </header>
             ${this.jobsError ? html`<p role="alert">${this.jobsError}</p>` : nothing}
@@ -11870,7 +11870,7 @@ export class SmithproxyApp extends LitElement {
         ${this.renderAddressInsight(insightId, type, value, entry)}
       </div>
       <div class="impact">
-        The new object is retained only in the workspace draft until Smithproxy validates and commits the transaction.
+        The new object remains in the workspace draft until you commit the draft.
       </div>
       ${prefill ? html`<div class="scope-note">
         Prefilled from ${prefill.sourceName}. Persistent and pending values are copied; temporary augment overlays are not.
@@ -11898,7 +11898,7 @@ export class SmithproxyApp extends LitElement {
           .value=${String(end)} required .readOnly=${readOnly} />
       </div>
       <div class="impact">
-        The port range is retained only in the workspace draft until Smithproxy validates and commits it.
+        The port range remains in the workspace draft until you commit the draft.
       </div>
       ${prefill ? html`<div class="scope-note">
         Prefilled from ${prefill.sourceName}. Persistent and pending values are copied; temporary augment overlays are not.
@@ -11922,7 +11922,7 @@ export class SmithproxyApp extends LitElement {
           .value=${String(number)} required .readOnly=${readOnly} />
       </div>
       <div class="impact">
-        The protocol object is retained only in the workspace draft until Smithproxy validates and commits it.
+        The protocol object remains in the workspace draft until you commit the draft.
       </div>
       ${prefill ? html`<div class="scope-note">
         Prefilled from ${prefill.sourceName}. Choose a unique protocol number before saving; temporary augment overlays are not copied.
@@ -12270,7 +12270,7 @@ export class SmithproxyApp extends LitElement {
           /(?:entries|mappings|rules)$/u.test(prefill.omitted) ? 'are' : 'is'} not copied.` : nothing}
       </div>` : nothing}
       <div class="impact">
-        The complete typed profile is retained in the workspace draft until Smithproxy validates and commits it.
+        The complete profile remains in the workspace draft until you commit the draft.
       </div>
       ${type === 'authentication' ? html`<div class="privacy-note section">
         Save the profile first, then add complete write-only identity mappings in the nested editor.
