@@ -729,6 +729,8 @@ export class SmithproxyApp extends LitElement {
 
     .dashboard { display: grid; align-content: start; gap: 14px; }
     .dashboard > .section-head { margin-bottom: 0; }
+    .dashboard-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .dashboard-shortcuts button { width: auto; min-height: 38px; }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
     .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .metric { min-height: 116px; padding: 15px 16px; }
@@ -9733,15 +9735,13 @@ export class SmithproxyApp extends LitElement {
     return html`
       <section class="monitor-panel" aria-label="Active operational alerts">
         <div class="runtime-heading">
-          <div><h3>Active alerts</h3><p>Locally derived health, freshness, availability, and capacity conditions</p></div>
+          <div><h3>Active alerts</h3><p>Conditions requiring administrator attention</p></div>
           <span class="runtime-state ${this.alertsError || alerts.some(item => item.severity === 'critical')
             ? 'danger' : alerts.length ? 'warning' : 'success'}">
             ${this.alertsError ? 'Unavailable' : alerts.length === 0 ? '● Clear' : `${alerts.length} active`}
           </span>
         </div>
-        ${this.alertsError ? html`<div class="metrics-message">${this.alertsError}</div>` : alerts.length === 0 ? html`
-          <div class="privacy-note">No active alert condition was detected by the GUI core.</div>
-        ` : html`
+        ${this.alertsError ? html`<div class="metrics-message">${this.alertsError}</div>` : alerts.length === 0 ? nothing : html`
           <div class="alert-list" role="list">
             ${alerts.map(alert => html`
               <article class="alert-row ${alert.severity}" role="listitem">
@@ -9959,20 +9959,15 @@ export class SmithproxyApp extends LitElement {
             ● Ready
           </span>
         </div>
-        <div class="table network-config-table" tabindex="0">
-          <table class="listener-table" aria-label="Configuration workspace shortcuts">
-            <thead><tr><th>Area</th><th>Purpose</th><th></th></tr></thead>
-            <tbody>
-              <tr><td class="listener-name">Policies</td><td>Ordered traffic decisions and inspection assignment</td>
-                <td><button class="secondary" type="button" @click=${() => open('Policy')}>Open policies</button></td></tr>
-              <tr><td class="listener-name">Reusable objects</td><td>Addresses, ports, and protocols</td>
-                <td><button class="secondary" type="button" @click=${() => open('Objects')}>Open objects</button></td></tr>
-              <tr><td class="listener-name">Profiles</td><td>Inspection, content, and routing behavior</td>
-                <td><button class="secondary" type="button" @click=${() => open('Objects', 'profile')}>Open profiles</button></td></tr>
-              <tr><td class="listener-name">Trust and signatures</td><td>TLS authorities and detection rules</td>
-                <td><button class="secondary" type="button" @click=${() => open('Objects', 'security')}>Open trust assets</button></td></tr>
-            </tbody>
-          </table>
+        <div class="dashboard-shortcuts" role="group" aria-label="Configuration shortcuts">
+          <button class="secondary" type="button" title="Ordered traffic decisions"
+            @click=${() => open('Policy')}>Policies</button>
+          <button class="secondary" type="button" title="Addresses, ports, and protocols"
+            @click=${() => open('Objects')}>Objects</button>
+          <button class="secondary" type="button" title="Inspection, content, and routing behavior"
+            @click=${() => open('Objects', 'profile')}>Profiles</button>
+          <button class="secondary" type="button" title="TLS authorities and detection rules"
+            @click=${() => open('Objects', 'security')}>Trust and signatures</button>
         </div>
       </section>`;
   }

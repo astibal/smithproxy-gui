@@ -5313,23 +5313,23 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
 
   const inventory = page.getByRole('region', {name: 'Configuration workspace'});
   await expect(inventory).toContainText('Running config saved · No draft changes');
-  const shortcuts = inventory.getByRole('table', {name: 'Configuration workspace shortcuts'});
-  await expect(shortcuts.getByRole('row')).toHaveCount(5);
+  const shortcuts = inventory.getByRole('group', {name: 'Configuration shortcuts'});
+  await expect(shortcuts.getByRole('button')).toHaveCount(4);
   await expect(inventory.getByText('Total', {exact: true})).toHaveCount(0);
   await expectNoWcagViolations(page);
 
-  await shortcuts.getByRole('button', {name: 'Open objects'}).click();
+  await shortcuts.getByRole('button', {name: 'Objects', exact: true}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'All objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toContainText('office');
 
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
-  await shortcuts.getByRole('button', {name: 'Open profiles'}).click();
+  await shortcuts.getByRole('button', {name: 'Profiles', exact: true}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Profiles and routing'})).toContainText('inspect');
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCount(0);
 
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
-  await shortcuts.getByRole('button', {name: 'Open trust assets'}).click();
+  await shortcuts.getByRole('button', {name: 'Trust and signatures', exact: true}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'Trust and signatures'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Trust and signatures'})).toBeVisible();
 });
