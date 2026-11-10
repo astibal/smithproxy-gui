@@ -427,6 +427,7 @@ export class SmithproxyApp extends LitElement {
   @state() private liveSessions: LiveSessionSnapshot = initialLiveSessions;
   @state() private sessionListQuery = '';
   @state() private sessionStateFilter: SessionStateFilter = 'all';
+  @state() private inspectedSessionId: string | undefined;
   @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
   @state() private neighbors: NeighborSnapshot = initialNeighbors;
   @state() private interfaces: InterfaceSnapshot = initialInterfaces;
@@ -772,6 +773,15 @@ export class SmithproxyApp extends LitElement {
     .listener-table tr.listener-idle td { color: var(--app-muted); }
     .listener-table tr.muted td { color: var(--app-muted); }
     .listener-table tr.listener-unused { opacity: .62; }
+    .session-inspect { padding: 4px 8px; border: 1px solid var(--app-border); border-radius: 2px;
+      background: transparent; color: var(--app-text); cursor: pointer; }
+    .session-detail-cell { padding: 0 !important; text-align: left !important; }
+    .session-detail { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 1px;
+      padding: 1px; background: var(--app-border); }
+    .session-detail div { display: grid; gap: 3px; min-width: 0; padding: 10px 12px;
+      background: var(--app-canvas); }
+    .session-detail dt { color: var(--app-muted); font-size: 11px; }
+    .session-detail dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
     .listener-name { font-weight: 650; }
     .collector-table { overflow-x: auto; margin-top: 14px; }
     .metrics-message { padding: 11px 13px; border: 1px solid var(--app-border); border-radius: 3px; color: var(--app-muted); }
@@ -1065,6 +1075,7 @@ export class SmithproxyApp extends LitElement {
       .policy-row-main { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
       .policy-row-main > :nth-child(3), .policy-row-main > :nth-child(5), .policy-row-main > :nth-child(6) { display: none; }
       .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+      .session-detail { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       .inventory-summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
@@ -1119,6 +1130,7 @@ export class SmithproxyApp extends LitElement {
       .statusbar .spacer { display: none; }
       .status-secondary { display: inline-flex; }
       .metric-grid { grid-template-columns: 1fr; }
+      .session-detail { grid-template-columns: 1fr; }
       .inventory-summary { grid-template-columns: repeat(2, minmax(100px, 1fr)); }
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
       .object-row > :nth-child(3), .object-row > :nth-child(4) { display: none; }
@@ -10307,9 +10319,11 @@ export class SmithproxyApp extends LitElement {
         </div>
         <div class="table">
           <table class="listener-table" aria-label="Observed proxy sessions">
-            <thead><tr><th>Status</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Policy</th><th>Rate</th><th>Transferred</th><th>Seen</th></tr></thead>
+            <thead><tr><th>Status</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Policy</th><th>Rate</th><th>Transferred</th><th>Seen</th><th>Details</th></tr></thead>
             <tbody>
-              ${visibleSessions.map(entry => html`
+              ${visibleSessions.map(entry => {
+                const inspected = this.inspectedSessionId === entry.id;
+                return html`
                 <tr class=${entry.active ? '' : 'muted'}>
                   <td><span class="system-state ${entry.active ? 'success' : ''}">${entry.active ? 'Active' : 'Closed'}</span></td>
                   <td><code>${entry.sourceAddress}:${entry.sourcePort}</code></td>
@@ -10321,10 +10335,30 @@ export class SmithproxyApp extends LitElement {
                   <td title=${`First observed ${this.timeLabel(entry.firstSeenAtUnixMs)}`}>
                     ${entry.active ? this.timeLabel(entry.lastSeenAtUnixMs) : `Closed ${this.timeLabel(entry.closedAtUnixMs)}`}
                   </td>
+                  <td><button class="session-inspect" type="button" aria-expanded=${inspected}
+                    aria-label=${`${inspected ? 'Hide' : 'Inspect'} session ${entry.sourceAddress} to ${entry.destinationAddress}`}
+                    @click=${() => {
+                      this.inspectedSessionId = inspected ? undefined : entry.id;
+                    }}>${inspected ? 'Hide' : 'Inspect'}</button></td>
                 </tr>
-              `)}
+                ${inspected ? html`<tr>
+                  <td class="session-detail-cell" colspan="9">
+                    <dl class="session-detail" role="group" aria-label="Session details">
+                      <div><dt>Source endpoint</dt><dd><code>${entry.sourceAddress}:${entry.sourcePort}</code></dd></div>
+                      <div><dt>Destination endpoint</dt><dd><code>${entry.destinationAddress}:${entry.destinationPort}</code></dd></div>
+                      <div><dt>Policy</dt><dd>${entry.policy}</dd></div>
+                      <div><dt>Transport</dt><dd>${entry.protocol}</dd></div>
+                      <div><dt>Upload</dt><dd>${this.formatBytes(entry.bytesUp)} · ${this.formatBytes(entry.speedUp)}/s</dd></div>
+                      <div><dt>Download</dt><dd>${this.formatBytes(entry.bytesDown)} · ${this.formatBytes(entry.speedDown)}/s</dd></div>
+                      <div><dt>First observed</dt><dd>${this.timeLabel(entry.firstSeenAtUnixMs)}</dd></div>
+                      <div><dt>${entry.active ? 'Last observed' : 'Closed'}</dt>
+                        <dd>${this.timeLabel(entry.active ? entry.lastSeenAtUnixMs : entry.closedAtUnixMs)}</dd></div>
+                    </dl>
+                  </td>
+                </tr>` : nothing}`;
+              })}
               ${visibleSessions.length === 0 ? html`
-                <tr><td colspan="8">${this.liveSessions.entries.length === 0
+                <tr><td colspan="9">${this.liveSessions.entries.length === 0
                   ? 'No active or recently closed sessions are available.'
                   : 'No sessions match the current filters.'}</td></tr>
               ` : nothing}

@@ -5061,10 +5061,17 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(activity.getByRole('heading', {name: 'Live session activity'})).toBeVisible();
   await expect(activity.getByText('3.84 kB/s')).toBeVisible();
   const sessions = activity.getByRole('table', {name: 'Observed proxy sessions'});
-  await expect(sessions.getByText('192.0.2.10:51342')).toBeVisible();
+  await expect(sessions.getByText('192.0.2.10:51342').first()).toBeVisible();
   await expect(sessions.getByText('198.51.100.20:443')).toBeVisible();
   await expect(sessions.getByText('Policy 1')).toBeVisible();
   await expect(sessions.getByText('Closed', {exact: true})).toBeVisible();
+  await sessions.getByRole('button', {name: 'Inspect session 192.0.2.10 to 198.51.100.20'}).click();
+  const sessionDetails = sessions.getByRole('group', {name: 'Session details'});
+  await expect(sessionDetails).toContainText('Source endpoint192.0.2.10:51342');
+  await expect(sessionDetails).toContainText('Destination endpoint198.51.100.20:443');
+  await expect(sessionDetails).toContainText('Upload2.05 kB · 512 B/s');
+  await expect(sessionDetails).toContainText('Download1.02 kB · 256 B/s');
+  await sessions.getByRole('button', {name: 'Hide session 192.0.2.10 to 198.51.100.20'}).click();
   await activity.getByRole('searchbox', {name: 'Filter observed sessions'}).fill('DNS');
   await expect(sessions.getByText('203.0.113.53:53')).toBeVisible();
   await expect(sessions.getByText('192.0.2.10:51342')).toHaveCount(0);
