@@ -7135,7 +7135,8 @@ test('fails closed before requesting an unsafe embedded mount', async ({page}) =
 
 test.describe('Saslik visual regression', () => {
   test.skip(
-    process.env.PLAYWRIGHT_SKIP_VISUAL_REGRESSION === '1',
+    process.env.PLAYWRIGHT_SKIP_VISUAL_REGRESSION === '1' ||
+      process.env.PLAYWRIGHT_VISUAL_BASELINE === undefined,
     'Pixel baselines run separately in the pinned visual-test container.',
   );
   test.beforeEach(({}, testInfo) => {
