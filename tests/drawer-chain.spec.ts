@@ -5007,7 +5007,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await mockSystemApi(page, state);
   await page.goto('/');
 
-  await expect(page.getByText('Core: Online')).toBeVisible();
+  await expect(page.getByText('Management: Online')).toBeVisible();
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Alerts: Clear');
@@ -5905,7 +5905,7 @@ test('rejects management capabilities that contradict the gateway session', asyn
   await page.goto('/');
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
-  await expect(statusbar).toContainText('Core: Offline');
+  await expect(statusbar).toContainText('Management: Offline');
   await expect(statusbar).toContainText('Gateway: Rejected');
   await expect(statusbar).toContainText('Events: Unavailable');
   expect(protectedRequests).toEqual([]);
@@ -5930,7 +5930,7 @@ test('rejects an incoherent privileged capability graph before protected request
   await page.goto('/');
 
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
-  await expect(statusbar).toContainText('Core: Offline');
+  await expect(statusbar).toContainText('Management: Offline');
   await expect(statusbar).toContainText('Config: Unavailable');
   await expect(statusbar).toContainText('Events: Unavailable');
   await page.getByRole('button', {name: 'System', exact: true}).click();
@@ -7124,7 +7124,7 @@ test('confines an embedded application to its explicit workspace mount', async (
     document.body.append(application);
   });
 
-  await expect(page.getByText('Core: Online')).toBeVisible();
+  await expect(page.getByText('Management: Online')).toBeVisible();
   await expect.poll(() => requests).toEqual(expect.arrayContaining([
     '/ws001/smithproxy-gui/api/v1/capabilities',
     '/ws001/smithproxy-gui/api/v1/auth/session',
@@ -7157,7 +7157,7 @@ test('fails closed before requesting an unsafe embedded mount', async ({page}) =
     document.body.append(application);
   });
 
-  await expect(page.getByText('Core: Offline')).toBeVisible();
+  await expect(page.getByText('Management: Offline')).toBeVisible();
   await expect(page.getByText(/Smithproxy: Unknown/i)).toHaveAttribute(
     'title', /unsafe path characters/i,
   );

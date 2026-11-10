@@ -1541,35 +1541,35 @@ export class SmithproxyApp extends LitElement {
       this.runtimeMetrics = {
         ...this.runtimeMetrics,
         state: 'unavailable',
-        detail: 'Runtime metrics are unavailable while the GUI core is offline.',
+        detail: 'Runtime metrics are unavailable while the management service is offline.',
       };
       this.sessionActivity = {
         ...this.sessionActivity,
         state: 'unavailable',
-        detail: 'Session activity is unavailable while the GUI core is offline.',
+        detail: 'Session activity is unavailable while the management service is offline.',
       };
       this.liveSessions = {
         ...this.liveSessions,
         state: 'unavailable',
-        detail: 'Live sessions are unavailable while the GUI core is offline.',
+        detail: 'Live sessions are unavailable while the management service is offline.',
       };
       this.tlsCache = {
         ...this.tlsCache,
         state: 'unavailable',
-        detail: 'TLS cache metrics are unavailable while the GUI core is offline.',
+        detail: 'TLS cache metrics are unavailable while the management service is offline.',
       };
       this.neighbors = {
         ...this.neighbors,
         state: 'unavailable',
-        detail: 'Neighborhood metrics are unavailable while the GUI core is offline.',
+        detail: 'Neighborhood metrics are unavailable while the management service is offline.',
       };
       this.interfaces = {
         ...this.interfaces,
         state: 'unavailable',
-        detail: 'Interface monitoring is unavailable while the GUI core is offline.',
+        detail: 'Interface monitoring is unavailable while the management service is offline.',
       };
-      this.auditError = 'Management audit is unavailable while the GUI core is offline.';
-      this.jobsError = 'Backend jobs are unavailable while the GUI core is offline.';
+      this.auditError = 'Management audit is unavailable while the management service is offline.';
+      this.jobsError = 'Backend jobs are unavailable while the management service is offline.';
     } finally {
       this.systemProbeInFlight = false;
       if (this.systemProbePending) {
@@ -7375,7 +7375,7 @@ export class SmithproxyApp extends LitElement {
                 changes contain write-only values. Their values remain redacted.
               </p>
             ` : !this.draftPreflightAvailable ? html`
-              <div class="metrics-message">The current GUI core does not advertise draft preflight.</div>
+              <div class="metrics-message">The management service does not advertise draft preflight.</div>
             ` : this.draftPreflightError ? html`
               <div class="metrics-message" role="alert">${this.draftPreflightError}</div>
             ` : html`
@@ -9611,7 +9611,7 @@ export class SmithproxyApp extends LitElement {
           </article>
         </div>
         ${this.renderCollectorNotice(presentation, neighbors.detail, neighbors.lastSuccessAtUnixMs)}
-        <div class="privacy-note">Hostnames, tags, labels, and per-endpoint timelines remain inside the GUI core.</div>
+        <div class="privacy-note">Hostnames, tags, labels, and per-endpoint timelines remain inside the management service.</div>
       </section>
     `;
   }
@@ -9653,7 +9653,7 @@ export class SmithproxyApp extends LitElement {
         ${interfaces.lastErrorCode === null ? nothing : html`
           <div class="metrics-message" role="status">Stable diagnostic code: ${interfaces.lastErrorCode}</div>`}
         ${this.renderCollectorNotice(presentation, interfaces.detail, interfaces.lastSuccessAtUnixMs)}
-        <div class="privacy-note">Interface names, indexes, addresses, routes, namespaces, and raw kernel errors never cross the GUI core boundary.</div>
+        <div class="privacy-note">Interface names, indexes, addresses, routes, namespaces, and raw kernel errors never leave the management service.</div>
       </section>
     `;
   }
@@ -10418,7 +10418,7 @@ export class SmithproxyApp extends LitElement {
           </table>
         </div>
         <div class="runtime-heading">
-          <div><h3>Observed connections</h3><p>Active sessions and recently closed sessions retained by GUI core</p></div>
+          <div><h3>Observed connections</h3><p>Active sessions and recently closed sessions retained by the management service</p></div>
           <span class="runtime-state ${this.liveSessions.state === 'ready' ? 'success' : 'warning'}"
             title=${this.liveSessions.detail}>● ${displayState(this.liveSessions.state)}</span>
         </div>
@@ -10503,7 +10503,7 @@ export class SmithproxyApp extends LitElement {
             </tbody>
           </table>
         </div>
-        <div class="privacy-note">The authenticated GUI core exposes only bounded endpoint, policy, protocol, classification, and counter metadata. Raw Smithproxy diagnostics remain server-side.</div>
+        <div class="privacy-note">The management service exposes only bounded endpoint, policy, protocol, classification, and counter metadata. Raw Smithproxy diagnostics remain server-side.</div>
       </section>
     `;
   }
@@ -10690,7 +10690,7 @@ export class SmithproxyApp extends LitElement {
               <dt>Status</dt><dd>${displayState(this.systemStatus.smithproxy)}</dd>
               <dt>Last check</dt><dd>${this.timeLabel(this.systemStatus.checkedAtUnixMs)}</dd>
               <dt>Last success</dt><dd>${this.timeLabel(this.systemStatus.lastSuccessAtUnixMs)}</dd>
-              <dt>Credential handling</dt><dd>GUI core only</dd>
+              <dt>Credential handling</dt><dd>Management service only</dd>
             </dl>
           </article>
           <article class="domain-card" data-system-section="appearance">
@@ -10792,7 +10792,7 @@ export class SmithproxyApp extends LitElement {
                   <span class="system-state ${job.state === 'succeeded' ? 'success' : job.state === 'failed' || job.state === 'cancelled' ? 'danger' : 'warning'}">${displayState(job.state)}</span>
                 </div>
               `)}
-              ${this.backendJobs.jobs.length === 0 ? html`<p>No backend jobs have been recorded since this core started.</p>` : nothing}
+              ${this.backendJobs.jobs.length === 0 ? html`<p>No backend jobs have been recorded since the management service started.</p>` : nothing}
             </div>
           </article>
           ${settings ? html`
@@ -11104,7 +11104,7 @@ export class SmithproxyApp extends LitElement {
         </div>
         ${this.auditError ? html`<div class="metrics-message">${this.auditError}</div>` : nothing}
         ${auditEntries.length === 0 ? html`
-          <div class="metrics-message">No management mutation has been observed since the GUI core started.</div>
+          <div class="metrics-message">No management mutation has been observed since the management service started.</div>
         ` : html`
           <div class="event-list" role="list" aria-label="Management audit">
             ${auditEntries.map(entry => {
@@ -11815,7 +11815,7 @@ export class SmithproxyApp extends LitElement {
       : current?.error ? current.error
       : current?.state === 'resolved' ? `${name} resolves to ${current.addresses.join(', ')}.`
       : current?.state === 'not-found' ? `${name} did not return an IPv4 or IPv6 address.`
-      : `${fqdnDescription}. Evaluate it from the GUI core host as a best-effort DNS check.`;
+      : `${fqdnDescription}. Evaluate it from the management service host as a best-effort DNS check.`;
     return html`<div id=${id} class="form-span address-insight" aria-live="polite"
       data-valid=${current?.state === 'resolved' && !current.error ? 'true' : 'false'}>
       <span>${message}</span>
@@ -12228,7 +12228,7 @@ export class SmithproxyApp extends LitElement {
         Save the profile first, then add complete write-only identity mappings in the nested editor.
         Pending replacements must be fully re-entered before this create operation can be changed.
       </div>` : ['tls', 'content', 'ssh', 'script'].includes(type) ? html`<div class="privacy-note section">
-        Write-only values are accepted by the GUI core, redacted from draft responses, and cleared from this editor.
+        Write-only values are accepted by the management service, redacted from draft responses, and cleared from this editor.
         Reopening a pending profile requires explicit re-entry before it can be updated.
       </div>` : nothing}
     `;
@@ -12808,22 +12808,22 @@ export class SmithproxyApp extends LitElement {
       </div>
       ${prefix ? this.renderNamedRenameNotice(`${prefix}name`) : nothing}
       ${routing || tls || detection || content || ssh || dns || script || authentication ? nothing : html`<div class="privacy-note section">
-        Profile values remain inside the GUI core until a typed, redacted editor is available.
+        Profile values remain inside the management service until a typed, redacted editor is available.
       </div>`}
       ${tls ? html`<div class="privacy-note section">
-        Current SNI bypass values stay inside the GUI core; replacements are write-only.
+        Current SNI bypass values stay inside the management service; replacements are write-only.
       </div>` : nothing}
       ${content ? html`<div class="privacy-note section">
-        Current session filters and all content-rule payloads stay inside the GUI core. Filter replacements are write-only.
+        Current session filters and all content-rule payloads stay inside the management service. Filter replacements are write-only.
       </div>` : nothing}
       ${ssh ? html`<div class="privacy-note section">
-        The current private host-key path stays inside the GUI core. Replacements are write-only.
+        The current private host-key path stays inside the management service. Replacements are write-only.
       </div>` : nothing}
       ${script ? html`<div class="privacy-note section">
-        The current script module path stays inside the GUI core. Replacements are write-only.
+        The current script module path stays inside the management service. Replacements are write-only.
       </div>` : nothing}
       ${authentication ? html`<div class="privacy-note section">
-        Authentication profiles are obsolete in Smithproxy; identity names and profile bindings stay inside the GUI core.
+        Authentication profiles are obsolete in Smithproxy; identity names and profile bindings stay inside the management service.
       </div>` : nothing}
       ${this.renderObjectUsage(profile)}
     `;
@@ -13209,7 +13209,7 @@ export class SmithproxyApp extends LitElement {
       </div>
       ${this.renderNamedRenameNotice(namePath)}
       <div class="privacy-note section">
-        The current certificate-authority path stays inside the GUI core. Replacements are write-only.
+        The current certificate-authority path stays inside the management service. Replacements are write-only.
       </div>
     `;
   }
@@ -13235,7 +13235,7 @@ export class SmithproxyApp extends LitElement {
           : 'Enter a CA path before saving.'}
       </div>` : nothing}
       <div class="privacy-note section">
-        The path is accepted by the GUI core, redacted from draft responses, and cleared from this editor.
+        The path is accepted by the management service, redacted from draft responses, and cleared from this editor.
         Reopening a pending authority requires explicit path re-entry before it can be updated.
       </div>
     `;
@@ -13325,7 +13325,7 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
       <div class="privacy-note section">
-        Current content expressions stay inside the GUI core. Draft review exposes only replacement intent.
+        Current content expressions stay inside the management service. Draft review exposes only replacement intent.
       </div>
     `;
   }
@@ -13399,7 +13399,7 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
       <div class="privacy-note section">
-        Match and replacement expressions stay inside the GUI core. Reopening this pending rule requires
+        Match and replacement expressions stay inside the management service. Reopening this pending rule requires
         re-entering every configured write-only expression before another update.
       </div>
     `;
@@ -13494,7 +13494,7 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
       <div class="privacy-note section">
-        Signature expressions stay inside the GUI core. Open a flow step to rotate one through a write-only control.
+        Signature expressions stay inside the management service. Open a flow step to rotate one through a write-only control.
       </div>
     `;
   }
@@ -13663,7 +13663,7 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
       <div class="privacy-note section">
-        The matcher expression stays inside the GUI core and is redacted in draft review.
+        The matcher expression stays inside the management service and is redacted in draft review.
         Reopening this pending signature requires re-entering it before another update.
       </div>
       ${prefill ? html`<div class="scope-note section">
@@ -13735,7 +13735,7 @@ export class SmithproxyApp extends LitElement {
           .readOnly=${readOnly}></textarea>
       </div>
       <div class="privacy-note section">
-        The matcher expression stays inside the GUI core. Reopening this pending step requires
+        The matcher expression stays inside the management service. Reopening this pending step requires
         re-entering the write-only expression before another update.
       </div>
     `;
@@ -14500,7 +14500,7 @@ export class SmithproxyApp extends LitElement {
             </button>
           ` : nothing}
           <span class="system-state ${this.systemStatus.core === 'online' ? 'success' : this.systemStatus.core === 'offline' ? 'danger' : 'warning'}">
-            ● Core: ${displayState(this.systemStatus.core)}
+            ● Management: ${displayState(this.systemStatus.core)}
           </span>
           <span class="system-state ${statusTone(this.systemStatus)}" title=${this.systemStatusTitle()} aria-live="polite">
             ● Smithproxy: ${displayState(this.systemStatus.smithproxy)}
