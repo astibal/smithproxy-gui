@@ -102,6 +102,7 @@ type FqdnEvaluation = Pick<DnsLookup, 'name' | 'state' | 'addresses'> & {
 type CapabilityBootstrapState = 'discovering' | 'refreshing' | 'ready' | 'unavailable';
 type EventCategoryFilter = 'all' | 'control-plane' | 'backend-job';
 type PolicyStatusFilter = 'all' | 'enabled' | 'disabled';
+type SessionStateFilter = 'all' | 'active' | 'closed';
 type PolicyDensity = 'dense' | 'standard' | 'comfortable';
 type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile' | 'security';
 type ObjectSectionKind = Exclude<ObjectKindFilter, 'all'>;
@@ -423,6 +424,8 @@ export class SmithproxyApp extends LitElement {
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
   @state() private liveSessions: LiveSessionSnapshot = initialLiveSessions;
+  @state() private sessionListQuery = '';
+  @state() private sessionStateFilter: SessionStateFilter = 'all';
   @state() private tlsCache: TlsCacheSnapshot = initialTlsCache;
   @state() private neighbors: NeighborSnapshot = initialNeighbors;
   @state() private interfaces: InterfaceSnapshot = initialInterfaces;
@@ -10202,6 +10205,15 @@ export class SmithproxyApp extends LitElement {
     const presentation = this.collectorPresentation(
       activity.state, activity.lastSuccessAtUnixMs, 10_000,
     );
+    const query = this.sessionListQuery.trim().toLocaleLowerCase();
+    const visibleSessions = this.liveSessions.entries.filter(entry => {
+      const stateMatches = this.sessionStateFilter === 'all' ||
+        (this.sessionStateFilter === 'active') === entry.active;
+      if (!stateMatches || query.length === 0) return stateMatches;
+      return [entry.sourceAddress, entry.sourcePort, entry.destinationAddress,
+        entry.destinationPort, entry.protocol, entry.policy]
+        .some(value => value.toLocaleLowerCase().includes(query));
+    });
     return html`
       <section class="runtime-summary" aria-label="Session activity">
         <div class="runtime-heading">
@@ -10255,11 +10267,35 @@ export class SmithproxyApp extends LitElement {
           <span class="runtime-state ${this.liveSessions.state === 'ready' ? 'success' : 'warning'}"
             title=${this.liveSessions.detail}>● ${displayState(this.liveSessions.state)}</span>
         </div>
+        <div class="list-filters" role="search" aria-label="Filter observed sessions">
+          <label class="list-filter">Endpoint, protocol, or policy
+            <input type="search" aria-label="Filter observed sessions"
+              .value=${this.sessionListQuery}
+              @input=${(event: Event) => {
+                this.sessionListQuery = (event.currentTarget as HTMLInputElement).value.slice(0, 128);
+              }} />
+          </label>
+          <label class="list-filter">State
+            <select aria-label="Filter sessions by state" .value=${this.sessionStateFilter}
+              @change=${(event: Event) => {
+                this.sessionStateFilter =
+                  (event.currentTarget as HTMLSelectElement).value as SessionStateFilter;
+              }}>
+              <option value="all">Active and closed</option>
+              <option value="active">Active only</option>
+              <option value="closed">Recently closed only</option>
+            </select>
+          </label>
+          <span class="list-filter-summary" role="status">
+            Showing ${visibleSessions.length.toLocaleString()} of
+            ${this.liveSessions.entries.length.toLocaleString()}
+          </span>
+        </div>
         <div class="table">
           <table class="listener-table" aria-label="Observed proxy sessions">
             <thead><tr><th>Status</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Policy</th><th>Rate</th><th>Transferred</th><th>Seen</th></tr></thead>
             <tbody>
-              ${this.liveSessions.entries.map(entry => html`
+              ${visibleSessions.map(entry => html`
                 <tr class=${entry.active ? '' : 'muted'}>
                   <td><span class="system-state ${entry.active ? 'success' : ''}">${entry.active ? 'Active' : 'Closed'}</span></td>
                   <td><code>${entry.sourceAddress}:${entry.sourcePort}</code></td>
@@ -10273,8 +10309,10 @@ export class SmithproxyApp extends LitElement {
                   </td>
                 </tr>
               `)}
-              ${this.liveSessions.entries.length === 0 ? html`
-                <tr><td colspan="8">No active or recently closed sessions are available.</td></tr>
+              ${visibleSessions.length === 0 ? html`
+                <tr><td colspan="8">${this.liveSessions.entries.length === 0
+                  ? 'No active or recently closed sessions are available.'
+                  : 'No sessions match the current filters.'}</td></tr>
               ` : nothing}
             </tbody>
           </table>

@@ -5044,6 +5044,13 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(sessions.getByText('198.51.100.20:443')).toBeVisible();
   await expect(sessions.getByText('Policy 1')).toBeVisible();
   await expect(sessions.getByText('Closed', {exact: true})).toBeVisible();
+  await activity.getByRole('searchbox', {name: 'Filter observed sessions'}).fill('DNS');
+  await expect(sessions.getByText('203.0.113.53:53')).toBeVisible();
+  await expect(sessions.getByText('192.0.2.10:51342')).toHaveCount(0);
+  await activity.getByRole('searchbox', {name: 'Filter observed sessions'}).fill('');
+  await activity.getByRole('combobox', {name: 'Filter sessions by state'}).selectOption('active');
+  await expect(sessions.getByText('192.0.2.10:51342')).toBeVisible();
+  await expect(sessions.getByText('203.0.113.53:53')).toHaveCount(0);
   await page.getByRole('group', {name: 'Monitoring categories'})
     .getByRole('button', {name: 'Traffic'}).click();
   const runtimeHistory = page.getByRole('region', {name: 'Runtime history'});
