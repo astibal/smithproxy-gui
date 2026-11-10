@@ -9553,7 +9553,7 @@ export class SmithproxyApp extends LitElement {
           ${listeners.length > 0 ? html`
             <div class="table network-config-table" tabindex="0">
               <table class="listener-table" aria-label="Runtime listener workload">
-                <thead><tr><th>Listener</th><th>State</th><th>Workers</th><th>Active</th><th>Total</th>
+                <thead><tr><th>Listener</th><th>State</th><th>Workers</th><th>Active sessions</th><th>Total sessions</th>
                   <th>Upload</th><th>Download</th></tr></thead>
                 <tbody>${listeners.map(listener => {
                   const active = presentation.current && listener.sessionsActive > 0;

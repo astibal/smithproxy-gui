@@ -6241,6 +6241,9 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(neighborhood.getByText('8', {exact: true})).toBeVisible();
   await expect(neighborhood.getByText(/hostnames, tags, labels, and per-endpoint timelines remain/i)).toBeVisible();
   const workload = page.getByRole('table', {name: 'Runtime listener workload'});
+  await expect(workload.getByRole('columnheader')).toHaveText([
+    'Listener', 'State', 'Workers', 'Active sessions', 'Total sessions', 'Upload', 'Download',
+  ]);
   const workloadRows = workload.getByRole('row');
   await expect(workloadRows.nth(1).getByRole('cell')).toHaveText([
     'tcp', 'Active', '2', '3', '12', '1.02 kB', '2.05 kB',
