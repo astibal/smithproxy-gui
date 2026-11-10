@@ -6478,6 +6478,11 @@ test('organizes operational surfaces into focused administrator views', async ({
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Appearance', exact: true}).click();
   await expect(page.getByRole('heading', {level: 2, name: 'Appearance'})).toBeVisible();
+  const appearance = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Shared appearance'}),
+  });
+  await expect(appearance).toContainText('Theme managed bySaslik');
+  await expect(appearance).toContainText('Change the shared theme in Saslik appearance settings');
   await expect(page.getByRole('heading', {name: 'Background operations'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Management', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Background operations'})).toBeVisible();
