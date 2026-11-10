@@ -6597,16 +6597,20 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByText('Smithproxy key')).toBeVisible();
   await expect(page.getByText('Never exposed')).toBeVisible();
   await page.getByRole('button', {name: 'System settings', exact: true}).click();
+  await expect(page.getByText('Listener, access, TLS, logging, and service behavior')).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Traffic admission'})).toBeVisible();
   await expect(page.getByText('Fail closed')).toHaveCount(2);
   await page.getByRole('button', {name: 'Captures', exact: true}).click();
+  await expect(page.getByText('Review and control local and remote traffic capture')).toBeVisible();
   const capturePosture = page.getByRole('article').filter({has: page.getByRole('heading', {name: 'Capture posture'})});
   await expect(capturePosture).toBeVisible();
   await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
   await page.getByRole('button', {name: 'Management', exact: true}).click();
+  await expect(page.getByText('Management API, webhook, background jobs, and diagnostics')).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
   await page.getByRole('button', {name: 'Configuration archive', exact: true}).click();
+  await expect(page.getByText('Save, download, validate, and restore the startup configuration')).toBeVisible();
   await page.locator('smithproxy-gui').evaluate((application: HTMLElement & {
     archiveInventory?: {state: 'ready'; contentHash: string; resources: []};
     updateComplete: Promise<unknown>;

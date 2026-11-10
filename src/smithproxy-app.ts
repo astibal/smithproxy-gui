@@ -10591,6 +10591,15 @@ export class SmithproxyApp extends LitElement {
     const pendingConfiguration =
       (this.systemView === 'settings' && this.draftObjects.has('settings:settings')) ||
       (this.systemView === 'captures' && this.draftObjects.has('captures:captures'));
+    const systemDescription = this.systemView === 'configuration'
+      ? 'Save, download, validate, and restore the startup configuration'
+      : this.systemView === 'settings'
+        ? 'Listener, access, TLS, logging, and service behavior'
+        : this.systemView === 'captures'
+          ? 'Review and control local and remote traffic capture'
+          : this.systemView === 'backend'
+            ? 'Management API, webhook, background jobs, and diagnostics'
+            : 'Choose how this management interface looks';
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
@@ -10599,7 +10608,7 @@ export class SmithproxyApp extends LitElement {
             this.systemView === 'captures' ? 'Traffic captures' :
             this.systemView === 'backend' ? 'Management service' :
             'Appearance'}</h2>
-            <p>Focused system administration backed by the current Smithproxy state</p></div>
+            <p>${systemDescription}</p></div>
         </div>
         ${pendingConfiguration ? html`<div class="scope-note" role="status">
           Pending draft values are shown in these cards. Running configuration remains unchanged until you commit the draft.
