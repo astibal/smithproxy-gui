@@ -6126,10 +6126,10 @@ test('filters structured job failures without exposing job identifiers', async (
   await page.getByRole('button', {name: 'Logs', exact: true}).click();
   const events = page.getByRole('list', {name: 'Operational events'});
   await expect(events.getByText('Configuration refresh did not converge')).toBeVisible();
-  await page.getByRole('button', {name: 'Control plane · 1'}).click();
+  await page.getByRole('button', {name: 'Connectivity · 1'}).click();
   await expect(events.getByText('Smithproxy control plane is reachable')).toBeVisible();
   await expect(events.getByText('Configuration refresh did not converge')).toBeHidden();
-  await page.getByRole('button', {name: 'Backend jobs · 1'}).click();
+  await page.getByRole('button', {name: 'Background work · 1'}).click();
   await expect(events.getByText('Configuration refresh did not converge')).toBeVisible();
   await expect(events.getByText('Smithproxy control plane is reachable')).toBeHidden();
   await expect(page.getByText('job-01234567-89ab-4def-8123-456789abcdef')).toHaveCount(0);
@@ -6305,6 +6305,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(audit.getByText('config.draft.upsert')).toBeVisible();
   await expect(audit.getByText('policy.[0].action')).toBeVisible();
   await expect(audit.getByText('abc123-7')).toBeVisible();
+  await expect(page.getByText('User identity unavailable.', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Backend', exact: true}).click();

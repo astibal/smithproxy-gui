@@ -816,6 +816,7 @@ export class SmithproxyApp extends LitElement {
     .event-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
     .event-filters button[aria-pressed='true'] { border-color: var(--app-brand); color: var(--app-text); }
     .logs-content .privacy-note, .logs-content .origin-note { padding-block: 7px; }
+    .log-safety-note { display: block; margin-top: 4px; color: var(--app-muted); font-size: 12px; }
     .logs-content .event-filters { gap: 6px; margin: 4px 0; }
     .logs-content .event-filters button { min-height: 30px; padding: 4px 9px; }
     .logs-content .event-row, .logs-content .audit-row { padding-block: 8px; }
@@ -10869,7 +10870,8 @@ export class SmithproxyApp extends LitElement {
         <div class="section-head">
           <div>
             <h2>Operational events</h2>
-            <p>Recent control-plane and backend-job events.</p>
+            <p>Recent connectivity and background-operation events.</p>
+            <small class="log-safety-note">Sensitive configuration values are omitted.</small>
           </div>
           <span class="runtime-state ${this.eventsError ? 'danger' : 'success'}">
             ${this.eventsError ? 'Unavailable' : this.eventCategoryFilter === 'all'
@@ -10877,14 +10879,11 @@ export class SmithproxyApp extends LitElement {
               : `${events.length} of ${allEvents.length} events`}
           </span>
         </div>
-        <div class="privacy-note">
-          Configuration values and secrets are omitted from operational events.
-        </div>
         <div class="event-filters" role="group" aria-label="Operational event category">
           ${([
             ['all', `All · ${allEvents.length}`],
-            ['control-plane', `Control plane · ${controlPlaneCount}`],
-            ['backend-job', `Backend jobs · ${jobEventCount}`],
+            ['control-plane', `Connectivity · ${controlPlaneCount}`],
+            ['backend-job', `Background work · ${jobEventCount}`],
           ] as const).map(([category, label]) => html`
             <button class="secondary" type="button"
               aria-pressed=${this.eventCategoryFilter === category}
@@ -10903,7 +10902,7 @@ export class SmithproxyApp extends LitElement {
                 </time>
                 <span class="event-severity ${event.severity}">${event.severity}</span>
                 <strong>${event.message}</strong>
-                <span class="event-source" title=${event.code}>${event.category === 'backend-job' ? 'backend job' : 'control plane'}</span>
+                <span class="event-source" title=${event.code}>${event.category === 'backend-job' ? 'background work' : 'connectivity'}</span>
               </article>
             `)}
           </div>
@@ -10913,14 +10912,14 @@ export class SmithproxyApp extends LitElement {
           <div>
             <h2>Management audit</h2>
             <p>Recent management changes and their outcomes.</p>
+            <small class="log-safety-note">
+              <strong>User identity unavailable.</strong> Request IDs, operations, and affected paths are retained;
+              values and secrets are omitted.
+            </small>
           </div>
           <span class="runtime-state ${this.auditError ? 'danger' : 'success'}">
             ${this.auditError ? 'Unavailable' : `${auditEntries.length} records`}
           </span>
-        </div>
-        <div class="origin-note">
-          <strong>User identity is unavailable for these records.</strong>
-          Request IDs, operations and affected paths are retained; values and secrets are omitted.
         </div>
         ${this.auditError ? html`<div class="metrics-message">${this.auditError}</div>` : nothing}
         ${auditEntries.length === 0 ? html`
