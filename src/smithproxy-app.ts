@@ -1175,7 +1175,8 @@ export class SmithproxyApp extends LitElement {
       .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .topbar p { display: none; }
       .config-workflow { grid-column: 2; justify-self: end; }
-      .config-workflow button { min-height: 34px; padding: 6px 9px; }
+      .config-workflow.actionable .config-state { display: none; }
+      .config-workflow button { min-height: 34px; padding: 6px 9px; font-size: 12px; }
       .config-workflow-error { display: none; }
       .config-refresh { grid-row: 1; grid-column: 3; }
       .topbar .search { display: block; grid-column: 1 / -1; width: 100%; max-width: none; }
@@ -14588,7 +14589,8 @@ export class SmithproxyApp extends LitElement {
             <h1>${sectionTitle}</h1>
             <p>${sectionDescriptions[this.activeSection] ?? 'Smithproxy management'}</p>
             ${this.snapshot?.source === 'live' ? html`
-              <div class="config-workflow" aria-label="Configuration changes">
+              <div class="config-workflow ${this.snapshot.unsaved || this.draftChangeCount > 0
+                ? 'actionable' : ''}" aria-label="Configuration changes">
                 <span class="config-state ${this.snapshot.unsaved ? 'danger' : ''}">
                   ${this.snapshot.unsaved ? '● Running configuration unsaved' : 'Running configuration saved'}
                 </span>

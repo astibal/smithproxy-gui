@@ -6390,6 +6390,22 @@ test('keeps an unsaved running configuration visible on mobile', async ({page}) 
   await expect(card.getByTitle(`sha256:${'1'.repeat(64)}`)).toHaveText('sha256:11111111…');
 });
 
+test('keeps mobile draft and startup actions visible without overflowing the topbar', async ({page}) => {
+  await page.setViewportSize({width: 360, height: 740});
+  await mockSystemApi(page, {
+    smithproxy: 'ready', unsavedConfig: true, configSaveReady: true,
+    initialDraftChanges: [{path: 'policy.[0].action', value: 'reject'}],
+  }, true);
+  await page.goto('/');
+
+  const topbar = page.locator('.topbar');
+  await expect(topbar.getByRole('button', {name: /Review draft · 1/u})).toBeVisible();
+  await expect(topbar.getByRole('button', {name: 'Save startup'})).toBeVisible();
+  await expect(topbar.getByText('Running configuration unsaved', {exact: false})).toBeHidden();
+  await expect(topbar.getByText('1 draft change', {exact: true})).toBeHidden();
+  await expect.poll(() => topbar.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
 test('persists the exact running revision only after explicit confirmation', async ({page}) => {
   const runningRevision = `sha256:${'2'.repeat(64)}`;
   const state: MockState = {
