@@ -1228,7 +1228,7 @@ test('opens management settings at the selected protected configuration group', 
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
 
-  await page.getByRole('button', {name: 'Open API settings'}).click();
+  await page.getByRole('button', {name: 'Open access settings'}).click();
   let editor = page.getByRole('dialog', {name: 'Edit System settings'});
   await expect(editor.getByText('Protected configuration view')).toBeVisible();
   await expect(editor.getByRole('button', {name: 'Edit', exact: true})).toBeVisible();
@@ -5299,7 +5299,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(health.getByRole('table', {name: 'Operational subsystem health'})).not.toBeVisible();
   await health.locator('summary').click();
   const healthTable = health.getByRole('table', {name: 'Operational subsystem health'});
-  await expect(healthTable.getByRole('row').filter({hasText: 'Management API'})).toContainText('Ready · Fresh');
+  await expect(healthTable.getByRole('row').filter({hasText: 'Management connection'})).toContainText('Ready · Fresh');
   await expect(healthTable.getByRole('row').filter({hasText: 'TLS cache'})).toContainText('Ready · Fresh');
 });
 
@@ -5308,7 +5308,7 @@ test('opens every operational health subsystem in its administrator view', async
   await page.goto('/');
 
   const routes = [
-    ['Management API', () => page.getByRole('heading', {name: 'Management connectivity'})],
+    ['Management connection', () => page.getByRole('heading', {name: 'Management connectivity'})],
     ['Traffic metrics', () => page.getByRole('region', {name: 'Runtime history'})],
     ['Session activity', () => page.getByRole('region', {name: 'Session activity'})],
     ['TLS cache', () => page.getByRole('region', {name: 'TLS interception cache'})],
@@ -6660,7 +6660,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(capturePosture.getByText('pcap_single / 1024 MiB')).toBeVisible();
   await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
   await expect(page.getByText('Management access, webhook integrations, background jobs, and diagnostics')).toBeVisible();
-  await expect(page.getByRole('heading', {name: 'Smithproxy API posture'})).toBeVisible();
+  await expect(page.getByRole('heading', {name: 'Management access'})).toBeVisible();
   await expect(page.getByRole('heading', {name: 'Webhook posture'})).toBeVisible();
   await page.getByRole('button', {name: 'Startup & backups', exact: true}).click();
   await expect(page.getByText('Save, download, validate, and restore the startup configuration')).toBeVisible();
@@ -6997,7 +6997,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(debugCard).toContainText('Socket eventsEnabled');
   await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
   const apiPosture = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'Smithproxy API posture'}),
+    has: page.getByRole('heading', {name: 'Management access'}),
   });
   await expect(apiPosture).toContainText('Port 55580 · 900s token TTL');
   const webhookPosture = page.getByRole('article').filter({

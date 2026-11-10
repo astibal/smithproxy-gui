@@ -9791,7 +9791,7 @@ export class SmithproxyApp extends LitElement {
 
   private renderOperationalHealth() {
     const items = [
-      {name: 'Management API', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs,
+      {name: 'Management connection', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs,
         lastSuccess: this.systemStatus.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'connectivity'},
       {name: 'Traffic metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs,
         lastSuccess: this.runtimeMetrics.lastSuccessAtUnixMs, intervalMs: 5_000, target: 'traffic'},
@@ -11000,11 +11000,11 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="backend">
-              <header><div><h3>Smithproxy API posture</h3><p>Secrets and addresses are redacted</p></div>
+              <header><div><h3>Management access</h3><p>Secrets and addresses are redacted</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
                     'settings', event.currentTarget as HTMLElement, 'management-api',
-                  )}>Open API settings</button>
+                  )}>Open access settings</button>
               </header>
               <dl>
                 <dt>Listener</dt><dd>${setting('accept_api', settings.acceptApi) ? 'Enabled' : 'Disabled'}</dd>
