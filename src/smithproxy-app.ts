@@ -10671,7 +10671,7 @@ export class SmithproxyApp extends LitElement {
             ` : nothing}
             ${this.archiveInventory && !this.archiveValidation ? html`
               <div class="archive-resource-editor">
-                <input type="text" maxlength="512" placeholder="templates/replacement/notice.html"
+                <input type="text" maxlength="1024" placeholder="templates/replacement/notice.html"
                   aria-label="Managed resource path" .value=${this.archiveResourcePath}
                   @input=${(event: Event) => {
                     const input = event.currentTarget;

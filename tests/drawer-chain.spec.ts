@@ -6623,6 +6623,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(archive).toContainText('Managed paths must begin with pki/, templates/, or commands/.');
   await expect(archive).not.toContainText('messages/');
   await expect(archive).not.toContainText('ssh/');
+  await expect(archive.getByLabel('Managed resource path')).toHaveAttribute('maxlength', '1024');
   await expect(page.getByRole('heading', {name: 'Trust and signatures'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
   await page.getByRole('button', {name: 'Trust', exact: true}).click();
