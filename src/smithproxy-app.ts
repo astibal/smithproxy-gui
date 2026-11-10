@@ -82,7 +82,7 @@ import {
 
 const navigation = ['Dashboard', 'Network', 'Objects', 'Policy', 'Monitoring', 'Logs', 'System'];
 const sectionDescriptions: Readonly<Record<string, string>> = {
-  Dashboard: 'Control plane and configuration readiness',
+  Dashboard: 'Traffic, configuration, and operational status',
   Network: 'Listeners, interfaces, and runtime reachability',
   Objects: 'Reusable configuration, profiles, and trust assets',
   Policy: 'Ordered traffic decisions and inspection behavior',
@@ -9621,9 +9621,9 @@ export class SmithproxyApp extends LitElement {
 
   private renderOperationalHealth() {
     const items = [
-      {name: 'Control plane', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs,
+      {name: 'Management API', state: this.systemStatus.smithproxy, checked: this.systemStatus.checkedAtUnixMs,
         lastSuccess: this.systemStatus.lastSuccessAtUnixMs, intervalMs: 5_000},
-      {name: 'Listener metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs,
+      {name: 'Traffic metrics', state: this.runtimeMetrics.state, checked: this.runtimeMetrics.checkedAtUnixMs,
         lastSuccess: this.runtimeMetrics.lastSuccessAtUnixMs, intervalMs: 5_000},
       {name: 'Session activity', state: this.sessionActivity.state, checked: this.sessionActivity.checkedAtUnixMs,
         lastSuccess: this.sessionActivity.lastSuccessAtUnixMs, intervalMs: 10_000},
@@ -9639,7 +9639,7 @@ export class SmithproxyApp extends LitElement {
     return html`
       <section class="runtime-summary" aria-label="Operational health matrix">
         <div class="runtime-heading">
-          <div><h3>Operational health</h3><p>Current state and freshness across GUI core data planes</p></div>
+          <div><h3>Operational health</h3><p>Availability and freshness of administrator-facing services</p></div>
         </div>
         <div class="table network-config-table" tabindex="0">
           <table class="listener-table" aria-label="Operational subsystem health">
@@ -9800,7 +9800,7 @@ export class SmithproxyApp extends LitElement {
           <article class="metric">
             <span class="metric-label">Active sessions</span>
             <strong class="metric-value">${metrics.totals.sessionsActive.toLocaleString()}</strong>
-            <span class="metric-note">Across ${metrics.listeners.length} listener types</span>
+            <span class="metric-note">Current established proxy connections</span>
           </article>
           <article class="metric">
             <span class="metric-label">Total sessions</span>
@@ -9943,7 +9943,7 @@ export class SmithproxyApp extends LitElement {
           </div>
         </section>`;
     }
-    const open = (section: 'Objects' | 'Policy' | 'System', objectKind: ObjectKindFilter = 'all') => {
+    const open = (section: 'Objects' | 'Policy', objectKind: ObjectKindFilter = 'all') => {
       if (section === 'Objects') this.selectObjectView(objectKind);
       else this.activeSection = section;
     };
@@ -9970,7 +9970,7 @@ export class SmithproxyApp extends LitElement {
               <tr><td class="listener-name">Profiles</td><td>Inspection, content, and routing behavior</td>
                 <td><button class="secondary" type="button" @click=${() => open('Objects', 'profile')}>Open profiles</button></td></tr>
               <tr><td class="listener-name">Trust and signatures</td><td>TLS authorities and detection rules</td>
-                <td><button class="secondary" type="button" @click=${() => open('System')}>Open trust assets</button></td></tr>
+                <td><button class="secondary" type="button" @click=${() => open('Objects', 'security')}>Open trust assets</button></td></tr>
             </tbody>
           </table>
         </div>

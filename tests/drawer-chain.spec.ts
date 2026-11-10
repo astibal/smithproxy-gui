@@ -5113,7 +5113,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
   const health = page.getByRole('region', {name: 'Operational health matrix'});
   const healthTable = health.getByRole('table', {name: 'Operational subsystem health'});
-  await expect(healthTable.getByRole('row').filter({hasText: 'Control plane'})).toContainText('Ready · Fresh');
+  await expect(healthTable.getByRole('row').filter({hasText: 'Management API'})).toContainText('Ready · Fresh');
   await expect(healthTable.getByRole('row').filter({hasText: 'TLS cache'})).toContainText('Ready · Fresh');
 });
 
@@ -5327,6 +5327,11 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
   await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Profiles and routing'})).toContainText('inspect');
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCount(0);
+
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
+  await shortcuts.getByRole('button', {name: 'Open trust assets'}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'Trust and signatures'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Trust and signatures'})).toBeVisible();
 });
 
 test('filters real and pending policies by text, status, and action', async ({page}) => {
