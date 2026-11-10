@@ -481,45 +481,55 @@ TransactionResponse SmithproxyMonitor::execute_transaction(
         };
         const auto post = [&](const std::string_view path,
                               const nlohmann::json& params) -> ApiResponse {
-            std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
-            if (!curl) return {};
-            curl_slist* raw_headers = nullptr;
-            const std::array header_values{
-                "X-API-Key: " + config_->api_key,
-                std::string{"Content-Type: application/json"},
-                std::string{"Accept: application/json"},
-                std::string{"Expect:"},
-            };
-            for (const auto& value : header_values) {
-                auto* updated = curl_slist_append(raw_headers, value.c_str());
-                if (!updated) {
+            const auto request = nlohmann::json{{"params", params}}.dump();
+            std::optional<std::string> rejected_auth_token;
+
+            // Smithproxy accepts API keys directly for read-only requests only. Mutating
+            // transaction endpoints require an authorized session and its CSRF token.
+            for (unsigned attempt = 0U; attempt < 2U; ++attempt) {
+                const auto session_result = upstream_session(rejected_auth_token);
+                if (!session_result.session) return {401L, std::nullopt};
+                const auto& session = *session_result.session;
+
+                std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+                if (!curl) return {};
+                auto* raw_headers = append_session_headers(
+                    nullptr, session.auth_token, session.csrf_token);
+                if (!raw_headers) return {};
+                auto* updated_headers = curl_slist_append(raw_headers, "Expect:");
+                if (!updated_headers) {
                     curl_slist_free_all(raw_headers);
                     return {};
                 }
-                raw_headers = updated;
+                std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
+                ResponseBuffer response{
+                    .limit = transaction_response_limit,
+                    .body = {},
+                    .exceeded = false,
+                };
+                configure_request(
+                    curl.get(), *config_, config_->api_url + std::string(path), headers.get());
+                curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
+                curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+                curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
+                curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                                 static_cast<curl_off_t>(request.size()));
+                curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+                curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+                if (curl_easy_perform(curl.get()) != CURLE_OK || response.exceeded) return {};
+                long status{};
+                curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+                if ((status == 401L || status == 403L) && attempt == 0U) {
+                    rejected_auth_token = session.auth_token;
+                    continue;
+                }
+                auto document = nlohmann::json::parse(response.body, nullptr, false);
+                if (document.is_discarded() || !document.is_object()) {
+                    return {status, std::nullopt};
+                }
+                return {status, std::optional<nlohmann::json>{std::move(document)}};
             }
-            std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
-            const auto request = nlohmann::json{{"params", params}}.dump();
-            ResponseBuffer response{
-                .limit = transaction_response_limit,
-                .body = {},
-                .exceeded = false,
-            };
-            configure_request(
-                curl.get(), *config_, config_->api_url + std::string(path), headers.get());
-            curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 10000L);
-            curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
-            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
-            curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
-                             static_cast<curl_off_t>(request.size()));
-            curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
-            curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
-            if (curl_easy_perform(curl.get()) != CURLE_OK || response.exceeded) return {};
-            long status{};
-            curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
-            auto document = nlohmann::json::parse(response.body, nullptr, false);
-            if (document.is_discarded() || !document.is_object()) return {status, std::nullopt};
-            return {status, std::optional<nlohmann::json>{std::move(document)}};
+            return {401L, std::nullopt};
         };
 
         const auto begin = post(
