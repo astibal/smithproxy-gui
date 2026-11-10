@@ -4316,7 +4316,7 @@ test('refreshes live configuration only outside an active edit transaction', asy
   await page.goto('/');
   await expect(page.getByText('Config: Ready')).toBeVisible();
   await expect.poll(() => state.configFetches).toBe(1);
-  const refresh = page.getByRole('button', {name: 'Refresh config'});
+  const refresh = page.getByRole('button', {name: 'Refresh configuration'});
   await expect(refresh).toBeEnabled();
   await refresh.click();
   await expect.poll(() => state.configFetches).toBe(2);
@@ -4378,6 +4378,22 @@ test('detects an external revision while preserving and blocking the active draf
   await expect(page.getByText('Draft: 1 changes')).toBeVisible();
 });
 
+test('identifies the refresh action while an external configuration notice is active', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.locator('smithproxy-gui').evaluate((app: HTMLElement & {
+    externalConfigNotice: boolean;
+  }) => {
+    app.externalConfigNotice = true;
+  });
+  await expect(page.getByRole('status').filter({
+    hasText: 'Configuration changed in the background.',
+  })).toBeVisible();
+  await expect(page.getByRole('button', {
+    name: 'Reload externally changed configuration',
+  })).toBeVisible();
+});
+
 test('loads the first live snapshot when an existing draft arrives first', async ({page}) => {
   const draftRevision = `sha256:${'1'.repeat(64)}`;
   const liveRevision = `sha256:${'2'.repeat(64)}`;
@@ -4402,7 +4418,7 @@ test('recovers live configuration automatically after a transient API failure', 
   await page.goto('/');
 
   await expect.poll(() => state.configFetches).toBe(1);
-  await expect(page.getByRole('button', {name: 'Refresh config'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Refresh configuration'})).toBeVisible();
   await expect(page.locator('.statusbar')).toContainText('Config: Unavailable');
 
   await page.evaluate(() => {
@@ -4412,7 +4428,7 @@ test('recovers live configuration automatically after a transient API failure', 
   });
   await expect.poll(() => state.configFetches).toBe(2);
   await expect(page.getByText('Config: Ready')).toBeVisible();
-  await expect(page.getByRole('button', {name: 'Refresh config'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Refresh configuration'})).toBeVisible();
 });
 
 test('recovers from a concurrent draft writer without losing either change set', async ({page}) => {

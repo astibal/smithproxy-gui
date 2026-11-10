@@ -14235,11 +14235,15 @@ export class SmithproxyApp extends LitElement {
             ` : nothing}
             ${this.configReadAvailable && this.draftChangeCount === 0 ? html`
               <button class="config-refresh ${this.configError ? 'danger' : ''} ${
-                this.configRevisionDrift ? 'drift' : ''}" type="button"
-                aria-label="Refresh config"
+                this.externalConfigNotice ? 'drift' : ''}" type="button"
+                aria-label=${this.externalConfigNotice
+                  ? 'Reload externally changed configuration'
+                  : 'Refresh configuration'}
                 title=${this.drawers.length > 0
                   ? 'Close the active editor before refreshing configuration.'
-                  : this.configError ?? 'Reload the authenticated Smithproxy configuration snapshot.'}
+                  : this.externalConfigNotice
+                    ? 'Smithproxy changed outside this workspace. Reload the current running configuration.'
+                    : this.configError ?? 'Reload the authenticated Smithproxy configuration snapshot.'}
                 ?disabled=${this.configRefreshInFlight || this.drawers.length > 0 || this.draftSaving ||
                   this.draftCommitting}
                 @click=${() => { void this.refreshConfiguration(true); }}>
