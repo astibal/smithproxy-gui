@@ -1172,6 +1172,11 @@ export class SmithproxyApp extends LitElement {
       .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto auto; gap: 5px 8px; padding: 8px 12px; }
       .section-head { align-items: start; }
       .structural-action { max-width: 190px; }
+      .policy-view-options { display: grid; width: 100%; align-items: stretch; }
+      .policy-view-options label { width: 100%; }
+      .policy-view-options select { width: 100%; }
+      .policy-view-options .structural-action { max-width: none; justify-items: stretch; text-align: left; }
+      .policy-view-options .structural-action button { width: 100%; }
       .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .topbar p { display: none; }
       .config-workflow { grid-column: 2; justify-self: end; }
