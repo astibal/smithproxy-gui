@@ -691,7 +691,16 @@ export class SmithproxyApp extends LitElement {
     .object-subnav button[aria-current='page'] { box-shadow: none; color: var(--app-text); }
     .object-subnav .nav-count { min-width: 20px; padding: 1px 5px; border: 1px solid var(--app-border); border-radius: 9px; color: var(--app-muted); font-size: 10px; font-variant-numeric: tabular-nums; text-align: center; }
     .nested-subnav { display: grid; gap: 1px; margin: -1px 0 3px 13px; padding-left: 5px; border-left: 1px solid var(--app-border); }
-    .nested-subnav button { grid-template-columns: 10px minmax(0, 1fr); padding: 6px 7px; font-size: 12px; }
+    .nested-subnav button { grid-template-columns: 12px minmax(0, 1fr) auto; padding: 6px 7px; font-size: 12px; }
+    .nested-nav-icon { display: block; width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 1px; }
+    .nested-nav-icon[data-kind='all'], .nested-nav-icon[data-kind='signatures'] { border-radius: 50%; }
+    .nested-nav-icon[data-kind='tls'], .nested-nav-icon[data-kind='starttls'] { rotate: 45deg; }
+    .nested-nav-icon[data-kind='content'] { border-width: 2px 1px; }
+    .nested-nav-icon[data-kind='detection'] { border-radius: 50%; box-shadow: inset 0 0 0 2px var(--app-surface); background: currentColor; }
+    .nested-nav-icon[data-kind='routing'] { width: 10px; height: 4px; border-width: 1px 0; }
+    .nested-nav-icon[data-kind='ssh'] { border-style: dashed; }
+    .nested-nav-icon[data-kind='dns'] { border-radius: 50% 50% 1px 50%; }
+    .nested-nav-icon[data-kind='script'] { width: 10px; border-width: 0 1px; }
 
     .main { display: grid; grid-template-rows: 58px minmax(0, 1fr); min-width: 0; min-height: 0; }
     .topbar { display: flex; gap: 16px; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--app-border); background: color-mix(in srgb, var(--app-surface) 88%, transparent); }
@@ -1180,6 +1189,9 @@ export class SmithproxyApp extends LitElement {
       .object-subnav { display: flex; margin: 0; padding: 0; border-left: 0; }
       .object-subnav button { width: 42px; padding: 8px; }
       .object-subnav .nav-label { display: none; }
+      .nested-subnav { display: flex; margin: 0; padding: 0; border-left: 0; }
+      .nested-subnav button { width: 42px; padding: 8px; }
+      .nested-subnav .nav-count { display: none; }
       .main { grid-row: 2; grid-template-rows: 94px minmax(0, 1fr); }
       .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto auto; gap: 5px 8px; padding: 8px 12px; }
       .section-head { align-items: start; }
@@ -14922,12 +14934,12 @@ export class SmithproxyApp extends LitElement {
                         this.objectKindFilter === 'profile' ? html`
                         <div class="nested-subnav" role="group" aria-label="Profile categories">
                           ${profileObjectNavigation.map(profile => html`<button type="button"
-                            aria-label=${profile.label} title=${profile.label}
+                            title=${profile.label}
                             aria-current=${this.profileObjectFilter === profile.kind ? 'page' : nothing}
                             @click=${() => {
                               this.selectObjectView('profile');
                               this.profileObjectFilter = profile.kind;
-                            }}><span class="nav-icon" aria-hidden="true">·</span>
+                            }}><span class="nav-icon nested-nav-icon" data-kind=${profile.kind} aria-hidden="true"></span>
                             <span class="nav-label">${profile.label}</span>
                             <span class="nav-count" aria-hidden="true">${profileNavigationCount(profile.kind)}</span>
                           </button>`)}
@@ -14938,11 +14950,11 @@ export class SmithproxyApp extends LitElement {
                         this.securityObjectFilter !== 'trust' ? html`
                         <div class="nested-subnav" role="group" aria-label="Signature categories">
                           ${securityObjectNavigation.map(security => html`<button type="button"
-                            aria-label=${security.label} title=${security.label}
+                            title=${security.label}
                             aria-current=${this.securityObjectFilter === security.kind ? 'page' : nothing}
                             @click=${() => {
                               this.selectObjectView('security', security.kind);
-                            }}><span class="nav-icon" aria-hidden="true">·</span>
+                            }}><span class="nav-icon nested-nav-icon" data-kind=${security.kind} aria-hidden="true"></span>
                             <span class="nav-label">${security.label}</span>
                             <span class="nav-count" aria-hidden="true">${signatureNavigationCount(security.kind)}</span>
                           </button>`)}

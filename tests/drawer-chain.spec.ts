@@ -1740,7 +1740,7 @@ test('counts pending object creates and deletes in their own navigation categori
   await expect(profiles.getByTitle('TLS').locator('.nav-count')).toHaveText('2');
   await expect(profiles.getByTitle('Content').locator('.nav-count')).toHaveText('1');
 
-  await categories.getByRole('button', {name: 'Signatures'}).click();
+  await categories.getByRole('button', {name: 'Signatures', exact: true}).click();
   const signatures = page.getByRole('group', {name: 'Signature categories'});
   await expect(signatures.getByTitle('All signatures').locator('.nav-count')).toHaveText('1');
   await expect(signatures.getByTitle('STARTTLS signatures').locator('.nav-count')).toHaveText('0');
@@ -5697,6 +5697,35 @@ test('opens focused profile, trust, and signature views from shallow object navi
     .toContainText('smtp/starttls');
   await expect(page.getByRole('group', {name: 'STARTTLS signatures', exact: true}))
     .not.toContainText('http/request');
+  await expectNoWcagViolations(page);
+});
+
+test('keeps nested object navigation distinguishable on a narrow viewport', async ({page}) => {
+  await page.setViewportSize({width: 390, height: 844});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  const categories = page.getByRole('group', {name: 'Object categories'});
+  await categories.getByRole('button', {name: 'Profiles and routing'}).click();
+
+  const profiles = page.getByRole('group', {name: 'Profile categories'});
+  await expect(profiles).toBeVisible();
+  await expect(profiles.getByRole('button', {name: 'TLS', exact: true}).locator('.nested-nav-icon'))
+    .toHaveAttribute('data-kind', 'tls');
+  await expect(profiles.getByRole('button', {name: 'Content', exact: true}).locator('.nested-nav-icon'))
+    .toHaveAttribute('data-kind', 'content');
+  await profiles.getByRole('button', {name: 'TLS', exact: true}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'TLS profiles'})).toBeVisible();
+
+  await categories.getByRole('button', {name: 'Signatures', exact: true}).click();
+  const signatures = page.getByRole('group', {name: 'Signature categories'});
+  await expect(signatures.getByRole('button', {name: 'STARTTLS signatures'}).locator('.nested-nav-icon'))
+    .toHaveAttribute('data-kind', 'starttls');
+  await expect(signatures.getByRole('button', {name: 'Detection signatures'}).locator('.nested-nav-icon'))
+    .toHaveAttribute('data-kind', 'detection');
+  await signatures.getByRole('button', {name: 'STARTTLS signatures'}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'STARTTLS signatures'})).toBeVisible();
   await expectNoWcagViolations(page);
 });
 
