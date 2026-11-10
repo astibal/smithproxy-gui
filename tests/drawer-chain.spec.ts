@@ -1409,6 +1409,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await editor.getByRole('button', {name: 'audit', exact: true}).click();
   const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
+  await expect(scriptEditor.getByRole('group', {name: 'Script execution'})).toBeVisible();
   await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
   await scriptEditor.getByLabel('Module path', {exact: true}).selectOption('replace');
   await scriptEditor.getByLabel('Module path replacement').fill('/opt/smithproxy/new-audit.py');
@@ -1418,6 +1419,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await editor.getByRole('button', {name: 'detect', exact: true}).click();
   const detectionEditor = page.getByRole('dialog', {name: 'Edit detect'});
+  await expect(detectionEditor.getByRole('group', {name: 'Detection pipeline'})).toBeVisible();
   await detectionEditor.getByLabel('Detection phase').selectOption('2');
   await detectionEditor.getByLabel('L7 engines').selectOption('false');
   await detectionEditor.getByLabel('Knowledge base').selectOption('true');
@@ -1426,6 +1428,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await editor.getByRole('button', {name: 'resolver', exact: true}).click();
   const dnsEditor = page.getByRole('dialog', {name: 'Edit resolver'});
+  await expect(dnsEditor.getByRole('group', {name: 'DNS transaction handling'})).toBeVisible();
   await dnsEditor.getByLabel('Match request ID').selectOption('false');
   await dnsEditor.getByLabel('Randomize upstream ID').selectOption('false');
   await dnsEditor.getByLabel('Cached responses').selectOption('true');

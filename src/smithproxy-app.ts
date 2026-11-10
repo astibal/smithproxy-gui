@@ -13000,6 +13000,10 @@ export class SmithproxyApp extends LitElement {
             </div>
           </fieldset>
         ` : detection ? html`
+          <fieldset class="editor-group">
+            <legend>Detection pipeline</legend>
+            <p>Selects when traffic classification runs and which local detection sources participate.</p>
+            <div class="form-grid">
           <label for="detection-mode-${entry.id}">Detection phase</label>
           <select id="detection-mode-${entry.id}" .value=${String(persistent('mode', detection.mode))}
             ?disabled=${fieldReadOnly('mode')}>
@@ -13017,6 +13021,8 @@ export class SmithproxyApp extends LitElement {
             ?disabled=${fieldReadOnly('kb_enabled')}>
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
+            </div>
+          </fieldset>
         ` : content ? html`
           <fieldset class="editor-group">
             <legend>Payload capture</legend>
@@ -13174,6 +13180,10 @@ export class SmithproxyApp extends LitElement {
             </div>
           </fieldset>
         ` : dns ? html`
+          <fieldset class="editor-group">
+            <legend>DNS transaction handling</legend>
+            <p>Controls request identity checks and response behavior for intercepted DNS traffic.</p>
+            <div class="form-grid">
           <label for="dns-match-${entry.id}">Match request ID</label>
           <select id="dns-match-${entry.id}" .value=${String(persistent('match_request_id', dns.matchRequestId))}
             ?disabled=${fieldReadOnly('match_request_id')}>
@@ -13189,7 +13199,13 @@ export class SmithproxyApp extends LitElement {
             ?disabled=${fieldReadOnly('cached_responses')}>
             <option value="true">Enabled</option><option value="false">Disabled</option>
           </select>
+            </div>
+          </fieldset>
         ` : script ? html`
+          <fieldset class="editor-group">
+            <legend>Script execution</legend>
+            <p>Selects the script runtime and replaces the private module path without exposing its current value.</p>
+            <div class="form-grid">
           <label for="script-runtime-${entry.id}">Runtime</label>
           <select id="script-runtime-${entry.id}" .value=${scriptRuntime} ?disabled=${fieldReadOnly('type')}>
             <option value="python">Python</option><option value="go">Go</option>
@@ -13204,7 +13220,13 @@ export class SmithproxyApp extends LitElement {
             <input id="script-write-module-${entry.id}-value" aria-label="Module path replacement"
               placeholder="New path (write-only)" autocomplete="off" .readOnly=${mappedReadOnly} />
           </div>
+            </div>
+          </fieldset>
         ` : authentication ? html`
+          <fieldset class="editor-group">
+            <legend>Legacy authentication</legend>
+            <p>Compatibility controls for obsolete identity profiles; new deployments should not depend on them.</p>
+            <div class="form-grid">
           <label>Lifecycle</label><span>Deprecated compatibility profile</span>
           <label for="auth-authenticate-${entry.id}">Authenticate</label>
           ${booleanSelect(`auth-authenticate-${entry.id}`, 'authenticate', authentication.authenticate)}
@@ -13217,6 +13239,8 @@ export class SmithproxyApp extends LitElement {
             )}>
             <span>${authentication.identityCount} redacted entries</span><span>Edit →</span>
           </button>
+            </div>
+          </fieldset>
         ` : html`<label>Value exposure</label><span>Metadata only</span>`}
       </div>
       ${prefix ? this.renderNamedRenameNotice(`${prefix}name`) : nothing}
