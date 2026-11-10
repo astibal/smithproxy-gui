@@ -14124,6 +14124,7 @@ export class SmithproxyApp extends LitElement {
       (entry.kind === 'auth-identities-create' && this.workspaceDraft?.structuralOperations.some(operation =>
         operation.op === 'create' && operation.collection === 'auth_profiles' &&
         operation.localId === entry.id && typeof operation.fields['identities'] === 'string'));
+    const editing = this.drawerEditing(entry);
     const editLabel = entry.kind === 'address-create' ? 'Create address object'
       : entry.kind === 'port-create' ? 'Create port object'
         : entry.kind === 'protocol-create' ? 'Create protocol object'
@@ -14172,7 +14173,6 @@ export class SmithproxyApp extends LitElement {
       : this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile);
     const readOnly = !draftable ||
       (entry.kind === 'captures' && this.snapshot?.captures?.editable !== true);
-    const editing = this.drawerEditing(entry);
     const protectedView = !readOnly && !editing;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
     const cliCommands = this.cliCommandsForDrawer(entry);
@@ -14204,7 +14204,8 @@ export class SmithproxyApp extends LitElement {
                       ? 'Create certificate authority' : entry.kind === 'content-rule-create'
                         ? 'Create content rule' : entry.kind === 'signature-flow-create'
                           ? 'Create signature flow step' : entry.kind === 'signature-create'
-                            ? 'Create signature' : `Edit ${entry.kind}`}</small><h2>${entry.title}</h2></div>
+                            ? 'Create signature' : `${editing ? 'Edit' : 'View'} ${entry.kind}`}</small>
+            <h2>${entry.title}</h2></div>
           ${active && this.consoleAvailable && cliCommands ? html`
             <button class="secondary" type="button" aria-label="Open in CLI"
               title=${cliBlocker ?? 'Open the console at this configuration object'}

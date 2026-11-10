@@ -1200,6 +1200,7 @@ test('requires an explicit edit decision before live configuration fields can ch
   const name = editor.getByLabel('Name');
   const action = editor.getByLabel('Action', {exact: true});
   const edit = editor.getByRole('button', {name: 'Edit', exact: true});
+  await expect(editor.getByText('View policy', {exact: true})).toBeVisible();
   await expect(editor.getByText('Protected configuration view')).toBeVisible();
   await expect(editor.getByText(/Select Edit before changing this configuration/u)).toBeVisible();
   await expect(name).toHaveAttribute('readonly', '');
@@ -1209,6 +1210,7 @@ test('requires an explicit edit decision before live configuration fields can ch
   await expect(editor.getByRole('button', {name: 'office', exact: true})).toBeEnabled();
 
   await edit.click();
+  await expect(editor.getByText('Edit policy', {exact: true})).toBeVisible();
   await expect(name).toBeEditable();
   await expect(action).toBeEnabled();
   await expect(name).not.toBeFocused();
