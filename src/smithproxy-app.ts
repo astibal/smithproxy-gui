@@ -4636,6 +4636,8 @@ export class SmithproxyApp extends LitElement {
     const finish = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      window.removeEventListener('blur', finish);
       try {
         window.localStorage.setItem('smithproxy.policy-columns', JSON.stringify(this.policyColumnWidths));
       } catch {
@@ -4644,6 +4646,10 @@ export class SmithproxyApp extends LitElement {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', finish, {once: true});
+    // A cancelled pointer sequence or a window switch must publish the width
+    // reached so far and, more importantly, release the global move handler.
+    window.addEventListener('pointercancel', finish, {once: true});
+    window.addEventListener('blur', finish, {once: true});
   }
 
   /**
@@ -8276,7 +8282,7 @@ export class SmithproxyApp extends LitElement {
           <div class="policy-table-row heading">
             <span></span><div class="policy-row-main heading" style=${this.policyColumnStyle()}>
               ${['Name', 'Source', 'Destination', 'Action', 'Status', 'Transport'].map((label, index) => html`
-                <span class="policy-column-heading">${label}${index < 5 ? html`
+                <span class="policy-column-heading">${label}${html`
                   <span class="policy-column-resizer" role="separator" tabindex="0"
                     aria-label=${`Resize ${label} column`} aria-orientation="vertical"
                     aria-valuemin="70" aria-valuemax="480"
@@ -8293,7 +8299,7 @@ export class SmithproxyApp extends LitElement {
                         window.localStorage.setItem('smithproxy.policy-columns', JSON.stringify(widths));
                       } catch { /* The in-memory width remains active. */ }
                     }}></span>
-                ` : nothing}</span>
+                `}</span>
               `)}
             </div>
           </div>

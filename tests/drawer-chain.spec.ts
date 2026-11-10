@@ -4851,6 +4851,28 @@ test('rejects tampering with augment-owned persistent values', async ({page}) =>
   expect(state.draftMutationVersions).toEqual([]);
 });
 
+test('persists policy table density and every resizable column', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+
+  const density = page.getByLabel('Policy row density');
+  await density.selectOption('dense');
+  await expect(page.getByRole('group', {name: 'Policies'})).toHaveClass(/policy-density-dense/);
+
+  const transportResize = page.getByRole('separator', {name: 'Resize Transport column'});
+  await expect(transportResize).toHaveAttribute('aria-valuenow', '210');
+  await transportResize.press('ArrowRight');
+  await expect(transportResize).toHaveAttribute('aria-valuenow', '220');
+
+  await page.reload();
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await expect(page.getByLabel('Policy row density')).toHaveValue('dense');
+  await expect(page.getByRole('group', {name: 'Policies'})).toHaveClass(/policy-density-dense/);
+  await expect(page.getByRole('separator', {name: 'Resize Transport column'}))
+    .toHaveAttribute('aria-valuenow', '220');
+});
+
 test('renders and protects augment-owned list overlay chains', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
