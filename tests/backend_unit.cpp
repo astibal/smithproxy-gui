@@ -2027,14 +2027,16 @@ int main() {
     alert_status.config_snapshot.last_success_at = now;
     assert(derive_operational_alerts(alert_status, true, true, now).empty());
 
+    // Reaching capacity is the cache's normal steady state: old certificates rotate out.
     alert_status.tls_cache_metrics.size = 90U;
     auto active_alerts = derive_operational_alerts(alert_status, true, true, now);
-    assert(active_alerts.size() == 1U);
-    assert(active_alerts.front().id == "tls-cache-capacity");
-    assert(active_alerts.front().severity == "warning");
+    assert(active_alerts.empty());
     alert_status.tls_cache_metrics.size = 100U;
     active_alerts = derive_operational_alerts(alert_status, true, true, now);
-    assert(active_alerts.front().severity == "critical");
+    assert(active_alerts.empty());
+    alert_status.tls_cache_metrics.size = 101U;
+    active_alerts = derive_operational_alerts(alert_status, true, true, now);
+    assert(active_alerts.empty());
 
     alert_status.tls_cache_metrics.size = 42U;
     alert_status.live_sessions.last_success_at = now - std::chrono::seconds{61};

@@ -80,15 +80,6 @@ std::vector<OperationalAlert> derive_operational_alerts(
                                std::chrono::seconds{180}, now);
     }
 
-    const auto capacity = status.tls_cache_metrics.capacity;
-    if (status.tls_cache_metrics.state == "ready" && capacity != 0U &&
-        status.tls_cache_metrics.size >= capacity - capacity / 10U) {
-        const auto full = status.tls_cache_metrics.size >= capacity;
-        alerts.push_back({"tls-cache-capacity", full ? "critical" : "warning",
-                          full ? "TLS cache capacity is exhausted" : "TLS cache capacity is high",
-                          full ? "The reported cache size has reached its configured capacity."
-                               : "The reported cache size is at least 90% of its configured capacity."});
-    }
     return alerts;
 }
 
