@@ -6461,6 +6461,7 @@ test('keeps an unsaved running configuration visible on mobile', async ({page}) 
 
   const unsaved = page.getByRole('button', {name: '● Running config: Unsaved'});
   await expect(unsaved).toBeVisible();
+  await expect(page.locator('.statusbar')).not.toContainText('Running config: unsaved');
   await expect(page.getByRole('region', {name: 'Configuration workspace'}))
     .toContainText('Running config unsaved');
   await unsaved.click();

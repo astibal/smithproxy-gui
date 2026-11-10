@@ -14910,12 +14910,6 @@ export class SmithproxyApp extends LitElement {
           </span>
           <span class="status-secondary system-state ${this.gatewayStatus().tone}"
             title=${this.gatewayStatus().detail}>● Gateway: ${this.gatewayStatus().label}</span>
-          <span class="status-secondary"
-            title=${this.snapshot?.savedRevision
-              ? `Saved revision ${this.snapshot.savedRevision}`
-              : 'Saved revision is unavailable'}>
-            Running config: ${this.snapshot ? this.snapshot.unsaved ? 'unsaved' : 'saved' : 'unknown'}
-          </span>
           <span class="spacer"></span>
         </footer>
       </div>
