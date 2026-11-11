@@ -1753,7 +1753,9 @@ private:
                         ",\"content_profile\":" + json_string(policy.content_profile) +
                         ",\"auth_profile\":" + json_string(policy.auth_profile) +
                         ",\"dns_profile\":" + json_string(policy.dns_profile) +
-                        ",\"script_profile\":" + json_string(policy.script_profile) + "}";
+                        ",\"script_profile\":" + json_string(policy.script_profile) +
+                        ",\"ingress_role\":" + json_string(policy.ingress_role) +
+                        ",\"egress_role\":" + json_string(policy.egress_role) + "}";
         }
         policies += ']';
 
@@ -1953,7 +1955,18 @@ private:
         std::string settings{"null"};
         if (snapshot.settings) {
             const auto& value = *snapshot.settings;
+            std::string interface_roles{"["};
+            for (std::size_t index = 0; index < value.interface_roles.size(); ++index) {
+                if (index != 0U) interface_roles += ',';
+                const auto& rule = value.interface_roles[index];
+                interface_roles += "{\"id\":" + json_string(rule.id) +
+                    ",\"if_name\":" + json_string(rule.if_name) +
+                    ",\"if_address\":" + json_string(rule.if_address) +
+                    ",\"role\":" + json_string(rule.role) + "}";
+            }
+            interface_roles += ']';
             settings = "{\"present_groups\":" + string_array_json(value.present_groups) +
+                       ",\"interface_roles\":" + interface_roles +
                        ",\"accept_tproxy\":" + std::string(value.accept_tproxy ? "true" : "false") +
                        ",\"accept_redirect\":" + (value.accept_redirect ? "true" : "false") +
                        ",\"accept_socks\":" + (value.accept_socks ? "true" : "false") +

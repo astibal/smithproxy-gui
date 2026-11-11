@@ -300,6 +300,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       authProfile: optionalString(item.auth_profile, 'policy authentication profile'),
       dnsProfile: optionalString(item.dns_profile, 'policy DNS profile'),
       scriptProfile: optionalString(item.script_profile, 'policy script profile'),
+      ingressRole: optionalString(item.ingress_role ?? '', 'policy ingress interface role'),
+      egressRole: optionalString(item.egress_role ?? '', 'policy egress interface role'),
       enabled: safeBoolean(item.enabled, 'policy enabled state'),
     };
   });
@@ -639,6 +641,21 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     const presentGroups = boundedArray(
       value.settings.present_groups, 'present settings groups', settingsGroups.size,
     ).map(group => safeString(group, 'settings group', 32));
+    const interfaceRoleIds = new Set<string>();
+    const interfaceRoles = boundedArray(
+      value.settings.interface_roles ?? [], 'interface role rules', MAX_REFERENCES,
+    ).map(item => {
+      if (!isObject(item)) throw new Error('Invalid interface role rule.');
+      const id = safeString(item.id, 'interface role ID', 128);
+      const interfaceName = optionalString(item.if_name, 'interface role name selector');
+      const interfaceAddress = optionalString(item.if_address, 'interface role address selector');
+      const role = safeString(item.role, 'interface role', 128);
+      if (interfaceRoleIds.has(id) || (!interfaceName && !interfaceAddress)) {
+        throw new Error('Invalid interface role rule.');
+      }
+      interfaceRoleIds.add(id);
+      return {id, interfaceName, interfaceAddress, role};
+    });
     if (udpQuickPorts.some(port => !/^\d{1,5}$/u.test(port) || Number(port) > 65535) ||
         value.settings.nameserver_count !== nameservers.length ||
         value.settings.auxiliary.udp_quick_port_count !== udpQuickPorts.length ||
@@ -649,6 +666,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     }
     settings = {
       presentGroups: presentGroups as SystemSettings['presentGroups'],
+      interfaceRoles,
       acceptTproxy: safeBoolean(value.settings.accept_tproxy, 'TPROXY listener state'),
       acceptRedirect: safeBoolean(value.settings.accept_redirect, 'REDIRECT listener state'),
       acceptSocks: safeBoolean(value.settings.accept_socks, 'SOCKS listener state'),

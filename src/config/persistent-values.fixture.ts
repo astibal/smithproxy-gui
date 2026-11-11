@@ -28,6 +28,7 @@ const snapshot: ConfigSnapshot = {
       action: 'accept',
       nat: 'auto', routing: '', tlsProfile: 'inspect', sshProfile: 'default-ssh', detectionProfile: 'default',
       contentProfile: 'capture', authProfile: 'legacy-auth', dnsProfile: 'safe-dns', scriptProfile: 'audit',
+      ingressRole: 'Office', egressRole: 'Outside',
       enabled: true,
     },
     {
@@ -41,7 +42,7 @@ const snapshot: ConfigSnapshot = {
       features: [],
       action: 'deny',
       nat: 'none', routing: '', tlsProfile: '', sshProfile: '', detectionProfile: '',
-      contentProfile: '', authProfile: '', dnsProfile: '', scriptProfile: '',
+      contentProfile: '', authProfile: '', dnsProfile: '', scriptProfile: '', ingressRole: '', egressRole: '',
       enabled: true,
     },
     {
@@ -55,7 +56,7 @@ const snapshot: ConfigSnapshot = {
       features: [],
       action: 'reject',
       nat: 'auto', routing: '', tlsProfile: '', sshProfile: '', detectionProfile: '',
-      contentProfile: '', authProfile: '', dnsProfile: '', scriptProfile: '',
+      contentProfile: '', authProfile: '', dnsProfile: '', scriptProfile: '', ingressRole: '', egressRole: '',
       enabled: false,
     },
   ],
@@ -216,6 +217,7 @@ const snapshot: ConfigSnapshot = {
     },
   ],
   settings: {
+    interfaceRoles: [],
     presentGroups: [
       'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
     ],

@@ -24,7 +24,15 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     set(`${base}.auth_profile`, policy.authProfile);
     set(`${base}.alg_dns_profile`, policy.dnsProfile);
     set(`${base}.script_profile`, policy.scriptProfile);
+    set(`${base}.ingress_role`, policy.ingressRole);
+    set(`${base}.egress_role`, policy.egressRole);
   }
+  snapshot.settings?.interfaceRoles.forEach((rule, index) => {
+    const base = `settings.interfaces.[${index}]`;
+    set(`${base}.match.if_name`, rule.interfaceName);
+    set(`${base}.match.if_address`, rule.interfaceAddress);
+    set(`${base}.role`, rule.role);
+  });
   snapshot.addresses.forEach((item, index) => {
     const base = `address_objects.[${index}]`;
     set(`${base}.name`, item.name);

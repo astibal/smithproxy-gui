@@ -163,6 +163,9 @@ Result validate_policy(const std::string_view field, const DraftScalar& value) {
     }
     if (field == "action") return valid(enumerated(value, {"accept", "deny", "reject"}));
     if (field == "nat") return valid(enumerated(value, {"auto", "none"}));
+    if (field == "ingress_role" || field == "egress_role") {
+        return valid(bounded_text(value, 128U, true));
+    }
     constexpr std::array references{
         std::string_view{"routing"}, std::string_view{"tls_profile"},
         std::string_view{"ssh_profile"}, std::string_view{"detection_profile"},
@@ -326,6 +329,12 @@ Result validate_indexed(const std::string_view path, const DraftScalar& value) {
 }
 
 Result validate_settings(const std::string_view field, const DraftScalar& value) {
+    if (const auto nested = indexed_suffix(field, "interfaces")) {
+        if (*nested == "role" || *nested == "match.if_name" || *nested == "match.if_address") {
+            return valid(bounded_text(value, 128U, *nested != "role"));
+        }
+        return Result::UnknownPath;
+    }
     constexpr std::array booleans{
         std::string_view{"accept_tproxy"}, std::string_view{"accept_redirect"},
         std::string_view{"accept_socks"}, std::string_view{"accept_http_connect"},

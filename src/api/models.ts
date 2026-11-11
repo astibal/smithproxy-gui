@@ -17,7 +17,16 @@ export interface PolicySummary {
   authProfile: string;
   dnsProfile: string;
   scriptProfile: string;
+  ingressRole: string;
+  egressRole: string;
   enabled: boolean;
+}
+
+export interface InterfaceRoleRule {
+  id: string;
+  interfaceName: string;
+  interfaceAddress: string;
+  role: string;
 }
 
 export interface ConfigReference {
@@ -178,6 +187,7 @@ export interface ProfileObject {
 export interface SystemSettings {
   presentGroups: ReadonlyArray<'cli' | 'web_rating' | 'admin' | 'tuning' | 'socks' |
     'http_connect' | 'http_api' | 'webhook'>;
+  interfaceRoles: ReadonlyArray<InterfaceRoleRule>;
   acceptTproxy: boolean;
   acceptRedirect: boolean;
   acceptSocks: boolean;

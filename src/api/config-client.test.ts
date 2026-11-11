@@ -21,7 +21,7 @@ const liveSnapshot = {
     features: ['sinkhole'],
     action: 'accept', nat: '', routing: 'main', tls_profile: 'inspect',
     ssh_profile: '', detection_profile: 'default', content_profile: 'capture', auth_profile: '',
-    dns_profile: '', script_profile: '',
+    dns_profile: '', script_profile: '', ingress_role: 'Office', egress_role: 'Outside',
   }],
   addresses: [
     {id: 'address-0', name: 'office', type: 'cidr', type_editable: true, value: '10.0.0.0/24'},
@@ -96,6 +96,10 @@ const liveSnapshot = {
     },
   ],
   settings: {
+    interface_roles: [
+      {id: 'interface-role-0', if_name: 'lan0', if_address: '10.0.0.1/24', role: 'Office'},
+      {id: 'interface-role-1', if_name: 'wan0', if_address: '', role: 'Outside'},
+    ],
     present_groups: [
       'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
     ],
@@ -221,9 +225,13 @@ describe('ApiConfigClient', () => {
       },
     }).captures?.remote.greFormat).toBe('spq1');
     expect(snapshot.policies[0]).toMatchObject({
-      protocol: 'tcp', action: 'accept',
+      protocol: 'tcp', action: 'accept', ingressRole: 'Office', egressRole: 'Outside',
       sources: [{id: 'address-0', name: 'office'}],
     });
+    expect(snapshot.settings?.interfaceRoles).toEqual([
+      {id: 'interface-role-0', interfaceName: 'lan0', interfaceAddress: '10.0.0.1/24', role: 'Office'},
+      {id: 'interface-role-1', interfaceName: 'wan0', interfaceAddress: '', role: 'Outside'},
+    ]);
     expect(snapshot.addresses[0]?.usedBy).toEqual([
       {id: 'policy-0', kind: 'policy', name: 'Policy 1'},
     ]);

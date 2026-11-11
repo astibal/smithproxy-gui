@@ -4251,6 +4251,8 @@ export class SmithproxyApp extends LitElement {
       content_profile: this.persistentValue(`${base}.content_profile`, policy.contentProfile),
       alg_dns_profile: this.persistentValue(`${base}.alg_dns_profile`, policy.dnsProfile),
       script_profile: this.persistentValue(`${base}.script_profile`, policy.scriptProfile),
+      ingress_role: this.persistentValue(`${base}.ingress_role`, policy.ingressRole),
+      egress_role: this.persistentValue(`${base}.egress_role`, policy.egressRole),
     };
     const localId = `create-policy-${crypto.randomUUID()}`;
     this.policyCreatePrefills.set(localId, {fields, position, sourceName});
@@ -5080,13 +5082,17 @@ export class SmithproxyApp extends LitElement {
       (empty || values.length > 0) && values.length <= 256 &&
       values.every(value => printable(value, 128)) && new Set(values).size === values.length;
     const referenceValues = new Map([...references].map(([field, value]) => [field, value!.value.trim()]));
+    const ingressRole = input('ingress-role');
+    const egressRole = input('egress-role');
+    if (!ingressRole || !egressRole) return;
     if (!printable(normalizedName, 128) || !policyActions.some(value => value === normalizedAction) ||
         !printable(normalizedProtocol, 128) || !validList(sourceValues) ||
         !validList(destinationValues) ||
         ![sourcePortValues, destinationPortValues].every(values => validList(values)) ||
         !featureValues.every(value => policyFeatures.some(feature => feature === value)) ||
         !policyNatModes.some(value => value === nat.value) ||
-        [...referenceValues.values()].some(value => !printable(value, 128, true))) {
+        [...referenceValues.values(), ingressRole.value.trim(), egressRole.value.trim()]
+          .some(value => !printable(value, 128, true))) {
       this.drawerError = 'Policy fields and unique bounded references are required.';
       return;
     }
@@ -5134,6 +5140,8 @@ export class SmithproxyApp extends LitElement {
       content_profile: referenceValues.get('content')!,
       alg_dns_profile: referenceValues.get('dns')!,
       script_profile: referenceValues.get('script')!,
+      ingress_role: ingressRole.value.trim(),
+      egress_role: egressRole.value.trim(),
     };
     const existing = this.pendingPolicyCreate(entry);
     const sameFields = existing !== undefined && Object.keys(existing.fields).length === Object.keys(fields).length &&
@@ -6598,12 +6606,14 @@ export class SmithproxyApp extends LitElement {
       const sources = field('sources');
       const sourcePorts = field('source-ports');
       const destinationPorts = field('destination-ports');
+      const ingressRole = field('ingress-role');
+      const egressRole = field('egress-role');
       const features = this.renderRoot.querySelector<HTMLElement>(`#policy-features-${entry.id}`);
       const nat = this.renderRoot.querySelector<HTMLSelectElement>(`#policy-nat-${entry.id}`);
       const referenceIds = ['routing', 'tls', 'ssh', 'detection', 'content', 'dns', 'script'] as const;
       const references = new Map(referenceIds.map(id => [id, field(id)]));
       if (index < 0 || !name || !enabled || !destination || !action || !protocol || !sources ||
-          !sourcePorts || !destinationPorts || !features || !nat ||
+          !sourcePorts || !destinationPorts || !ingressRole || !egressRole || !features || !nat ||
           [...references.values()].some(value => !value)) return undefined;
       // Reference-list editors keep their pending selection in component state.
       // Read that state directly instead of depending on a hidden input having
@@ -6650,7 +6660,8 @@ export class SmithproxyApp extends LitElement {
           protocol.value.trim().length === 0 || protocol.value.trim().length > 128 ||
           ![sourceValues, sourcePortValues, destinations, destinationPortValues].every(validList) ||
           !validFeatures ||
-          [...references.values()].some(value => value!.value.trim().length > 128)) {
+          [...references.values()].some(value => value!.value.trim().length > 128) ||
+          ingressRole.value.trim().length > 128 || egressRole.value.trim().length > 128) {
         this.draftError = 'Policy fields and unique bounded references are required.';
         return undefined;
       }
@@ -6676,6 +6687,8 @@ export class SmithproxyApp extends LitElement {
         {path: `policy.[${index}].content_profile`, value: references.get('content')!.value.trim()},
         {path: `policy.[${index}].alg_dns_profile`, value: references.get('dns')!.value.trim()},
         {path: `policy.[${index}].script_profile`, value: references.get('script')!.value.trim()},
+        {path: `policy.[${index}].ingress_role`, value: ingressRole.value.trim()},
+        {path: `policy.[${index}].egress_role`, value: egressRole.value.trim()},
       ];
     }
     if (entry.kind === 'address') {
@@ -7124,6 +7137,25 @@ export class SmithproxyApp extends LitElement {
     const changes: DraftChange[] = [];
     const settings = this.snapshot?.settings;
     if (!settings) return undefined;
+    for (const [index] of settings.interfaceRoles.entries()) {
+      const value = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
+        `#settings-interface-role-${index}-${field}`,
+      )?.value.trim();
+      const ifName = value('name');
+      const ifAddress = value('address');
+      const role = value('role');
+      const current = settings.interfaceRoles[index]!;
+      if (ifName === undefined || ifAddress === undefined || role === undefined ||
+          (current.interfaceName && !ifName) || (current.interfaceAddress && !ifAddress) || !role ||
+          [ifName, ifAddress, role].some(item => item.length > 128 || /[\u0000-\u001f\u007f]/u.test(item))) {
+        this.draftError = 'Configured interface selectors and their role must remain non-empty bounded values.';
+        return undefined;
+      }
+      const base = `settings.interfaces.[${index}]`;
+      if (current.interfaceName) changes.push({path: `${base}.match.if_name`, value: ifName});
+      if (current.interfaceAddress) changes.push({path: `${base}.match.if_address`, value: ifAddress});
+      changes.push({path: `${base}.role`, value: role});
+    }
     for (const [path, id] of systemBooleanFields) {
       const select = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-${id}`);
       if (!select || (select.value !== 'true' && select.value !== 'false')) return undefined;
@@ -9780,6 +9812,27 @@ export class SmithproxyApp extends LitElement {
             synchronization error${interfaces.synchronizationErrors === 1 ? '' : 's'}.
           </div>` : nothing}
         ${this.renderCollectorNotice(presentation, interfaces.lastSuccessAtUnixMs)}
+        <div class="runtime-heading">
+          <div><h3>Interface roles</h3><p>Ordered name and address selectors used by policy matching</p></div>
+          <button class="secondary" type="button"
+            ?disabled=${!this.snapshot?.settings}
+            @click=${(event: MouseEvent) => this.openSystemDrawer('settings', event.currentTarget as HTMLElement)}>
+            Edit role rules
+          </button>
+        </div>
+        <div class="table network-config-table" tabindex="0">
+          <table class="listener-table" aria-label="Configured interface roles">
+            <thead><tr><th>Priority</th><th>Interface name</th><th>Address</th><th>Role</th></tr></thead>
+            <tbody>
+              ${(this.snapshot?.settings?.interfaceRoles ?? []).map((rule, index) => html`<tr>
+                <td>${index + 1}</td><td><code>${rule.interfaceName || 'Any'}</code></td>
+                <td><code>${rule.interfaceAddress || 'Any'}</code></td><td><strong>${rule.role}</strong></td>
+              </tr>`)}
+              ${(this.snapshot?.settings?.interfaceRoles.length ?? 0) === 0 ? html`
+                <tr><td colspan="4">No interface role rules are configured.</td></tr>` : nothing}
+            </tbody>
+          </table>
+        </div>
         <details class="diagnostic-section">
           <summary>
             <div><h4>Synchronization diagnostics</h4><p>Internal collection state for troubleshooting</p></div>
@@ -11519,6 +11572,8 @@ export class SmithproxyApp extends LitElement {
     const legacyFeatures = featureValues.filter(
       feature => !policyFeatures.some(canonical => canonical === feature),
     );
+    const interfaceRoles = [...new Set(this.snapshot?.settings?.interfaceRoles.map(rule => rule.role) ?? [])]
+      .sort((left, right) => left.localeCompare(right));
     return html`
       <div class="form-grid wide-form-grid">
         <label for="policy-create-name-${entry.id}">Name</label>
@@ -11555,6 +11610,15 @@ export class SmithproxyApp extends LitElement {
         ${this.renderReferenceListEditor(
           entry, `policy-create-destinations-${entry.id}`, 'Destinations', 'address', destinations, readOnly,
         )}
+        <label for="policy-create-ingress-role-${entry.id}">Ingress interface role</label>
+        <input id="policy-create-ingress-role-${entry.id}" list="policy-interface-roles-${entry.id}"
+          .value=${text('ingress_role')} maxlength="128" placeholder="Any role" .readOnly=${readOnly} />
+        <label for="policy-create-egress-role-${entry.id}">Egress interface role</label>
+        <input id="policy-create-egress-role-${entry.id}" list="policy-interface-roles-${entry.id}"
+          .value=${text('egress_role')} maxlength="128" placeholder="Any role" .readOnly=${readOnly} />
+        <datalist id="policy-interface-roles-${entry.id}">
+          ${interfaceRoles.map(role => html`<option value=${role}></option>`)}
+        </datalist>
         <label for="policy-create-action-${entry.id}">Action</label>
         <select id="policy-create-action-${entry.id}" .value=${actionValue} ?disabled=${readOnly}>
           ${legacyAction ? html`
@@ -11640,6 +11704,8 @@ export class SmithproxyApp extends LitElement {
     const policyEnabled = !this.persistentValue(`${policyBase}.disabled`, !policy.enabled);
     const legacyAction = !policyActions.some(value => value === actionValue);
     const legacyNat = !policyNatModes.some(value => value === natValue);
+    const interfaceRoles = [...new Set(this.snapshot?.settings?.interfaceRoles.map(rule => rule.role) ?? [])]
+      .sort((left, right) => left.localeCompare(right));
     const protocol = this.snapshot?.protocols.find(item => item.name === protocolValue);
     const pendingMove = this.pendingPolicyMove(policy.id);
     const precedingPolicies = this.precedingDraftCreates(pendingMove?.localId ?? '', 'policy', null);
@@ -11740,6 +11806,17 @@ export class SmithproxyApp extends LitElement {
             entry, `destination-${entry.id}`, 'Destinations', 'address', destinationValues,
             this.originReadOnly(`${policyBase}.dst`, liveReadOnly),
           )}
+          <label for="policy-ingress-role-${entry.id}">Ingress interface role</label>
+          <input id="policy-ingress-role-${entry.id}" list="policy-interface-roles-${entry.id}"
+            .value=${this.persistentValue(`${policyBase}.ingress_role`, policy.ingressRole)} maxlength="128"
+            placeholder="Any role" .readOnly=${this.originReadOnly(`${policyBase}.ingress_role`, liveReadOnly)} />
+          <label for="policy-egress-role-${entry.id}">Egress interface role</label>
+          <input id="policy-egress-role-${entry.id}" list="policy-interface-roles-${entry.id}"
+            .value=${this.persistentValue(`${policyBase}.egress_role`, policy.egressRole)} maxlength="128"
+            placeholder="Any role" .readOnly=${this.originReadOnly(`${policyBase}.egress_role`, liveReadOnly)} />
+          <datalist id="policy-interface-roles-${entry.id}">
+            ${interfaceRoles.map(role => html`<option value=${role}></option>`)}
+          </datalist>
           <label for="policy-protocol-${entry.id}">Protocol</label>
           ${this.renderSingleReferenceEditor(
             entry, `policy-protocol-${entry.id}`, 'Protocol', 'protocol', protocol?.name ?? protocolValue,
@@ -13382,6 +13459,31 @@ export class SmithproxyApp extends LitElement {
         configuration contains: ${missingGroups.join(', ')}.
       </div>` : nothing}
       <div class="form-grid wide-form-grid">
+        <fieldset class="editor-group" data-settings-group="interfaces">
+          <legend>Interface roles</legend>
+          <p>Ordered selectors assign semantic roles used by policy ingress and egress matching.</p>
+          ${settings.interfaceRoles.length > 0 ? settings.interfaceRoles.map((rule, index) => {
+            const base = `settings.interfaces.[${index}]`;
+            return html`<div class="form-grid">
+              <label for="settings-interface-role-${index}-name">Interface name</label>
+              <input id="settings-interface-role-${index}-name" maxlength="128"
+                .value=${scalar(`${base}.match.if_name`, rule.interfaceName)}
+                .readOnly=${!rule.interfaceName || locked(`${base}.match.if_name`)}
+                placeholder=${rule.interfaceName ? 'Exact interface name' : 'Not configured'} />
+              <label for="settings-interface-role-${index}-address">Interface address</label>
+              <input id="settings-interface-role-${index}-address" maxlength="128"
+                .value=${scalar(`${base}.match.if_address`, rule.interfaceAddress)}
+                .readOnly=${!rule.interfaceAddress || locked(`${base}.match.if_address`)}
+                placeholder=${rule.interfaceAddress ? 'Address or CIDR' : 'Not configured'} />
+              <label for="settings-interface-role-${index}-role">Assigned role</label>
+              <input id="settings-interface-role-${index}-role" maxlength="128" required
+                .value=${scalar(`${base}.role`, rule.role)} .readOnly=${locked(`${base}.role`)} />
+            </div>`;
+          }) : html`<div class="metrics-message">
+            No interface role rules are configured. This Smithproxy transaction contract can edit existing
+            rules, but does not yet advertise structural creation or deletion for this ordered list.
+          </div>`}
+        </fieldset>
         <fieldset class="editor-group" data-settings-group="traffic">
           <legend>Traffic admission</legend>
           <p>Enables accepted proxy entry points and defines fail-closed behavior.</p>

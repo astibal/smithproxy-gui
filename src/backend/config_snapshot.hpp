@@ -177,6 +177,15 @@ struct ConfigPolicy {
     std::string auth_profile;
     std::string dns_profile;
     std::string script_profile;
+    std::string ingress_role;
+    std::string egress_role;
+};
+
+struct ConfigInterfaceRole {
+    std::string id;
+    std::string if_name;
+    std::string if_address;
+    std::string role;
 };
 
 struct ConfigSystemSettings {
@@ -276,6 +285,7 @@ struct ConfigSystemSettings {
     std::uint64_t webhook_neighbor_tag_refresh_age{};
     bool webhook_task_debug{};
     bool webhook_task_debug_dump{};
+    std::vector<ConfigInterfaceRole> interface_roles;
     // Optional libconfig groups which are present in the running tree. Values
     // from absent groups are defaults for display and cannot be updated with Set.
     std::vector<std::string> present_groups;

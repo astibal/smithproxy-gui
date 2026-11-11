@@ -291,9 +291,12 @@ bool parse_policies(const Json& section, ConfigSnapshot& snapshot, std::string& 
         const auto auth_profile = bounded_string(value, "auth_profile", maximum_name_length, true);
         const auto dns_profile = bounded_string(value, "alg_dns_profile", maximum_name_length, true);
         const auto script_profile = bounded_string(value, "script_profile", maximum_name_length, true);
+        const auto ingress_role = bounded_string(value, "ingress_role", maximum_name_length, true);
+        const auto egress_role = bounded_string(value, "egress_role", maximum_name_length, true);
         if (!configured_name || !disabled || !protocol || protocol->empty() || !sources || !source_ports || !destinations ||
             !destination_ports || !features || !action || action->empty() || !nat || !routing || !tls_profile ||
-            !ssh_profile || !detection_profile || !content_profile || !auth_profile || !dns_profile || !script_profile) {
+            !ssh_profile || !detection_profile || !content_profile || !auth_profile || !dns_profile || !script_profile ||
+            !ingress_role || !egress_role) {
             error = "Smithproxy policy fields are invalid";
             return false;
         }
@@ -304,6 +307,7 @@ bool parse_policies(const Json& section, ConfigSnapshot& snapshot, std::string& 
             *sources, *source_ports, *destinations, *destination_ports,
             *features, *action, *nat, *routing, *tls_profile, *ssh_profile,
             *detection_profile, *content_profile, *auth_profile, *dns_profile, *script_profile,
+            *ingress_role, *egress_role,
         });
     }
     return true;
@@ -742,6 +746,26 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         *value, "extended_local_destination_protection", true);
     const auto policy_fail_open = boolean_scalar(*value, "policy_fail_open", false);
     const auto access_fail_open = boolean_scalar(*value, "policy_access_request_fail_open", false);
+    std::vector<ConfigInterfaceRole> interface_roles;
+    if (const auto rules = value->find("interfaces"); rules != value->end()) {
+        if (!rules->is_array() || rules->size() > maximum_references) {
+            return {std::nullopt, "Smithproxy returned invalid interface role rules"};
+        }
+        interface_roles.reserve(rules->size());
+        for (std::size_t index = 0; index < rules->size(); ++index) {
+            const auto& rule = (*rules)[index];
+            if (!rule.is_object() || !rule.contains("match") || !rule["match"].is_object()) {
+                return {std::nullopt, "Smithproxy returned invalid interface role rule"};
+            }
+            const auto role = bounded_string(rule, "role", maximum_name_length);
+            const auto if_name = bounded_string(rule["match"], "if_name", maximum_name_length, true);
+            const auto if_address = bounded_string(rule["match"], "if_address", maximum_name_length, true);
+            if (!role || !if_name || !if_address || (if_name->empty() && if_address->empty())) {
+                return {std::nullopt, "Smithproxy returned invalid interface role selector"};
+            }
+            interface_roles.push_back({stable_id("interface-role", index), *if_name, *if_address, *role});
+        }
+    }
     const auto plaintext_workers = optional_signed_decimal(*value, "plaintext_workers", 0, -1, 4096);
     const auto tls_workers = optional_signed_decimal(*value, "ssl_workers", 0, -1, 4096);
     const auto udp_workers = optional_signed_decimal(*value, "udp_workers", 0, -1, 4096);
@@ -977,7 +1001,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *webhook_sift_payload_limit, !webhook_host_id->empty(),
                 !webhook_bind_interface->empty(), *webhook_api_override, *webhook_ping_interval,
                 *webhook_neighbor_update_interval, *webhook_neighbor_tag_refresh_age,
-                *webhook_task_debug, *webhook_task_debug_dump,
+                *webhook_task_debug, *webhook_task_debug_dump, std::move(interface_roles),
                 std::move(present_groups),
             }, {}};
 }
