@@ -9,7 +9,9 @@ type ConsoleState = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
 @customElement('smithproxy-console')
 export class SmithproxyConsole extends LitElement {
   @property({type: Boolean}) expanded = false;
+  @property({type: Boolean, reflect: true}) contextual = false;
   @property({attribute: 'base-path'}) basePath = '/';
+  @property({attribute: false}) commands: ReadonlyArray<string> = [];
   @state() private connectionState: ConsoleState = 'idle';
   @state() private connectionDetail = 'Open the console to connect to Smithproxy CLI.';
   @query('.terminal-host') private terminalHost?: HTMLElement;
@@ -20,6 +22,7 @@ export class SmithproxyConsole extends LitElement {
   private resizeObserver: ResizeObserver | undefined;
   private terminalLoading: Promise<void> | undefined;
   private pendingInput: string | undefined;
+  private loadedCommandPath = '';
 
   /**
    * Open the shared console and navigate through trusted CLI commands supplied
@@ -44,6 +47,10 @@ export class SmithproxyConsole extends LitElement {
       box-shadow: 0 -10px 30px #0000; color: var(--app-text, #e8eff1);
       transition: height 160ms ease, box-shadow 160ms ease; }
     :host([expanded]) { height: min(46dvh, 430px); box-shadow: 0 -12px 32px #0009; }
+    :host([contextual]) { position: relative; z-index: auto; inset: auto; display: block;
+      height: min(38dvh, 340px); border-bottom: 1px solid var(--app-border, #2c4855);
+      box-shadow: inset 0 -10px 24px #0005; transition: none; }
+    :host([contextual]) .console { grid-template-rows: 31px minmax(0, 1fr); }
     .console { display: grid; grid-template-rows: 31px minmax(0, 1fr); height: 100%; overflow: hidden; }
     header { display: flex; min-width: 0; gap: 8px; align-items: center; padding: 0 10px;
       background: var(--app-raised, #173440); }
@@ -67,14 +74,26 @@ export class SmithproxyConsole extends LitElement {
   `];
 
   protected updated(changes: Map<PropertyKey, unknown>): void {
-    if (!changes.has('expanded')) return;
-    this.toggleAttribute('expanded', this.expanded);
-    if (this.expanded) void this.openConsole();
+    if (changes.has('contextual')) {
+      if (this.contextual) window.removeEventListener('keydown', this.handleShortcut, true);
+      else window.addEventListener('keydown', this.handleShortcut, true);
+    }
+    if (changes.has('expanded')) {
+      this.toggleAttribute('expanded', this.expanded);
+      if (this.expanded) void this.openConsole();
+    }
+    if (this.contextual && changes.has('commands')) {
+      const commandPath = this.commands.join('\r');
+      if (commandPath && commandPath !== this.loadedCommandPath) {
+        this.loadedCommandPath = commandPath;
+        this.openAt(this.commands);
+      }
+    }
   }
 
   connectedCallback(): void {
     super.connectedCallback();
-    window.addEventListener('keydown', this.handleShortcut, true);
+    if (!this.contextual) window.addEventListener('keydown', this.handleShortcut, true);
   }
 
   disconnectedCallback(): void {
@@ -228,12 +247,12 @@ export class SmithproxyConsole extends LitElement {
 
   protected render() {
     return html`
-      <section class="console" aria-label="Smithproxy CLI console">
+      <section class="console" aria-label=${this.contextual ? 'Object CLI console' : 'Smithproxy CLI console'}>
         <header>
           <button class="toggle" type="button" aria-expanded=${this.expanded}
             title="Toggle console (backquote / tilde)"
             @click=${() => this.requestToggle()}>
-            <span class="prompt" aria-hidden="true">&gt;_</span><strong>Console</strong>
+            <span class="prompt" aria-hidden="true">&gt;_</span><strong>${this.contextual ? 'Object CLI' : 'Console'}</strong>
             <span class="state ${this.connectionState}" title=${this.connectionDetail}>${this.connectionDetail}</span>
           </button>
           ${this.expanded && (this.connectionState === 'closed' || this.connectionState === 'error') ? html`
@@ -241,7 +260,8 @@ export class SmithproxyConsole extends LitElement {
           ${this.expanded && this.connectionState === 'connected' ? html`
             <button class="action" type="button"
               @click=${() => this.disconnect('CLI session closed.')}>Disconnect</button>` : nothing}
-          <button class="action" type="button" aria-label=${this.expanded ? 'Collapse console' : 'Expand console'}
+          <button class="action" type="button" aria-label=${this.contextual ? 'Close object CLI'
+            : this.expanded ? 'Collapse console' : 'Expand console'}
             @click=${() => this.requestToggle()}>${this.expanded ? '⌄' : '⌃'}</button>
         </header>
         <div class="terminal-host" aria-label="Interactive Smithproxy terminal"></div>

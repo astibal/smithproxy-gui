@@ -1171,15 +1171,19 @@ test('offers the slide-out CLI only when a real broker capability is available',
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
   const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
-  await editor.getByRole('button', {name: 'Open in CLI'}).click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(consoleRegion.getByLabel('Interactive Smithproxy terminal')).toBeVisible();
+  await editor.getByRole('button', {name: 'Open object in CLI'}).click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  const objectConsole = editor.getByRole('region', {name: 'Object CLI console'});
+  await expect(objectConsole).toBeVisible();
+  await expect(objectConsole.getByLabel('Interactive Smithproxy terminal')).toBeVisible();
   await expect.poll(() => cliInputs.at(-1)?.toString())
     .toBe('configure terminal\redit policy\redit [0]\r');
 
-  // Reopening an object must not reuse a CLI location left behind by the
-  // operator. Each contextual jump starts at a fresh broker root.
-  await editor.getByRole('button', {name: 'Open in CLI'}).click();
+  // Reopening an object creates a new isolated CLI session and cannot reuse
+  // a location left behind in either the global or previous object console.
+  await editor.getByRole('button', {name: 'Close object CLI panel'}).click();
+  await expect(objectConsole).toHaveCount(0);
+  await editor.getByRole('button', {name: 'Open object in CLI'}).click();
   await expect.poll(() => cliConnections).toBe(2);
   await expect.poll(() => cliInputs.length).toBe(2);
   expect(cliInputs.at(-1)?.toString()).toBe('configure terminal\redit policy\redit [0]\r');

@@ -71,7 +71,6 @@ import {probeIncidents} from './monitoring/incidents';
 import {orderListenerWorkloads} from './monitoring/listener-order';
 import {drawerRouteSearch, parseDrawerRoute} from './state/drawer-route';
 import {DrawerStore, MAXIMUM_DRAWER_DEPTH, type DrawerEntry} from './state/drawer-store';
-import type {SmithproxyConsole} from './console/smithproxy-console';
 import './console/smithproxy-console';
 import {
   connectingSystemStatus,
@@ -562,6 +561,7 @@ export class SmithproxyApp extends LitElement {
   @state() private archiveResourceDeleteArmed: string | undefined;
   @state() private consoleAvailable = false;
   @state() private consoleExpanded = false;
+  @state() private drawerConsoleKey: string | undefined;
 
   private readonly drawerStore = new DrawerStore();
   private runtime: RuntimeConfig | undefined;
@@ -1058,11 +1058,13 @@ export class SmithproxyApp extends LitElement {
     .drawer[data-depth='4'] { z-index: 14; left: calc(20% + 208px); }
     .drawer[data-depth='5'] { z-index: 15; left: calc(20% + 260px); }
     .drawer.drawer.focus-mode { left: 0; min-width: 0; }
+    .drawer.contextual-console-open { grid-template-rows: auto auto minmax(0, 1fr) auto; }
     .drawer-head { display: flex; gap: 12px; align-items: center; padding: 15px 18px; border-bottom: 1px solid var(--app-border); background: var(--app-raised); }
     .drawer-title { flex: 1; min-width: 0; }
     .drawer-title small { display: block; color: var(--app-muted); }
     .drawer-title h2 { overflow: hidden; margin: 1px 0 0; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
     .icon-button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--app-border); border-radius: 3px; background: transparent; cursor: pointer; }
+    .cli-button { color: var(--app-brand); font: 700 13px ui-monospace, monospace; }
     .drawer-body { overflow: auto; padding: 22px 24px 32px; }
     .edit-lock-note { margin: 0 0 18px; padding: 10px 12px; border-left: 3px solid var(--app-brand); background: var(--app-canvas); color: var(--app-muted); }
     .drawer-foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--app-border); background: var(--app-raised); }
@@ -4573,14 +4575,12 @@ export class SmithproxyApp extends LitElement {
     return commands;
   }
 
-  private openDrawerInCli(entry: DrawerEntry): void {
+  private toggleDrawerCli(entry: DrawerEntry): void {
     const commands = this.cliCommandsForDrawer(entry);
     if (!commands || !this.consoleAvailable || this.draftChangeCount > 0 ||
         this.dirtyDrawerKeys.has(this.drawerKey(entry))) return;
-    const consoleElement = this.renderRoot.querySelector<SmithproxyConsole>('smithproxy-console');
-    if (!consoleElement) return;
-    consoleElement.openAt(commands);
-    this.consoleExpanded = true;
+    const key = this.drawerKey(entry);
+    this.drawerConsoleKey = this.drawerConsoleKey === key ? undefined : key;
   }
 
   private enableDrawerEditing(entry: DrawerEntry): void {
@@ -4770,7 +4770,11 @@ export class SmithproxyApp extends LitElement {
     this.structuralDeleteArmedKey = undefined;
     const remainingDirty = new Set(this.dirtyDrawerKeys);
     const remainingEditors = new Set(this.editingDrawerKeys);
-    for (const entry of this.drawerStore.entries.slice(index)) {
+    const closingEntries = this.drawerStore.entries.slice(index);
+    if (closingEntries.some(entry => this.drawerKey(entry) === this.drawerConsoleKey)) {
+      this.drawerConsoleKey = undefined;
+    }
+    for (const entry of closingEntries) {
       remainingDirty.delete(this.drawerKey(entry));
       remainingEditors.delete(this.drawerKey(entry));
       this.drawerInitialChanges.delete(this.drawerKey(entry));
@@ -14561,6 +14565,7 @@ export class SmithproxyApp extends LitElement {
     const protectedView = !readOnly && !editing;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
     const cliCommands = this.cliCommandsForDrawer(entry);
+    const drawerCliOpen = this.drawerConsoleKey === this.drawerKey(entry);
     const cliBlocker = dirty ? 'Save or discard the unsaved form changes before opening this object in CLI.'
       : this.draftChangeCount > 0
         ? 'Commit or discard the shared workspace draft before editing the running configuration in CLI.'
@@ -14574,7 +14579,7 @@ export class SmithproxyApp extends LitElement {
     const closePending = active && this.pendingCloseIndex !== undefined;
     const closeFromIndex = this.pendingCloseIndex ?? index;
     return html`
-      <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''}"
+      <section class="drawer ${this.focusMode && active ? 'focus-mode' : ''} ${drawerCliOpen ? 'contextual-console-open' : ''}"
         data-depth=${visibleDepth} role="dialog" aria-modal=${active ? 'true' : 'false'}
         aria-hidden=${active ? nothing : 'true'} aria-label=${editLabel} tabindex="-1" ?inert=${!active}
         @input=${(event: Event) => this.markDrawerDirty(entry, event)}
@@ -14592,10 +14597,11 @@ export class SmithproxyApp extends LitElement {
                             ? 'Create signature' : `${editing ? 'Edit' : 'View'} ${entry.kind}`}</small>
             <h2>${entry.title}</h2></div>
           ${active && this.consoleAvailable && cliCommands ? html`
-            <button class="secondary" type="button" aria-label="Open in CLI"
-              title=${cliBlocker ?? 'Open the console at this configuration object'}
+            <button class="icon-button cli-button" type="button"
+              aria-label=${drawerCliOpen ? 'Close object CLI panel' : 'Open object in CLI'}
+              title=${cliBlocker ?? (drawerCliOpen ? 'Close this object CLI' : 'Open this object in CLI')}
               ?disabled=${cliBlocker !== undefined}
-              @click=${() => this.openDrawerInCli(entry)}>Open in CLI</button>
+              @click=${() => this.toggleDrawerCli(entry)}><span aria-hidden="true">&gt;_</span></button>
           ` : nothing}
           ${protectedView ? html`
             <button class="primary" type="button" data-enable-edit
@@ -14619,6 +14625,11 @@ export class SmithproxyApp extends LitElement {
           <button class="icon-button" type="button" data-close-drawer aria-label=${closeLabel}
             @click=${() => this.requestCloseDrawer(index)}>×</button>
         </header>
+        ${drawerCliOpen && cliCommands ? html`
+          <smithproxy-console contextual .expanded=${true} .commands=${cliCommands}
+            .basePath=${this.runtime?.basePath ?? '/'}
+            @console-toggle=${() => { this.drawerConsoleKey = undefined; }}></smithproxy-console>
+        ` : nothing}
         ${keyed(`${this.drawerKey(entry)}:${editing ? 'edit' : 'view'}`, html`
           <div class="drawer-body" data-edit-mode=${editing ? 'edit' : 'view'}>
             ${protectedView ? html`<p class="edit-lock-note">
