@@ -1185,6 +1185,29 @@ test('offers the slide-out CLI only when a real broker capability is available',
   expect(cliInputs.at(-1)?.toString()).toBe('configure terminal\redit policy\redit [0]\r');
 });
 
+test('keeps the collapsed console compact and toggles it with Backquote', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready', consoleReady: true}, true, false);
+  await page.goto('/');
+
+  const consoleRegion = page.getByRole('region', {name: 'Smithproxy CLI console'});
+  const toggle = consoleRegion.getByRole('button', {name: /Console/u});
+  await expect(consoleRegion).toHaveCSS('height', '31px');
+
+  await page.keyboard.press('`');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(consoleRegion.locator('.xterm')).toBeVisible();
+  await toggle.focus();
+  await page.keyboard.press('`');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+  // Backquote remains available as ordinary text inside configuration forms.
+  const search = page.getByPlaceholder('Search configuration');
+  await search.focus();
+  await page.keyboard.press('`');
+  await expect(search).toHaveValue('`');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+});
+
 test('keeps drawer actions above the collapsed CLI console', async ({page}) => {
   await page.setViewportSize({width: 1280, height: 900});
   await mockSystemApi(page, {smithproxy: 'ready', consoleReady: true}, true, false);

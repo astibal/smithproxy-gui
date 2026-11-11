@@ -705,7 +705,7 @@ export class SmithproxyApp extends LitElement {
     .nested-nav-icon[data-kind='script'] { width: 10px; border-width: 0 1px; }
 
     .main { display: grid; grid-template-rows: 58px minmax(0, 1fr) var(--console-height, 0px); min-width: 0; min-height: 0; }
-    .shell.console-available { --console-height: 40px; }
+    .shell.console-available { --console-height: 32px; }
     .shell.console-expanded { --console-height: min(46dvh, 430px); }
     .topbar { display: flex; gap: 16px; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--app-border); background: color-mix(in srgb, var(--app-surface) 88%, transparent); }
     .topbar h1 { margin: 0; font-size: 18px; }
@@ -7375,11 +7375,6 @@ export class SmithproxyApp extends LitElement {
   }
 
   private handleKeydown(event: KeyboardEvent): void {
-    if (this.consoleAvailable && event.ctrlKey && event.key === '`') {
-      event.preventDefault();
-      this.consoleExpanded = !this.consoleExpanded;
-      return;
-    }
     if (event.key === 'Escape' && this.drawers.length > 0) {
       event.preventDefault();
       this.requestCloseDrawer(this.drawers.length - 1);

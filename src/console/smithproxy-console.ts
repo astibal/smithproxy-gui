@@ -39,13 +39,13 @@ export class SmithproxyConsole extends LitElement {
   }
 
   static styles = [unsafeCSS(xtermStyles), css`
-    :host { position: fixed; z-index: 18; right: 0; bottom: 30px; left: 216px; height: 40px;
+    :host { position: fixed; z-index: 18; right: 0; bottom: 30px; left: 216px; height: 32px;
       border-top: 1px solid var(--app-border, #2c4855); background: #081218;
       box-shadow: 0 -10px 30px #0000; color: var(--app-text, #e8eff1);
       transition: height 160ms ease, box-shadow 160ms ease; }
     :host([expanded]) { height: min(46dvh, 430px); box-shadow: 0 -12px 32px #0009; }
-    .console { display: grid; grid-template-rows: 39px minmax(0, 1fr); height: 100%; overflow: hidden; }
-    header { display: flex; min-width: 0; gap: 10px; align-items: center; padding: 0 12px;
+    .console { display: grid; grid-template-rows: 31px minmax(0, 1fr); height: 100%; overflow: hidden; }
+    header { display: flex; min-width: 0; gap: 8px; align-items: center; padding: 0 10px;
       background: var(--app-raised, #173440); }
     .toggle { display: flex; min-width: 0; flex: 1; gap: 9px; align-items: center; padding: 0;
       border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
@@ -56,7 +56,7 @@ export class SmithproxyConsole extends LitElement {
     .state.connected { color: var(--app-success, #4ade80); }
     .state.error { color: var(--app-danger, #fb7185); }
     .state.connecting { color: var(--app-warning, #facc15); }
-    .action { padding: 4px 8px; border: 1px solid var(--app-border, #2c4855); border-radius: 2px;
+    .action { padding: 2px 7px; border: 1px solid var(--app-border, #2c4855); border-radius: 2px;
       background: transparent; color: var(--app-muted, #a6bac3); cursor: pointer; }
     .action:hover { color: var(--app-text, #e8eff1); }
     .terminal-host { min-width: 0; min-height: 0; padding: 8px 10px; }
@@ -72,7 +72,13 @@ export class SmithproxyConsole extends LitElement {
     if (this.expanded) void this.openConsole();
   }
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    window.addEventListener('keydown', this.handleShortcut, true);
+  }
+
   disconnectedCallback(): void {
+    window.removeEventListener('keydown', this.handleShortcut, true);
     this.disconnect('Console closed.');
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
@@ -81,6 +87,22 @@ export class SmithproxyConsole extends LitElement {
     this.fitAddon = undefined;
     super.disconnectedCallback();
   }
+
+  /** Toggles the console globally without stealing Backquote from form fields. */
+  private readonly handleShortcut = (event: KeyboardEvent): void => {
+    if (event.code !== 'Backquote' || event.repeat ||
+        event.altKey || event.ctrlKey || event.metaKey) return;
+
+    const path = event.composedPath();
+    const insideEditor = path.some(target => target instanceof HTMLElement &&
+      (target.matches('input, textarea, select') || target.isContentEditable));
+    // xterm handles its own hidden textarea below. Ordinary form editors keep
+    // the character as text and never toggle the console.
+    if (insideEditor) return;
+
+    event.preventDefault();
+    this.requestToggle();
+  };
 
   private async openConsole(): Promise<void> {
     await this.ensureTerminal();
@@ -108,6 +130,16 @@ export class SmithproxyConsole extends LitElement {
       });
       this.terminal.loadAddon(this.fitAddon);
       this.terminal.open(this.terminalHost);
+      // The xterm helper textarea consumes keyboard events. Intercept the
+      // local drawer shortcut at its capture boundary before xterm can turn
+      // it into remote CLI input.
+      this.terminalHost.addEventListener('keydown', event => {
+        if (event.code !== 'Backquote' ||
+            event.altKey || event.ctrlKey || event.metaKey) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        this.requestToggle();
+      }, true);
       this.terminal.onData(data => {
         if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(data);
       });
@@ -199,6 +231,7 @@ export class SmithproxyConsole extends LitElement {
       <section class="console" aria-label="Smithproxy CLI console">
         <header>
           <button class="toggle" type="button" aria-expanded=${this.expanded}
+            title="Toggle console (backquote / tilde)"
             @click=${() => this.requestToggle()}>
             <span class="prompt" aria-hidden="true">&gt;_</span><strong>Console</strong>
             <span class="state ${this.connectionState}" title=${this.connectionDetail}>${this.connectionDetail}</span>
