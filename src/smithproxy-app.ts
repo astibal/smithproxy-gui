@@ -580,6 +580,7 @@ export class SmithproxyApp extends LitElement {
   private eventStreamDegradedTimer: number | undefined;
   private nextConfigRefreshAt = 0;
   private externalConfigNoticeTimer: number | undefined;
+  private lastNotifiedConfigRevision: string | undefined;
   // A successful local commit changes the same revision observed by the background poller.
   // Remember it until the authoritative snapshot arrives so it is not reported as external work.
   private locallyCommittedRevision: string | undefined;
@@ -1978,7 +1979,10 @@ export class SmithproxyApp extends LitElement {
       const externalRevisionChanged = liveSnapshotLoaded && snapshot.revision !== null &&
         this.snapshot?.revision !== null && snapshot.revision !== this.snapshot?.revision &&
         !locallyCommittedRevisionLoaded && !localCommitAwaitingResponse;
-      if (externalRevisionChanged) this.showExternalConfigNotice();
+      if (externalRevisionChanged && snapshot.revision !== this.lastNotifiedConfigRevision) {
+        this.lastNotifiedConfigRevision = snapshot.revision ?? undefined;
+        this.showExternalConfigNotice();
+      }
       if (locallyCommittedRevisionLoaded || externalRevisionChanged) {
         this.locallyCommittedRevision = undefined;
         this.localCommitPending = false;
@@ -15086,7 +15090,7 @@ export class SmithproxyApp extends LitElement {
                 title=${this.drawers.length > 0
                   ? 'Close the active editor before refreshing configuration.'
                   : this.externalConfigNotice
-                    ? 'Smithproxy changed outside this workspace. Reload the current running configuration.'
+                    ? 'The running configuration changed. Reload the current snapshot.'
                     : this.configError ?? 'Reload the authenticated Smithproxy configuration snapshot.'}
                 ?disabled=${this.configRefreshInFlight || this.drawers.length > 0 || this.draftSaving ||
                   this.draftCommitting}
@@ -15112,7 +15116,7 @@ export class SmithproxyApp extends LitElement {
         ${this.externalConfigNotice ? html`
           <aside class="config-toast" role="status" aria-live="polite">
             <div class="config-toast-content">
-              <strong>Running configuration changed outside this workspace.</strong>
+              <strong>Running configuration changed.</strong>
               <button type="button" aria-label="Dismiss configuration change notice"
                 @click=${() => { this.externalConfigNotice = false; }}>×</button>
             </div>

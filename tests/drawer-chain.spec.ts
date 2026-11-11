@@ -2561,7 +2561,7 @@ test('validates and atomically commits the draft with one administrator action',
     '1 operations · 1 warnings',
   );
   await expect(page.getByRole('status').filter({
-    hasText: 'Running configuration changed outside this workspace.',
+    hasText: 'Running configuration changed.',
   })).toHaveCount(0);
   expect(state.commitRequests).toEqual([{
     expectedVersion: 1,
@@ -2607,7 +2607,7 @@ test('does not report its own revision when polling overlaps an atomic commit', 
   }) => app.localCommitPending)).toBe(true);
 
   await expect(page.getByRole('status').filter({
-    hasText: 'Running configuration changed outside this workspace.',
+    hasText: 'Running configuration changed.',
   })).toHaveCount(0);
   await expect(page.getByText('Draft: 0 changes')).toBeVisible();
   await expect(page.getByRole('button', {name: /Review draft/u})).toHaveCount(0);
@@ -2626,7 +2626,7 @@ test('does not report its own revision when polling overlaps an atomic commit', 
   });
   await expect.poll(() => state.configFetches ?? 0).toBeGreaterThan(acknowledgedFetches);
   await expect(page.getByRole('status').filter({
-    hasText: 'Running configuration changed outside this workspace.',
+    hasText: 'Running configuration changed.',
   })).toBeVisible();
 });
 
@@ -4615,11 +4615,23 @@ test('detects an external revision while preserving and blocking the active draf
   });
 
   const notice = page.getByRole('status').filter({
-    hasText: 'Running configuration changed outside this workspace.',
+    hasText: 'Running configuration changed.',
   });
   await expect(notice).toBeVisible();
   await notice.getByRole('button', {name: 'Dismiss configuration change notice'}).click();
   await expect(notice).not.toBeVisible();
+
+  // The active draft keeps the old snapshot on screen, but repeated polling of
+  // the same new revision must not restart a dismissed/expired notification.
+  const fetchesAfterNotice = state.configFetches ?? 0;
+  await page.evaluate(() => {
+    const changedAt = Date.now() + 6_000;
+    Date.now = () => changedAt;
+    window.dispatchEvent(new Event('online'));
+  });
+  await expect.poll(() => state.configFetches ?? 0).toBeGreaterThan(fetchesAfterNotice);
+  await expect(notice).not.toBeVisible();
+
   const review = page.getByRole('button', {name: 'Review draft · 1 · live changed'});
   await expect(review).toBeVisible();
   await review.click();
@@ -4638,7 +4650,7 @@ test('identifies the refresh action while an external configuration notice is ac
     app.externalConfigNotice = true;
   });
   await expect(page.getByRole('status').filter({
-    hasText: 'Running configuration changed outside this workspace.',
+    hasText: 'Running configuration changed.',
   })).toBeVisible();
   await expect(page.getByRole('button', {
     name: 'Reload externally changed configuration',
