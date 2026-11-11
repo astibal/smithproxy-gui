@@ -1185,6 +1185,23 @@ test('offers the slide-out CLI only when a real broker capability is available',
   expect(cliInputs.at(-1)?.toString()).toBe('configure terminal\redit policy\redit [0]\r');
 });
 
+test('keeps drawer actions above the collapsed CLI console', async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 900});
+  await mockSystemApi(page, {smithproxy: 'ready', consoleReady: true}, true, false);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+
+  const drawer = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const consoleRegion = page.getByRole('region', {name: 'Smithproxy CLI console'});
+  const [drawerBox, consoleBox] = await Promise.all([drawer.boundingBox(), consoleRegion.boundingBox()]);
+
+  expect(drawerBox).not.toBeNull();
+  expect(consoleBox).not.toBeNull();
+  expect(drawerBox!.y + drawerBox!.height).toBeLessThanOrEqual(consoleBox!.y);
+  await expect(drawer.locator('.drawer-foot')).toBeInViewport();
+});
+
 test('does not imply CLI access when the broker capability is absent', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true, false);
   await page.goto('/');
@@ -5730,6 +5747,37 @@ test('keeps nested object navigation distinguishable on a narrow viewport', asyn
   await signatures.getByRole('button', {name: 'STARTTLS signatures'}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'STARTTLS signatures'})).toBeVisible();
   await expectNoWcagViolations(page);
+});
+
+test('keeps navigation groups open while the sidebar has vertical room', async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 1000});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  const network = page.getByRole('button', {name: 'Network', exact: true});
+  const objects = page.getByRole('button', {name: 'Objects', exact: true});
+  await network.click();
+  await objects.click();
+
+  await expect(network).toHaveAttribute('aria-expanded', 'true');
+  await expect(objects).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('group', {name: 'Network categories'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Object categories', exact: true})).toBeVisible();
+});
+
+test('folds an older navigation group when the sidebar runs out of height', async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 520});
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  const network = page.getByRole('button', {name: 'Network', exact: true});
+  const objects = page.getByRole('button', {name: 'Objects', exact: true});
+  await network.click();
+  await objects.click();
+
+  await expect(objects).toHaveAttribute('aria-expanded', 'true');
+  await expect(network).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('group', {name: 'Object categories', exact: true})).toBeVisible();
 });
 
 test('filters real and pending policies by text, status, and action', async ({page}) => {

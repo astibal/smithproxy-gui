@@ -662,6 +662,8 @@ export class SmithproxyApp extends LitElement {
 
     .sidebar {
       grid-row: 1;
+      min-height: 0;
+      overflow-y: auto;
       padding: 18px 12px;
       border-right: 1px solid var(--app-border);
       background: var(--app-surface);
@@ -702,7 +704,9 @@ export class SmithproxyApp extends LitElement {
     .nested-nav-icon[data-kind='dns'] { border-radius: 50% 50% 1px 50%; }
     .nested-nav-icon[data-kind='script'] { width: 10px; border-width: 0 1px; }
 
-    .main { display: grid; grid-template-rows: 58px minmax(0, 1fr); min-width: 0; min-height: 0; }
+    .main { display: grid; grid-template-rows: 58px minmax(0, 1fr) var(--console-height, 0px); min-width: 0; min-height: 0; }
+    .shell.console-available { --console-height: 40px; }
+    .shell.console-expanded { --console-height: min(46dvh, 430px); }
     .topbar { display: flex; gap: 16px; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--app-border); background: color-mix(in srgb, var(--app-surface) 88%, transparent); }
     .topbar h1 { margin: 0; font-size: 18px; }
     .topbar p { flex: 1; margin: 0; color: var(--app-muted); }
@@ -1192,7 +1196,7 @@ export class SmithproxyApp extends LitElement {
       .nested-subnav { display: flex; margin: 0; padding: 0; border-left: 0; }
       .nested-subnav button { width: 42px; padding: 8px; }
       .nested-subnav .nav-count { display: none; }
-      .main { grid-row: 2; grid-template-rows: 94px minmax(0, 1fr); }
+      .main { grid-row: 2; grid-template-rows: 94px minmax(0, 1fr) var(--console-height, 0px); }
       .topbar { display: grid; grid-template: auto auto / minmax(0, 1fr) auto auto; gap: 5px 8px; padding: 8px 12px; }
       .section-head { align-items: start; }
       .structural-action { max-width: 190px; }
@@ -14719,6 +14723,33 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  /**
+   * Keep already opened navigation groups visible while they fit. When a new
+   * group makes the sidebar overflow, fold older groups until it fits again.
+   */
+  private async fitSidebarNavigation(
+    preferred: 'Network' | 'Objects' | 'Policy' | 'Monitoring' | 'Logs' | 'System',
+  ): Promise<void> {
+    await this.updateComplete;
+    const sidebar = this.renderRoot.querySelector<HTMLElement>('.sidebar');
+    if (!sidebar || sidebar.scrollHeight <= sidebar.clientHeight) return;
+
+    const groups = [
+      ['Network', 'networkNavigationExpanded'],
+      ['Objects', 'objectNavigationExpanded'],
+      ['Policy', 'policyNavigationExpanded'],
+      ['Monitoring', 'monitoringNavigationExpanded'],
+      ['Logs', 'logsNavigationExpanded'],
+      ['System', 'systemNavigationExpanded'],
+    ] as const;
+    for (const [name, property] of groups) {
+      if (name === preferred || !this[property]) continue;
+      this[property] = false;
+      await this.updateComplete;
+      if (sidebar.scrollHeight <= sidebar.clientHeight) return;
+    }
+  }
+
   protected render() {
     if (this.loadingError) return html`<div class="error" role="alert">${this.loadingError}</div>`;
     const controlFreshness = classifyFreshness(this.systemStatus.lastSuccessAtUnixMs, 5_000);
@@ -14804,7 +14835,8 @@ export class SmithproxyApp extends LitElement {
       : navigation;
     const sectionTitle = this.activeSection === 'Objects' ? this.objectViewLabel() : this.activeSection;
     return html`
-      <div class="shell" @keydown=${this.handleKeydown}>
+      <div class="shell ${this.consoleAvailable ? 'console-available' : ''} ${
+        this.consoleExpanded ? 'console-expanded' : ''}" @keydown=${this.handleKeydown}>
         <aside class="sidebar">
           <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
           <nav aria-label="Primary navigation">
@@ -14825,60 +14857,36 @@ export class SmithproxyApp extends LitElement {
                       const wasActive = this.activeSection === 'Objects';
                       this.activeSection = 'Objects';
                       this.objectNavigationExpanded = wasActive ? !this.objectNavigationExpanded : true;
-                      this.networkNavigationExpanded = false;
-                      this.policyNavigationExpanded = false;
-                      this.monitoringNavigationExpanded = false;
-                      this.logsNavigationExpanded = false;
-                      this.systemNavigationExpanded = false;
+                      void this.fitSidebarNavigation('Objects');
                     } else if (item === 'Network') {
                       const wasActive = this.activeSection === 'Network';
                       this.activeSection = 'Network';
                       this.networkView = 'overview';
                       this.networkNavigationExpanded = wasActive ? !this.networkNavigationExpanded : true;
-                      this.objectNavigationExpanded = false;
-                      this.policyNavigationExpanded = false;
-                      this.monitoringNavigationExpanded = false;
-                      this.logsNavigationExpanded = false;
-                      this.systemNavigationExpanded = false;
+                      void this.fitSidebarNavigation('Network');
                     } else if (item === 'Monitoring') {
                       const wasActive = this.activeSection === 'Monitoring';
                       this.activeSection = 'Monitoring';
                       this.monitoringView = 'overview';
                       this.monitoringNavigationExpanded = wasActive ? !this.monitoringNavigationExpanded : true;
-                      this.networkNavigationExpanded = false;
-                      this.objectNavigationExpanded = false;
-                      this.policyNavigationExpanded = false;
-                      this.logsNavigationExpanded = false;
-                      this.systemNavigationExpanded = false;
+                      void this.fitSidebarNavigation('Monitoring');
                     } else if (item === 'Policy') {
                       const wasActive = this.activeSection === 'Policy' || this.activeSection === 'Draft';
                       this.activeSection = 'Policy';
                       this.policyNavigationExpanded = wasActive ? !this.policyNavigationExpanded : true;
-                      this.networkNavigationExpanded = false;
-                      this.objectNavigationExpanded = false;
-                      this.monitoringNavigationExpanded = false;
-                      this.logsNavigationExpanded = false;
-                      this.systemNavigationExpanded = false;
+                      void this.fitSidebarNavigation('Policy');
                     } else if (item === 'Logs') {
                       const wasActive = this.activeSection === 'Logs';
                       this.activeSection = 'Logs';
                       this.logsView = 'events';
                       this.logsNavigationExpanded = wasActive ? !this.logsNavigationExpanded : true;
-                      this.networkNavigationExpanded = false;
-                      this.objectNavigationExpanded = false;
-                      this.monitoringNavigationExpanded = false;
-                      this.policyNavigationExpanded = false;
-                      this.systemNavigationExpanded = false;
+                      void this.fitSidebarNavigation('Logs');
                     } else if (item === 'System') {
                       const wasActive = this.activeSection === 'System';
                       this.activeSection = 'System';
                       this.systemView = 'configuration';
-                      this.networkNavigationExpanded = false;
-                      this.objectNavigationExpanded = false;
-                      this.monitoringNavigationExpanded = false;
-                      this.policyNavigationExpanded = false;
-                      this.logsNavigationExpanded = false;
                       this.systemNavigationExpanded = wasActive ? !this.systemNavigationExpanded : true;
+                      void this.fitSidebarNavigation('System');
                       if (this.configSaveAvailable && !this.archiveInventory && !this.archiveBusy) {
                         void this.loadArchiveInventory();
                       }
