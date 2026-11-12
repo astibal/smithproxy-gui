@@ -199,6 +199,14 @@ function optionalString(value: unknown, label: string, maximum = 128): string {
   return value;
 }
 
+/** Matcher bodies are opaque engine input and may legitimately contain tabs or newlines. */
+function matcherExpression(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 65536 || value.includes('\0')) {
+    throw new Error('Invalid signature expression.');
+  }
+  return value;
+}
+
 function safeInteger(value: unknown, label: string, maximum: number): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > maximum) {
     throw new Error(`Invalid ${label}.`);
@@ -1059,7 +1067,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
           side: flowSide as 'r' | 'w',
           type: type as 'regex' | 'simple',
           expressionConfigured: safeBoolean(step.expression_configured, 'signature expression state'),
-          expression: optionalString(step.expression, 'signature expression', 16384),
+          expression: matcherExpression(step.expression),
           bytesStart: safeInteger(step.bytes_start, 'signature byte offset', Number.MAX_SAFE_INTEGER),
           bytesMax: safeInteger(step.bytes_max, 'signature byte window', Number.MAX_SAFE_INTEGER),
         };

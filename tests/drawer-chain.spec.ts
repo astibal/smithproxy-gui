@@ -1162,7 +1162,7 @@ async function mockSystemApi(
             side: 'client', severity: 0, group: '', enables: '', engine: '',
             flow: [
               {id: 'starttls-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
-               expression: '^STARTTLS', bytes_start: 0, bytes_max: 16},
+               expression: '^STARTTLS\r?\n(?:250[ -].*\n)*$', bytes_start: 0, bytes_max: 16},
               {id: 'starttls-signature-0-flow-1', side: 'w', type: 'regex', expression_configured: true,
                expression: '^220', bytes_start: 0, bytes_max: 512},
             ],
