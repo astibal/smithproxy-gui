@@ -267,7 +267,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                  "stats": [{"relative_days": 3, "counter": 4, "bytes_up": 10, "bytes_down": 20}]},
             ]).encode())
             return
-        if self.path == "/api/v1/network/interfaces/summary":
+        if self.path == "/api/diag/network/interfaces":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -285,7 +285,10 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                     "interfaces": 3, "addresses": 5,
                     "ipv4_addresses": 3, "ipv6_addresses": 2,
                 },
-                "last_error": None,
+                "snapshot_valid": True,
+                "interfaces": [{"name": "eth0"}],
+                "last_error": "",
+                "last_error_code": None,
             }).encode())
             return
         if self.path == "/api/diag/proxy/session/list":

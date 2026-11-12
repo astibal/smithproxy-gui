@@ -9836,8 +9836,8 @@ export class SmithproxyApp extends LitElement {
         <details class="diagnostic-section">
           <summary>
             <div><h4>Synchronization diagnostics</h4><p>Internal collection state for troubleshooting</p></div>
-            <span class="runtime-state ${interfaces.synchronizationErrors > 0 ? 'warning' : 'success'}">
-              ${interfaces.synchronizationErrors > 0 ? 'Attention' : 'Healthy'}
+            <span class="runtime-state ${presentation.tone}">
+              ${interfaces.state === 'ready' ? 'Healthy' : presentation.label}
             </span>
           </summary>
           <div class="diagnostic-content">

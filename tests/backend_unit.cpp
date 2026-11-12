@@ -1667,31 +1667,40 @@ int main() {
         "synchronization":{"running":true,"attempts":2,"successes":2,"errors":0,
             "event_datagrams":15,"changed_event_datagrams":4},
         "totals":{"interfaces":3,"addresses":5,"ipv4_addresses":3,"ipv6_addresses":2},
-        "last_error":null})");
+        "snapshot_valid":true,"interfaces":[{"name":"eth0"}],
+        "last_error":"","last_error_code":null})");
     assert(interfaces.metrics);
     assert(interfaces.metrics->generation == 42U);
     assert(interfaces.metrics->interfaces == 3U);
     assert(interfaces.metrics->addresses == 5U);
     assert(interfaces.metrics->changed_event_datagrams == 4U);
+    const auto event_error = parse_interface_metrics(R"({
+        "schema_version":1,"state":"degraded","generation":42,"sampled_at_unix_ms":1793239515319,
+        "synchronization":{"running":true,"attempts":2,"successes":2,"errors":3,
+            "event_datagrams":15,"changed_event_datagrams":4},
+        "totals":{"interfaces":3,"addresses":5,"ipv4_addresses":3,"ipv6_addresses":2},
+        "last_error_code":"network-context-error"})");
+    assert(event_error.metrics);
+    assert(event_error.metrics->synchronization_errors == 3U);
     assert(!parse_interface_metrics(R"({
         "schema_version":1,"state":"ready","generation":1,"sampled_at_unix_ms":1,
         "synchronization":{"running":true,"attempts":1,"successes":2,"errors":0,
             "event_datagrams":1,"changed_event_datagrams":0},
         "totals":{"interfaces":1,"addresses":1,"ipv4_addresses":1,"ipv6_addresses":0},
-        "last_error":null})").metrics);
+        "last_error_code":null})").metrics);
     assert(!parse_interface_metrics(R"({
         "schema_version":1,"state":"ready","generation":1,"sampled_at_unix_ms":1,
         "synchronization":{"running":true,"attempts":1,"successes":1,"errors":0,
             "event_datagrams":1,"changed_event_datagrams":0},
         "totals":{"interfaces":1,"addresses":1,"ipv4_addresses":1,"ipv6_addresses":0},
-        "last_error":"raw kernel error"})").metrics);
+        "last_error_code":"raw kernel error"})").metrics);
     assert(!parse_interface_metrics(R"({
         "schema_version":1,"state":"ready","generation":1,
         "sampled_at_unix_ms":9007199254740991,
         "synchronization":{"running":true,"attempts":1,"successes":1,"errors":0,
             "event_datagrams":1,"changed_event_datagrams":0},
         "totals":{"interfaces":1,"addresses":1,"ipv4_addresses":1,"ipv6_addresses":0},
-        "last_error":null})").metrics);
+        "last_error_code":null})").metrics);
 
     const auto configuration = parse_config_snapshot(
         R"({"success":{"policy":[{"name":"office policy","disabled":"0","proto":"tcp","src":["office"],"sport":["any"],"dst":["internet"],"dport":["https"],"features":["sinkhole"],"action":"accept","nat":"masquerade","routing":"main","tls_profile":"inspect"}]}})",

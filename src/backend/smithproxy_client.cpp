@@ -1217,9 +1217,11 @@ InterfaceMetrics SmithproxyMonitor::fetch_interface_metrics() const {
         return metrics;
     }
 
-    const std::string endpoint = config_->api_url + "/api/v1/network/interfaces/summary";
+    const std::string endpoint = config_->api_url + "/api/diag/network/interfaces";
     ResponseBuffer response{
-        .limit = 8U * 1024U,
+        // The diagnostic response contains the detailed interface inventory in
+        // addition to the summary consumed here, so allow realistic host sizes.
+        .limit = 256U * 1024U,
         .body = {},
         .exceeded = false,
     };

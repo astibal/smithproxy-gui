@@ -45,14 +45,14 @@ bool stable_error_code(const std::string& value) {
 
 InterfaceMetricsParseResult parse_interface_metrics(const std::string_view payload) {
     const auto document = nlohmann::json::parse(payload, nullptr, false);
-    if (document.is_discarded() || !document.is_object() || document.size() != 7U) {
+    if (document.is_discarded() || !document.is_object()) {
         return {std::nullopt, "Smithproxy returned an invalid interface summary"};
     }
     const auto schema_version = counter(document, "schema_version");
     if (!schema_version || *schema_version != 1U || !document.contains("state") ||
         !document["state"].is_string() || !document.contains("synchronization") ||
         !document["synchronization"].is_object() || !document.contains("totals") ||
-        !document["totals"].is_object() || !document.contains("last_error")) {
+        !document["totals"].is_object() || !document.contains("last_error_code")) {
         return {std::nullopt, "Smithproxy returned an invalid interface summary"};
     }
     const auto state = document["state"].get<std::string>();
@@ -64,8 +64,7 @@ InterfaceMetricsParseResult parse_interface_metrics(const std::string_view paylo
     const auto sampled_at = counter(document, "sampled_at_unix_ms");
     const auto& synchronization = document["synchronization"];
     const auto& totals = document["totals"];
-    if (synchronization.size() != 6U || totals.size() != 4U ||
-        !synchronization.contains("running") || !synchronization["running"].is_boolean()) {
+    if (!synchronization.contains("running") || !synchronization["running"].is_boolean()) {
         return {std::nullopt, "Smithproxy returned invalid interface counters"};
     }
     const auto attempts = counter(synchronization, "attempts");
@@ -83,17 +82,17 @@ InterfaceMetricsParseResult parse_interface_metrics(const std::string_view paylo
         *sampled_at > static_cast<std::uint64_t>(maximum_time_milliseconds) ||
         !attempts || !successes || !errors ||
         !event_datagrams || !changed_datagrams || !interfaces || !addresses || !ipv4 || !ipv6 ||
-        *successes > *attempts || *errors > *attempts || *successes + *errors > *attempts ||
+        *successes > *attempts ||
         *changed_datagrams > *event_datagrams ||
         *ipv4 > *addresses || *ipv6 > *addresses || *ipv4 + *ipv6 != *addresses) {
         return {std::nullopt, "Smithproxy returned incoherent interface counters"};
     }
     std::optional<std::string> last_error;
-    if (!document["last_error"].is_null()) {
-        if (!document["last_error"].is_string()) {
+    if (!document["last_error_code"].is_null()) {
+        if (!document["last_error_code"].is_string()) {
             return {std::nullopt, "Smithproxy returned an invalid interface error code"};
         }
-        last_error = document["last_error"].get<std::string>();
+        last_error = document["last_error_code"].get<std::string>();
         if (!stable_error_code(*last_error)) {
             return {std::nullopt, "Smithproxy returned an invalid interface error code"};
         }
