@@ -472,6 +472,11 @@ async function mockSystemApi(
       last_success_at_unix_ms: collectorLastSuccess(sampledAt),
       hosts_total: 8, active_today: 3, active_week: 6, tagged_hosts: 4,
       observations: 20, bytes_up: 1000, bytes_down: 2000,
+      entries: [{
+        hostname: 'workstation.example', tags: 'office', last_seen_unix_seconds: 1_800_000_000,
+        samples: [{relative_days: 0, observations: 3, bytes_up: 1000, bytes_down: 2000,
+          labels: ['tls', 'browser']}],
+      }],
     }});
   });
   await page.route('**/api/v1/network/interfaces/summary', async route => {
@@ -483,6 +488,12 @@ async function mockSystemApi(
       checked_at_unix_ms: sampledAt,
       last_success_at_unix_ms: collectorLastSuccess(sampledAt),
       generation: 42,
+      snapshot_valid: true,
+      roles_valid: true,
+      route_generation: 8,
+      role_generation: 3,
+      route_changed_at: '2026-11-12T10:00:00Z',
+      role_changed_at: '2026-11-12T10:00:01Z',
       synchronization_running: true,
       synchronization_attempts: 3,
       synchronization_successes: 3,
@@ -493,7 +504,21 @@ async function mockSystemApi(
       addresses: 5,
       ipv4_addresses: 3,
       ipv6_addresses: 2,
+      inventory: [
+        {index: 1, name: 'lo', role: 'Local', flags: 73, uplink: false, addresses: [
+          {family: 'IPv4', address: '127.0.0.1', prefix_length: 8, scope: 254, flags: 128},
+          {family: 'IPv6', address: '::1', prefix_length: 128, scope: 254, flags: 128},
+        ]},
+        {index: 2, name: 'lan0', role: 'Inside', flags: 69699, uplink: false, addresses: [
+          {family: 'IPv4', address: '192.0.2.10', prefix_length: 24, scope: 0, flags: 128},
+        ]},
+        {index: 3, name: 'wan0', role: 'Outside', flags: 69699, uplink: true, addresses: [
+          {family: 'IPv4', address: '198.51.100.2', prefix_length: 24, scope: 0, flags: 128},
+          {family: 'IPv6', address: '2001:db8::2', prefix_length: 64, scope: 0, flags: 0},
+        ]},
+      ],
       last_error_code: null,
+      last_error_detail: null,
     }});
   });
   await page.route('**/api/v1/events/recent', async route => route.fulfill({json: {
@@ -1015,7 +1040,8 @@ async function mockSystemApi(
           routing: null, tls: null,
           detection: null, content: null,
           ssh: {
-            host_key_configured: true, host_key_policy: 'strict', shell: true,
+            host_key_configured: true, host_key: '/etc/ssh/ssh_host_ed25519_key',
+            host_key_policy: 'strict', shell: true,
             exec: false, subsystem: true, pty: true, environment: false,
             local_forward: false, remote_forward: false, x11: false, agent: false,
           },
@@ -1025,7 +1051,8 @@ async function mockSystemApi(
           id: 'script-0', name: 'audit', type: 'script', private_reference_count: 0,
           routing: null, tls: null,
           detection: null, content: null, ssh: null, dns: null,
-          script: {runtime: 'python', module_path_configured: true}, authentication: null,
+          script: {runtime: 'python', module_path_configured: true,
+            module_path: '/etc/smithproxy/audit.py'}, authentication: null,
         },
         {
           id: 'authentication-0', name: 'legacy-auth', type: 'authentication',
@@ -1055,18 +1082,25 @@ async function mockSystemApi(
         ports: {plaintext: 50080, tls: 50443, udp: 50080, dtls: 50443, quic: 443, socks: 1080, http_connect: 3128},
         ocsp_status_ttl: 1800, crl_status_ttl: 86400,
         logging: {
-          default_write_payload: false, payload_directory_configured: true, pcap_single_quota: 100,
-          level: 6, file_configured: true, console: true, ssl_key_file_configured: true,
-          syslog_server_configured: false, syslog_port: 514, syslog_facility: 23,
+          default_write_payload: false, payload_directory: '/var/lib/payloads',
+          payload_directory_configured: true, pcap_single_quota: 100,
+          level: 6, file_configured: true, file: '/var/log/smithproxy.log', console: true,
+          ssl_key_file_configured: true, ssl_key_file: '/var/log/smithproxy.keys',
+          syslog_server_configured: false, syslog_server: '', syslog_port: 514, syslog_facility: 23,
           syslog_level: 6, syslog_family: 4,
         },
         auxiliary: {
           udp_quick_port_count: 1, udp_quick_ports: ['0'], certificates_path_configured: true,
+          certificates_path: '/etc/smithproxy/certs',
           certificate_password_configured: true, certificate_transparency_log_configured: true,
-          ca_bundle_path_configured: true, ca_bundle_file_configured: false,
-          messages_directory_configured: true, payload_file_prefix_configured: false,
-          payload_file_suffix_configured: false, cli_port: 50000, cli_password_configured: false,
-          web_rating_key_configured: false, admin_group_configured: true,
+          certificate_transparency_log: '/etc/smithproxy/ct.log',
+          ca_bundle_path_configured: true, ca_bundle_path: '/etc/ssl/certs',
+          ca_bundle_file_configured: false, ca_bundle_file: '',
+          messages_directory_configured: true, messages_directory: '/etc/smithproxy/messages',
+          payload_file_prefix_configured: false, payload_file_prefix: '',
+          payload_file_suffix_configured: false, payload_file_suffix: '',
+          cli_port: 50000, cli_password_configured: false,
+          web_rating_key_configured: false, admin_group_configured: true, admin_group: 'smithproxy-admin',
           tuning: {
             host_buffer_min: 2048, host_buffer_max_multiplier: 1024, host_write_full: 200000,
             host_io_batch: 262144, tls_write_chunk: 20480, host_open_timeout: 7,
@@ -1082,13 +1116,17 @@ async function mockSystemApi(
           key_count: 1, allowed_ip_count: 1, allowed_ips: ['127.0.0.1'],
           key_timeout: 3600, port: 55555, key_extend_on_access: true,
           loopback_only: true, pam_login: false, allow_api_header: false,
-          bind_address_configured: true, bind_interface_configured: false,
+          bind_address_configured: true, bind_address: '127.0.0.1',
+          bind_interface_configured: false, bind_interface: '',
         },
         webhook: {
-          enabled: false, tls_verify: true, url_configured: false, sift_enabled: false,
-          sift_url_configured: true, sift_tenant_configured: true, sift_instance_configured: false,
+          enabled: false, tls_verify: true, url_configured: false, url: '', sift_enabled: false,
+          sift_url_configured: true, sift_url: 'https://sift.example',
+          sift_tenant_configured: true, sift_tenant: 'tenant',
+          sift_instance_configured: false, sift_instance: '',
           sift_payload_limit_per_direction: 262144, hostid_configured: false,
-          bind_interface_configured: false, api_override: false, ping_interval: 120,
+          hostid: '', bind_interface_configured: false, bind_interface: '',
+          api_override: false, ping_interval: 120,
           nbr_update_interval: 900, nbr_tag_refresh_age: 300, task_debug: false,
           task_debug_dump: false,
         },
@@ -1101,17 +1139,20 @@ async function mockSystemApi(
       captures: {
         editable: state.captureEditable ?? true,
         local: {
-          enabled: false, directory_configured: true, file_prefix_configured: true,
-          file_suffix_configured: true, format: 'pcap_single', quota_mib: 1024,
+          enabled: false, directory_configured: true, directory: '/var/lib/captures',
+          file_prefix_configured: true, file_prefix: 'capture-',
+          file_suffix_configured: true, file_suffix: '.pcap', format: 'pcap_single', quota_mib: 1024,
         },
         remote: {
           enabled: false, tunnel_type: 'gre', gre_format: 'traffic',
-          destination_configured: false, ttl: 1, bind_interface_configured: false,
+          destination_configured: false, destination: '', ttl: 1,
+          bind_interface_configured: false, bind_interface: '',
         },
         calculate_checksums: true,
       },
       security_assets: {
-        certificate_authorities: [{id: 'certificate-authority-0', name: 'default', path_configured: true}],
+        certificate_authorities: [{id: 'certificate-authority-0', name: 'default', path_configured: true,
+          path: '/etc/smithproxy/default-ca.pem'}],
         certificate_authority_count: 1, certificate_authority_path_count: 1,
         starttls_signature_count: 1, starttls_flow_step_count: 2,
         detection_signature_count: 1, detection_flow_step_count: 1,
@@ -1121,9 +1162,9 @@ async function mockSystemApi(
             side: 'client', severity: 0, group: '', enables: '', engine: '',
             flow: [
               {id: 'starttls-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
-               bytes_start: 0, bytes_max: 16},
+               expression: '^STARTTLS', bytes_start: 0, bytes_max: 16},
               {id: 'starttls-signature-0-flow-1', side: 'w', type: 'regex', expression_configured: true,
-               bytes_start: 0, bytes_max: 512},
+               expression: '^220', bytes_start: 0, bytes_max: 512},
             ],
           },
           {
@@ -1131,7 +1172,7 @@ async function mockSystemApi(
             side: 'client', severity: 4, group: 'base', enables: 'http', engine: 'http1',
             flow: [{
               id: 'detection-signature-0-flow-0', side: 'r', type: 'regex', expression_configured: true,
-              bytes_start: 0, bytes_max: 200,
+              expression: '^GET ', bytes_start: 0, bytes_max: 200,
             }],
           },
         ],
@@ -6773,7 +6814,10 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(page.getByRole('heading', {level: 2, name: 'Network activity'})).toBeVisible();
   const neighborhood = page.getByRole('region', {name: 'Neighborhood activity'});
   await expect(neighborhood.getByText('8', {exact: true})).toBeVisible();
-  await expect(neighborhood.getByText(/hostnames, tags, labels, and per-endpoint timelines remain/i)).toBeVisible();
+  const neighborTable = neighborhood.getByRole('table', {name: 'Observed network neighbors'});
+  await expect(neighborTable).toContainText('workstation.example');
+  await expect(neighborTable).toContainText('office');
+  await expect(neighborTable).toContainText('tls · browser');
   const workload = page.getByRole('table', {name: 'Runtime listener workload'});
   await expect(workload.getByRole('columnheader')).toHaveText([
     'Listener', 'State', 'Workers', 'Active sessions', 'Total sessions', 'Upload', 'Download',
@@ -6851,7 +6895,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
   const trust = page.getByRole('group', {name: 'Trust and signatures'});
   await expect(trust.getByRole('button', {
-    name: /default Certificate authority CA path configured · redacted/i,
+    name: /default Certificate authority.*default-ca\.pem/i,
   })).toBeVisible();
   await trust.getByRole('button', {name: /smtp\/starttls STARTTLS signature mail · client/i}).click();
   await expect(page.getByRole('dialog', {name: 'Edit smtp/starttls'})).toBeVisible();
@@ -7008,7 +7052,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
     .getByRole('button', {name: /default Certificate authority/i}).click();
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
   await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
-  await expect(authorityEditor.getByText(/current certificate-authority path stays inside/i)).toBeVisible();
+  await expect(authorityEditor.getByText('/etc/smithproxy/default-ca.pem', {exact: true})).toBeVisible();
 });
 
 test('organizes operational surfaces into focused administrator views', async ({page}) => {
@@ -7021,6 +7065,11 @@ test('organizes operational surfaces into focused administrator views', async ({
   await expect(interfaces).toBeVisible();
   await expect(interfaces.getByText('IPv4 addresses', {exact: true}).locator('..')).toContainText('3');
   await expect(interfaces.getByText('IPv6 addresses', {exact: true}).locator('..')).toContainText('2');
+  const inventory = interfaces.getByRole('table', {name: 'Observed network interfaces'});
+  await expect(inventory.getByRole('row').filter({hasText: 'lan0'})).toContainText('Inside');
+  await expect(inventory.getByRole('row').filter({hasText: 'lan0'})).toContainText('192.0.2.10/24');
+  await expect(inventory.getByRole('row').filter({hasText: 'wan0'})).toContainText('Default-route uplink');
+  await expect(inventory.getByRole('row').filter({hasText: 'wan0'})).toContainText('2001:db8::2/64');
   const synchronizationDiagnostics = interfaces.locator('details.diagnostic-section').filter({
     hasText: 'Synchronization diagnostics',
   });

@@ -227,6 +227,22 @@ export interface NeighborSnapshot {
   observations: number;
   bytesUp: number;
   bytesDown: number;
+  entries: NeighborEntrySnapshot[];
+}
+
+export interface NeighborSampleSnapshot {
+  relativeDays: number;
+  observations: number;
+  bytesUp: number;
+  bytesDown: number;
+  labels: string[];
+}
+
+export interface NeighborEntrySnapshot {
+  hostname: string;
+  tags: string;
+  lastSeenUnixSeconds: number;
+  samples: NeighborSampleSnapshot[];
 }
 
 export type InterfaceMonitorState =
@@ -237,12 +253,35 @@ export type InterfaceMonitorState =
   | 'unconfigured'
   | 'not-advertised';
 
+export interface InterfaceAddressSnapshot {
+  family: 'IPv4' | 'IPv6' | 'other';
+  address: string;
+  prefixLength: number;
+  scope: number;
+  flags: number;
+}
+
+export interface InterfaceInventoryEntry {
+  index: number;
+  name: string;
+  role: string;
+  flags: number;
+  uplink: boolean;
+  addresses: ReadonlyArray<InterfaceAddressSnapshot>;
+}
+
 export interface InterfaceSnapshot {
   state: InterfaceMonitorState;
   detail: string;
   checkedAtUnixMs: number | null;
   lastSuccessAtUnixMs: number | null;
   generation: number;
+  snapshotValid: boolean;
+  rolesValid: boolean;
+  routeGeneration: number;
+  roleGeneration: number;
+  routeChangedAt: string | null;
+  roleChangedAt: string | null;
   synchronizationRunning: boolean;
   synchronizationAttempts: number;
   synchronizationSuccesses: number;
@@ -253,7 +292,9 @@ export interface InterfaceSnapshot {
   addresses: number;
   ipv4Addresses: number;
   ipv6Addresses: number;
+  inventory: ReadonlyArray<InterfaceInventoryEntry>;
   lastErrorCode: string | null;
+  lastErrorDetail: string | null;
 }
 
 export interface DnsLookup {
@@ -831,10 +872,48 @@ function parseNeighbors(value: unknown): NeighborSnapshot {
       !isNonNegativeInteger(value.hosts_total) || !isNonNegativeInteger(value.active_today) ||
       !isNonNegativeInteger(value.active_week) || !isNonNegativeInteger(value.tagged_hosts) ||
       !isNonNegativeInteger(value.observations) || !isNonNegativeInteger(value.bytes_up) ||
-      !isNonNegativeInteger(value.bytes_down) || value.active_today > value.active_week ||
+      !isNonNegativeInteger(value.bytes_down) || !Array.isArray(value.entries) ||
+      value.entries.length > 4096 || value.active_today > value.active_week ||
       value.active_week > value.hosts_total || value.tagged_hosts > value.hosts_total) {
     throw new Error('Invalid neighborhood response.');
   }
+  const hostnames = new Set<string>();
+  const entries: NeighborEntrySnapshot[] = value.entries.map(entry => {
+    if (!isObject(entry) || !isBoundedDisplayText(entry.hostname, 253) ||
+        hostnames.has(entry.hostname) || typeof entry.tags !== 'string' ||
+        entry.tags.length > 2048 || /[\u0000-\u001f\u007f]/u.test(entry.tags) ||
+        !isNonNegativeInteger(entry.last_seen_unix_seconds) || !Array.isArray(entry.samples) ||
+        entry.samples.length > 30) {
+      throw new Error('Invalid neighborhood response.');
+    }
+    hostnames.add(entry.hostname);
+    const relativeDays = new Set<number>();
+    const samples: NeighborSampleSnapshot[] = entry.samples.map(sample => {
+      if (!isObject(sample) || !isNonNegativeInteger(sample.relative_days) ||
+          sample.relative_days > 29 || relativeDays.has(sample.relative_days) ||
+          !isNonNegativeInteger(sample.observations) || !isNonNegativeInteger(sample.bytes_up) ||
+          !isNonNegativeInteger(sample.bytes_down) || !Array.isArray(sample.labels) ||
+          sample.labels.length > 64 ||
+          sample.labels.some(label => !isBoundedDisplayText(label, 128)) ||
+          new Set(sample.labels).size !== sample.labels.length) {
+        throw new Error('Invalid neighborhood response.');
+      }
+      relativeDays.add(sample.relative_days);
+      return {
+        relativeDays: sample.relative_days,
+        observations: sample.observations,
+        bytesUp: sample.bytes_up,
+        bytesDown: sample.bytes_down,
+        labels: sample.labels,
+      };
+    });
+    return {
+      hostname: entry.hostname,
+      tags: entry.tags,
+      lastSeenUnixSeconds: entry.last_seen_unix_seconds,
+      samples,
+    };
+  });
   return {
     state: value.state,
     detail: value.detail,
@@ -847,6 +926,7 @@ function parseNeighbors(value: unknown): NeighborSnapshot {
     observations: value.observations,
     bytesUp: value.bytes_up,
     bytesDown: value.bytes_down,
+    entries,
   };
 }
 
@@ -855,7 +935,12 @@ function parseInterfaces(value: unknown): InterfaceSnapshot {
       !isNullableNonNegativeInteger(value.checked_at_unix_ms) ||
       !isNullableNonNegativeInteger(value.last_success_at_unix_ms) ||
       !coherentSampleTimes(value.state, value.checked_at_unix_ms, value.last_success_at_unix_ms) ||
-      !isNonNegativeInteger(value.generation) || typeof value.synchronization_running !== 'boolean' ||
+      !isNonNegativeInteger(value.generation) || typeof value.snapshot_valid !== 'boolean' ||
+      typeof value.roles_valid !== 'boolean' || !isNonNegativeInteger(value.route_generation) ||
+      !isNonNegativeInteger(value.role_generation) ||
+      !(value.route_changed_at === null || isBoundedDisplayText(value.route_changed_at, 32)) ||
+      !(value.role_changed_at === null || isBoundedDisplayText(value.role_changed_at, 32)) ||
+      typeof value.synchronization_running !== 'boolean' ||
       !isNonNegativeInteger(value.synchronization_attempts) ||
       !isNonNegativeInteger(value.synchronization_successes) ||
       !isNonNegativeInteger(value.synchronization_errors) ||
@@ -863,15 +948,58 @@ function parseInterfaces(value: unknown): InterfaceSnapshot {
       !isNonNegativeInteger(value.changed_event_datagrams) ||
       !isNonNegativeInteger(value.interfaces) || !isNonNegativeInteger(value.addresses) ||
       !isNonNegativeInteger(value.ipv4_addresses) || !isNonNegativeInteger(value.ipv6_addresses) ||
+      !Array.isArray(value.inventory) || value.inventory.length > 4096 ||
       !(value.last_error_code === null ||
         (typeof value.last_error_code === 'string' && /^[a-z][a-z0-9._-]{0,63}$/u.test(value.last_error_code))) ||
+      !(value.last_error_detail === null || isBoundedDisplayText(value.last_error_detail, 1024)) ||
       value.synchronization_successes > value.synchronization_attempts ||
-      value.synchronization_errors > value.synchronization_attempts ||
-      value.synchronization_successes + value.synchronization_errors > value.synchronization_attempts ||
       value.changed_event_datagrams > value.event_datagrams ||
       value.ipv4_addresses + value.ipv6_addresses !== value.addresses ||
       (value.state === 'ready' && value.last_error_code !== null)) {
     throw new Error('Invalid interface monitoring response.');
+  }
+  const indexes = new Set<number>();
+  let addressCount = 0;
+  const inventory = value.inventory.map((item): InterfaceInventoryEntry => {
+    if (!isObject(item) || !isNonNegativeInteger(item.index) || item.index === 0 ||
+        indexes.has(item.index) || !isBoundedDisplayText(item.name, 64) ||
+        typeof item.role !== 'string' || item.role.length > 64 ||
+        /[\u0000-\u001f\u007f]/u.test(item.role) || !isNonNegativeInteger(item.flags) ||
+        item.flags > 0xffffffff || typeof item.uplink !== 'boolean' ||
+        !Array.isArray(item.addresses) || item.addresses.length > 1024) {
+      throw new Error('Invalid interface inventory entry.');
+    }
+    indexes.add(item.index);
+    const addresses = item.addresses.map((address): InterfaceAddressSnapshot => {
+      if (!isObject(address) ||
+          (address.family !== 'IPv4' && address.family !== 'IPv6' && address.family !== 'other') ||
+          !isBoundedDisplayText(address.address, 128) ||
+          !isNonNegativeInteger(address.prefix_length) ||
+          address.prefix_length > (address.family === 'IPv4' ? 32 : address.family === 'IPv6' ? 128 : 255) ||
+          !isNonNegativeInteger(address.scope) || address.scope > 255 ||
+          !isNonNegativeInteger(address.flags) || address.flags > 0xffffffff) {
+        throw new Error('Invalid interface address entry.');
+      }
+      ++addressCount;
+      return {
+        family: address.family,
+        address: address.address,
+        prefixLength: address.prefix_length,
+        scope: address.scope,
+        flags: address.flags,
+      };
+    });
+    return {
+      index: item.index,
+      name: item.name,
+      role: item.role,
+      flags: item.flags,
+      uplink: item.uplink,
+      addresses,
+    };
+  });
+  if (inventory.length !== value.interfaces || addressCount !== value.addresses) {
+    throw new Error('Incoherent interface inventory response.');
   }
   return {
     state: value.state,
@@ -879,6 +1007,12 @@ function parseInterfaces(value: unknown): InterfaceSnapshot {
     checkedAtUnixMs: value.checked_at_unix_ms,
     lastSuccessAtUnixMs: value.last_success_at_unix_ms,
     generation: value.generation,
+    snapshotValid: value.snapshot_valid,
+    rolesValid: value.roles_valid,
+    routeGeneration: value.route_generation,
+    roleGeneration: value.role_generation,
+    routeChangedAt: value.route_changed_at,
+    roleChangedAt: value.role_changed_at,
     synchronizationRunning: value.synchronization_running,
     synchronizationAttempts: value.synchronization_attempts,
     synchronizationSuccesses: value.synchronization_successes,
@@ -889,7 +1023,9 @@ function parseInterfaces(value: unknown): InterfaceSnapshot {
     addresses: value.addresses,
     ipv4Addresses: value.ipv4_addresses,
     ipv6Addresses: value.ipv6_addresses,
+    inventory,
     lastErrorCode: value.last_error_code,
+    lastErrorDetail: value.last_error_detail,
   };
 }
 

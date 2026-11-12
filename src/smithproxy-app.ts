@@ -354,6 +354,7 @@ const initialNeighbors: NeighborSnapshot = {
   observations: 0,
   bytesUp: 0,
   bytesDown: 0,
+  entries: [],
 };
 
 const initialInterfaces: InterfaceSnapshot = {
@@ -362,6 +363,12 @@ const initialInterfaces: InterfaceSnapshot = {
   checkedAtUnixMs: null,
   lastSuccessAtUnixMs: null,
   generation: 0,
+  snapshotValid: false,
+  rolesValid: false,
+  routeGeneration: 0,
+  roleGeneration: 0,
+  routeChangedAt: null,
+  roleChangedAt: null,
   synchronizationRunning: false,
   synchronizationAttempts: 0,
   synchronizationSuccesses: 0,
@@ -372,7 +379,9 @@ const initialInterfaces: InterfaceSnapshot = {
   addresses: 0,
   ipv4Addresses: 0,
   ipv6Addresses: 0,
+  inventory: [],
   lastErrorCode: null,
+  lastErrorDetail: null,
 };
 
 const initialEvents: EventSnapshot = {
@@ -814,6 +823,15 @@ export class SmithproxyApp extends LitElement {
     .metric-value.warning { color: var(--app-warning); }
     .metric-value.danger { color: var(--app-danger); }
     .metric-note { display: block; margin-top: 5px; color: var(--app-muted); font-size: 12px; }
+    .interface-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; }
+    .interface-metric { padding: 9px 11px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-surface); }
+    .interface-metric .metric-value { margin-top: 3px; font-size: 19px; }
+    .interface-addresses { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+    .interface-address { display: inline-flex; gap: 5px; padding: 3px 6px; border: 1px solid var(--app-border); border-radius: 2px; background: var(--app-canvas); white-space: nowrap; }
+    .interface-address small { color: var(--app-muted); }
+    .interface-name { display: grid; gap: 2px; }
+    .interface-name small { color: var(--app-muted); }
+    .diagnostic-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
     .monitor-panel { padding: 16px; }
     .monitor-panel h3 { margin: 0; font-size: 15px; }
     .monitor-panel p { margin: 4px 0 0; color: var(--app-muted); }
@@ -1174,6 +1192,7 @@ export class SmithproxyApp extends LitElement {
       .policy-row-main { grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) 80px; }
       .policy-row-main > :nth-child(3), .policy-row-main > :nth-child(5), .policy-row-main > :nth-child(6) { display: none; }
       .metric-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+      .interface-metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       .session-detail { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       .inventory-summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       .trend-grid { grid-template-columns: 1fr; }
@@ -1240,6 +1259,7 @@ export class SmithproxyApp extends LitElement {
       .statusbar .spacer { display: none; }
       .status-secondary { display: inline-flex; }
       .metric-grid { grid-template-columns: 1fr; }
+      .interface-metric-grid { grid-template-columns: repeat(2, minmax(100px, 1fr)); }
       .session-detail { grid-template-columns: 1fr; }
       .inventory-summary { grid-template-columns: repeat(2, minmax(100px, 1fr)); }
       .object-row { grid-template-columns: minmax(120px, 1fr) 90px; }
@@ -8935,7 +8955,7 @@ export class SmithproxyApp extends LitElement {
     }).filter(item => item.matches);
     const authorities = (this.snapshot.securityAssets?.certificateAuthorities ?? []).map((item, index) => {
       const name = this.presentedValue(`tls_ca.[${index}].name`, item.name);
-      const detail = item.pathConfigured ? 'Path configured · redacted' : 'Path not configured';
+      const detail = item.path || 'Path not configured';
       return {
         item, name, detail,
         matches: this.searchMatches([name, 'certificate authority', 'ca', detail], query),
@@ -9162,7 +9182,7 @@ export class SmithproxyApp extends LitElement {
     const authorityRows = (this.snapshot?.securityAssets?.certificateAuthorities ?? []).map((item, index) => {
       const prefix = `tls_ca.[${index}].`;
       const name = this.presentedValue(`${prefix}name`, item.name);
-      const summary = item.pathConfigured ? 'CA path configured · redacted' : 'CA path not configured';
+      const summary = item.path || 'CA path not configured';
       return {item, prefix, name, summary};
     }).filter(row => kindMatches('security') && securityTypeMatches('trust') && securityFilterAvailable &&
       queryMatches([row.name, row.summary, 'certificate authority', 'ca', 'trust']));
@@ -9736,7 +9756,7 @@ export class SmithproxyApp extends LitElement {
     return html`
       <section class="runtime-summary" aria-label="Neighborhood activity">
         <div class="runtime-heading">
-          <div><h3>Neighborhood activity</h3><p>Privacy-safe aggregates for recently observed endpoints</p></div>
+          <div><h3>Neighborhood activity</h3><p>Recently observed endpoints and their traffic history</p></div>
           <span class="runtime-state ${presentation.tone}">● ${presentation.label}</span>
         </div>
         <div class="metric-grid">
@@ -9762,7 +9782,28 @@ export class SmithproxyApp extends LitElement {
           </article>
         </div>
         ${this.renderCollectorNotice(presentation, neighbors.lastSuccessAtUnixMs)}
-        <div class="privacy-note">Hostnames, tags, labels, and per-endpoint timelines remain inside the management service.</div>
+        <div class="table network-config-table" tabindex="0">
+          <table class="listener-table" aria-label="Observed network neighbors">
+            <thead><tr><th>Endpoint</th><th>Tags</th><th>Last seen</th><th>Observations</th><th>Traffic</th><th>Labels</th></tr></thead>
+            <tbody>
+              ${neighbors.entries.map(entry => {
+                const observations = entry.samples.reduce((total, sample) => total + sample.observations, 0);
+                const bytes = entry.samples.reduce((total, sample) => total + sample.bytesUp + sample.bytesDown, 0);
+                const labels = [...new Set(entry.samples.flatMap(sample => sample.labels))];
+                return html`<tr>
+                  <td><strong>${entry.hostname}</strong></td>
+                  <td>${entry.tags || 'None'}</td>
+                  <td>${this.timeLabel(entry.lastSeenUnixSeconds * 1000)}</td>
+                  <td>${observations.toLocaleString()}</td>
+                  <td>${this.formatBytes(bytes)}</td>
+                  <td>${labels.length > 0 ? labels.join(' · ') : 'None'}</td>
+                </tr>`;
+              })}
+              ${neighbors.entries.length === 0 ? html`
+                <tr><td colspan="6">No neighborhood endpoints have been reported.</td></tr>` : nothing}
+            </tbody>
+          </table>
+        </div>
       </section>
     `;
   }
@@ -9784,23 +9825,23 @@ export class SmithproxyApp extends LitElement {
           <div><h3>Network interfaces</h3><p>Current interface and address inventory</p></div>
           <span class="runtime-state ${presentation.tone}">● ${presentation.label}</span>
         </div>
-        <div class="metric-grid">
-          <article class="metric">
+        <div class="interface-metric-grid">
+          <article class="interface-metric">
             <span class="metric-label">Interfaces</span>
             <strong class="metric-value">${interfaces.interfaces.toLocaleString()}</strong>
             <span class="metric-note">Reported by the connected Smithproxy instance</span>
           </article>
-          <article class="metric">
+          <article class="interface-metric">
             <span class="metric-label">Addresses</span>
             <strong class="metric-value">${interfaces.addresses.toLocaleString()}</strong>
             <span class="metric-note">${interfaces.ipv4Addresses.toLocaleString()} IPv4 · ${interfaces.ipv6Addresses.toLocaleString()} IPv6</span>
           </article>
-          <article class="metric">
+          <article class="interface-metric">
             <span class="metric-label">IPv4 addresses</span>
             <strong class="metric-value">${interfaces.ipv4Addresses.toLocaleString()}</strong>
             <span class="metric-note">Currently assigned addresses</span>
           </article>
-          <article class="metric">
+          <article class="interface-metric">
             <span class="metric-label">IPv6 addresses</span>
             <strong class="metric-value">${interfaces.ipv6Addresses.toLocaleString()}</strong>
             <span class="metric-note">Currently assigned addresses</span>
@@ -9812,6 +9853,32 @@ export class SmithproxyApp extends LitElement {
             synchronization error${interfaces.synchronizationErrors === 1 ? '' : 's'}.
           </div>` : nothing}
         ${this.renderCollectorNotice(presentation, interfaces.lastSuccessAtUnixMs)}
+        <div class="runtime-heading">
+          <div><h3>Observed interfaces</h3><p>Current operating-system interface inventory</p></div>
+        </div>
+        <div class="table network-config-table" tabindex="0">
+          <table class="listener-table" aria-label="Observed network interfaces">
+            <thead><tr><th>Interface</th><th>Index</th><th>Role</th><th>Link</th><th>Addresses</th><th>Flags</th></tr></thead>
+            <tbody>
+              ${interfaces.inventory.map(item => html`<tr>
+                <td><span class="interface-name"><strong>${item.name}</strong><small>${item.uplink ? 'Default-route uplink' : 'Local interface'}</small></span></td>
+                <td>${item.index.toLocaleString()}</td>
+                <td><strong>${item.role || 'Unassigned'}</strong></td>
+                <td>${this.interfaceFlagsLabel(item.flags)}</td>
+                <td><span class="interface-addresses">
+                  ${item.addresses.map(address => html`<span class="interface-address">
+                    <code>${address.address}/${address.prefixLength}</code>
+                    <small>${address.family} · ${this.interfaceScopeLabel(address.scope)} · flags ${this.hexFlags(address.flags)}</small>
+                  </span>`)}
+                  ${item.addresses.length === 0 ? html`<span class="runtime-state">No addresses</span>` : nothing}
+                </span></td>
+                <td><code>${this.hexFlags(item.flags)}</code></td>
+              </tr>`)}
+              ${interfaces.inventory.length === 0 ? html`
+                <tr><td colspan="6">No interface inventory has been reported.</td></tr>` : nothing}
+            </tbody>
+          </table>
+        </div>
         <div class="runtime-heading">
           <div><h3>Interface roles</h3><p>Ordered name and address selectors used by policy matching</p></div>
           <button class="secondary" type="button"
@@ -9841,23 +9908,52 @@ export class SmithproxyApp extends LitElement {
             </span>
           </summary>
           <div class="diagnostic-content">
-            <dl>
-              <dt>Generation</dt><dd>${interfaces.generation.toLocaleString()}</dd>
-              <dt>Attempts</dt><dd>${interfaces.synchronizationAttempts.toLocaleString()}</dd>
-              <dt>Successful</dt><dd>${interfaces.synchronizationSuccesses.toLocaleString()}</dd>
-              <dt>Errors</dt><dd>${interfaces.synchronizationErrors.toLocaleString()}</dd>
-              <dt>Current state</dt><dd>${interfaces.synchronizationRunning ? 'Running' : 'Idle'}</dd>
-              <dt>Event datagrams</dt><dd>${interfaces.eventDatagrams.toLocaleString()}</dd>
-              <dt>Changed events</dt><dd>${interfaces.changedEventDatagrams.toLocaleString()}</dd>
-              <dt>Last error code</dt><dd>${interfaces.lastErrorCode ?? 'None'}</dd>
-            </dl>
-            <p class="privacy-note">
-              Interface names, indexes, addresses, routes, namespaces, and raw kernel errors remain inside the management service.
-            </p>
+            <div class="table">
+              <table class="listener-table diagnostic-table" aria-label="Interface synchronization counters">
+                <tbody>
+                  <tr><th>Generation</th><td>${interfaces.generation.toLocaleString()}</td></tr>
+                  <tr><th>Snapshot validity</th><td>${interfaces.snapshotValid ? 'Valid' : 'Invalid'}</td></tr>
+                  <tr><th>Role validity</th><td>${interfaces.rolesValid ? 'Valid' : 'Invalid'}</td></tr>
+                  <tr><th>Route generation</th><td>${interfaces.routeGeneration.toLocaleString()}</td></tr>
+                  <tr><th>Last route change</th><td>${interfaces.routeChangedAt ?? 'Not observed'}</td></tr>
+                  <tr><th>Role generation</th><td>${interfaces.roleGeneration.toLocaleString()}</td></tr>
+                  <tr><th>Last role change</th><td>${interfaces.roleChangedAt ?? 'Not observed'}</td></tr>
+                  <tr><th>Synchronization state</th><td>${interfaces.synchronizationRunning ? 'Running' : 'Idle'}</td></tr>
+                  <tr><th>Attempts</th><td>${interfaces.synchronizationAttempts.toLocaleString()}</td></tr>
+                  <tr><th>Successful</th><td>${interfaces.synchronizationSuccesses.toLocaleString()}</td></tr>
+                  <tr><th>Errors</th><td>${interfaces.synchronizationErrors.toLocaleString()}</td></tr>
+                  <tr><th>Event datagrams</th><td>${interfaces.eventDatagrams.toLocaleString()}</td></tr>
+                  <tr><th>Changed events</th><td>${interfaces.changedEventDatagrams.toLocaleString()}</td></tr>
+                  <tr><th>Last error code</th><td>${interfaces.lastErrorCode ?? 'None'}</td></tr>
+                  <tr><th>Last error detail</th><td>${interfaces.lastErrorDetail ?? 'None'}</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </details>
       </section>
     `;
+  }
+
+  private hexFlags(flags: number): string {
+    return `0x${flags.toString(16).padStart(4, '0')}`;
+  }
+
+  private interfaceFlagsLabel(flags: number): string {
+    const labels = [
+      [0x1, 'Up'], [0x8, 'Loopback'], [0x40, 'Running'], [0x10000, 'Lower up'],
+    ] as const;
+    const active = labels.filter(([mask]) => (flags & mask) !== 0).map(([, label]) => label);
+    return active.length > 0 ? active.join(' · ') : 'Down';
+  }
+
+  private interfaceScopeLabel(scope: number): string {
+    if (scope === 0) return 'global';
+    if (scope === 200) return 'site';
+    if (scope === 253) return 'link';
+    if (scope === 254) return 'host';
+    if (scope === 255) return 'nowhere';
+    return `scope ${scope}`;
   }
 
   private availabilityLabel(): string {
@@ -11182,7 +11278,7 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Logging and payloads</h3><p>Destinations stay redacted</p></div>
+              <header><div><h3>Logging and payloads</h3><p>Active output destinations and retention</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
                     'settings', event.currentTarget as HTMLElement, 'logging',
@@ -11190,12 +11286,12 @@ export class SmithproxyApp extends LitElement {
               </header>
               <dl>
                 <dt>Log level / console</dt><dd>${setting('log_level', settings.logging.level)} / ${setting('log_console', settings.logging.console) ? 'On' : 'Off'}</dd>
-                <dt>Log file</dt><dd>${settings.logging.fileConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>TLS key log</dt><dd>${settings.logging.sslKeyFileConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Log file</dt><dd><code>${settings.logging.file || 'Not configured'}</code></dd>
+                <dt>TLS key log</dt><dd><code>${settings.logging.sslKeyFile || 'Not configured'}</code></dd>
                 <dt>Default payload capture</dt><dd>${setting('default_write_payload', settings.logging.defaultWritePayload) ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Payload directory</dt><dd>${settings.logging.payloadDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Payload directory</dt><dd><code>${settings.logging.payloadDirectory || 'Not configured'}</code></dd>
                 <dt>Single PCAP quota</dt><dd>${setting('write_pcap_single_quota', settings.logging.pcapSingleQuota).toLocaleString()}</dd>
-                <dt>Syslog</dt><dd>${settings.logging.syslogServerConfigured ? `Configured · IPv${setting('syslog_family', settings.logging.syslogFamily)}` : 'Not configured'}</dd>
+                <dt>Syslog</dt><dd>${settings.logging.syslogServer ? html`<code>${settings.logging.syslogServer}</code> · IPv${setting('syslog_family', settings.logging.syslogFamily)}` : 'Not configured'}</dd>
                 <dt>Syslog port / facility / level</dt><dd>${setting('syslog_port', settings.logging.syslogPort)} / ${setting('syslog_facility', settings.logging.syslogFacility)} / ${setting('syslog_level', settings.logging.syslogLevel)}</dd>
               </dl>
             </article>
@@ -11208,7 +11304,7 @@ export class SmithproxyApp extends LitElement {
               </header>
               <dl>
                 <dt>CLI port / password</dt><dd>${setting('cli.port', settings.auxiliary.cliPort)} / ${settings.auxiliary.cliPasswordConfigured ? 'Configured' : 'Not configured'}</dd>
-                <dt>Administration group</dt><dd>${settings.auxiliary.adminGroupConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Administration group</dt><dd><code>${settings.auxiliary.adminGroup || 'Not configured'}</code></dd>
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
@@ -11226,17 +11322,18 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Certificate resources</h3><p>Private paths and passwords stay redacted</p></div>
+              <header><div><h3>Certificate resources</h3><p>Resource locations; private key passwords remain hidden</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
                     'settings', event.currentTarget as HTMLElement, 'certificates',
                   )}>Open certificate settings</button>
               </header>
               <dl>
-                <dt>Certificates</dt><dd>${settings.auxiliary.certificatesPathConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>CA bundle</dt><dd>${settings.auxiliary.caBundlePathConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Certificates</dt><dd><code>${settings.auxiliary.certificatesPath || 'Not configured'}</code></dd>
+                <dt>CA bundle path</dt><dd><code>${settings.auxiliary.caBundlePath || 'Not configured'}</code></dd>
+                <dt>CA bundle file</dt><dd><code>${settings.auxiliary.caBundleFile || 'Not configured'}</code></dd>
                 <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>Certificate transparency log</dt><dd>${settings.auxiliary.certificateTransparencyLogConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Certificate transparency log</dt><dd><code>${settings.auxiliary.certificateTransparencyLog || 'Not configured'}</code></dd>
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
@@ -11247,7 +11344,8 @@ export class SmithproxyApp extends LitElement {
                   )}>Open resource settings</button>
               </header>
               <dl>
-                <dt>Message assets</dt><dd>${settings.auxiliary.messagesDirectoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Message assets</dt><dd><code>${settings.auxiliary.messagesDirectory || 'Not configured'}</code></dd>
+                <dt>Payload filename</dt><dd><code>${settings.auxiliary.payloadFilePrefix || '(no prefix)'}</code> … <code>${settings.auxiliary.payloadFileSuffix || '(no suffix)'}</code></dd>
                 <dt>Web rating key</dt><dd>${settings.auxiliary.webRatingKeyConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
               </dl>
             </article>
@@ -11267,7 +11365,7 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="backend">
-              <header><div><h3>Management access</h3><p>Secrets and addresses are redacted</p></div>
+              <header><div><h3>Management access</h3><p>Listener exposure and authentication posture</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
                     'settings', event.currentTarget as HTMLElement, 'management-api',
@@ -11280,14 +11378,14 @@ export class SmithproxyApp extends LitElement {
                 <dt>Endpoint</dt><dd>Port ${setting('http_api.port', settings.httpApi.port)} · ${setting('http_api.key_timeout', settings.httpApi.keyTimeout)}s token TTL</dd>
                 <dt>Token refresh</dt><dd>${setting('http_api.key_extend_on_access', settings.httpApi.keyExtendOnAccess) ? 'On access' : 'Fixed expiry'}</dd>
                 <dt>Loopback only</dt><dd>${setting('http_api.loopback_only', settings.httpApi.loopbackOnly) ? 'Yes' : 'No'}</dd>
-                <dt>Bind address</dt><dd>${settings.httpApi.bindAddressConfigured ? 'Configured · redacted' : 'Default'}</dd>
-                <dt>Bind interface</dt><dd>${settings.httpApi.bindInterfaceConfigured ? 'Configured · redacted' : 'Default'}</dd>
+                <dt>Bind address</dt><dd><code>${settings.httpApi.bindAddress || 'Default'}</code></dd>
+                <dt>Bind interface</dt><dd><code>${settings.httpApi.bindInterface || 'Default'}</code></dd>
                 <dt>API header access</dt><dd>${setting('http_api.allow_api_header', settings.httpApi.allowApiHeader) ? 'Allowed' : 'Blocked'}</dd>
                 <dt>PAM login</dt><dd>${setting('http_api.pam_login', settings.httpApi.pamLogin) ? 'Enabled' : 'Disabled'}</dd>
               </dl>
             </article>
             <article class="domain-card" data-system-section="backend">
-              <header><div><h3>Webhook posture</h3><p>URLs and identities are redacted</p></div>
+              <header><div><h3>Webhook posture</h3><p>Destinations, identity, and delivery behavior</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
                     'settings', event.currentTarget as HTMLElement, 'webhook',
@@ -11295,10 +11393,13 @@ export class SmithproxyApp extends LitElement {
               </header>
               <dl>
                 <dt>Webhook</dt><dd>${setting('webhook.enabled', settings.webhook.enabled) ? 'Enabled' : 'Disabled'}</dd>
-                <dt>URL</dt><dd>${settings.webhook.urlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>URL</dt><dd><code>${settings.webhook.url || 'Not configured'}</code></dd>
                 <dt>TLS verification</dt><dd>${setting('webhook.tls_verify', settings.webhook.tlsVerify) ? 'Required' : 'Disabled'}</dd>
                 <dt>Sift</dt><dd>${setting('webhook.sift', settings.webhook.siftEnabled) ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Sift endpoint</dt><dd>${settings.webhook.siftUrlConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Sift endpoint</dt><dd><code>${settings.webhook.siftUrl || 'Not configured'}</code></dd>
+                <dt>Sift tenant / instance</dt><dd><code>${settings.webhook.siftTenant || 'Not configured'}</code> / <code>${settings.webhook.siftInstance || 'Not configured'}</code></dd>
+                <dt>Host identity</dt><dd><code>${settings.webhook.hostId || 'Not configured'}</code></dd>
+                <dt>Bound interface</dt><dd><code>${settings.webhook.bindInterface || 'Default'}</code></dd>
                 <dt>Sift payload limit</dt><dd>${setting('webhook.sift_payload_limit_per_direction', settings.webhook.siftPayloadLimitPerDirection)} bytes / direction</dd>
                 <dt>Ping interval</dt><dd>${setting('webhook.ping_interval', settings.webhook.pingInterval)}s</dd>
                 <dt>API override</dt><dd>${setting('webhook.api_override', settings.webhook.apiOverride) ? 'Allowed' : 'Blocked'}</dd>
@@ -11330,7 +11431,7 @@ export class SmithproxyApp extends LitElement {
           ` : nothing}
           ${captures ? html`
             <article class="domain-card" data-system-section="captures">
-              <header><div><h3>Capture posture</h3><p>Paths and destinations are redacted</p></div>
+              <header><div><h3>Capture posture</h3><p>Local storage and remote export destinations</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('captures', 'captures')}
                   <button class="secondary" type="button" ?disabled=${!captures.editable}
                     title=${captures.editable
@@ -11340,13 +11441,13 @@ export class SmithproxyApp extends LitElement {
               </header>
               <dl>
                 <dt>Local capture</dt><dd>${captureSetting('local.enabled', captures.local.enabled) ? 'Enabled' : 'Disabled'}</dd>
-                <dt>Local target</dt><dd>${captures.local.directoryConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>Filename prefix / suffix</dt><dd>${captures.local.filePrefixConfigured ? 'Configured' : 'Empty'} / ${captures.local.fileSuffixConfigured ? 'Configured' : 'Empty'}</dd>
+                <dt>Local target</dt><dd><code>${captures.local.directory || 'Not configured'}</code></dd>
+                <dt>Filename prefix / suffix</dt><dd><code>${captures.local.filePrefix || '(empty)'}</code> / <code>${captures.local.fileSuffix || '(empty)'}</code></dd>
                 <dt>Format / quota</dt><dd>${captureSetting('local.format', captures.local.format)} / ${captureSetting('local.pcap_quota', captures.local.quotaMiB)} MiB</dd>
                 <dt>Remote capture</dt><dd>${captureSetting('remote.enabled', captures.remote.enabled) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Tunnel format</dt><dd>${captureSetting('remote.tun_type', captures.remote.tunnelType)} / ${captureSetting('remote.gre_format', captures.remote.greFormat)}</dd>
-                <dt>Remote target</dt><dd>${captures.remote.destinationConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
-                <dt>TTL / bound interface</dt><dd>${captureSetting('remote.tun_ttl', captures.remote.ttl)} / ${captures.remote.bindInterfaceConfigured ? 'Yes' : 'No'}</dd>
+                <dt>Remote target</dt><dd><code>${captures.remote.destination || 'Not configured'}</code></dd>
+                <dt>TTL / bound interface</dt><dd>${captureSetting('remote.tun_ttl', captures.remote.ttl)} / <code>${captures.remote.bindInterface || 'Default'}</code></dd>
                 <dt>Checksums</dt><dd>${captureSetting('options.calculate_checksums', captures.calculateChecksums) ? 'Calculated' : 'Preserved'}</dd>
               </dl>
             </article>
@@ -13300,7 +13401,7 @@ export class SmithproxyApp extends LitElement {
         ` : script ? html`
           <fieldset class="editor-group">
             <legend>Script execution</legend>
-            <p>Selects the script runtime and replaces the private module path without exposing its current value.</p>
+            <p>Selects the script runtime and module loaded by this profile.</p>
             <div class="form-grid">
           <label for="script-runtime-${entry.id}">Runtime</label>
           <select id="script-runtime-${entry.id}" .value=${scriptRuntime} ?disabled=${fieldReadOnly('type')}>
@@ -13308,6 +13409,7 @@ export class SmithproxyApp extends LitElement {
             <option value="unknown">Unspecified</option>
           </select>
           <label for="script-write-module-${entry.id}-mode">Module path</label>
+          <code>${script.modulePath || 'Not configured'}</code>
           <div class="write-only-control">
             <select id="script-write-module-${entry.id}-mode" ?disabled=${mappedReadOnly}>
               <option value="unchanged">${script.modulePathConfigured ? 'Keep configured path' : 'Keep empty'}</option>
@@ -13349,12 +13451,8 @@ export class SmithproxyApp extends LitElement {
       ${content ? html`<div class="privacy-note section">
         Current session filters and all content-rule payloads stay inside the management service. Filter replacements are write-only.
       </div>` : nothing}
-      ${ssh ? html`<div class="privacy-note section">
-        The current private host-key path stays inside the management service. Replacements are write-only.
-      </div>` : nothing}
-      ${script ? html`<div class="privacy-note section">
-        The current script module path stays inside the management service. Replacements are write-only.
-      </div>` : nothing}
+      ${ssh ? html`<div class="scope-note section">Current host-key path: <code>${ssh.hostKey}</code></div>` : nothing}
+      ${script ? html`<div class="scope-note section">Current module path: <code>${script.modulePath || 'Not configured'}</code></div>` : nothing}
       ${authentication ? html`<div class="privacy-note section">
         Authentication profiles are obsolete in Smithproxy; identity names and profile bindings stay inside the management service.
       </div>` : nothing}
@@ -13843,6 +13941,7 @@ export class SmithproxyApp extends LitElement {
         <input id="authority-name-${entry.id}" .value=${this.persistentValue(namePath, authority.name)}
           .readOnly=${this.originReadOnly(namePath, disabled)} />
         <label for="authority-write-path-${entry.id}-mode">CA path</label>
+        <code>${authority.path || 'Not configured'}</code>
         <div class="write-only-control">
           <select id="authority-write-path-${entry.id}-mode" ?disabled=${disabled}>
             <option value="unchanged">${authority.pathConfigured ? 'Keep configured path' : 'Keep empty'}</option>
@@ -13853,9 +13952,7 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
       ${this.renderNamedRenameNotice(namePath)}
-      <div class="privacy-note section">
-        The current certificate-authority path stays inside the management service. Replacements are write-only.
-      </div>
+      <div class="scope-note section">Replacement values remain redacted only in draft review.</div>
     `;
   }
 
@@ -14213,6 +14310,7 @@ export class SmithproxyApp extends LitElement {
         <input id="signature-flow-maximum-${entry.id}" type="number" min="0"
           .value=${String(scalar('bytes_max', step.bytesMax))} .readOnly=${locked('bytes_max')} />
         <label for="signature-flow-write-expression-${entry.id}-mode">Expression</label>
+        <pre><code>${step.expression || '(empty)'}</code></pre>
         <div class="write-only-control">
           <select id="signature-flow-write-expression-${entry.id}-mode" ?disabled=${disabled}>
             <option value="unchanged">${step.expressionConfigured ? 'Keep configured expression' : 'Keep empty'}</option>
@@ -14223,9 +14321,7 @@ export class SmithproxyApp extends LitElement {
             placeholder="New expression (write-only)" .readOnly=${disabled}></textarea>
         </div>
       </div>
-      <div class="privacy-note section">
-        The current matcher expression is never serialized to the browser. A replacement is redacted in draft review.
-      </div>
+      <div class="scope-note section">Replacement values remain redacted only in draft review.</div>
     `;
   }
 

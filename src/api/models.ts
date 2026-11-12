@@ -138,6 +138,7 @@ export interface ContentProfileDetails {
 
 export interface SshProfileDetails {
   hostKeyConfigured: boolean;
+  hostKey: string;
   hostKeyPolicy: 'insecure' | 'accept-new' | 'strict';
   shell: boolean;
   exec: boolean;
@@ -159,6 +160,7 @@ export interface DnsProfileDetails {
 export interface ScriptProfileDetails {
   runtime: 'python' | 'go' | 'unknown';
   modulePathConfigured: boolean;
+  modulePath: string;
 }
 
 export interface AuthenticationProfileDetails {
@@ -202,13 +204,17 @@ export interface SystemSettings {
   crlStatusTtl: number;
   logging: {
     defaultWritePayload: boolean;
+    payloadDirectory: string;
     payloadDirectoryConfigured: boolean;
     pcapSingleQuota: number;
     level: number;
     fileConfigured: boolean;
+    file: string;
     console: boolean;
     sslKeyFileConfigured: boolean;
+    sslKeyFile: string;
     syslogServerConfigured: boolean;
+    syslogServer: string;
     syslogPort: number;
     syslogFacility: number;
     syslogLevel: number;
@@ -218,17 +224,25 @@ export interface SystemSettings {
     udpQuickPortCount: number;
     udpQuickPorts: ReadonlyArray<string>;
     certificatesPathConfigured: boolean;
+    certificatesPath: string;
     certificatePasswordConfigured: boolean;
     certificateTransparencyLogConfigured: boolean;
+    certificateTransparencyLog: string;
     caBundlePathConfigured: boolean;
+    caBundlePath: string;
     caBundleFileConfigured: boolean;
+    caBundleFile: string;
     messagesDirectoryConfigured: boolean;
+    messagesDirectory: string;
     payloadFilePrefixConfigured: boolean;
+    payloadFilePrefix: string;
     payloadFileSuffixConfigured: boolean;
+    payloadFileSuffix: string;
     cliPort: number;
     cliPasswordConfigured: boolean;
     webRatingKeyConfigured: boolean;
     adminGroupConfigured: boolean;
+    adminGroup: string;
     tuning: {
       hostBufferMin: number;
       hostBufferMaxMultiplier: number;
@@ -262,19 +276,27 @@ export interface SystemSettings {
     pamLogin: boolean;
     allowApiHeader: boolean;
     bindAddressConfigured: boolean;
+    bindAddress: string;
     bindInterfaceConfigured: boolean;
+    bindInterface: string;
   };
   webhook: {
     enabled: boolean;
     tlsVerify: boolean;
     urlConfigured: boolean;
+    url: string;
     siftEnabled: boolean;
     siftUrlConfigured: boolean;
+    siftUrl: string;
     siftTenantConfigured: boolean;
+    siftTenant: string;
     siftInstanceConfigured: boolean;
+    siftInstance: string;
     siftPayloadLimitPerDirection: number;
     hostIdConfigured: boolean;
+    hostId: string;
     bindInterfaceConfigured: boolean;
+    bindInterface: string;
     apiOverride: boolean;
     pingInterval: number;
     neighborUpdateInterval: number;
@@ -289,8 +311,11 @@ export interface CaptureSettings {
   local: {
     enabled: boolean;
     directoryConfigured: boolean;
+    directory: string;
     filePrefixConfigured: boolean;
+    filePrefix: string;
     fileSuffixConfigured: boolean;
+    fileSuffix: string;
     format: 'pcap_single' | 'pcap' | 'smcap';
     quotaMiB: number;
   };
@@ -299,8 +324,10 @@ export interface CaptureSettings {
     tunnelType: 'gre';
     greFormat: 'traffic' | 'pcapng' | 'spq1';
     destinationConfigured: boolean;
+    destination: string;
     ttl: number;
     bindInterfaceConfigured: boolean;
+    bindInterface: string;
   };
   calculateChecksums: boolean;
 }
@@ -323,6 +350,7 @@ export interface CertificateAuthoritySummary {
   id: string;
   name: string;
   pathConfigured: boolean;
+  path: string;
 }
 
 export interface SignatureFlowStep {
@@ -330,6 +358,7 @@ export interface SignatureFlowStep {
   side: 'r' | 'w';
   type: 'regex' | 'simple';
   expressionConfigured: boolean;
+  expression: string;
   bytesStart: number;
   bytesMax: number;
 }

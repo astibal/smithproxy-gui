@@ -262,7 +262,8 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps([
                 {"hostname": "private-neighbor.example", "tags": "office", "last_seen": 1,
-                 "stats": [{"relative_days": 0, "counter": 3, "bytes_up": 100, "bytes_down": 200}]},
+                 "stats": [{"relative_days": 0, "counter": 3, "bytes_up": 100, "bytes_down": 200,
+                            "labels": ["tls", "browser"]}]},
                 {"hostname": "another-private.example", "tags": "", "last_seen": 1,
                  "stats": [{"relative_days": 3, "counter": 4, "bytes_up": 10, "bytes_down": 20}]},
             ]).encode())
@@ -276,6 +277,12 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                 "schema_version": 1,
                 "state": "ready",
                 "generation": 42,
+                "snapshot_valid": True,
+                "roles_valid": True,
+                "route_generation": 8,
+                "role_generation": 3,
+                "route_changed_at": "2026-11-12T10:00:00Z",
+                "role_changed_at": "2026-11-12T10:00:01Z",
                 "sampled_at_unix_ms": int(time.time() * 1000),
                 "synchronization": {
                     "running": True, "attempts": 3, "successes": 3, "errors": 0,
@@ -285,8 +292,24 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                     "interfaces": 3, "addresses": 5,
                     "ipv4_addresses": 3, "ipv6_addresses": 2,
                 },
-                "snapshot_valid": True,
-                "interfaces": [{"name": "eth0"}],
+                "interfaces": [
+                    {"ifindex": 1, "name": "lo", "role": "Local", "flags": 73,
+                     "uplink": False, "addresses": [
+                         {"family": "IPv4", "address": "127.0.0.1", "prefix_length": 8,
+                          "scope": 254, "flags": 128},
+                         {"family": "IPv6", "address": "::1", "prefix_length": 128,
+                          "scope": 254, "flags": 128}]},
+                    {"ifindex": 2, "name": "lan0", "role": "Inside", "flags": 69699,
+                     "uplink": False, "addresses": [
+                         {"family": "IPv4", "address": "192.0.2.10", "prefix_length": 24,
+                          "scope": 0, "flags": 128}]},
+                    {"ifindex": 3, "name": "wan0", "role": "Outside", "flags": 69699,
+                     "uplink": True, "addresses": [
+                         {"family": "IPv4", "address": "198.51.100.2", "prefix_length": 24,
+                          "scope": 0, "flags": 128},
+                         {"family": "IPv6", "address": "2001:db8::2", "prefix_length": 64,
+                          "scope": 0, "flags": 0}]},
+                ],
                 "last_error": "",
                 "last_error_code": None,
             }).encode())
@@ -744,7 +767,9 @@ def main() -> int:
             assert neighbors["observations"] == 7
             assert neighbors["bytes_up"] == 110
             assert neighbors["bytes_down"] == 220
-            assert b"private-neighbor.example" not in body
+            assert neighbors["entries"][0]["hostname"] == "private-neighbor.example"
+            assert neighbors["entries"][0]["tags"] == "office"
+            assert neighbors["entries"][0]["samples"][0]["labels"] == ["tls", "browser"]
             neighbor_last_success = neighbors["last_success_at_unix_ms"]
             status, _, body = request(
                 configured_port, "/api/v1/network/interfaces/summary", headers=gateway_headers)
@@ -756,7 +781,15 @@ def main() -> int:
             assert interfaces["addresses"] == 5
             assert interfaces["ipv4_addresses"] == 3
             assert interfaces["ipv6_addresses"] == 2
+            assert interfaces["snapshot_valid"] is True
+            assert interfaces["roles_valid"] is True
+            assert interfaces["route_generation"] == 8
+            assert interfaces["role_generation"] == 3
+            assert interfaces["inventory"][1]["name"] == "lan0"
+            assert interfaces["inventory"][2]["uplink"] is True
+            assert interfaces["inventory"][2]["addresses"][1]["address"] == "2001:db8::2"
             assert interfaces["last_error_code"] is None
+            assert interfaces["last_error_detail"] is None
             assert b"private" not in body
             interface_last_success = interfaces["last_success_at_unix_ms"]
             status, _, body = request(
@@ -816,13 +849,17 @@ def main() -> int:
             assert config_snapshot["settings"]["crl_status_ttl"] == 86400
             assert config_snapshot["settings"]["logging"] == {
                 "default_write_payload": False,
+                "payload_directory": "/private/payloads",
                 "payload_directory_configured": True,
                 "pcap_single_quota": 100,
                 "level": 6,
                 "file_configured": True,
+                "file": "/private/log/messages.log",
                 "console": True,
                 "ssl_key_file_configured": True,
+                "ssl_key_file": "/private/log/tls.keys",
                 "syslog_server_configured": True,
+                "syslog_server": "192.0.2.60",
                 "syslog_port": 514,
                 "syslog_facility": 23,
                 "syslog_level": 6,
@@ -832,17 +869,25 @@ def main() -> int:
                 "udp_quick_port_count": 1,
                 "udp_quick_ports": ["0"],
                 "certificates_path_configured": True,
+                "certificates_path": "/private/certs",
                 "certificate_password_configured": True,
                 "certificate_transparency_log_configured": True,
+                "certificate_transparency_log": "/private/ct-log-list.cnf",
                 "ca_bundle_path_configured": True,
+                "ca_bundle_path": "/private/ca-bundle",
                 "ca_bundle_file_configured": True,
+                "ca_bundle_file": "/private/ca-bundle.pem",
                 "messages_directory_configured": True,
+                "messages_directory": "/private/messages",
                 "payload_file_prefix_configured": True,
+                "payload_file_prefix": "private-prefix",
                 "payload_file_suffix_configured": True,
+                "payload_file_suffix": "private-suffix",
                 "cli_port": 50000,
                 "cli_password_configured": True,
                 "web_rating_key_configured": True,
                 "admin_group_configured": True,
+                "admin_group": "private-admins",
                 "tuning": {
                     "host_buffer_min": 2048, "host_buffer_max_multiplier": 1024,
                     "host_write_full": 200000, "host_io_batch": 262144,
@@ -868,14 +913,20 @@ def main() -> int:
                 "pam_login": False,
                 "allow_api_header": False,
                 "bind_address_configured": True,
+                "bind_address": "192.0.2.77",
                 "bind_interface_configured": True,
+                "bind_interface": "private-api0",
             }
             assert config_snapshot["settings"]["webhook"] == {
                 "enabled": True, "tls_verify": True, "url_configured": True,
+                "url": "https://private-webhook.example/",
                 "sift_enabled": True, "sift_url_configured": True,
+                "sift_url": "http://private-sift.example/webhook",
                 "sift_tenant_configured": True, "sift_instance_configured": True,
+                "sift_tenant": "private-tenant", "sift_instance": "private-instance",
                 "sift_payload_limit_per_direction": 524288,
                 "hostid_configured": True, "bind_interface_configured": True,
+                "hostid": "private-host-id", "bind_interface": "private-webhook0",
                 "api_override": False, "ping_interval": 60,
                 "nbr_update_interval": 600, "nbr_tag_refresh_age": 240,
                 "task_debug": True, "task_debug_dump": False,
@@ -912,33 +963,37 @@ def main() -> int:
             assert secret.encode() not in config_body
             assert gateway_secret.encode() not in config_body
             assert b"backend-secret-value" not in config_body
-            assert b"192.0.2.77" not in config_body
-            assert b"private-api0" not in config_body
-            assert b"private-webhook.example" not in config_body
-            assert b"private-sift.example" not in config_body
-            assert b"private-tenant" not in config_body
-            assert b"private-instance" not in config_body
+            assert b"192.0.2.77" in config_body
+            assert b"private-api0" in config_body
+            assert b"private-webhook.example" in config_body
+            assert b"private-sift.example" in config_body
+            assert b"private-tenant" in config_body
+            assert b"private-instance" in config_body
             assert b"private-identity-name" not in config_body
-            assert b"private-host-id" not in config_body
-            assert b"private-webhook0" not in config_body
-            assert b"ct-log-list" not in config_body
-            assert b"ca-bundle.pem" not in config_body
-            assert b"private-admins" not in config_body
-            assert b"/private/captures" not in config_body
-            assert b"192.0.2.10" not in config_body
-            assert b"private0" not in config_body
-            assert b"/private/payloads" not in config_body
-            assert b"/private/log" not in config_body
-            assert b"192.0.2.60" not in config_body
+            assert b"private-host-id" in config_body
+            assert b"private-webhook0" in config_body
+            assert b"ct-log-list" in config_body
+            assert b"ca-bundle.pem" in config_body
+            assert b"private-admins" in config_body
+            assert b"/private/captures" in config_body
+            assert b"192.0.2.10" in config_body
+            assert b"private0" in config_body
+            assert b"/private/payloads" in config_body
+            assert b"/private/log" in config_body
+            assert b"192.0.2.60" in config_body
             for private_value in (
-                b"/private/certs", b"private-ca-password", b"/private/ca-bundle",
-                b"/private/messages", b"private-prefix", b"private-suffix",
-                b"private-cli-password", b"private-rating-key",
+                b"private-ca-password", b"private-cli-password", b"private-rating-key",
             ):
                 assert private_value not in config_body
+            for operational_value in (
+                b"/private/certs", b"/private/ca-bundle", b"/private/messages",
+                b"private-prefix", b"private-suffix",
+            ):
+                assert operational_value in config_body
             assert config_snapshot["security_assets"] == {
                 "certificate_authorities": [
-                    {"id": "certificate-authority-0", "name": "default", "path_configured": True},
+                    {"id": "certificate-authority-0", "name": "default", "path_configured": True,
+                     "path": "/private/ca/default"},
                 ],
                 "certificate_authority_count": 1,
                 "certificate_authority_path_count": 1,
@@ -952,7 +1007,8 @@ def main() -> int:
                         "name": "smtp/starttls", "side": "client", "severity": 2, "group": "",
                         "enables": "", "engine": "", "flow": [{
                             "id": "starttls-signature-0-flow-0", "side": "r", "type": "regex",
-                            "expression_configured": True, "bytes_start": 0, "bytes_max": 0,
+                            "expression_configured": True, "expression": "secret-starttls-regex",
+                            "bytes_start": 0, "bytes_max": 0,
                         }],
                     },
                     {
@@ -961,11 +1017,13 @@ def main() -> int:
                         "enables": "", "engine": "", "flow": [
                             {
                                 "id": "detection-signature-0-flow-0", "side": "r", "type": "regex",
-                                "expression_configured": True, "bytes_start": 0, "bytes_max": 0,
+                                "expression_configured": True, "expression": "secret-detection-regex",
+                                "bytes_start": 0, "bytes_max": 0,
                             },
                             {
                                 "id": "detection-signature-0-flow-1", "side": "r", "type": "regex",
-                                "expression_configured": True, "bytes_start": 0, "bytes_max": 0,
+                                "expression_configured": True, "expression": "another-secret-regex",
+                                "bytes_start": 0, "bytes_max": 0,
                             },
                         ],
                     },
@@ -973,9 +1031,9 @@ def main() -> int:
             }
             assert config_snapshot["augment_support"] is False
             assert config_snapshot["value_origins"] == []
-            assert b"/private/ca/default" not in config_body
-            assert b"secret-starttls-regex" not in config_body
-            assert b"secret-detection-regex" not in config_body
+            assert b"/private/ca/default" in config_body
+            assert b"secret-starttls-regex" in config_body
+            assert b"secret-detection-regex" in config_body
             assert b"private-content-match" not in config_body
             assert b"private-content-replacement" not in config_body
 

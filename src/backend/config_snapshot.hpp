@@ -106,6 +106,7 @@ struct ConfigContentProfile {
 };
 
 struct ConfigSshProfile {
+    std::string host_key;
     std::string host_key_policy;
     bool shell{};
     bool exec{};
@@ -127,6 +128,7 @@ struct ConfigDnsProfile {
 struct ConfigScriptProfile {
     std::string runtime;
     bool module_path_configured{};
+    std::string module_path;
 };
 
 struct ConfigPrivateProfileReference {
@@ -289,6 +291,28 @@ struct ConfigSystemSettings {
     // Optional libconfig groups which are present in the running tree. Values
     // from absent groups are defaults for display and cannot be updated with Set.
     std::vector<std::string> present_groups;
+    // Administrator-visible locations and endpoints. Passwords and API keys
+    // intentionally remain represented only by configured/not-configured state.
+    std::string payload_directory;
+    std::string log_file;
+    std::string ssl_key_log_file;
+    std::string syslog_server;
+    std::string certificates_path;
+    std::string certificate_transparency_log;
+    std::string ca_bundle_path;
+    std::string ca_bundle_file;
+    std::string messages_directory;
+    std::string payload_file_prefix;
+    std::string payload_file_suffix;
+    std::string admin_group;
+    std::string api_bind_address;
+    std::string api_bind_interface;
+    std::string webhook_url;
+    std::string webhook_sift_url;
+    std::string webhook_sift_tenant;
+    std::string webhook_sift_instance;
+    std::string webhook_host_id;
+    std::string webhook_bind_interface;
 };
 
 struct ConfigDebugSettings {
@@ -322,12 +346,18 @@ struct ConfigCaptureSettings {
     bool remote_bind_interface_configured{};
     bool calculate_checksums{};
     bool editable{};
+    std::string local_directory;
+    std::string local_file_prefix;
+    std::string local_file_suffix;
+    std::string remote_destination;
+    std::string remote_bind_interface;
 };
 
 struct ConfigCertificateAuthority {
     std::string id;
     std::string name;
     bool path_configured{};
+    std::string path;
 };
 
 struct ConfigSignatureFlowStep {
@@ -335,6 +365,7 @@ struct ConfigSignatureFlowStep {
     std::string side;
     std::string type;
     bool expression_configured{};
+    std::string expression;
     std::uint64_t bytes_start{};
     std::uint64_t bytes_max{};
 };

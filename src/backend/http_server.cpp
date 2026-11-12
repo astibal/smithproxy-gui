@@ -1907,7 +1907,8 @@ private:
                 profiles += "null";
             } else {
                 const auto& ssh = *profile.ssh;
-                profiles += "{\"host_key_configured\":true,\"host_key_policy\":" +
+                profiles += "{\"host_key_configured\":true,\"host_key\":" +
+                            json_string(ssh.host_key) + ",\"host_key_policy\":" +
                             json_string(ssh.host_key_policy) +
                             ",\"shell\":" + (ssh.shell ? "true" : "false") +
                             ",\"exec\":" + (ssh.exec ? "true" : "false") +
@@ -1935,7 +1936,8 @@ private:
             } else {
                 profiles += "{\"runtime\":" + json_string(profile.script->runtime) +
                             ",\"module_path_configured\":" +
-                            (profile.script->module_path_configured ? "true" : "false") + "}";
+                            (profile.script->module_path_configured ? "true" : "false") +
+                            ",\"module_path\":" + json_string(profile.script->module_path) + "}";
             }
             profiles += ",\"authentication\":";
             if (!profile.authentication) {
@@ -1995,16 +1997,20 @@ private:
                        ",\"crl_status_ttl\":" + std::to_string(value.crl_status_ttl) +
                        ",\"logging\":{\"default_write_payload\":" +
                        (value.default_write_payload ? "true" : "false") +
+                       ",\"payload_directory\":" + json_string(value.payload_directory) +
                        ",\"payload_directory_configured\":" +
                        (value.payload_directory_configured ? "true" : "false") +
                        ",\"pcap_single_quota\":" + std::to_string(value.write_pcap_single_quota) +
                        ",\"level\":" + std::to_string(value.log_level) +
                        ",\"file_configured\":" + (value.log_file_configured ? "true" : "false") +
+                       ",\"file\":" + json_string(value.log_file) +
                        ",\"console\":" + (value.log_console ? "true" : "false") +
                        ",\"ssl_key_file_configured\":" +
                        (value.ssl_key_log_file_configured ? "true" : "false") +
+                       ",\"ssl_key_file\":" + json_string(value.ssl_key_log_file) +
                        ",\"syslog_server_configured\":" +
                        (value.syslog_server_configured ? "true" : "false") +
+                       ",\"syslog_server\":" + json_string(value.syslog_server) +
                        ",\"syslog_port\":" + std::to_string(value.syslog_port) +
                        ",\"syslog_facility\":" + std::to_string(value.syslog_facility) +
                        ",\"syslog_level\":" + std::to_string(value.syslog_level) +
@@ -2014,26 +2020,35 @@ private:
                        ",\"udp_quick_ports\":" + string_array_json(value.udp_quick_ports) +
                        ",\"certificates_path_configured\":" +
                        (value.certificates_path_configured ? "true" : "false") +
+                       ",\"certificates_path\":" + json_string(value.certificates_path) +
                        ",\"certificate_password_configured\":" +
                        (value.certificate_password_configured ? "true" : "false") +
                        ",\"certificate_transparency_log_configured\":" +
                        (value.certificate_transparency_log_configured ? "true" : "false") +
+                       ",\"certificate_transparency_log\":" +
+                       json_string(value.certificate_transparency_log) +
                        ",\"ca_bundle_path_configured\":" +
                        (value.ca_bundle_path_configured ? "true" : "false") +
+                       ",\"ca_bundle_path\":" + json_string(value.ca_bundle_path) +
                        ",\"ca_bundle_file_configured\":" +
                        (value.ca_bundle_file_configured ? "true" : "false") +
+                       ",\"ca_bundle_file\":" + json_string(value.ca_bundle_file) +
                        ",\"messages_directory_configured\":" +
                        (value.messages_directory_configured ? "true" : "false") +
+                       ",\"messages_directory\":" + json_string(value.messages_directory) +
                        ",\"payload_file_prefix_configured\":" +
                        (value.payload_file_prefix_configured ? "true" : "false") +
+                       ",\"payload_file_prefix\":" + json_string(value.payload_file_prefix) +
                        ",\"payload_file_suffix_configured\":" +
                        (value.payload_file_suffix_configured ? "true" : "false") +
+                       ",\"payload_file_suffix\":" + json_string(value.payload_file_suffix) +
                        ",\"cli_port\":" + std::to_string(value.cli_port) +
                        ",\"cli_password_configured\":" +
                        (value.cli_password_configured ? "true" : "false") +
                        ",\"web_rating_key_configured\":" +
                        (value.web_rating_key_configured ? "true" : "false") +
                        ",\"admin_group_configured\":" + (value.admin_group_configured ? "true" : "false") +
+                       ",\"admin_group\":" + json_string(value.admin_group) +
                        ",\"tuning\":{\"host_buffer_min\":" + std::to_string(value.tuning_host_buffer_min) +
                        ",\"host_buffer_max_multiplier\":" + std::to_string(value.tuning_host_buffer_max_multiplier) +
                        ",\"host_write_full\":" + std::to_string(value.tuning_host_write_full) +
@@ -2066,18 +2081,26 @@ private:
                        ",\"allow_api_header\":" + (value.api_header_allowed ? "true" : "false") +
                        ",\"bind_address_configured\":" +
                        (value.api_bind_address_configured ? "true" : "false") +
+                       ",\"bind_address\":" + json_string(value.api_bind_address) +
                        ",\"bind_interface_configured\":" +
-                       (value.api_bind_interface_configured ? "true" : "false") + "}" +
+                       (value.api_bind_interface_configured ? "true" : "false") +
+                       ",\"bind_interface\":" + json_string(value.api_bind_interface) + "}" +
                        ",\"webhook\":{\"enabled\":" + (value.webhook_enabled ? "true" : "false") +
                        ",\"tls_verify\":" + (value.webhook_tls_verify ? "true" : "false") +
                        ",\"url_configured\":" + (value.webhook_url_configured ? "true" : "false") +
+                       ",\"url\":" + json_string(value.webhook_url) +
                        ",\"sift_enabled\":" + (value.webhook_sift_enabled ? "true" : "false") +
                        ",\"sift_url_configured\":" + (value.webhook_sift_url_configured ? "true" : "false") +
+                       ",\"sift_url\":" + json_string(value.webhook_sift_url) +
                        ",\"sift_tenant_configured\":" + (value.webhook_sift_tenant_configured ? "true" : "false") +
+                       ",\"sift_tenant\":" + json_string(value.webhook_sift_tenant) +
                        ",\"sift_instance_configured\":" + (value.webhook_sift_instance_configured ? "true" : "false") +
+                       ",\"sift_instance\":" + json_string(value.webhook_sift_instance) +
                        ",\"sift_payload_limit_per_direction\":" + std::to_string(value.webhook_sift_payload_limit) +
                        ",\"hostid_configured\":" + (value.webhook_host_id_configured ? "true" : "false") +
+                       ",\"hostid\":" + json_string(value.webhook_host_id) +
                        ",\"bind_interface_configured\":" + (value.webhook_bind_interface_configured ? "true" : "false") +
+                       ",\"bind_interface\":" + json_string(value.webhook_bind_interface) +
                        ",\"api_override\":" + (value.webhook_api_override ? "true" : "false") +
                        ",\"ping_interval\":" + std::to_string(value.webhook_ping_interval) +
                        ",\"nbr_update_interval\":" + std::to_string(value.webhook_neighbor_update_interval) +
@@ -2118,10 +2141,13 @@ private:
                        ",\"local\":{\"enabled\":" + std::string(value.local_enabled ? "true" : "false") +
                        ",\"directory_configured\":" +
                        (value.local_directory_configured ? "true" : "false") +
+                       ",\"directory\":" + json_string(value.local_directory) +
                        ",\"file_prefix_configured\":" +
                        (value.local_file_prefix_configured ? "true" : "false") +
+                       ",\"file_prefix\":" + json_string(value.local_file_prefix) +
                        ",\"file_suffix_configured\":" +
                        (value.local_file_suffix_configured ? "true" : "false") +
+                       ",\"file_suffix\":" + json_string(value.local_file_suffix) +
                        ",\"format\":" + json_string(value.local_format) +
                        ",\"quota_mib\":" + std::to_string(value.local_quota_mib) + "}" +
                        ",\"remote\":{\"enabled\":" + (value.remote_enabled ? "true" : "false") +
@@ -2129,9 +2155,11 @@ private:
                        ",\"gre_format\":" + json_string(value.remote_gre_format) +
                        ",\"destination_configured\":" +
                        (value.remote_destination_configured ? "true" : "false") +
+                       ",\"destination\":" + json_string(value.remote_destination) +
                        ",\"ttl\":" + std::to_string(value.remote_ttl) +
                        ",\"bind_interface_configured\":" +
-                       (value.remote_bind_interface_configured ? "true" : "false") + "}" +
+                       (value.remote_bind_interface_configured ? "true" : "false") +
+                       ",\"bind_interface\":" + json_string(value.remote_bind_interface) + "}" +
                        ",\"calculate_checksums\":" + (value.calculate_checksums ? "true" : "false") + "}";
         }
         std::string security_assets{"null"};
@@ -2144,7 +2172,8 @@ private:
                 authorities += "{\"id\":" + json_string(authority.id) +
                                ",\"name\":" + json_string(authority.name) +
                                ",\"path_configured\":" +
-                               (authority.path_configured ? "true" : "false") + "}";
+                               (authority.path_configured ? "true" : "false") +
+                               ",\"path\":" + json_string(authority.path) + "}";
             }
             authorities += ']';
             std::string signatures{"["};
@@ -2160,6 +2189,7 @@ private:
                             ",\"type\":" + json_string(step.type) +
                             ",\"expression_configured\":" +
                             (step.expression_configured ? "true" : "false") +
+                            ",\"expression\":" + json_string(step.expression) +
                             ",\"bytes_start\":" + std::to_string(step.bytes_start) +
                             ",\"bytes_max\":" + std::to_string(step.bytes_max) + "}";
                 }
@@ -2438,6 +2468,31 @@ private:
 
     Response neighbor_summary() const {
         const auto metrics = monitor_.status().neighbor_metrics;
+        std::string entries = "[";
+        for (std::size_t entry_index = 0; entry_index < metrics.entries.size(); ++entry_index) {
+            if (entry_index != 0U) entries += ',';
+            const auto& entry = metrics.entries[entry_index];
+            entries += "{\"hostname\":" + json_string(entry.hostname) +
+                       ",\"tags\":" + json_string(entry.tags) +
+                       ",\"last_seen_unix_seconds\":" + std::to_string(entry.last_seen) +
+                       ",\"samples\":[";
+            for (std::size_t sample_index = 0; sample_index < entry.samples.size(); ++sample_index) {
+                if (sample_index != 0U) entries += ',';
+                const auto& sample = entry.samples[sample_index];
+                entries += "{\"relative_days\":" + std::to_string(sample.relative_days) +
+                           ",\"observations\":" + std::to_string(sample.observations) +
+                           ",\"bytes_up\":" + std::to_string(sample.bytes_up) +
+                           ",\"bytes_down\":" + std::to_string(sample.bytes_down) +
+                           ",\"labels\":[";
+                for (std::size_t label_index = 0; label_index < sample.labels.size(); ++label_index) {
+                    if (label_index != 0U) entries += ',';
+                    entries += json_string(sample.labels[label_index]);
+                }
+                entries += "]}";
+            }
+            entries += "]}";
+        }
+        entries += ']';
         return {200, "application/json; charset=utf-8",
                 "{\"state\":" + json_string(metrics.state) +
                     ",\"detail\":" + json_string(metrics.detail) +
@@ -2449,17 +2504,50 @@ private:
                     ",\"tagged_hosts\":" + std::to_string(metrics.tagged_hosts) +
                     ",\"observations\":" + std::to_string(metrics.observations) +
                     ",\"bytes_up\":" + std::to_string(metrics.bytes_up) +
-                    ",\"bytes_down\":" + std::to_string(metrics.bytes_down) + "}"};
+                    ",\"bytes_down\":" + std::to_string(metrics.bytes_down) +
+                    ",\"entries\":" + entries + "}"};
     }
 
     Response interface_summary() const {
         const auto metrics = monitor_.status().interface_metrics;
+        std::string inventory = "[";
+        for (std::size_t interface_index = 0; interface_index < metrics.inventory.size();
+             ++interface_index) {
+            if (interface_index != 0U) inventory += ',';
+            const auto& interface = metrics.inventory[interface_index];
+            inventory += "{\"index\":" + std::to_string(interface.index) +
+                         ",\"name\":" + json_string(interface.name) +
+                         ",\"role\":" + json_string(interface.role) +
+                         ",\"flags\":" + std::to_string(interface.flags) +
+                         ",\"uplink\":" + (interface.uplink ? "true" : "false") +
+                         ",\"addresses\":[";
+            for (std::size_t address_index = 0; address_index < interface.addresses.size();
+                 ++address_index) {
+                if (address_index != 0U) inventory += ',';
+                const auto& address = interface.addresses[address_index];
+                inventory += "{\"family\":" + json_string(address.family) +
+                             ",\"address\":" + json_string(address.address) +
+                             ",\"prefix_length\":" + std::to_string(address.prefix_length) +
+                             ",\"scope\":" + std::to_string(address.scope) +
+                             ",\"flags\":" + std::to_string(address.flags) + "}";
+            }
+            inventory += "]}";
+        }
+        inventory += ']';
         return {200, "application/json; charset=utf-8",
                 "{\"state\":" + json_string(metrics.state) +
                     ",\"detail\":" + json_string(metrics.detail) +
                     ",\"checked_at_unix_ms\":" + timestamp_json(metrics.checked_at) +
                     ",\"last_success_at_unix_ms\":" + timestamp_json(metrics.last_success_at) +
                     ",\"generation\":" + std::to_string(metrics.generation) +
+                    ",\"snapshot_valid\":" + (metrics.snapshot_valid ? "true" : "false") +
+                    ",\"roles_valid\":" + (metrics.roles_valid ? "true" : "false") +
+                    ",\"route_generation\":" + std::to_string(metrics.route_generation) +
+                    ",\"role_generation\":" + std::to_string(metrics.role_generation) +
+                    ",\"route_changed_at\":" +
+                    (metrics.route_changed_at ? json_string(*metrics.route_changed_at) : "null") +
+                    ",\"role_changed_at\":" +
+                    (metrics.role_changed_at ? json_string(*metrics.role_changed_at) : "null") +
                     ",\"synchronization_running\":" +
                     (metrics.synchronization_running ? "true" : "false") +
                     ",\"synchronization_attempts\":" +
@@ -2475,8 +2563,11 @@ private:
                     ",\"addresses\":" + std::to_string(metrics.addresses) +
                     ",\"ipv4_addresses\":" + std::to_string(metrics.ipv4_addresses) +
                     ",\"ipv6_addresses\":" + std::to_string(metrics.ipv6_addresses) +
+                    ",\"inventory\":" + inventory +
                     ",\"last_error_code\":" +
-                    (metrics.last_error ? json_string(*metrics.last_error) : "null") + "}"};
+                    (metrics.last_error ? json_string(*metrics.last_error) : "null") +
+                    ",\"last_error_detail\":" +
+                    (metrics.last_error_detail ? json_string(*metrics.last_error_detail) : "null") + "}"};
     }
 
     Response session_activity() const {

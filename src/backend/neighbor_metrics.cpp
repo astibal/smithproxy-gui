@@ -12,6 +12,8 @@ constexpr std::size_t maximum_neighbors = 4096U;
 constexpr std::size_t maximum_days = 30U;
 constexpr std::size_t maximum_hostname_length = 253U;
 constexpr std::size_t maximum_tags_length = 2048U;
+constexpr std::size_t maximum_labels = 64U;
+constexpr std::size_t maximum_label_length = 128U;
 
 std::optional<std::uint64_t> counter(const nlohmann::json& object, const char* name) {
     const auto value = object.find(name);
@@ -75,6 +77,8 @@ NeighborMetricsParseResult parse_neighbor_metrics(const std::string_view payload
 
         bool active_today = false;
         bool active_week = false;
+        NeighborEntry parsed_neighbor{hostname_value, tags_value, *last_seen, {}};
+        parsed_neighbor.samples.reserve(stats->size());
         for (const auto& sample : *stats) {
             if (!sample.is_object()) {
                 return {std::nullopt, "Smithproxy neighborhood sample is invalid"};
@@ -87,16 +91,37 @@ NeighborMetricsParseResult parse_neighbor_metrics(const std::string_view payload
                 !bytes_up || !bytes_down) {
                 return {std::nullopt, "Smithproxy neighborhood counters are invalid"};
             }
+            std::vector<std::string> labels;
+            if (const auto found = sample.find("labels"); found != sample.end()) {
+                if (!found->is_array() || found->size() > maximum_labels) {
+                    return {std::nullopt, "Smithproxy neighborhood labels are invalid"};
+                }
+                std::unordered_set<std::string> unique_labels;
+                for (const auto& label : *found) {
+                    if (!label.is_string()) {
+                        return {std::nullopt, "Smithproxy neighborhood labels are invalid"};
+                    }
+                    const auto value = label.get<std::string>();
+                    if (!safe_text(value, maximum_label_length) ||
+                        !unique_labels.insert(value).second) {
+                        return {std::nullopt, "Smithproxy neighborhood labels are invalid"};
+                    }
+                    labels.push_back(value);
+                }
+            }
             active_today = active_today || *relative_days == 0U;
             active_week = active_week || *relative_days <= 6U;
             saturating_add(result.observations, *observations);
             saturating_add(result.bytes_up, *bytes_up);
             saturating_add(result.bytes_down, *bytes_down);
+            parsed_neighbor.samples.push_back({
+                *relative_days, *observations, *bytes_up, *bytes_down, std::move(labels)});
         }
         result.hosts_total += 1U;
         if (active_today) result.active_today += 1U;
         if (active_week) result.active_week += 1U;
         if (!tags_value.empty()) result.tagged_hosts += 1U;
+        result.entries.push_back(std::move(parsed_neighbor));
     }
     return {std::move(result), {}};
 }

@@ -5,8 +5,24 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace smithproxy::gui {
+
+struct NeighborSample {
+    std::uint64_t relative_days{};
+    std::uint64_t observations{};
+    std::uint64_t bytes_up{};
+    std::uint64_t bytes_down{};
+    std::vector<std::string> labels;
+};
+
+struct NeighborEntry {
+    std::string hostname;
+    std::string tags;
+    std::uint64_t last_seen{};
+    std::vector<NeighborSample> samples;
+};
 
 struct NeighborMetrics {
     std::string state{"unconfigured"};
@@ -20,6 +36,7 @@ struct NeighborMetrics {
     std::uint64_t observations{};
     std::uint64_t bytes_up{};
     std::uint64_t bytes_down{};
+    std::vector<NeighborEntry> entries;
 };
 
 struct NeighborMetricsParseResult {

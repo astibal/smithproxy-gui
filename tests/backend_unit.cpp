@@ -1648,7 +1648,7 @@ int main() {
 
     const auto neighbors = parse_neighbor_metrics(R"([
         {"hostname":"private.example","tags":"office","last_seen":1,"stats":[
-            {"relative_days":0,"counter":3,"bytes_up":100,"bytes_down":200},
+            {"relative_days":0,"counter":3,"bytes_up":100,"bytes_down":200,"labels":["tls","browser"]},
             {"relative_days":7,"counter":2,"bytes_up":50,"bytes_down":75}]},
         {"hostname":"another.private","tags":"","last_seen":1,"stats":[
             {"relative_days":3,"counter":4,"bytes_up":10,"bytes_down":20}]}
@@ -1659,29 +1659,48 @@ int main() {
     assert(neighbors.metrics->active_week == 2U);
     assert(neighbors.metrics->observations == 9U);
     assert(neighbors.metrics->bytes_down == 295U);
+    assert(neighbors.metrics->entries.size() == 2U);
+    assert(neighbors.metrics->entries.front().hostname == "private.example");
+    assert(neighbors.metrics->entries.front().samples.front().labels.size() == 2U);
     assert(!parse_neighbor_metrics(R"([{"hostname":"duplicate","tags":"","last_seen":1,"stats":[]},
         {"hostname":"duplicate","tags":"","last_seen":1,"stats":[]}])").metrics);
 
     const auto interfaces = parse_interface_metrics(R"({
-        "schema_version":1,"state":"ready","generation":42,"sampled_at_unix_ms":1793239515319,
+        "schema_version":1,"state":"ready","generation":42,"snapshot_valid":true,"roles_valid":true,
+        "route_generation":8,"role_generation":3,"route_changed_at":"2026-11-12T10:00:00Z",
+        "role_changed_at":"2026-11-12T10:00:01Z","sampled_at_unix_ms":1793239515319,
         "synchronization":{"running":true,"attempts":2,"successes":2,"errors":0,
             "event_datagrams":15,"changed_event_datagrams":4},
-        "totals":{"interfaces":3,"addresses":5,"ipv4_addresses":3,"ipv6_addresses":2},
-        "snapshot_valid":true,"interfaces":[{"name":"eth0"}],
+        "totals":{"interfaces":2,"addresses":3,"ipv4_addresses":2,"ipv6_addresses":1},
+        "snapshot_valid":true,"interfaces":[
+            {"ifindex":1,"name":"lo","role":"Local","flags":73,"uplink":false,"addresses":[
+                {"family":"IPv4","address":"127.0.0.1","prefix_length":8,"scope":254,"flags":128},
+                {"family":"IPv6","address":"::1","prefix_length":128,"scope":254,"flags":128}]},
+            {"ifindex":2,"name":"eth0","role":"Outside","flags":69699,"uplink":true,"addresses":[
+                {"family":"IPv4","address":"192.0.2.2","prefix_length":24,"scope":0,"flags":128}]}],
         "last_error":"","last_error_code":null})");
     assert(interfaces.metrics);
     assert(interfaces.metrics->generation == 42U);
-    assert(interfaces.metrics->interfaces == 3U);
-    assert(interfaces.metrics->addresses == 5U);
+    assert(interfaces.metrics->interfaces == 2U);
+    assert(interfaces.metrics->addresses == 3U);
+    assert(interfaces.metrics->inventory.size() == 2U);
+    assert(interfaces.metrics->inventory.back().name == "eth0");
+    assert(interfaces.metrics->inventory.back().uplink);
     assert(interfaces.metrics->changed_event_datagrams == 4U);
     const auto event_error = parse_interface_metrics(R"({
-        "schema_version":1,"state":"degraded","generation":42,"sampled_at_unix_ms":1793239515319,
+        "schema_version":1,"state":"degraded","generation":42,"snapshot_valid":false,"roles_valid":false,
+        "route_generation":8,"role_generation":3,"route_changed_at":null,"role_changed_at":null,
+        "sampled_at_unix_ms":1793239515319,
         "synchronization":{"running":true,"attempts":2,"successes":2,"errors":3,
             "event_datagrams":15,"changed_event_datagrams":4},
-        "totals":{"interfaces":3,"addresses":5,"ipv4_addresses":3,"ipv6_addresses":2},
-        "last_error_code":"network-context-error"})");
+        "totals":{"interfaces":1,"addresses":1,"ipv4_addresses":1,"ipv6_addresses":0},
+        "interfaces":[{"ifindex":2,"name":"eth0","role":"Outside","flags":69699,
+            "uplink":true,"addresses":[{"family":"IPv4","address":"192.0.2.2",
+            "prefix_length":24,"scope":0,"flags":128}]}],
+        "last_error":"netlink receive failed","last_error_code":"network-context-error"})");
     assert(event_error.metrics);
     assert(event_error.metrics->synchronization_errors == 3U);
+    assert(event_error.metrics->last_error_detail == "netlink receive failed");
     assert(!parse_interface_metrics(R"({
         "schema_version":1,"state":"ready","generation":1,"sampled_at_unix_ms":1,
         "synchronization":{"running":true,"attempts":1,"successes":2,"errors":0,

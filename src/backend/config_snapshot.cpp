@@ -646,6 +646,7 @@ ConfigProfileParseResult parse_config_profiles(
                 return {std::nullopt, "Smithproxy returned an invalid SSH profile"};
             }
             ssh = ConfigSshProfile{
+                *host_key,
                 host_key_policy->empty() ? "accept-new" : *host_key_policy,
                 *shell, *exec, *subsystem, *pty, *environment, *local_forward, *remote_forward, *x11, *agent,
             };
@@ -667,7 +668,7 @@ ConfigProfileParseResult parse_config_profiles(
             }
             const auto runtime = *configured_type == "0" ? "python" :
                                  *configured_type == "1" ? "go" : "unknown";
-            script = ConfigScriptProfile{runtime, !module_path->empty()};
+            script = ConfigScriptProfile{runtime, !module_path->empty(), *module_path};
         } else if (type == "authentication") {
             const auto authenticate = boolean_scalar(profile, "authenticate", false);
             const auto resolve = boolean_scalar(profile, "resolve", true);
@@ -1003,6 +1004,12 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *webhook_neighbor_update_interval, *webhook_neighbor_tag_refresh_age,
                 *webhook_task_debug, *webhook_task_debug_dump, std::move(interface_roles),
                 std::move(present_groups),
+                *payload_directory, *log_file, *ssl_key_log_file, *syslog_server,
+                *certificates_path, *certificate_transparency_log, *ca_bundle_path,
+                *ca_bundle_file, *messages_directory, *payload_file_prefix,
+                *payload_file_suffix, *admin_group, *bind_address, *bind_interface,
+                *webhook_url, *webhook_sift_url, *webhook_sift_tenant,
+                *webhook_sift_instance, *webhook_host_id, *webhook_bind_interface,
             }, {}};
 }
 
@@ -1139,6 +1146,7 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
                 !bind_interface->empty(), *checksums,
                 local_value != value->end() && remote_value != value->end() &&
                     options_value != value->end(),
+                *local_dir, *local_prefix, *local_suffix, *destination, *bind_interface,
             }, {}};
 }
 
@@ -1167,7 +1175,7 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
         if (!path) return {std::nullopt, "Smithproxy returned an invalid certificate authority path"};
         if (!path->empty()) ++authority_paths;
         certificate_authorities.push_back(ConfigCertificateAuthority{
-            stable_id("certificate-authority", authority_index++), name, !path->empty(),
+            stable_id("certificate-authority", authority_index++), name, !path->empty(), *path,
         });
     }
 
@@ -1220,7 +1228,7 @@ ConfigSecurityAssetsParseResult parse_config_security_assets(
                               flow_index++),
                     flow_side->empty() ? "r" : *flow_side,
                     type->empty() ? "regex" : *type,
-                    !expression->empty(), *bytes_start, *bytes_max,
+                    !expression->empty(), *expression, *bytes_start, *bytes_max,
                 });
             }
             signatures.push_back(ConfigSignature{

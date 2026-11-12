@@ -507,6 +507,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       if (!['insecure', 'accept-new', 'strict'].includes(hostKeyPolicy)) throw new Error('Invalid SSH host-key policy.');
       ssh = {
         hostKeyConfigured: safeBoolean(item.ssh.host_key_configured, 'SSH host-key state'),
+        hostKey: safeString(item.ssh.host_key, 'SSH host-key path', 4096),
         hostKeyPolicy: hostKeyPolicy as 'insecure' | 'accept-new' | 'strict',
         shell: safeBoolean(item.ssh.shell, 'SSH shell action'),
         exec: safeBoolean(item.ssh.exec, 'SSH exec action'),
@@ -538,6 +539,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       script = {
         runtime: runtime as 'python' | 'go' | 'unknown',
         modulePathConfigured: safeBoolean(item.script.module_path_configured, 'script module-path state'),
+        modulePath: optionalString(item.script.module_path, 'script module path', 4096),
       };
     } else if (item.script !== null) {
       throw new Error('Invalid non-script profile details.');
@@ -707,6 +709,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         defaultWritePayload: safeBoolean(
           value.settings.logging.default_write_payload, 'default payload capture state',
         ),
+        payloadDirectory: optionalString(
+          value.settings.logging.payload_directory, 'payload directory', 4096,
+        ),
         payloadDirectoryConfigured: safeBoolean(
           value.settings.logging.payload_directory_configured, 'payload directory state',
         ),
@@ -715,13 +720,16 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         ),
         level: safeInteger(value.settings.logging.level, 'log level', 8),
         fileConfigured: safeBoolean(value.settings.logging.file_configured, 'log file state'),
+        file: optionalString(value.settings.logging.file, 'log file', 4096),
         console: safeBoolean(value.settings.logging.console, 'console logging state'),
         sslKeyFileConfigured: safeBoolean(
           value.settings.logging.ssl_key_file_configured, 'TLS key log file state',
         ),
+        sslKeyFile: optionalString(value.settings.logging.ssl_key_file, 'TLS key log file', 4096),
         syslogServerConfigured: safeBoolean(
           value.settings.logging.syslog_server_configured, 'syslog server state',
         ),
+        syslogServer: optionalString(value.settings.logging.syslog_server, 'syslog server', 255),
         syslogPort: safeInteger(value.settings.logging.syslog_port, 'syslog port', 65535),
         syslogFacility: safeInteger(value.settings.logging.syslog_facility, 'syslog facility', 32),
         syslogLevel: safeInteger(value.settings.logging.syslog_level, 'syslog level', 8),
@@ -735,6 +743,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         certificatesPathConfigured: safeBoolean(
           value.settings.auxiliary.certificates_path_configured, 'certificate path state',
         ),
+        certificatesPath: optionalString(
+          value.settings.auxiliary.certificates_path, 'certificate path', 4096,
+        ),
         certificatePasswordConfigured: safeBoolean(
           value.settings.auxiliary.certificate_password_configured, 'certificate password state',
         ),
@@ -742,20 +753,34 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
           value.settings.auxiliary.certificate_transparency_log_configured,
           'certificate transparency log state',
         ),
+        certificateTransparencyLog: optionalString(
+          value.settings.auxiliary.certificate_transparency_log, 'certificate transparency log', 4096,
+        ),
         caBundlePathConfigured: safeBoolean(
           value.settings.auxiliary.ca_bundle_path_configured, 'CA bundle path state',
         ),
+        caBundlePath: optionalString(value.settings.auxiliary.ca_bundle_path, 'CA bundle path', 4096),
         caBundleFileConfigured: safeBoolean(
           value.settings.auxiliary.ca_bundle_file_configured, 'CA bundle file state',
         ),
+        caBundleFile: optionalString(value.settings.auxiliary.ca_bundle_file, 'CA bundle file', 4096),
         messagesDirectoryConfigured: safeBoolean(
           value.settings.auxiliary.messages_directory_configured, 'message directory state',
+        ),
+        messagesDirectory: optionalString(
+          value.settings.auxiliary.messages_directory, 'message directory', 4096,
         ),
         payloadFilePrefixConfigured: safeBoolean(
           value.settings.auxiliary.payload_file_prefix_configured, 'payload prefix state',
         ),
+        payloadFilePrefix: optionalString(
+          value.settings.auxiliary.payload_file_prefix, 'payload filename prefix', 255,
+        ),
         payloadFileSuffixConfigured: safeBoolean(
           value.settings.auxiliary.payload_file_suffix_configured, 'payload suffix state',
+        ),
+        payloadFileSuffix: optionalString(
+          value.settings.auxiliary.payload_file_suffix, 'payload filename suffix', 255,
         ),
         cliPort: rangedInteger(value.settings.auxiliary.cli_port, 'CLI port', 1024, 65535),
         cliPasswordConfigured: safeBoolean(
@@ -767,6 +792,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         adminGroupConfigured: safeBoolean(
           value.settings.auxiliary.admin_group_configured, 'administration group state',
         ),
+        adminGroup: optionalString(value.settings.auxiliary.admin_group, 'administration group', 255),
         tuning: {
           hostBufferMin: rangedInteger(
             value.settings.auxiliary.tuning.host_buffer_min, 'host buffer minimum', 1500, 10000000,
@@ -833,31 +859,41 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         bindAddressConfigured: safeBoolean(
           value.settings.http_api.bind_address_configured, 'API bind-address state',
         ),
+        bindAddress: optionalString(value.settings.http_api.bind_address, 'API bind address', 4096),
         bindInterfaceConfigured: safeBoolean(
           value.settings.http_api.bind_interface_configured, 'API bind-interface state',
         ),
+        bindInterface: optionalString(value.settings.http_api.bind_interface, 'API bind interface', 4096),
       },
       webhook: {
         enabled: safeBoolean(value.settings.webhook.enabled, 'webhook state'),
         tlsVerify: safeBoolean(value.settings.webhook.tls_verify, 'webhook TLS verification state'),
         urlConfigured: safeBoolean(value.settings.webhook.url_configured, 'webhook URL state'),
+        url: optionalString(value.settings.webhook.url, 'webhook URL', 4096),
         siftEnabled: safeBoolean(value.settings.webhook.sift_enabled, 'Sift state'),
         siftUrlConfigured: safeBoolean(
           value.settings.webhook.sift_url_configured, 'Sift URL state',
         ),
+        siftUrl: optionalString(value.settings.webhook.sift_url, 'Sift URL', 4096),
         siftTenantConfigured: safeBoolean(
           value.settings.webhook.sift_tenant_configured, 'Sift tenant state',
         ),
+        siftTenant: optionalString(value.settings.webhook.sift_tenant, 'Sift tenant', 4096),
         siftInstanceConfigured: safeBoolean(
           value.settings.webhook.sift_instance_configured, 'Sift instance state',
         ),
+        siftInstance: optionalString(value.settings.webhook.sift_instance, 'Sift instance', 4096),
         siftPayloadLimitPerDirection: rangedInteger(
           value.settings.webhook.sift_payload_limit_per_direction,
           'Sift payload limit', 1, 1073741824,
         ),
         hostIdConfigured: safeBoolean(value.settings.webhook.hostid_configured, 'webhook host ID state'),
+        hostId: optionalString(value.settings.webhook.hostid, 'webhook host ID', 4096),
         bindInterfaceConfigured: safeBoolean(
           value.settings.webhook.bind_interface_configured, 'webhook bind-interface state',
+        ),
+        bindInterface: optionalString(
+          value.settings.webhook.bind_interface, 'webhook bind interface', 4096,
         ),
         apiOverride: safeBoolean(value.settings.webhook.api_override, 'webhook API override state'),
         pingInterval: safeInteger(value.settings.webhook.ping_interval, 'webhook ping interval', 2147483647),
@@ -939,12 +975,15 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         directoryConfigured: safeBoolean(
           value.captures.local.directory_configured, 'local capture directory state',
         ),
+        directory: optionalString(value.captures.local.directory, 'local capture directory', 4096),
         filePrefixConfigured: safeBoolean(
           value.captures.local.file_prefix_configured, 'local capture filename prefix state',
         ),
+        filePrefix: optionalString(value.captures.local.file_prefix, 'local capture filename prefix', 255),
         fileSuffixConfigured: safeBoolean(
           value.captures.local.file_suffix_configured, 'local capture filename suffix state',
         ),
+        fileSuffix: optionalString(value.captures.local.file_suffix, 'local capture filename suffix', 255),
         format: localFormat as 'pcap_single' | 'pcap' | 'smcap',
         quotaMiB: safeInteger(
           value.captures.local.quota_mib, 'local capture quota', Number.MAX_SAFE_INTEGER,
@@ -957,10 +996,12 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         destinationConfigured: safeBoolean(
           value.captures.remote.destination_configured, 'remote capture destination state',
         ),
+        destination: optionalString(value.captures.remote.destination, 'remote capture destination', 255),
         ttl: safeInteger(value.captures.remote.ttl, 'remote capture TTL', 255),
         bindInterfaceConfigured: safeBoolean(
           value.captures.remote.bind_interface_configured, 'remote capture interface state',
         ),
+        bindInterface: optionalString(value.captures.remote.bind_interface, 'remote capture interface', 255),
       },
       calculateChecksums: safeBoolean(value.captures.calculate_checksums, 'capture checksum state'),
     };
@@ -988,6 +1029,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         id,
         name,
         pathConfigured: safeBoolean(item.path_configured, 'certificate authority path state'),
+        path: optionalString(item.path, 'certificate authority path', 4096),
       };
     });
     const signatureIds = new Set<string>();
@@ -1017,6 +1059,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
           side: flowSide as 'r' | 'w',
           type: type as 'regex' | 'simple',
           expressionConfigured: safeBoolean(step.expression_configured, 'signature expression state'),
+          expression: optionalString(step.expression, 'signature expression', 16384),
           bytesStart: safeInteger(step.bytes_start, 'signature byte offset', Number.MAX_SAFE_INTEGER),
           bytesMax: safeInteger(step.bytes_max, 'signature byte window', Number.MAX_SAFE_INTEGER),
         };

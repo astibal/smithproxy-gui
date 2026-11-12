@@ -523,29 +523,50 @@ describe('SystemClient', () => {
     await expect(client.tlsCacheSummary()).rejects.toThrow('Invalid TLS cache response');
   });
 
-  it('loads and validates privacy-safe neighborhood aggregates', async () => {
+  it('loads and validates neighborhood inventory and aggregates', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       state: 'ready', detail: 'Current', checked_at_unix_ms: 100,
       last_success_at_unix_ms: 100, hosts_total: 8, active_today: 3,
       active_week: 6, tagged_hosts: 4, observations: 20, bytes_up: 1000, bytes_down: 2000,
+      entries: [{hostname: 'workstation.example', tags: 'office', last_seen_unix_seconds: 10,
+        samples: [{relative_days: 0, observations: 3, bytes_up: 100, bytes_down: 200,
+          labels: ['tls', 'browser']}]}],
     }));
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
 
     await expect(client.neighborSummary()).resolves.toMatchObject({
       hostsTotal: 8, activeToday: 3, activeWeek: 6, observations: 20,
+      entries: [{hostname: 'workstation.example', tags: 'office'}],
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/network/neighbors/summary', expect.anything(),
     );
   });
 
-  it('loads and validates privacy-safe interface synchronization aggregates', async () => {
+  it('loads and validates interface synchronization and inventory data', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       state: 'ready', detail: 'Current', checked_at_unix_ms: 100,
-      last_success_at_unix_ms: 100, generation: 42, synchronization_running: true,
+      last_success_at_unix_ms: 100, generation: 42, snapshot_valid: true, roles_valid: true,
+      route_generation: 8, role_generation: 3,
+      route_changed_at: '2026-11-12T10:00:00Z', role_changed_at: '2026-11-12T10:00:01Z',
+      synchronization_running: true,
       synchronization_attempts: 3, synchronization_successes: 3, synchronization_errors: 0,
       event_datagrams: 15, changed_event_datagrams: 4, interfaces: 3, addresses: 5,
-      ipv4_addresses: 3, ipv6_addresses: 2, last_error_code: null,
+      ipv4_addresses: 3, ipv6_addresses: 2,
+      inventory: [
+        {index: 1, name: 'lo', role: 'Local', flags: 73, uplink: false, addresses: [
+          {family: 'IPv4', address: '127.0.0.1', prefix_length: 8, scope: 254, flags: 128},
+          {family: 'IPv6', address: '::1', prefix_length: 128, scope: 254, flags: 128},
+        ]},
+        {index: 2, name: 'lan0', role: 'Inside', flags: 69699, uplink: false, addresses: [
+          {family: 'IPv4', address: '192.0.2.10', prefix_length: 24, scope: 0, flags: 128},
+        ]},
+        {index: 3, name: 'wan0', role: 'Outside', flags: 69699, uplink: true, addresses: [
+          {family: 'IPv4', address: '198.51.100.2', prefix_length: 24, scope: 0, flags: 128},
+          {family: 'IPv6', address: '2001:db8::2', prefix_length: 64, scope: 0, flags: 0},
+        ]},
+      ],
+      last_error_code: null, last_error_detail: null,
     }));
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
 
@@ -561,14 +582,17 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
       state: 'not-advertised', detail: 'Capability not advertised',
       checked_at_unix_ms: 100, last_success_at_unix_ms: null,
-      generation: 0, synchronization_running: false,
+      generation: 0, snapshot_valid: false, roles_valid: false,
+      route_generation: 0, role_generation: 0, route_changed_at: null, role_changed_at: null,
+      synchronization_running: false,
       synchronization_attempts: 0, synchronization_successes: 0, synchronization_errors: 0,
       event_datagrams: 0, changed_event_datagrams: 0, interfaces: 0, addresses: 0,
-      ipv4_addresses: 0, ipv6_addresses: 0, last_error_code: null,
+      ipv4_addresses: 0, ipv6_addresses: 0, inventory: [],
+      last_error_code: null, last_error_detail: null,
     }));
 
     await expect(client.interfaceSummary()).resolves.toMatchObject({
-      state: 'not-advertised', lastSuccessAtUnixMs: null, interfaces: 0,
+      state: 'not-advertised', lastSuccessAtUnixMs: null, interfaces: 0, inventory: [],
     });
   });
 
@@ -836,7 +860,7 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
       state: 'ready', detail: 'Invalid', checked_at_unix_ms: 1,
       last_success_at_unix_ms: 1, hosts_total: 1, active_today: 2,
-      active_week: 1, tagged_hosts: 0, observations: 0, bytes_up: 0, bytes_down: 0,
+      active_week: 1, tagged_hosts: 0, observations: 0, bytes_up: 0, bytes_down: 0, entries: [],
     }));
     await expect(client.neighborSummary()).rejects.toThrow('Invalid neighborhood response');
   });
