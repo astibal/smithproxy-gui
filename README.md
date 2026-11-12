@@ -300,7 +300,8 @@ draft revision. The review surface already counts, displays, removes, validates,
 and commits scalar and structural operations as one transaction.
 Every scalar row presents its persistent value next to the pending value, using
 the augment origin's persistent base when available instead of the temporary
-effective overlay. Write-only paths show fixed redacted posture on both sides.
+effective overlay. Operational paths and endpoints are visible in the live
+administrator snapshot; replacement values remain redacted in draft responses.
 Structural creates, deletes, and moves use the same before/after presentation,
 so the operator can review existence and ordering changes before validation.
 When the core advertises `structural_drafts`, the Objects and Policy views enable
@@ -337,7 +338,8 @@ profiles use the same confirmed deletion path and cannot be deleted while refere
 New routing, TLS, detection, DNS ALG, content, SSH, and script profiles
 submit complete typed payloads, reject duplicate names and invalid bounded values
 locally, and reopen from draft review under stable optimistic identifiers. Sensitive
-session filters, host-key paths, and script paths are cleared after acceptance and
+session filters are not returned, while host-key and script paths are visible in the
+live administrator snapshot. Replacement values are cleared after acceptance and
 redacted from every draft response. Updating such a pending create requires explicit
 write-only re-entry. Obsolete authentication profiles and their profile-level identity
 mappings are parsed defensively for legacy snapshots but are not displayed, created,
@@ -348,16 +350,17 @@ Content profiles expose nested creation, confirmed deletion, and first/before/la
 ordering for stable content rules. New write-only match and replacement expressions
 are cleared from the editor after the GUI core accepts them and must be re-entered
 before a pending create operation can be updated.
-Certificate authorities support structural creation and confirmed deletion. New CA
-paths are write-only, cleared after acceptance, redacted from draft review, and must
+Certificate authorities support structural creation and confirmed deletion. Current CA
+paths are visible to administrators; replacements are cleared after acceptance,
+redacted from draft review, and must
 be re-entered before a pending authority can be updated.
 STARTTLS and detection signatures support atomic structural creation: the parent
 metadata and required first flow step are validated and retained with one draft
 version increment, and removing either pending row removes the complete linked
 group. Existing signatures support confirmed deletion, while their flow steps
-provide nested create, confirmed delete, and ordered move workflows. Write-only
-matcher expressions are redacted by the GUI core, cleared from the editor after
-acceptance, and never shown in draft review.
+provide nested create, confirmed delete, and ordered move workflows. Current matcher
+expressions are visible in the administrator view; replacement values are redacted by
+the GUI core, cleared from the editor after acceptance, and never shown in draft review.
 Current legacy deployments keep the controls disabled because their snapshot IDs
 are not stable.
 
@@ -430,8 +433,7 @@ the bounded capability-bootstrap posture.
 It never includes configuration values, revisions, paths, event text, audit
 targets, listener names, protocol names, credentials, or tokens.
 
-The privacy-preserving interface-monitor contract required for future netlink
-health monitoring is documented in
+The administrator-facing interface monitoring and inventory contract is documented in
 [`docs/SMITHPROXY_INTERFACE_API_PROPOSAL.md`](docs/SMITHPROXY_INTERFACE_API_PROPOSAL.md).
 The optional slide-out console connects through a bounded same-origin WebSocket
 bridge to the existing Smithproxy libcli2 broker. The GUI does not parse,

@@ -1,20 +1,18 @@
-# Smithproxy interface diagnostics API proposal
+# Smithproxy interface diagnostics API
 
-Status: proposal for review. This document does not authorize or contain changes
-to the Smithproxy repository.
+Status: implemented.
 
 ## Context
 
-Smithproxy revision `e545e616d1172fa1a4715a36fc7b31e7f88dd771` exposes
-interface-monitor state through the privileged administrative command
-`diag system netlink info`. The GUI must not invoke or parse that command. A
-bounded authenticated HTTP endpoint is required before interface health can
-become a live monitoring surface.
+Smithproxy exposes its immutable interface snapshot through the authenticated
+diagnostic API. GUI core validates and bounds that response before publishing an
+administrator-facing same-origin representation. It never invokes or parses
+privileged CLI output.
 
 ## Endpoint
 
 ```http
-GET /api/v1/network/interfaces/summary
+GET /api/diag/network/interfaces
 Authorization: existing Smithproxy API authentication
 Accept: application/json
 ```
@@ -36,34 +34,50 @@ The endpoint is read-only and returns one coherent monitor snapshot:
     "changed_event_datagrams": 4
   },
   "totals": {
-    "interfaces": 3,
-    "addresses": 5,
-    "ipv4_addresses": 3,
-    "ipv6_addresses": 2
+    "interfaces": 1,
+    "addresses": 1,
+    "ipv4_addresses": 1,
+    "ipv6_addresses": 0
   },
-  "last_error": null
+  "snapshot_valid": true,
+  "roles_valid": true,
+  "route_generation": 8,
+  "role_generation": 3,
+  "route_changed_at": "2026-11-12T10:00:00Z",
+  "role_changed_at": "2026-11-12T10:00:01Z",
+  "interfaces": [
+    {
+      "ifindex": 2,
+      "name": "lan0",
+      "role": "Inside",
+      "flags": 69699,
+      "uplink": false,
+      "addresses": [{
+        "family": "IPv4",
+        "address": "192.0.2.10",
+        "prefix_length": 24,
+        "scope": 0,
+        "flags": 128
+      }]
+    }
+  ],
+  "last_error": "",
+  "last_error_code": null
 }
 ```
 
 `state` is one of `starting`, `ready`, `degraded`, or `unavailable`.
-`last_error` is a bounded stable diagnostic code, not raw kernel or exception
-text. Counters are unsigned 64-bit values serialized as JSON integers while
+`last_error_code` is a bounded stable diagnostic code while `last_error` retains
+the concrete administrator-facing diagnostic. Counters are unsigned 64-bit values serialized as JSON integers while
 they remain within the exact JSON integer range; an implementation must return
 an explicit overflow error rather than a rounded value.
 
-## Privacy boundary
+## Administrator boundary
 
-The summary endpoint intentionally omits:
-
-- interface names and indexes;
-- IP and link-layer addresses;
-- network namespaces;
-- route, neighbor, and DNS data;
-- raw netlink flags or kernel error text.
-
-These values are unnecessary for health monitoring and can disclose deployment
-topology. A future administrator-only inventory endpoint needs separate review,
-authorization, pagination, and address-redaction rules.
+Interface names, indexes, roles, addresses, flags, generations, and diagnostics
+are intentionally available to authenticated administrators. GUI core exposes
+only fields supplied by the typed Smithproxy snapshot; it does not augment them
+from the host filesystem, operating-system commands, DNS, or CLI output.
 
 ## Operational guarantees
 
@@ -71,23 +85,17 @@ authorization, pagination, and address-redaction rules.
    endpoints and fail closed.
 2. The response is generated from a single immutable `InterfaceSnapshot` plus
    one statistics sample. It must not combine values collected across a retry.
-3. The response body is bounded to 8 KiB and uses `Cache-Control: no-store`.
+3. GUI core bounds the detailed response to 256 KiB and serves its browser API
+   with `Cache-Control: no-store`.
 4. The handler does not initiate a netlink synchronization, block on the monitor
    thread, or expose administrative CLI output.
-5. `503` represents an unavailable snapshot; malformed internal state returns a
-   stable `500` error envelope and emits an audit event.
-6. Capability discovery advertises the exact endpoint and schema version. The
-   GUI does not infer support from the Smithproxy version.
+5. Malformed or incoherent inventory data is rejected as unavailable rather than
+   partially displayed.
 
 ## GUI-core integration
 
-The browser continues to call only the same-origin GUI core. When Smithproxy
-advertises this capability, the core polls it with the existing server-side
-credential, validates every field and bound, and publishes a privacy-preserving
-same-origin summary. Until then, the same-origin summary reports
-`not-advertised` and no CLI or filesystem fallback is permitted.
-
-The GUI-core parser, bounded same-origin endpoint, diagnostics allowlist, and
-management-authenticated browser surface implement this proposed schema. Existing
-Smithproxy deployments return `not-advertised`; the GUI retains no fallback and
-does not interpret administrative command output.
+The browser calls only GUI core at `/api/v1/network/interfaces/summary`. GUI core
+polls Smithproxy with its existing server-side credential, validates every field
+and bound, and publishes the aggregate counters plus concrete inventory. If the
+Smithproxy endpoint is absent, GUI core reports `not-advertised`; there is no CLI
+or filesystem fallback.

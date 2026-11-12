@@ -131,14 +131,14 @@ segments.
 
 Capture posture includes local format and quota, remote tunnel mode and TTL,
 and checksum behavior. Capture directories, filename components, tunnel
-destinations, and bind interfaces are exposed as configured flags and edited
-through write-only replace/clear controls.
+destinations, and bind interfaces are visible in the administrator snapshot and
+edited through replace/clear controls whose pending values stay redacted.
 
 Trust and signature posture covers configured TLS certificate-authority entries,
 STARTTLS signatures, detection signatures, and their ordered flow steps.
 Signature names, categories, sides, groups, engines, matcher types, and byte
-windows are typed. Certificate paths and matcher expressions remain inside the
-GUI core and use explicit write-only replacement controls.
+windows are typed. Current certificate paths and matcher expressions are visible
+to the administrator; replacement values use explicit redacted draft controls.
 
 The snapshot carries `augment_support` and a bounded `value_origins` collection.
 Each origin identifies a stable schema path, persistent and effective typed
@@ -373,9 +373,9 @@ posture, and webhook switches. HTTP API bind address/interface values remain
 write-only. Webhook and Sift endpoints, identities, and bound interfaces are
 also write-only; payload limits, control-plane intervals, and task diagnostics
 are typed. Capture batches cover enablement, formats, quota, tunnel TTL, and
-checksum behavior. Nameservers, API credentials, webhook URLs, capture paths,
-remote destinations, and bound interfaces use explicit write-only replacement
-or clearing. Allowed addresses and other non-secret lists use bounded typed
+checksum behavior. Nameservers, webhook URLs, capture paths, remote destinations,
+and bound interfaces are visible and use explicit replacement or clearing.
+API credentials remain secret. Allowed addresses and other non-secret lists use bounded typed
 editors. The active settings set emitted by the current Smithproxy saver is
 covered in full, including performance tuning, certificate transparency and CA
 bundle files, and the write-only administration group. Deprecated ignored
@@ -383,8 +383,8 @@ tuning keys are deliberately omitted from the editor.
 The current detection, capture, SSH, routing, and script schemas are also
 covered in full. Their coverage manifest entries are pinned to exact active
 field inventories so a schema drift cannot silently retain a `full` claim.
-Signature reads cover severity as well as category, side, engine selection, and
-ordered matcher flows. Expression bodies remain redacted and write-only.
+Signature reads cover severity as well as category, side, engine selection, ordered
+matcher flows, and current expression bodies. Pending replacement bodies remain redacted.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.
