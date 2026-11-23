@@ -33,7 +33,7 @@
         "cli", "web_rating", "tpool_log", "socks", "http_connect",
         "ssl_autodetect_harder", "ssl_use_ktls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "All active writable settings emitted by the current Smithproxy saver are typed and editable with ranges aligned to the pinned upstream schema. Non-QUIC worker pools accept non-negative counts and defer the target-specific hardware ceiling to authoritative Smithproxy validation; QUIC accepts -1, 0, or 1. Non-canonical legacy live worker values remain readable without being resubmitted when unrelated settings change. OCSP and CRL status TTLs remain visible but read-only because upstream marks them VALUE_NONE. Integer quotas accept the full lossless JSON range. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys use write-only replace/clear controls. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."
+      "notes": "All active writable settings emitted by the current Smithproxy saver are administrator-visible, typed, and editable with ranges aligned to the pinned upstream schema. Non-QUIC worker pools accept non-negative counts and defer the target-specific hardware ceiling to authoritative Smithproxy validation; QUIC accepts -1, 0, or 1. Non-canonical legacy live worker values remain readable without being resubmitted when unrelated settings change. OCSP and CRL status TTLs remain visible but read-only because upstream marks them VALUE_NONE. Integer quotas accept the full lossless JSON range. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys remain visible and reopen from drafts without re-entry. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."
     },
     {
       "name": "debug",
@@ -96,25 +96,25 @@
         "remote.bind_interface", "options.calculate_checksums", "options.metadata",
         "options.statistics", "options.transport", "options.protocol_events"
       ],
-      "notes": "All active capture fields are typed and editable. Numeric quotas accept the full lossless JSON integer range supported by the GUI transport. Paths, filename components, destination addresses, and interface names use write-only replace/clear controls and remain redacted in draft responses."
+      "notes": "All active capture fields are administrator-visible, typed, and editable. Numeric quotas accept the full lossless JSON integer range supported by the GUI transport. Paths, filename components, destination addresses, and interface names reopen from drafts without re-entry."
     },
     {
       "name": "content_profiles",
       "origin": "reference_config",
       "read": "full",
-      "edit": "partial",
+      "edit": "typed",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["name", "write_payload", "write_format", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http", "rules_session_filter", "content_rules"],
-      "notes": "Content controls and nested rule action metadata are typed. Complete parent profiles support structural creation and safe duplication of non-sensitive persistent and pending values; session filters, nested rules, and augment overlays are explicitly excluded from copies. Session filters and rule match/replacement expressions remain server-side and use write-only rotation. Stable unreferenced profiles support confirmed structural deletion individually or through filtered atomic cleanup. Nested rules support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order, labels pending moves and deletes, and permits create or move references to earlier same-parent pending creates. Accepted write-only create values are cleared from the editor and must be re-entered before updating a pending create operation."
+      "notes": "All content-profile fields and nested rule expressions are administrator-visible, typed, editable, structurally creatable, reorderable, and deletable. Draft values are returned in full and reopen without re-entry; expression byte sequences are preserved when an unchanged textarea is saved."
     },
     {
       "name": "tls_ca",
       "origin": "reference_config",
       "read": "full",
-      "edit": "partial",
+      "edit": "typed",
       "sensitivity": "security-critical",
       "tracked_fields": ["name", "path_configured", "path"],
-      "notes": "Authority names and current filesystem paths are visible to administrators. Authorities support structural creation, safe name duplication from persistent and pending values without augment overlays, and confirmed deletion, with pending deletion labeled in the trust-asset list. Path replacements use redacted draft controls, are excluded from copies, are cleared after acceptance, and must be re-entered before a pending create can be updated."
+      "notes": "Authority names and filesystem paths are fully visible and editable. Authorities support structural creation, duplication, rename, and confirmed deletion; pending paths reopen without re-entry."
     },
     {
       "name": "tls_profiles",
@@ -133,7 +133,7 @@
         "sni_filter_bypass", "sni_filter_use_dns_cache", "sni_filter_use_dns_domain_tree",
         "redirect_warning_ports", "sslkeylog", "alerts"
       ],
-      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed, editable, structurally creatable, and safely duplicable from persistent and pending values without augment overlays. SNI bypass expressions support write-only replace or clear, never cross the browser boundary, and are explicitly excluded from copies. Updating a pending create requires explicit bypass-list re-entry. Stable unreferenced profiles support confirmed structural deletion individually or through filtered atomic cleanup."
+      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed, visible, editable, structurally creatable, and duplicable from persistent and pending values. SNI bypass entries remain visible to the administrator and reopen from drafts without re-entry."
     },
     {
       "name": "ssh_profiles",
@@ -145,7 +145,7 @@
         "name", "host_key", "hostkey_policy", "shell", "exec", "subsystem",
         "pty", "environment", "local_forward", "remote_forward", "x11", "agent"
       ],
-      "notes": "All active SSH profile fields are typed, editable, structurally creatable, and safely duplicable from persistent and pending values without augment overlays; host-key paths are write-only, remain redacted, and are explicitly excluded from copies. Stable unreferenced profiles support confirmed structural deletion individually or through filtered atomic cleanup."
+      "notes": "All active SSH profile fields, including host-key paths, are administrator-visible, typed, editable, structurally creatable, and duplicable from persistent and pending values."
     },
     {
       "name": "alg_dns_profiles",
@@ -183,19 +183,19 @@
       "name": "starttls_signatures",
       "origin": "reference_config",
       "read": "full",
-      "edit": "partial",
+      "edit": "typed",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata, current matcher expressions, and ordered flow controls are visible and typed. Parent metadata and the required first flow step support atomic structural creation, safe duplication of persistent and pending non-sensitive values without augment overlays, and linked removal with one draft version increment. Copies require a new first matcher expression and explicitly omit additional flow steps. Existing signatures support confirmed structural deletion and label that state in the trust-asset list. Matcher replacements remain redacted in draft responses. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order, labels pending moves and deletes, and permits create or move references to earlier same-parent pending creates. Accepted replacement values are cleared from the editor and must be re-entered before updating a pending create operation."
+      "notes": "All signature metadata, matcher expressions, and ordered flow controls are administrator-visible and typed. Parents and flow steps support structural creation, editing, ordering, and deletion; complete draft expressions reopen without re-entry and preserve unchanged byte sequences."
     },
     {
       "name": "detection_signatures",
       "origin": "reference_config",
       "read": "full",
-      "edit": "partial",
+      "edit": "typed",
       "sensitivity": "rule-bearing",
       "tracked_fields": ["cat", "name", "side", "severity", "group", "enables", "engine", "flow", "type", "signature", "bytes_start", "bytes_max"],
-      "notes": "All active signature metadata, current matcher expressions, and ordered flow controls are visible and typed. Parent metadata and the required first flow step support atomic structural creation, safe duplication of persistent and pending non-sensitive values without augment overlays, and linked removal with one draft version increment. Copies require a new first matcher expression and explicitly omit additional flow steps. Existing signatures support confirmed structural deletion and label that state in the trust-asset list. Matcher replacements remain redacted in draft responses. Stable flow steps support ordered structural creation, confirmed deletion, and first/before/last moves when the reviewed structural capability is available; their parent editor presents the effective draft order, labels pending moves and deletes, and permits create or move references to earlier same-parent pending creates. Accepted replacement values are cleared from the editor and must be re-entered before updating a pending create operation."
+      "notes": "All signature metadata, matcher expressions, and ordered flow controls are administrator-visible and typed. Parents and flow steps support structural creation, editing, ordering, and deletion; complete draft expressions reopen without re-entry and preserve unchanged byte sequences."
     },
     {
       "name": "script_profiles",
@@ -204,16 +204,16 @@
       "edit": "typed",
       "sensitivity": "code-bearing",
       "tracked_fields": ["name", "type", "script-file"],
-      "notes": "All active script-profile fields are typed, editable, structurally creatable, and safely duplicable from persistent and pending values without augment overlays; executable paths are write-only, remain redacted, and are explicitly excluded from copies. Stable unreferenced profiles support confirmed structural deletion individually or through filtered atomic cleanup."
+      "notes": "All active script-profile fields, including executable module paths, are administrator-visible, typed, editable, structurally creatable, and duplicable from persistent and pending values."
     },
     {
       "name": "auth_profiles",
       "origin": "api_extension",
-      "read": "metadata",
-      "edit": "none",
+      "read": "full",
+      "edit": "typed",
       "sensitivity": "identity-bearing",
-      "tracked_fields": ["name", "authenticate", "resolve", "identity_count"],
-      "notes": "Legacy authentication profiles are parsed defensively so old configurations remain readable, but they are not shown, created, referenced, or edited by the GUI. Their current Smithproxy runtime behavior is obsolete and effectively a no-op. Identity matching will return only with a reviewed policy-level model; the GUI does not advertise the deprecated profile-level identity mechanism."
+      "tracked_fields": ["name", "authenticate", "resolve", "identity_count", "identities"],
+      "notes": "Legacy authentication profiles remain fully visible and editable for complete configuration administration. Profile flags and complete identity mappings support typed draft editing even though new deployments should avoid this obsolete runtime mechanism."
     }
   ]
 }

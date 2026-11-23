@@ -94,14 +94,12 @@ FULL_TYPED_FIELDS = {
         "ingress_role", "egress_role", "disabled",
     },
     "script_profiles": {"name", "type", "script-file"},
-}
-
-FULL_READ_FIELDS = {
     "content_profiles": {
         "name", "write_payload", "write_format", "webhook_enable",
         "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh",
         "ja4_http", "rules_session_filter", "content_rules",
     },
+    "tls_ca": {"name", "path_configured", "path"},
     "starttls_signatures": {
         "cat", "name", "side", "severity", "group", "enables", "engine",
         "flow", "type", "signature", "bytes_start", "bytes_max",
@@ -110,14 +108,14 @@ FULL_READ_FIELDS = {
         "cat", "name", "side", "severity", "group", "enables", "engine",
         "flow", "type", "signature", "bytes_start", "bytes_max",
     },
-    "tls_ca": {"name", "path_configured", "path"},
+    "auth_profiles": {"name", "authenticate", "resolve", "identity_count", "identities"},
 }
+
+FULL_READ_FIELDS = {}
 
 PARTIAL_FIELDS = {}
 
-LEGACY_METADATA_FIELDS = {
-    "auth_profiles": {"name", "authenticate", "resolve", "identity_count"},
-}
+LEGACY_METADATA_FIELDS = {}
 
 
 def fail(message: str) -> None:

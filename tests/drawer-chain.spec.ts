@@ -222,43 +222,12 @@ async function mockSystemApi(
   const now = (): number => state.now ?? Date.now();
   const collectorLastSuccess = (sampledAt: number): number =>
     sampledAt - (state.collectorLastSuccessAgeMs ?? 5_000);
-  const fixedSensitiveDraftPaths = new Set([
-    'settings.webhook.url', 'settings.syslog_server', 'settings.write_payload_dir',
-    'settings.log_file', 'settings.sslkeylog_file', 'settings.certs_path',
-    'settings.certs_ca_key_password', 'settings.certs_ctlog', 'settings.ca_bundle_path',
-    'settings.ca_bundle_file', 'settings.admin.group', 'settings.messages_dir',
-    'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
-    'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
-    'settings.http_api.bind_address', 'settings.http_api.bind_interface',
-    'settings.webhook.sift_url', 'settings.webhook.sift_tenant_id',
-    'settings.webhook.sift_instance_id', 'settings.webhook.hostid',
-    'settings.webhook.bind_interface', 'captures.local.dir', 'captures.local.file_prefix',
-    'captures.local.file_suffix', 'captures.remote.tun_dst', 'captures.remote.bind_interface',
-  ]);
-  const sensitiveDraftPath = (path: string): boolean => fixedSensitiveDraftPaths.has(path) ||
-    (path.startsWith('ssh_profiles.[') && path.endsWith('].host_key')) ||
-    (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
-    (path.startsWith('auth_profiles.[') && path.endsWith('].identities')) ||
-    (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
-    (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
-    (path.startsWith('content_profiles.[') && path.includes('].content_rules.[') &&
-      (path.endsWith('].match') || path.endsWith('].replace'))) ||
-    (path.startsWith('tls_ca.[') && path.endsWith('].path')) ||
-    ((path.startsWith('starttls_signatures.[') || path.startsWith('detection_signatures.[')) &&
-      path.endsWith('].signature'));
-  const redactDraftChange = (change: {path: string; value: unknown}): {path: string; value: unknown} => {
-    if (!sensitiveDraftPath(change.path)) return change;
-    const empty = change.value === '' || (Array.isArray(change.value) && change.value.length === 0);
-    const value = empty ? '[redacted:clear]' : Array.isArray(change.value)
-      ? `[redacted:replace:${change.value.length}]` : '[redacted:replace]';
-    return {path: change.path, value};
-  };
   const baseRevision = state.validationReady || state.commitReady ? `sha256:${'1'.repeat(64)}` : null;
   let draft = {
     id: 'workspace-draft',
     base_revision: baseRevision,
     version: state.initialDraftChanges?.length || state.initialStructuralOperations?.length ? 1 : 0,
-    changes: state.initialDraftChanges?.map(redactDraftChange) ?? [] as Array<{path: string; value: unknown}>,
+    changes: state.initialDraftChanges ?? [] as Array<{path: string; value: unknown}>,
     structural_operations: state.initialStructuralOperations ?? [],
     private_profile_references_complete: state.privateDraftProfileReferencesComplete ?? false,
     private_profile_references: state.privateDraftProfileReferences ?? [],
@@ -712,13 +681,9 @@ async function mockSystemApi(
     }
     const operations = [...draft.structural_operations];
     for (const operation of body.operations) {
-      const storedOperation = operation.op === 'create' && operation.collection.endsWith('_signatures.flow') &&
-          operation.fields
-        ? {...operation, fields: {...operation.fields, signature: '[redacted:replace]'}}
-        : operation;
       const existing = operations.findIndex(item => item.local_id === operation.local_id);
-      if (existing < 0) operations.push(storedOperation);
-      else operations[existing] = storedOperation;
+      if (existing < 0) operations.push(operation);
+      else operations[existing] = operation;
     }
     draft = {...draft, version: draft.version + 1, structural_operations: operations};
     await route.fulfill({json: draft});
@@ -741,41 +706,9 @@ async function mockSystemApi(
     const existing = draft.structural_operations.findIndex(
       operation => operation.local_id === body.operation.local_id,
     );
-    const sensitiveFields = body.operation.collection === 'content_profiles.content_rules'
-      ? new Set(['match', 'replace'])
-      : body.operation.collection === 'starttls_signatures.flow' ||
-          body.operation.collection === 'detection_signatures.flow'
-        ? new Set(['signature'])
-        : body.operation.collection === 'content_profiles'
-          ? new Set(['rules_session_filter'])
-          : body.operation.collection === 'tls_profiles'
-            ? new Set(['sni_filter_bypass'])
-            : body.operation.collection === 'auth_profiles'
-              ? new Set(['identities'])
-            : body.operation.collection === 'tls_ca'
-              ? new Set(['path'])
-          : body.operation.collection === 'ssh_profiles'
-            ? new Set(['host_key'])
-            : body.operation.collection === 'script_profiles'
-              ? new Set(['script-file']) : new Set<string>();
-    const storedOperation = body.operation.op === 'create' && sensitiveFields.size > 0 &&
-      typeof body.operation.fields === 'object' && body.operation.fields !== null
-      ? {
-        ...body.operation,
-        fields: Object.fromEntries(Object.entries(body.operation.fields).map(([field, value]) => [
-          field,
-          sensitiveFields.has(field)
-            ? value === '' || (Array.isArray(value) && value.length === 0)
-              ? '[redacted:clear]'
-              : field === 'identities' && Array.isArray(value)
-                ? `[redacted:replace:${value.length}]` : '[redacted:replace]'
-            : value,
-        ])),
-      }
-      : body.operation;
     const operations = [...draft.structural_operations];
-    if (existing < 0) operations.push(storedOperation as typeof operations[number]);
-    else operations[existing] = storedOperation as typeof operations[number];
+    if (existing < 0) operations.push(body.operation as typeof operations[number]);
+    else operations[existing] = body.operation as typeof operations[number];
     draft = {...draft, version: draft.version + 1, structural_operations: operations};
     await route.fulfill({json: draft});
   });
@@ -872,7 +805,6 @@ async function mockSystemApi(
       await route.fulfill({status: 409, json: {error: 'draft version conflict'}});
       return;
     }
-    const responseChanges = body.changes.map(redactDraftChange);
     draft = {
       ...draft,
       version: draft.version + 1,
@@ -880,7 +812,7 @@ async function mockSystemApi(
         ...draft.changes.filter(item =>
           !body.changes.some(change => change.path === item.path) &&
           !body.remove_paths?.includes(item.path)),
-        ...responseChanges,
+        ...body.changes,
       ],
     };
     await route.fulfill({json: draft});
@@ -1842,7 +1774,7 @@ test('navigates object categories as dedicated views', async ({page}) => {
   await expect(categories.getByTitle('Address objects').locator('.nav-count')).toHaveText('2');
   await expect(categories.getByTitle('Port objects').locator('.nav-count')).toHaveText('1');
   await expect(categories.getByTitle('Protocol objects').locator('.nav-count')).toHaveText('1');
-  await expect(categories.getByTitle('Profiles and routing').locator('.nav-count')).toHaveText('7');
+  await expect(categories.getByTitle('Profiles and routing').locator('.nav-count')).toHaveText('8');
   await expect(categories.getByTitle('Trust').locator('.nav-count')).toHaveText('1');
   await expect(categories.getByTitle('Signatures').locator('.nav-count')).toHaveText('2');
 
@@ -1889,15 +1821,15 @@ test('counts pending object creates and deletes in their own navigation categori
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
   const categories = page.getByRole('group', {name: 'Object categories', exact: true});
-  await expect(categories.getByTitle('All objects').locator('.nav-count')).toHaveText('14');
+  await expect(categories.getByTitle('All objects').locator('.nav-count')).toHaveText('15');
   await expect(categories.getByTitle('Address objects').locator('.nav-count')).toHaveText('1');
   await expect(categories.getByTitle('Port objects').locator('.nav-count')).toHaveText('2');
-  await expect(categories.getByTitle('Profiles and routing').locator('.nav-count')).toHaveText('8');
+  await expect(categories.getByTitle('Profiles and routing').locator('.nav-count')).toHaveText('9');
   await expect(categories.getByTitle('Signatures').locator('.nav-count')).toHaveText('1');
 
   await categories.getByRole('button', {name: 'Profiles and routing'}).click();
   const profiles = page.getByRole('group', {name: 'Profile categories'});
-  await expect(profiles.getByTitle('All profiles').locator('.nav-count')).toHaveText('8');
+  await expect(profiles.getByTitle('All profiles').locator('.nav-count')).toHaveText('9');
   await expect(profiles.getByTitle('TLS').locator('.nav-count')).toHaveText('2');
   await expect(profiles.getByTitle('Content').locator('.nav-count')).toHaveText('1');
 
@@ -3122,7 +3054,7 @@ test('creates complete typed routing detection and DNS profiles', async ({page})
   await expectNoWcagViolations(page);
 });
 
-test('creates sensitive content SSH and script profiles without reflecting write-only values', async ({page}) => {
+test('creates and reopens complete content SSH and script profiles', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
     structuralDraftsReady: true, structuralMutationRequests: [],
@@ -3205,22 +3137,19 @@ test('creates sensitive content SSH and script profiles without reflecting write
 
   await page.getByRole('button', {name: 'Review draft · 3'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
-  for (const secret of ['PRIVATE-CONTENT-FILTER', '/private/branch-host-key', '/private/branch.py']) {
-    await expect(table).not.toContainText(secret);
-  }
   const contentRow = table.getByRole('row').filter({hasText: 'content_profiles · create'});
   await contentRow.getByRole('button', {name: 'Edit'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
-  await expect(editor.getByLabel('Session filter', {exact: true})).toHaveValue('unchanged');
-  await expect(editor.getByLabel('New session filter')).toHaveValue('');
+  await expect(editor.getByLabel('Session filter', {exact: true})).toHaveValue('replace');
+  await expect(editor.getByLabel('New session filter')).toHaveValue('PRIVATE-CONTENT-FILTER');
   await editor.getByLabel('Name').fill('branch-content-updated');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText(/Re-enter the write-only session filter/u)).toBeVisible();
-  expect(state.structuralMutationRequests).toHaveLength(3);
+  await expect(editor).not.toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(4);
   await expectNoWcagViolations(page);
 });
 
-test('creates a complete fail-closed TLS profile with a redacted SNI bypass list', async ({page}) => {
+test('creates and reopens a complete fail-closed TLS profile', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
     structuralDraftsReady: true, structuralMutationRequests: [],
@@ -3277,22 +3206,22 @@ test('creates a complete fail-closed TLS profile with a redacted SNI bypass list
   await page.getByRole('button', {name: 'Review draft · 1'}).click();
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(table).toContainText('tls_profiles · create');
-  await expect(table).not.toContainText('private.example');
   await table.getByRole('row').filter({hasText: 'tls_profiles · create'})
     .getByRole('button', {name: 'Edit'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Profile type')).toHaveValue('tls');
   await expect(editor.getByLabel('OCSP certificate checks')).toHaveValue('2');
   await expect(editor.getByLabel('Certificate warning ports')).toHaveValue('443, 8443');
-  await expect(editor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('unchanged');
+  await expect(editor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('replace');
+  await expect(editor.getByLabel('New SNI bypass list')).toHaveValue('["private.example"]');
   await editor.getByLabel('Name').fill('branch-tls-updated');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText(/Re-enter the write-only SNI bypass list/u)).toBeVisible();
-  expect(state.structuralMutationRequests).toHaveLength(1);
+  await expect(editor).not.toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(2);
   await expectNoWcagViolations(page);
 });
 
-test('creates and deletes certificate authorities without exposing filesystem paths', async ({page}) => {
+test('creates deletes and reopens certificate authorities with complete paths', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
     structuralDraftsReady: true, structuralMutationRequests: [],
@@ -3335,16 +3264,15 @@ test('creates and deletes certificate authorities without exposing filesystem pa
   const table = page.getByRole('table', {name: 'Pending draft changes'});
   await expect(table).toContainText('tls_ca · delete');
   await expect(table).toContainText('tls_ca · create');
-  await expect(table).not.toContainText('/private/pki/branch-ca.pem');
   await table.getByRole('row').filter({hasText: 'tls_ca · create'})
     .getByRole('button', {name: 'Edit'}).click();
   createEditor = page.getByRole('dialog', {name: 'Create certificate authority'});
   await expect(createEditor.getByLabel('Name')).toHaveValue('branch-ca');
-  await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
+  await expect(createEditor.getByLabel('New CA path')).toHaveValue('/private/pki/branch-ca.pem');
   await createEditor.getByLabel('Name').fill('branch-ca-updated');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(createEditor.getByText(/Re-enter the write-only CA path/u)).toBeVisible();
-  expect(state.structuralMutationRequests).toHaveLength(2);
+  await expect(createEditor).not.toBeVisible();
+  expect(state.structuralMutationRequests).toHaveLength(3);
   await expectNoWcagViolations(page);
 });
 
@@ -4099,7 +4027,7 @@ test('deletes an unused stable profile and blocks referenced profiles', async ({
   await expect(deleteButton).toHaveAttribute('title', 'This object is referenced by 1 configuration entry.');
 });
 
-test('blocks profile deletion for redacted authentication identity references', async ({page}) => {
+test('blocks profile deletion for authentication identity references', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
     structuralDraftsReady: true, unusedProfile: true, privateProfileReferences: 1,
@@ -4116,7 +4044,7 @@ test('blocks profile deletion for redacted authentication identity references', 
 
   const editor = page.getByRole('dialog', {name: 'Edit unused-detection'});
   await expect(editor.getByText(
-    '1 reference is inside redacted authentication identity mappings.',
+    '1 reference is inside authentication identity mappings.',
   )).toBeVisible();
   const deleteButton = editor.getByRole('button', {name: 'Delete detection profile'});
   await expect(deleteButton).toBeDisabled();
@@ -4126,13 +4054,13 @@ test('blocks profile deletion for redacted authentication identity references', 
   await editor.getByLabel('Name').fill('renamed-detection');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor.getByText(
-    'Replace or clear the redacted authentication mappings before renaming this profile.',
+    'Replace or clear the authentication mappings before renaming this profile.',
   )).toBeVisible();
   await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
   await expectNoWcagViolations(page);
 });
 
-test('blocks profile deletion for redacted identity references in the workspace draft', async ({page}) => {
+test('blocks profile deletion for identity references in the workspace draft', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
     structuralDraftsReady: true, unusedProfile: true,
@@ -4153,7 +4081,7 @@ test('blocks profile deletion for redacted identity references in the workspace 
 
   const editor = page.getByRole('dialog', {name: 'Edit unused-detection'});
   await expect(editor.getByText(
-    '1 reference is inside effective redacted authentication identity mappings after pending changes.',
+    '1 reference is inside effective authentication identity mappings after pending changes.',
   )).toBeVisible();
   await expect(editor.getByRole('button', {name: 'Delete detection profile'})).toHaveAttribute(
     'title', 'This object is referenced by 1 configuration entry.',
@@ -4161,7 +4089,7 @@ test('blocks profile deletion for redacted identity references in the workspace 
   await expectNoWcagViolations(page);
 });
 
-test('uses effective redacted identity references for pending profile deletion', async ({page}) => {
+test('uses effective identity references for pending profile deletion', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
     structuralDraftsReady: true, unusedProfile: true, privateProfileReferences: 1,
@@ -4184,7 +4112,7 @@ test('uses effective redacted identity references for pending profile deletion',
 
   const editor = page.getByRole('dialog', {name: 'Edit unused-detection'});
   await expect(editor.getByText(
-    'Pending identity changes remove all redacted authentication references to this profile.',
+    'Pending identity changes remove all authentication references to this profile.',
   )).toBeVisible();
   await expect(editor.getByRole('button', {name: 'Delete detection profile'})).toBeEnabled();
   await editor.getByLabel('Name').fill('renamed-detection');
@@ -4329,7 +4257,7 @@ test('reorders and deletes stable nested content rules', async ({page}) => {
     .getByRole('button').filter({hasText: 'Pending delete'})).toHaveCount(1);
 });
 
-test('creates and safely reopens a nested content rule', async ({page}) => {
+test('creates and completely reopens a nested content rule', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
     validationReady: true,
@@ -4390,11 +4318,10 @@ test('creates and safely reopens a nested content rule', async ({page}) => {
   await expect(createEditor.getByLabel('Placement', {exact: true})).toHaveValue('before:content-rule-0-1');
   await expect(createEditor.getByLabel('Preserve matched length')).toHaveValue('true');
   await expect(createEditor.getByLabel('Replace every Nth match')).toHaveValue('3');
-  await expect(createEditor.getByLabel('New content match expression')).toHaveValue('');
+  await expect(createEditor.getByLabel('New content match expression')).toHaveValue('secret-match');
   await expect(createEditor.getByLabel('Replacement', {exact: true})).toHaveValue('replace');
-  await expect(createEditor.getByLabel('New content replacement expression')).toHaveValue('');
-  await expect(createEditor.locator('.privacy-note'))
-    .toContainText('re-entering every configured write-only expression');
+  await expect(createEditor.getByLabel('New content replacement expression'))
+    .toHaveValue('secret-replacement');
 });
 
 test('reorders and deletes stable signature flow steps', async ({page}) => {
@@ -4482,7 +4409,7 @@ test('reorders and deletes stable signature flow steps', async ({page}) => {
   await expect(deleteOnlyFlow).toHaveAttribute('title', 'A signature must retain at least one flow step.');
 });
 
-test('creates and safely reopens a signature flow step', async ({page}) => {
+test('creates and completely reopens a signature flow step', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
     validationReady: true,
@@ -4542,8 +4469,7 @@ test('creates and safely reopens a signature flow step', async ({page}) => {
   await expect(createEditor.getByLabel('Matcher')).toHaveValue('simple');
   await expect(createEditor.getByLabel('Byte offset')).toHaveValue('5');
   await expect(createEditor.getByLabel('Byte window')).toHaveValue('64');
-  await expect(createEditor.getByLabel('New signature flow expression')).toHaveValue('');
-  await expect(createEditor.locator('.privacy-note')).toContainText('re-entering the write-only expression');
+  await expect(createEditor.getByLabel('New signature flow expression')).toHaveValue('PRIVATE-FLOW');
 });
 
 test('creates and removes a signature with its first flow step atomically', async ({page}) => {
@@ -4599,13 +4525,11 @@ test('creates and removes a signature with its first flow step atomically', asyn
   editor = page.getByRole('dialog', {name: 'Create signature'});
   await expect(editor.getByLabel('Name')).toHaveValue('imap-starttls');
   await expect(editor.getByLabel('Direction')).toHaveValue('w');
-  await expect(editor.getByLabel('New signature first flow expression')).toHaveValue('');
+  await expect(editor.getByLabel('New signature first flow expression')).toHaveValue('PRIVATE-STARTTLS');
   await editor.getByLabel('Name').fill('imap-starttls-updated');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(editor.getByText('A matcher expression from 1 to 65536 characters is required.')).toBeVisible();
-  expect(state.structuralBatchMutationRequests).toHaveLength(1);
-  await editor.getByRole('button', {name: 'Cancel'}).click();
-  await editor.getByRole('button', {name: 'Discard changes'}).click();
+  await expect(editor).not.toBeVisible();
+  expect(state.structuralBatchMutationRequests).toHaveLength(2);
   await flowRow.getByRole('button', {name: /Remove .* from draft/u}).click();
   expect(state.structuralRemovalRequests).toHaveLength(1);
   await expect(page.getByRole('heading', {name: 'Workspace draft'})).toBeVisible();
@@ -4617,7 +4541,7 @@ test('creates and removes a signature with its first flow step atomically', asyn
   await existingEditor.getByRole('button', {name: 'Confirm delete detection signature'}).click();
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
-    expectedVersion: 2, csrf: '1',
+    expectedVersion: 3, csrf: '1',
     operation: {op: 'delete', collection: 'detection_signatures', entity_id: 'detection-signature-0'},
   });
   await expect(trustAfterRemoval.getByRole('button', {name: /http\/request Detection signature/i}))
@@ -4941,7 +4865,7 @@ test('does not offer a first script profile when its config collection is absent
 
   const editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Profile type').getByRole('option', {name: 'Script'})).toHaveCount(0);
-  await expect(editor.getByLabel('Profile type').getByRole('option')).toHaveCount(6);
+  await expect(editor.getByLabel('Profile type').getByRole('option')).toHaveCount(7);
 });
 
 test('does not offer first trust or signature entries when their collections are absent', async ({page}) => {
@@ -6376,7 +6300,7 @@ test('filters real configuration objects by value, kind, and effective usage', a
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
-  await expect(page.getByText('Showing 15 of 15', {exact: true})).toBeVisible();
+  await expect(page.getByText('Showing 16 of 16', {exact: true})).toBeVisible();
   const query = page.getByRole('searchbox', {name: 'Filter object list'});
   await query.fill('example.test');
   await expect(page.getByRole('group', {name: 'Address objects'}).getByRole('button')).toHaveCount(1);
@@ -6397,7 +6321,7 @@ test('filters real configuration objects by value, kind, and effective usage', a
   await page.getByRole('combobox', {name: 'Filter objects by usage'}).selectOption('unused');
   await expect(profiles.getByRole('button')).toHaveCount(1);
   await expect(profiles).toContainText('unused-detection');
-  await expect(page.getByText('Showing 1 of 15', {exact: true})).toBeVisible();
+  await expect(page.getByText('Showing 1 of 16', {exact: true})).toBeVisible();
 
   await page.getByRole('combobox', {name: 'Filter objects by kind'}).selectOption('port');
   await expect(page.getByText('No configuration objects match the current filters.')).toBeVisible();
@@ -6961,11 +6885,12 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
   await expect(contentEditor.getByRole('group', {name: 'Content rules'})
     .getByRole('button', {name: /Rule \d/i})).toHaveCount(2);
-  await expect(contentEditor.getByText(/Current session filters and all content-rule payloads stay inside/i)).toBeVisible();
+  await expect(contentEditor.getByLabel('Session filter replacement')).toHaveValue('tcp.port == 443');
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /^default-ssh ssh /i}).click();
   const sshEditor = page.getByRole('dialog', {name: 'Edit default-ssh'});
   await expect(sshEditor.getByLabel('Host key', {exact: true})).toHaveValue('unchanged');
+  await expect(sshEditor.getByLabel('Host key replacement')).toHaveValue('/etc/ssh/ssh_host_ed25519_key');
   await expect(sshEditor.getByLabel('Upstream host-key policy')).toHaveValue('strict');
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /^resolver dns /i}).click();
@@ -6974,6 +6899,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await profiles.getByRole('button', {name: /^audit script /i}).click();
   const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
   await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
+  await expect(scriptEditor.getByLabel('Module path replacement')).toHaveValue('/etc/smithproxy/audit.py');
   await expect(scriptEditor.getByLabel('Runtime')).toHaveValue('python');
   await page.keyboard.press('Escape');
   const trust = page.getByRole('group', {name: 'Trust and signatures'});
@@ -7568,8 +7494,7 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(changes).toContainText('settings.certs_ca_key_password');
   await expect(changes).toContainText('settings.http_api.keys');
   await expect(changes).toContainText('settings.syslog_server');
-  await expect(changes).toContainText('Replaced · redacted');
-  await expect(changes).toContainText('Cleared · redacted');
+  await expect(changes).toContainText('Cleared');
   await expect(changes).toContainText('settings.http_api.allow_api_header');
   await expect(changes).toContainText('debug.log_sockets');
   await expect(changes).toContainText('debug.log.proxy');
@@ -7577,24 +7502,15 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(changes).toContainText('captures.remote.tun_ttl');
   await expect(changes).toContainText('captures.local.dir');
   await expect(changes).toContainText('captures.remote.tun_dst');
-  await expect(changes).not.toContainText('hooks.example.test');
-  await expect(changes).not.toContainText('new-private-password');
-  await expect(changes).not.toContainText('new-api-key');
-  await expect(changes).not.toContainText('overlap-api-key');
-  await expect(changes).not.toContainText('192.0.2.77');
-  await expect(changes).not.toContainText('private-api0');
-  await expect(changes).not.toContainText('private-sift.test');
-  await expect(changes).not.toContainText('private-tenant');
-  await expect(changes).not.toContainText('private-instance');
-  await expect(changes).not.toContainText('private-host');
-  await expect(changes).not.toContainText('private-webhook0');
-  await expect(changes).not.toContainText('ct-log.cnf');
-  await expect(changes).not.toContainText('ca-bundle.pem');
-  await expect(changes).not.toContainText('private-admins');
-  await expect(changes).not.toContainText('/new/private/captures');
+  for (const value of [
+    'hooks.example.test', 'new-private-password', 'new-api-key', 'overlap-api-key',
+    '192.0.2.77', 'private-api0', 'private-sift.test', 'private-tenant', 'private-instance',
+    'private-host', 'private-webhook0', 'ct-log.cnf', 'ca-bundle.pem', 'private-admins',
+    '/new/private/captures',
+  ]) await expect(changes).toContainText(value);
 });
 
-test('edits nested signature flow metadata with write-only expressions', async ({page}) => {
+test('edits nested signature flow metadata with complete expressions', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   const trustPosture = await selectSecurityCategory(page, 'Detection signatures');
@@ -7622,15 +7538,14 @@ test('edits nested signature flow metadata with write-only expressions', async (
   await expect(changes).toContainText('detection_signatures.[0].group');
   await expect(changes).toContainText('detection_signatures.[0].severity');
   await expect(changes).toContainText('detection_signatures.[0].flow.[0].signature');
-  await expect(changes).toContainText('Replaced · redacted');
-  await expect(changes).not.toContainText('PRIVATE');
+  await expect(changes).toContainText('^PRIVATE[0-9]+$');
   await page.getByRole('button', {
     name: 'Edit detection_signatures.[0].flow.[0].signature',
   }).click();
   await expect(page.getByRole('dialog', {name: 'Edit Flow R'})).toBeVisible();
 });
 
-test('rotates nested content rules without exposing expressions', async ({page}) => {
+test('edits nested content rules with complete expressions', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
@@ -7658,9 +7573,8 @@ test('rotates nested content rules without exposing expressions', async ({page})
   await expect(changes).toContainText('content_profiles.[0].content_rules.[0].fill_length');
   await expect(changes).toContainText('content_profiles.[0].content_rules.[0].replace_each_nth');
   await expect(changes).toContainText('5');
-  await expect(changes).toContainText('Replaced · redacted');
-  await expect(changes).toContainText('Cleared · redacted');
-  await expect(changes).not.toContainText('PRIVATE-MATCH');
+  await expect(changes).toContainText('PRIVATE-MATCH-[0-9]+');
+  await expect(changes).toContainText('Cleared');
   await page.getByRole('button', {
     name: 'Edit content_profiles.[0].content_rules.[0].fill_length',
   }).click();
@@ -7762,7 +7676,7 @@ test('searches the complete readable configuration without unsafe markup', async
   await expect(results.getByRole('button').filter({hasText: 'Capture settings'})).toHaveCount(1);
 
   await search.fill('never-index-this.example');
-  await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
+  await expect(results.getByRole('button').filter({hasText: 'System settings'})).toHaveCount(1);
 
   await search.fill('<script>');
   await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
@@ -7771,7 +7685,7 @@ test('searches the complete readable configuration without unsafe markup', async
   await expect(page.getByRole('heading', {name: 'Dashboard', level: 1})).toBeVisible();
 });
 
-test('finds pending structural creates without indexing write-only values', async ({page}) => {
+test('finds pending structural creates without indexing legacy redaction sentinels', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready',
     initialStructuralOperations: [{
@@ -7841,7 +7755,7 @@ test('finds pending structural creates without indexing write-only values', asyn
 
   await search.fill('pending rule');
   const rule = results.getByRole('button').filter({hasText: 'capture · pending rule'});
-  await expect(rule).toContainText('Expression configured · redacted');
+  await expect(rule).toContainText('Empty match · pending draft');
   await rule.click();
   editor = page.getByRole('dialog', {name: 'Create content rule'});
   await expect(editor.getByLabel('Replace every Nth match')).toHaveValue('4');

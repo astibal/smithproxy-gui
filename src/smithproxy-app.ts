@@ -3691,36 +3691,7 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
-  private draftPathIsSensitive(path: string): boolean {
-    const sensitivePaths = new Set([
-      'settings.webhook.url', 'settings.syslog_server', 'settings.write_payload_dir',
-      'settings.log_file', 'settings.sslkeylog_file', 'settings.certs_path',
-      'settings.certs_ca_key_password', 'settings.certs_ctlog', 'settings.ca_bundle_path',
-      'settings.ca_bundle_file', 'settings.admin.group', 'settings.messages_dir',
-      'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
-      'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
-      'settings.custom_cert_fallback_dir',
-      'settings.http_api.bind_address', 'settings.http_api.bind_interface',
-      'settings.webhook.sift_url', 'settings.webhook.sift_tenant_id',
-      'settings.webhook.sift_instance_id', 'settings.webhook.hostid',
-      'settings.webhook.bind_interface',
-      'captures.local.dir', 'captures.local.file_prefix', 'captures.local.file_suffix',
-      'captures.remote.tun_dst', 'captures.remote.bind_interface',
-    ]);
-    const indexedSensitivePath =
-      (path.startsWith('ssh_profiles.[') && path.endsWith('].host_key')) ||
-      (path.startsWith('script_profiles.[') && path.endsWith('].script-file')) ||
-      (path.startsWith('tls_profiles.[') && path.endsWith('].sni_filter_bypass')) ||
-      (path.startsWith('content_profiles.[') && path.endsWith('].rules_session_filter')) ||
-      (path.startsWith('content_profiles.[') && path.includes('].content_rules.[') &&
-        (path.endsWith('].match') || path.endsWith('].replace'))) ||
-      (path.startsWith('tls_ca.[') && path.endsWith('].path')) ||
-      ((path.startsWith('starttls_signatures.[') || path.startsWith('detection_signatures.[')) &&
-        path.endsWith('].signature'));
-    return sensitivePaths.has(path) || indexedSensitivePath;
-  }
-
-  private draftValueSummary(path: string, value: DraftScalar): string {
+  private draftValueSummary(_path: string, value: DraftScalar): string {
     if (value === '[redacted:clear]') return 'Cleared · redacted';
     if (value === '[redacted:replace]') return 'Replaced · redacted';
     if (typeof value === 'string') {
@@ -3730,11 +3701,7 @@ export class SmithproxyApp extends LitElement {
         return `Replaced · redacted · ${count} item${count === 1 ? '' : 's'}`;
       }
     }
-    if (this.draftPathIsSensitive(path)) {
-      if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared · redacted';
-      const count = Array.isArray(value) ? ` · ${value.length} item${value.length === 1 ? '' : 's'}` : '';
-      return `Replaced · redacted${count}`;
-    }
+    if (value === '' || (Array.isArray(value) && value.length === 0)) return 'Cleared';
     if (Array.isArray(value)) {
       const preview = value.slice(0, 3).join(', ');
       return `${value.length} item${value.length === 1 ? '' : 's'}${preview ? ` · ${preview}` : ''}${value.length > 3 ? ', …' : ''}`;
@@ -3747,7 +3714,6 @@ export class SmithproxyApp extends LitElement {
     path: string,
     persistentValues: ReadonlyMap<string, ConfigValue>,
   ): string {
-    if (this.draftPathIsSensitive(path)) return 'Current value · redacted';
     const originValue = this.valueOrigin(path)?.persistentValue;
     const value = originValue ?? persistentValues.get(path);
     return value === undefined ? 'Unavailable' : this.draftValueSummary(path, value);
@@ -4311,10 +4277,13 @@ export class SmithproxyApp extends LitElement {
   private openAuthIdentities(profile: ProfileObject, origin?: HTMLElement): void {
     if (!profile.authentication || !this.draftAvailable) return;
     if (!this.authIdentityEditors.has(profile.id)) {
+      const prefix = this.profileOriginPrefixes().get(profile.id);
+      const pending = prefix ? this.pendingDraftValue(`${prefix}identities`) : undefined;
+      const identities = Array.isArray(pending) && pending.every(item => typeof item === 'object' && item !== null)
+        ? pending as ReadonlyArray<DraftAuthIdentity> : profile.authentication.identities;
       this.authIdentityEditors = new Map(this.authIdentityEditors).set(profile.id, {
         mode: 'replace',
-        rows: profile.authentication.identities.length > 0
-          ? profile.authentication.identities.map(identity => ({...identity})) : [{name: ''}],
+        rows: identities.length > 0 ? identities.map(identity => ({...identity})) : [{name: ''}],
       });
     }
     this.openObjectDrawer({
@@ -5275,11 +5244,16 @@ export class SmithproxyApp extends LitElement {
       this.drawerError = 'A valid content-rule placement is required.';
       return;
     }
+    const preservedTextareaValue = (element: HTMLTextAreaElement): string => {
+      const original = decodeURIComponent(element.dataset.originalValue ?? '');
+      const normalizedOriginal = original.replace(/\r\n?/gu, '\n');
+      return element.value === normalizedOriginal ? original : element.value;
+    };
     const fields: DraftCreateOperation['fields'] = {
-      match: match.value,
+      match: preservedTextareaValue(match),
       fill_length: fillLength.value === 'true',
       replace_each_nth: replaceEachValue,
-      ...(replacementMode.value === 'replace' ? {replace: replacement.value}
+      ...(replacementMode.value === 'replace' ? {replace: preservedTextareaValue(replacement)}
         : replacementMode.value === 'empty' ? {replace: ''} : {}),
     };
     this.draftSaving = true;
@@ -5294,8 +5268,6 @@ export class SmithproxyApp extends LitElement {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.contentRuleCreateParents.set(entry.id, profile.id);
       this.applyDraft(draft);
-      match.value = '';
-      replacement.value = '';
       this.markDrawerSaved(entry);
       await this.loadDraftPreflight();
     } catch (error) {
@@ -5491,6 +5463,10 @@ export class SmithproxyApp extends LitElement {
       this.drawerError = 'A valid flow-step placement is required.';
       return;
     }
+    const originalExpression = decodeURIComponent(expression.dataset.originalValue ?? '');
+    const normalizedOriginalExpression = originalExpression.replace(/\r\n?/gu, '\n');
+    const storedExpression = expression.value === normalizedOriginalExpression
+      ? originalExpression : expression.value;
     this.draftSaving = true;
     this.drawerError = undefined;
     this.draftError = undefined;
@@ -5501,13 +5477,12 @@ export class SmithproxyApp extends LitElement {
         parentId: signature.id, position,
         fields: {
           side: side.value, type: type.value, bytes_start: bytesStart,
-          bytes_max: bytesMax, signature: expression.value,
+          bytes_max: bytesMax, signature: storedExpression,
         },
       });
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.signatureFlowCreateParents.set(entry.id, signature.id);
       this.applyDraft(draft);
-      expression.value = '';
       this.markDrawerSaved(entry);
       await this.loadDraftPreflight();
     } catch (error) {
@@ -5828,7 +5803,7 @@ export class SmithproxyApp extends LitElement {
           !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
           !['all', 'unusual', 'mute'].includes(alerts.value) || !['empty', 'replace'].includes(bypassMode.value)) {
         this.drawerError = operation
-          ? 'Re-enter the write-only SNI bypass list or explicitly select an empty list before updating.'
+          ? 'Provide a valid SNI bypass list or explicitly select an empty list before updating.'
           : 'TLS timeouts, policy selections, warning ports, and the SNI bypass list must be valid.';
         return;
       }
@@ -5892,7 +5867,7 @@ export class SmithproxyApp extends LitElement {
           (filterMode.value === 'replace' &&
             (filter.value.length === 0 || filter.value.length > 65536 || filter.value.includes('\0')))) {
         this.drawerError = operation
-          ? 'Re-enter the write-only session filter or explicitly select an empty filter before updating.'
+          ? 'Provide a valid session filter or explicitly select an empty filter before updating.'
           : 'Content profile fields and the optional session filter must fit the configuration limits.';
         return;
       }
@@ -5919,7 +5894,7 @@ export class SmithproxyApp extends LitElement {
           !['empty', 'replace'].includes(hostKeyMode.value) ||
           (hostKeyMode.value === 'replace' && !printable(hostKeyValue, 1024))) {
         this.drawerError = operation
-          ? 'Re-enter the write-only host-key path or explicitly select an empty path before updating.'
+          ? 'Provide a valid host-key path or explicitly select an empty path before updating.'
           : 'SSH profile fields and the optional host-key path must fit the configuration limits.';
         return;
       }
@@ -5934,7 +5909,7 @@ export class SmithproxyApp extends LitElement {
           !['empty', 'replace'].includes(moduleMode.value) ||
           (moduleMode.value === 'replace' && !printable(moduleValue, 1024))) {
         this.drawerError = operation
-          ? 'Re-enter the write-only module path or explicitly select an empty path before updating.'
+          ? 'Provide a valid module path or explicitly select an empty path before updating.'
           : 'Script runtime and the optional module path must fit the configuration limits.';
         return;
       }
@@ -6004,7 +5979,7 @@ export class SmithproxyApp extends LitElement {
       !/[\u0000-\u001f\u007f]/u.test(value);
     if (!isConfigGroupName(name) || !printable(path, 1024)) {
       this.drawerError = this.pendingAuthorityCreate(entry)
-        ? 'Re-enter the write-only CA path before updating this pending authority.'
+        ? 'Provide a valid CA path before updating this pending authority.'
         : 'A printable unique name and CA path are required.';
       return;
     }
@@ -6120,7 +6095,9 @@ export class SmithproxyApp extends LitElement {
         }]);
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.applyDraft(draft);
-      this.updateAuthIdentityEditor(entry.id, {mode: 'replace', rows: [{name: ''}]});
+      this.updateAuthIdentityEditor(entry.id, {
+        mode: 'replace', rows: identities.length > 0 ? identities.map(identity => ({...identity})) : [{name: ''}],
+      });
       this.markDrawerSaved(entry);
       await this.loadDraftPreflight();
     } catch (error) {
@@ -6210,15 +6187,6 @@ export class SmithproxyApp extends LitElement {
       this.applyDraft(draft);
       await this.loadDraftPreflight();
       this.markDrawerSaved(entry);
-      if (entry.kind === 'settings' || entry.kind === 'captures' || entry.kind === 'profile' ||
-          entry.kind === 'authority' || entry.kind === 'signature-flow' || entry.kind === 'content-rule') {
-        this.renderRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-          '[id*="-write-"][id$="-value"], #settings-api-keys-value',
-        ).forEach(input => { input.value = ''; });
-        this.renderRoot.querySelectorAll<HTMLSelectElement>(
-          '[id*="-write-"][id$="-mode"], #settings-api-keys-mode',
-        ).forEach(select => { select.value = 'unchanged'; });
-      }
       await this.updateComplete;
       this.captureDrawerInitialChanges(entry);
     } catch (error) {
@@ -6840,7 +6808,7 @@ export class SmithproxyApp extends LitElement {
       }
       if (normalizedName !== currentName && this.effectivePrivateProfileReferences(profile) > 0) {
         this.draftError =
-          'Replace or clear the redacted authentication mappings before renaming this profile.';
+          'Replace or clear the authentication mappings before renaming this profile.';
         return undefined;
       }
       const renameChanges = this.renamedReferenceChanges(
@@ -7346,7 +7314,7 @@ export class SmithproxyApp extends LitElement {
         }
       }
       if (!valid) {
-        this.draftError = 'A write-only replacement is invalid for its configuration field.';
+        this.draftError = 'A replacement value is invalid for its configuration field.';
         return undefined;
       }
       changes.push({path: `settings.${path}`, value: replacement});
@@ -7441,7 +7409,7 @@ export class SmithproxyApp extends LitElement {
       if (kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
       if (kind === 'interface') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
       if (!valid) {
-        this.draftError = 'A write-only capture replacement is invalid for its field.';
+        this.draftError = 'A capture replacement value is invalid for its field.';
         return undefined;
       }
       changes.push({path: `captures.${path}`, value: replacement});
@@ -7530,7 +7498,7 @@ export class SmithproxyApp extends LitElement {
                 ${this.draftPreflight.sections.map(section => html`
                   <span class="preflight-section">
                     ${section.name.replaceAll('_', ' ')} · ${section.changeCount}
-                    ${section.sensitiveChangeCount > 0 ? ` · ${section.sensitiveChangeCount} write-only` : ''}
+                    ${section.sensitiveChangeCount > 0 ? ` · ${section.sensitiveChangeCount} protected` : ''}
                   </span>
                 `)}
               </div>
@@ -7550,7 +7518,8 @@ export class SmithproxyApp extends LitElement {
               ` : nothing}
               <p class="metric-note">
                 ${this.draftPreflight.sensitiveChangeCount} of ${this.draftPreflight.changeCount}
-                changes contain write-only values. Their values remain redacted.
+                changes contain protected values. Review shows their complete administrator-visible values;
+                audit and preflight summaries omit their contents.
               </p>
             ` : !this.draftPreflightAvailable ? html`
               <div class="metrics-message">The management service cannot review these changes for commit.</div>
@@ -8774,6 +8743,31 @@ export class SmithproxyApp extends LitElement {
       Number(settings.webhook.urlConfigured), Number(settings.webhook.siftUrlConfigured),
       Number(settings.webhook.siftTenantConfigured), Number(settings.webhook.siftInstanceConfigured),
       Number(settings.webhook.hostIdConfigured), Number(settings.webhook.bindInterfaceConfigured),
+      scalar('write_payload_dir', settings.logging.payloadDirectory),
+      scalar('log_file', settings.logging.file),
+      scalar('sslkeylog_file', settings.logging.sslKeyFile),
+      scalar('syslog_server', settings.logging.syslogServer),
+      scalar('certs_path', settings.auxiliary.certificatesPath),
+      scalar('certs_ca_key_password', settings.auxiliary.certificatePassword),
+      scalar('certs_ctlog', settings.auxiliary.certificateTransparencyLog),
+      scalar('custom_cert_fallback_dir', settings.auxiliary.customCertificateFallbackDirectory),
+      scalar('ca_bundle_path', settings.auxiliary.caBundlePath),
+      scalar('ca_bundle_file', settings.auxiliary.caBundleFile),
+      scalar('messages_dir', settings.auxiliary.messagesDirectory),
+      scalar('write_payload_file_prefix', settings.auxiliary.payloadFilePrefix),
+      scalar('write_payload_file_suffix', settings.auxiliary.payloadFileSuffix),
+      scalar('cli.enable_password', settings.auxiliary.cliPassword),
+      scalar('web_rating.wot_key', settings.auxiliary.webRatingKey),
+      scalar('admin.group', settings.auxiliary.adminGroup),
+      ...strings('http_api.keys', settings.httpApi.keys),
+      scalar('http_api.bind_address', settings.httpApi.bindAddress),
+      scalar('http_api.bind_interface', settings.httpApi.bindInterface),
+      scalar('webhook.url', settings.webhook.url),
+      scalar('webhook.sift_url', settings.webhook.siftUrl),
+      scalar('webhook.sift_tenant_id', settings.webhook.siftTenant),
+      scalar('webhook.sift_instance_id', settings.webhook.siftInstance),
+      scalar('webhook.hostid', settings.webhook.hostId),
+      scalar('webhook.bind_interface', settings.webhook.bindInterface),
     ];
     if (debug) {
       values.push(
@@ -8799,11 +8793,16 @@ export class SmithproxyApp extends LitElement {
       this.presentedValue('captures.local.pcap_quota', captures.local.quotaMiB),
       Number(captures.local.directoryConfigured), Number(captures.local.filePrefixConfigured),
       Number(captures.local.fileSuffixConfigured),
+      this.presentedValue('captures.local.dir', captures.local.directory),
+      this.presentedValue('captures.local.file_prefix', captures.local.filePrefix),
+      this.presentedValue('captures.local.file_suffix', captures.local.fileSuffix),
       Number(this.presentedValue('captures.remote.enabled', captures.remote.enabled)),
       this.presentedValue('captures.remote.tun_type', captures.remote.tunnelType),
       this.presentedValue('captures.remote.gre_format', captures.remote.greFormat),
       this.presentedValue('captures.remote.tun_ttl', captures.remote.ttl),
       Number(captures.remote.destinationConfigured), Number(captures.remote.bindInterfaceConfigured),
+      this.presentedValue('captures.remote.tun_dst', captures.remote.destination),
+      this.presentedValue('captures.remote.bind_interface', captures.remote.bindInterface),
       Number(this.presentedValue('captures.options.calculate_checksums', captures.calculateChecksums)),
       'format', 'quota', 'tunnel', 'ttl', 'checksums',
     ];
@@ -8821,9 +8820,9 @@ export class SmithproxyApp extends LitElement {
         ProfileCreateType, DraftCreateOperation['collection']
       ]>).map(([type, collection]) => [collection, type]),
     );
-    const fieldText = (operation: DraftCreateOperation, field: string): string => {
+    const fieldText = (operation: DraftCreateOperation, field: string, fallback = ''): string => {
       const value = operation.fields[field];
-      return typeof value === 'string' ? value : '';
+      return typeof value === 'string' && !value.startsWith('[redacted:') ? value : fallback;
     };
     const safeValues = (
       operation: DraftCreateOperation, fields: ReadonlyArray<string>, labels: ReadonlyArray<string>,
@@ -8831,9 +8830,15 @@ export class SmithproxyApp extends LitElement {
       const values: Array<string | number> = [...labels];
       for (const field of fields) {
         const value = operation.fields[field];
-        if (Array.isArray(value)) values.push(...value);
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            if (typeof item === 'string' || typeof item === 'number') values.push(item);
+            else if (typeof item === 'object' && item !== null) values.push(JSON.stringify(item));
+          }
+        }
         else if (typeof value === 'boolean') values.push(Number(value));
-        else if (typeof value === 'string' || typeof value === 'number') values.push(value);
+        else if (typeof value === 'string' && !value.startsWith('[redacted:')) values.push(value);
+        else if (typeof value === 'number') values.push(value);
       }
       return values;
     };
@@ -8867,14 +8872,13 @@ export class SmithproxyApp extends LitElement {
         ], ['policy', pending]);
       } else if (profileTypes.has(operation.collection)) {
         const type = profileTypes.get(operation.collection)!;
-        if (type === 'authentication') return [];
         kind = 'Profile';
         detail = `${type} · ${pending}`;
-        values = [name, type, 'profile', pending];
+        values = safeValues(operation, Object.keys(operation.fields), [name, type, 'profile', pending]);
       } else if (operation.collection === 'tls_ca') {
         kind = 'Certificate authority';
-        detail = `Path configured · redacted · ${pending}`;
-        values = [name, 'certificate authority', 'ca', 'path configured', pending];
+        detail = `${fieldText(operation, 'path', 'Path not configured')} · ${pending}`;
+        values = [name, fieldText(operation, 'path'), 'certificate authority', 'ca', pending];
       } else if (operation.collection === 'starttls_signatures' ||
           operation.collection === 'detection_signatures') {
         const signatureKind = operation.collection === 'starttls_signatures' ? 'STARTTLS' : 'Detection';
@@ -8891,9 +8895,9 @@ export class SmithproxyApp extends LitElement {
           : pendingParent?.op === 'create' ? fieldText(pendingParent, 'name') : 'Content profile';
         name = `${parentName} · pending rule`;
         kind = 'Content rule';
-        detail = `Expression configured · redacted · ${pending}`;
-        values = safeValues(operation, ['fill_length', 'replace_each_nth'], [
-          parentName, 'content rule', 'expression configured', pending,
+        detail = `${fieldText(operation, 'match', 'Empty match')} · ${pending}`;
+        values = safeValues(operation, ['match', 'replace', 'fill_length', 'replace_each_nth'], [
+          parentName, 'content rule', pending,
         ]);
       } else if (operation.collection.endsWith('_signatures.flow')) {
         const pendingParent = operations.find(candidate => candidate.op === 'create' &&
@@ -8905,9 +8909,9 @@ export class SmithproxyApp extends LitElement {
         const parentName = parent ? this.signatureDisplayName(parent.id, parent.name) : 'Signature';
         name = `${parentName} · pending flow`;
         kind = 'Signature flow';
-        detail = `Expression configured · redacted · ${pending}`;
-        values = safeValues(operation, ['side', 'type', 'bytes_start', 'bytes_max'], [
-          parentName, 'signature flow', 'expression configured', pending,
+        detail = `${fieldText(operation, 'signature', 'Empty expression')} · ${pending}`;
+        values = safeValues(operation, ['side', 'type', 'bytes_start', 'bytes_max', 'signature'], [
+          parentName, 'signature flow', pending,
         ]);
       } else {
         return [];
@@ -9204,7 +9208,7 @@ export class SmithproxyApp extends LitElement {
     const pendingAuthorityRows = pendingAuthorities.map(operation => ({
       operation,
       name: fieldText(operation, 'name', 'New certificate authority'),
-      summary: 'CA path configured · redacted',
+      summary: fieldText(operation, 'path', 'CA path not configured'),
     })).filter(row => kindMatches('security') && securityTypeMatches('trust') && securityFilterAvailable &&
       queryMatches([row.name, row.summary, 'certificate authority', 'ca', 'trust', 'pending']));
     const signatureIndexes = {starttls: 0, detection: 0};
@@ -11346,7 +11350,7 @@ export class SmithproxyApp extends LitElement {
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
-              <header><div><h3>Certificate resources</h3><p>Resource locations; private key passwords remain hidden</p></div>
+              <header><div><h3>Certificate resources</h3><p>Complete certificate locations and credentials</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
                     'settings', event.currentTarget as HTMLElement, 'certificates',
@@ -11356,7 +11360,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Certificates</dt><dd><code>${settings.auxiliary.certificatesPath || 'Not configured'}</code></dd>
                 <dt>CA bundle path</dt><dd><code>${settings.auxiliary.caBundlePath || 'Not configured'}</code></dd>
                 <dt>CA bundle file</dt><dd><code>${settings.auxiliary.caBundleFile || 'Not configured'}</code></dd>
-                <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>CA password</dt><dd><code>${settings.auxiliary.certificatePassword || 'Not configured'}</code></dd>
                 <dt>Certificate transparency log</dt><dd><code>${settings.auxiliary.certificateTransparencyLog || 'Not configured'}</code></dd>
                 <dt>Custom certificate fallback</dt><dd><code>${settings.auxiliary.customCertificateFallbackDirectory || 'Disabled'}</code></dd>
               </dl>
@@ -11371,7 +11375,7 @@ export class SmithproxyApp extends LitElement {
               <dl>
                 <dt>Message assets</dt><dd><code>${settings.auxiliary.messagesDirectory || 'Not configured'}</code></dd>
                 <dt>Payload filename</dt><dd><code>${settings.auxiliary.payloadFilePrefix || '(no prefix)'}</code> … <code>${settings.auxiliary.payloadFileSuffix || '(no suffix)'}</code></dd>
-                <dt>Web rating key</dt><dd>${settings.auxiliary.webRatingKeyConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
+                <dt>Web rating key</dt><dd><code>${settings.auxiliary.webRatingKey || 'Not configured'}</code></dd>
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
@@ -12755,7 +12759,7 @@ export class SmithproxyApp extends LitElement {
           </fieldset>
           <fieldset class="editor-group">
             <legend>Session scope</legend>
-            <p>Limits this profile with a private, write-only session expression.</p>
+            <p>Limits this profile with a complete administrator-visible session expression.</p>
             <div class="form-grid">
           ${writeOnlyMode('content-filter', 'Session filter', sensitiveField('rules_session_filter'))}
           <label for="profile-create-content-filter-${entry.id}">Filter value</label>
@@ -12826,9 +12830,6 @@ export class SmithproxyApp extends LitElement {
       </div>
       ${type === 'authentication' ? html`<div class="privacy-note section">
         Save the profile first, then review or edit its complete identity mappings in the nested editor.
-      </div>` : ['tls', 'content', 'ssh', 'script'].includes(type) ? html`<div class="privacy-note section">
-        Write-only values are accepted by the management service, redacted from draft responses, and cleared from this editor.
-        Reopening a pending profile requires explicit re-entry before it can be updated.
       </div>` : nothing}
     `;
   }
@@ -12923,10 +12924,11 @@ export class SmithproxyApp extends LitElement {
       return [...new Set([...live, ...pendingNames])];
     };
     const pending = creating
-      ? typeof createOperation?.fields['identities'] === 'string'
+      ? createOperation?.fields['identities'] !== undefined
       : this.draftPathsForDrawer(entry).length > 0;
     const configuredCount = profile?.authentication?.identityCount ??
-      Number(/^\[redacted:replace:(\d+)\]$/u.exec(String(createOperation?.fields['identities'] ?? ''))?.[1] ?? 0);
+      (Array.isArray(createOperation?.fields['identities']) ? createOperation.fields['identities'].length :
+        Number(/^\[redacted:replace:(\d+)\]$/u.exec(String(createOperation?.fields['identities'] ?? ''))?.[1] ?? 0));
     const markDirty = () => {
       const key = this.drawerKey(entry);
       if (!this.dirtyDrawerKeys.has(key)) this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
@@ -13234,8 +13236,12 @@ export class SmithproxyApp extends LitElement {
               <option value="replace">Replace</option><option value="clear">Clear</option>
             </select>
             <textarea id="tls-write-sni-${entry.id}-value" aria-label="SNI bypass list replacement"
-              placeholder='["private.example"] (write-only)' autocomplete="off"
-              .readOnly=${mappedReadOnly}></textarea>
+              placeholder="[]" autocomplete="off"
+              .value=${JSON.stringify(persistentStrings('sni_filter_bypass', tls.sniBypass))}
+              @input=${() => {
+                const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-write-sni-${entry.id}-mode`);
+                if (mode && !mappedReadOnly) mode.value = 'replace';
+              }} .readOnly=${mappedReadOnly}></textarea>
           </div>
             </div>
           </fieldset>
@@ -13304,7 +13310,7 @@ export class SmithproxyApp extends LitElement {
           </fieldset>
           <fieldset class="editor-group">
             <legend>Session scope and content rules</legend>
-            <p>Limits this profile with a private expression and applies ordered content replacements.</p>
+            <p>Limits this profile with a session expression and applies ordered content replacements.</p>
             <div class="form-grid">
           <label for="content-write-filter-${entry.id}-mode">Session filter</label>
           <div class="write-only-control">
@@ -13313,8 +13319,12 @@ export class SmithproxyApp extends LitElement {
               <option value="replace">Replace</option><option value="clear">Clear</option>
             </select>
             <textarea id="content-write-filter-${entry.id}-value" aria-label="Session filter replacement"
-              placeholder="New expression (write-only)" autocomplete="off"
-              .readOnly=${mappedReadOnly}></textarea>
+              placeholder="Session expression" autocomplete="off"
+              .value=${persistent('rules_session_filter', content.sessionFilter)}
+              @input=${() => {
+                const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#content-write-filter-${entry.id}-mode`);
+                if (mode && !mappedReadOnly) mode.value = 'replace';
+              }} .readOnly=${mappedReadOnly}></textarea>
           </div>
           <label>Content rules</label>
           <div class="reference-stack" role="group" aria-label="Content rules">
@@ -13379,7 +13389,11 @@ export class SmithproxyApp extends LitElement {
               <option value="replace">Replace</option><option value="clear">Clear</option>
             </select>
             <input id="ssh-write-host-key-${entry.id}-value" aria-label="Host key replacement"
-              placeholder="New path (write-only)" autocomplete="off" .readOnly=${mappedReadOnly} />
+              .value=${persistent('host_key', ssh.hostKey)} placeholder="Host-key path" autocomplete="off"
+              @input=${() => {
+                const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#ssh-write-host-key-${entry.id}-mode`);
+                if (mode && !mappedReadOnly) mode.value = 'replace';
+              }} .readOnly=${mappedReadOnly} />
           </div>
           <label for="ssh-host-key-policy-${entry.id}">Upstream host-key policy</label>
           <select id="ssh-host-key-policy-${entry.id}" .value=${persistent('hostkey_policy', ssh.hostKeyPolicy)}
@@ -13459,7 +13473,11 @@ export class SmithproxyApp extends LitElement {
               <option value="replace">Replace</option><option value="clear">Clear</option>
             </select>
             <input id="script-write-module-${entry.id}-value" aria-label="Module path replacement"
-              placeholder="New path (write-only)" autocomplete="off" .readOnly=${mappedReadOnly} />
+              .value=${persistent('script-file', script.modulePath)} placeholder="Module path" autocomplete="off"
+              @input=${() => {
+                const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#script-write-module-${entry.id}-mode`);
+                if (mode && !mappedReadOnly) mode.value = 'replace';
+              }} .readOnly=${mappedReadOnly} />
           </div>
             </div>
           </fieldset>
@@ -13487,19 +13505,11 @@ export class SmithproxyApp extends LitElement {
       </div>
       ${prefix ? this.renderNamedRenameNotice(`${prefix}name`) : nothing}
       ${routing || tls || detection || content || ssh || dns || script || authentication ? nothing : html`<div class="privacy-note section">
-        Profile values remain inside the management service until a typed, redacted editor is available.
+        This profile type is not part of the advertised configuration schema. Update the GUI/backend contract
+        before editing it.
       </div>`}
-      ${tls ? html`<div class="privacy-note section">
-        Current SNI bypass values stay inside the management service; replacements are write-only.
-      </div>` : nothing}
-      ${content ? html`<div class="privacy-note section">
-        Current session filters and all content-rule payloads stay inside the management service. Filter replacements are write-only.
-      </div>` : nothing}
       ${ssh ? html`<div class="scope-note section">Current host-key path: <code>${ssh.hostKey}</code></div>` : nothing}
       ${script ? html`<div class="scope-note section">Current module path: <code>${script.modulePath || 'Not configured'}</code></div>` : nothing}
-      ${authentication ? html`<div class="privacy-note section">
-        Authentication profiles are obsolete in Smithproxy; identity names and profile bindings stay inside the management service.
-      </div>` : nothing}
       ${this.renderObjectUsage(profile)}
     `;
   }
@@ -13608,7 +13618,8 @@ export class SmithproxyApp extends LitElement {
           <option value="clear">Clear</option>
         </select>
         <input id="settings-write-${id}-value" type="text"
-          aria-label="${label} replacement" .value=${currentTextValues.get(id) ?? ''}
+          aria-label="${label} replacement"
+          .value=${scalar(writeOnlyPaths.get(id)!, currentTextValues.get(id) ?? '')}
           placeholder="Empty" autocomplete="off" .readOnly=${fieldLocked}
           @input=${() => {
             const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-write-${id}-mode`);
@@ -13822,7 +13833,7 @@ export class SmithproxyApp extends LitElement {
           </select>
           <input id="settings-api-keys-value" type="text" autocomplete="off"
             aria-label="HTTP API keys replacement" placeholder='["new-key", "overlap-key"]'
-            .value=${JSON.stringify(settings.httpApi.keys)}
+            .value=${JSON.stringify(strings('settings.http_api.keys', settings.httpApi.keys))}
             @input=${() => {
               const mode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-api-keys-mode');
               if (mode && !locked('settings.http_api.keys')) mode.value = 'replace';
@@ -13951,6 +13962,11 @@ export class SmithproxyApp extends LitElement {
       ['local-suffix', captures.local.fileSuffix], ['remote-destination', captures.remote.destination],
       ['bind-interface', captures.remote.bindInterface],
     ]);
+    const textPaths: ReadonlyMap<string, string> = new Map([
+      ['local-directory', 'captures.local.dir'], ['local-prefix', 'captures.local.file_prefix'],
+      ['local-suffix', 'captures.local.file_suffix'], ['remote-destination', 'captures.remote.tun_dst'],
+      ['bind-interface', 'captures.remote.bind_interface'],
+    ]);
     const writeOnlyField = (id: string, label: string, configured: boolean) => html`
       <label for="captures-write-${id}-mode">${label}</label>
       <div class="write-only-control">
@@ -13960,7 +13976,8 @@ export class SmithproxyApp extends LitElement {
           <option value="clear">Clear</option>
         </select>
         <input id="captures-write-${id}-value" aria-label="${label} replacement"
-          .value=${currentValues.get(id) ?? ''} placeholder="Empty" autocomplete="off"
+          .value=${scalar(textPaths.get(id)!, currentValues.get(id) ?? '')}
+          placeholder="Empty" autocomplete="off"
           @input=${() => {
             const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-write-${id}-mode`);
             if (mode && !disabled) mode.value = 'replace';
@@ -14068,7 +14085,6 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
       ${this.renderNamedRenameNotice(namePath)}
-      <div class="scope-note section">Replacement values remain redacted only in draft review.</div>
     `;
   }
 
@@ -14207,6 +14223,11 @@ export class SmithproxyApp extends LitElement {
         ? operation.position.kind : `${operation.position.kind}:${operation.position.reference}`
       : 'last';
     const replacement = operation?.fields['replace'];
+    const pendingMatch = operation?.fields['match'];
+    const matchExpression = typeof pendingMatch === 'string' && !pendingMatch.startsWith('[redacted:')
+      ? pendingMatch : '';
+    const replacementExpression = typeof replacement === 'string' && !replacement.startsWith('[redacted:')
+      ? replacement : '';
     const replacementMode = replacement === undefined ? 'absent'
       : replacement === '[redacted:clear]' ? 'empty' : 'replace';
     const fillLength = operation?.fields['fill_length'];
@@ -14245,7 +14266,8 @@ export class SmithproxyApp extends LitElement {
         <label for="content-rule-create-match-${entry.id}">Match expression</label>
         <textarea id="content-rule-create-match-${entry.id}" maxlength="65536" required
           aria-label="New content match expression" autocomplete="off"
-          placeholder=${operation ? 'Re-enter match expression (write-only)' : 'Match expression (write-only)'}
+          placeholder="Match expression" .value=${matchExpression}
+          data-original-value=${encodeURIComponent(matchExpression)}
           .readOnly=${readOnly}></textarea>
         <label for="content-rule-create-replacement-mode-${entry.id}">Replacement</label>
         <div class="write-only-control">
@@ -14257,14 +14279,10 @@ export class SmithproxyApp extends LitElement {
           </select>
           <textarea id="content-rule-create-replacement-${entry.id}" maxlength="65536"
             aria-label="New content replacement expression" autocomplete="off"
-            placeholder=${operation && replacementMode === 'replace'
-              ? 'Re-enter replacement expression (write-only)' : 'Replacement expression (write-only)'}
+            placeholder="Replacement expression" .value=${replacementExpression}
+            data-original-value=${encodeURIComponent(replacementExpression)}
             .readOnly=${readOnly}></textarea>
         </div>
-      </div>
-      <div class="privacy-note section">
-        Match and replacement expressions stay inside the management service. Reopening this pending rule requires
-        re-entering every configured write-only expression before another update.
       </div>
     `;
   }
@@ -14358,7 +14376,7 @@ export class SmithproxyApp extends LitElement {
         </div>
       </div>
       <div class="privacy-note section">
-        Signature expressions stay inside the management service. Open a flow step to rotate one through a write-only control.
+        Open a flow step to inspect or edit its complete matcher expression.
       </div>
     `;
   }
@@ -14560,6 +14578,7 @@ export class SmithproxyApp extends LitElement {
     const type = operation?.fields['type'];
     const start = operation?.fields['bytes_start'];
     const maximum = operation?.fields['bytes_max'];
+    const expression = operation?.fields['signature'];
     return html`
       <div class="form-grid wide-form-grid">
         <label>Signature</label><span>${signature.name}</span>
@@ -14599,12 +14618,12 @@ export class SmithproxyApp extends LitElement {
         <label for="signature-flow-create-expression-${entry.id}">Expression</label>
         <textarea id="signature-flow-create-expression-${entry.id}" maxlength="65536" required
           aria-label="New signature flow expression" autocomplete="off"
-          placeholder=${operation ? 'Re-enter matcher expression (write-only)' : 'Matcher expression (write-only)'}
+          placeholder="Matcher expression"
+          .value=${typeof expression === 'string' && !expression.startsWith('[redacted:') ? expression : ''}
+          data-original-value=${encodeURIComponent(
+            typeof expression === 'string' && !expression.startsWith('[redacted:') ? expression : '',
+          )}
           .readOnly=${readOnly}></textarea>
-      </div>
-      <div class="privacy-note section">
-        The matcher expression stays inside the management service. Reopening this pending step requires
-        re-entering the write-only expression before another update.
       </div>
     `;
   }
@@ -14784,16 +14803,16 @@ export class SmithproxyApp extends LitElement {
           <div class="scope-note">
             ${privateReferenceCount} ${privateReferenceCount === 1 ? 'reference is' : 'references are'}
             inside ${privateReferencesChanged
-              ? 'effective redacted authentication identity mappings after pending changes'
-              : 'redacted authentication identity mappings'}.
+              ? 'effective authentication identity mappings after pending changes'
+              : 'authentication identity mappings'}.
           </div>
           <div class="scope-note">
-            Replace or clear those redacted mappings before renaming this profile.
+            Replace or clear those mappings before renaming this profile.
           </div>
         ` : nothing}
         ${privateReferencesChanged && privateReferenceCount === 0 ? html`
           <div class="scope-note">
-            Pending identity changes remove all redacted authentication references to this profile.
+            Pending identity changes remove all authentication references to this profile.
           </div>
         ` : nothing}
         <ul class="usage">
@@ -15023,8 +15042,7 @@ export class SmithproxyApp extends LitElement {
             ` : nothing}
             ${profile ? html`
               <button class="secondary" type="button"
-                title=${profileCloneBlocker ??
-                  'Open a prefilled profile copy; write-only values and nested rules remain excluded'}
+                title=${profileCloneBlocker ?? 'Open a prefilled profile copy'}
                 ?disabled=${profileCloneBlocker !== undefined || dirty || this.draftSaving || this.draftCommitting}
                 @click=${(event: MouseEvent) =>
                   this.duplicateProfile(profile, event.currentTarget as HTMLElement)}>
@@ -15033,7 +15051,7 @@ export class SmithproxyApp extends LitElement {
             ` : nothing}
             ${authority ? html`
               <button class="secondary" type="button"
-                title=${authorityCloneBlocker ?? 'Open a prefilled authority copy; the private path remains excluded'}
+                title=${authorityCloneBlocker ?? 'Open a prefilled authority copy'}
                 ?disabled=${authorityCloneBlocker !== undefined || dirty || this.draftSaving || this.draftCommitting}
                 @click=${(event: MouseEvent) =>
                   this.duplicateAuthority(authority, event.currentTarget as HTMLElement)}>
@@ -15042,8 +15060,7 @@ export class SmithproxyApp extends LitElement {
             ` : nothing}
             ${signature ? html`
               <button class="secondary" type="button"
-                title=${signatureCloneBlocker ??
-                  'Open a prefilled signature copy; private matcher expressions remain excluded'}
+                title=${signatureCloneBlocker ?? 'Open a prefilled signature copy'}
                 ?disabled=${signatureCloneBlocker !== undefined || dirty || this.draftSaving || this.draftCommitting}
                 @click=${(event: MouseEvent) =>
                   this.duplicateSignature(signature, event.currentTarget as HTMLElement)}>
