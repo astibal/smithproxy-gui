@@ -1565,12 +1565,12 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('ssh_profiles.[0].host_key');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('script_profiles.[0].type');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('script_profiles.[0].script-file');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/etc/smithproxy/new-host-key');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/opt/smithproxy/new-audit.py');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('internal.example');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('office-secret');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('/etc/smithproxy/new-host-key');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('/opt/smithproxy/new-audit.py');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('internal.example');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('office-secret');
   await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('tls_ca.[0].path');
-  await expect(page.getByRole('table', {name: 'Pending draft changes'})).not.toContainText('/etc/smithproxy/private/new-default-ca');
+  await expect(page.getByRole('table', {name: 'Pending draft changes'})).toContainText('/etc/smithproxy/private/new-default-ca');
   const addressDiff = page.getByRole('table', {name: 'Pending draft changes'})
     .getByRole('row').filter({hasText: 'address_objects.[0].value'});
   await expect(addressDiff.locator('.draft-transition-value')).toHaveText([
@@ -1579,7 +1579,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   const authorityDiff = page.getByRole('table', {name: 'Pending draft changes'})
     .getByRole('row').filter({hasText: 'tls_ca.[0].path'});
   await expect(authorityDiff.locator('.draft-transition-value')).toHaveText([
-    /Persistent\s*Current value · redacted/u, /Pending\s*Replaced · redacted/u,
+    /Persistent\s*\/etc\/smithproxy\/default-ca\.pem/u,
+    /Pending\s*\/etc\/smithproxy\/private\/new-default-ca/u,
   ]);
   await expect(page.getByRole('button', {name: 'Edit policy.[0].action'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Edit address_objects.[0].value'})).toBeVisible();
@@ -7214,7 +7215,7 @@ test('keeps absent nested settings groups visible but read-only', async ({page})
   await expect(editor.getByLabel('CLI port', {exact: true})).toHaveAttribute('readonly', '');
   await expect(editor.getByLabel('Initial host buffer (bytes)')).toHaveAttribute('readonly', '');
   await expect(editor.getByLabel('API port')).toHaveAttribute('readonly', '');
-  await expect(editor.getByLabel('HTTP API keys', {exact: true})).toBeDisabled();
+  await expect(editor.getByLabel('HTTP API keys', {exact: true})).toHaveAttribute('readonly', '');
   await expect(editor.getByLabel('Webhook', {exact: true})).toBeDisabled();
 
   await editor.getByLabel('Policy failure').selectOption('true');
@@ -7314,9 +7315,9 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(settingsEditor.getByLabel('Protect local destinations')).toHaveValue('true');
   await expect(settingsEditor.getByLabel('Require SOCKS authentication')).toHaveValue('false');
   await expect(settingsEditor.getByLabel('Require HTTP CONNECT authentication')).toHaveValue('false');
-  await expect(settingsEditor.getByLabel('Certificate password replacement'))
+  await expect(settingsEditor.getByLabel('Certificate password'))
     .toHaveValue('private-ca-password');
-  await expect(settingsEditor.getByLabel('HTTP API keys replacement'))
+  await expect(settingsEditor.getByLabel('HTTP API keys'))
     .toHaveValue('["backend-secret-value"]');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('1023');
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
@@ -7331,10 +7332,8 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await settingsEditor.getByLabel('API token TTL (seconds)').fill('900');
   await settingsEditor.getByLabel('API port').fill('55580');
   await settingsEditor.getByLabel('Refresh tokens on access').selectOption('false');
-  await settingsEditor.getByLabel('API bind address', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('API bind address replacement').fill('192.0.2.77');
-  await settingsEditor.getByLabel('API bind interface', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('API bind interface replacement').fill('private-api0');
+  await settingsEditor.getByLabel('API bind address').fill('192.0.2.77');
+  await settingsEditor.getByLabel('API bind interface').fill('private-api0');
   await settingsEditor.getByLabel('Socket event logging').selectOption('true');
   await settingsEditor.getByLabel('Log level', {exact: true}).fill('7');
   await settingsEditor.getByLabel('CLI port', {exact: true}).fill('50001');
@@ -7347,44 +7346,30 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await settingsEditor.getByLabel('Nameservers').fill('192.0.2.53, 2001:db8::53, resolver.example');
   await settingsEditor.getByLabel('UDP quick ports').fill('0, 53, 443');
   await settingsEditor.getByLabel('HTTP API allowed IPs').fill('127.0.0.1, 192.0.2.0/24');
-  await settingsEditor.getByLabel('Webhook URL', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Webhook URL replacement').fill('https://hooks.example.test/smithproxy');
+  await settingsEditor.getByLabel('Webhook URL').fill('https://hooks.example.test/smithproxy');
   await settingsEditor.getByLabel('Sift payload limit per direction').fill('524288');
   await settingsEditor.getByLabel('Synchronous webhook delivery').selectOption('true');
   await settingsEditor.getByLabel('Sift LoreD mode').selectOption('required');
   await settingsEditor.getByLabel('Include observed URLs in LoreD requests').selectOption('true');
-  await settingsEditor.getByLabel('Sift URL', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Sift URL replacement').fill('http://private-sift.test/webhook');
-  await settingsEditor.getByLabel('Sift tenant ID', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Sift tenant ID replacement').fill('private-tenant');
-  await settingsEditor.getByLabel('Sift instance ID', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Sift instance ID replacement').fill('private-instance');
-  await settingsEditor.getByLabel('Webhook host ID', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Webhook host ID replacement').fill('private-host');
-  await settingsEditor.getByLabel('Webhook bind interface', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Webhook bind interface replacement').fill('private-webhook0');
+  await settingsEditor.getByLabel('Sift URL').fill('http://private-sift.test/webhook');
+  await settingsEditor.getByLabel('Sift tenant ID').fill('private-tenant');
+  await settingsEditor.getByLabel('Sift instance ID').fill('private-instance');
+  await settingsEditor.getByLabel('Webhook host ID').fill('private-host');
+  await settingsEditor.getByLabel('Webhook bind interface').fill('private-webhook0');
   await settingsEditor.getByLabel('Initial host buffer (bytes)').fill('4096');
   await settingsEditor.getByLabel('QUIC listener receive buffer (bytes)').fill('2097152');
   await settingsEditor.getByLabel('QUIC inbox packets per worker').fill('8192');
   await settingsEditor.getByLabel('QUIC inbox bytes per worker').fill('33554432');
   await settingsEditor.getByLabel('Neighbor cache entries').fill('9000');
-  await settingsEditor.getByLabel('Certificate transparency log file', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Certificate transparency log file replacement').fill('/private/ct-log.cnf');
-  await settingsEditor.getByLabel('Custom certificate fallback directory', {exact: true})
-    .selectOption('replace');
-  await settingsEditor.getByLabel('Custom certificate fallback directory replacement')
+  await settingsEditor.getByLabel('Certificate transparency log file').fill('/private/ct-log.cnf');
+  await settingsEditor.getByLabel('Custom certificate fallback directory')
     .fill('/var/lib/smithproxy/custom-certs-next');
-  await settingsEditor.getByLabel('CA bundle file', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('CA bundle file replacement').fill('/private/ca-bundle.pem');
-  await settingsEditor.getByLabel('Administration group', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Administration group replacement').fill('private-admins');
-  await settingsEditor.getByLabel('Certificate password', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('Certificate password replacement').fill('new-private-password');
-  await settingsEditor.getByLabel('Syslog server', {exact: true}).selectOption('clear');
-  await settingsEditor.getByLabel('HTTP API keys', {exact: true}).selectOption('replace');
-  await settingsEditor.getByLabel('HTTP API keys replacement').fill('["new-api-key", "overlap-api-key"]');
+  await settingsEditor.getByLabel('CA bundle file').fill('/private/ca-bundle.pem');
+  await settingsEditor.getByLabel('Administration group').fill('private-admins');
+  await settingsEditor.getByLabel('Certificate password').fill('new-private-password');
+  await settingsEditor.getByLabel('CA bundle path').fill('');
+  await settingsEditor.getByLabel('HTTP API keys').fill('["new-api-key", "overlap-api-key"]');
   await settingsEditor.getByLabel('proxy module override').fill('8');
-  await expect(settingsEditor.getByText('Keep empty', {exact: true})).toHaveCount(11);
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
@@ -7441,9 +7426,8 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await captureEditor.getByLabel('Flow statistics blocks').selectOption('true');
   await captureEditor.getByLabel('Transport security blocks').selectOption('false');
   await captureEditor.getByLabel('Protocol lifecycle events').selectOption('true');
-  await captureEditor.getByLabel('Local directory', {exact: true}).selectOption('replace');
-  await captureEditor.getByLabel('Local directory replacement').fill('/new/private/captures');
-  await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
+  await captureEditor.getByLabel('Local directory').fill('/new/private/captures');
+  await captureEditor.getByLabel('Local filename prefix').fill('');
   await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(captureEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
@@ -7500,7 +7484,7 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(changes).toContainText('settings.admin.group');
   await expect(changes).toContainText('settings.certs_ca_key_password');
   await expect(changes).toContainText('settings.http_api.keys');
-  await expect(changes).toContainText('settings.syslog_server');
+  await expect(changes).toContainText('settings.ca_bundle_path');
   await expect(changes).toContainText('Cleared');
   await expect(changes).toContainText('settings.http_api.allow_api_header');
   await expect(changes).toContainText('debug.log_sockets');
@@ -7508,7 +7492,7 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(changes).toContainText('captures.local.format');
   await expect(changes).toContainText('captures.remote.tun_ttl');
   await expect(changes).toContainText('captures.local.dir');
-  await expect(changes).toContainText('captures.remote.tun_dst');
+  await expect(changes).toContainText('captures.local.file_prefix');
   for (const value of [
     'hooks.example.test', 'new-private-password', 'new-api-key', 'overlap-api-key',
     '192.0.2.77', 'private-api0', 'private-sift.test', 'private-tenant', 'private-instance',

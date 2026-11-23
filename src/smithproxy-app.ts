@@ -7263,28 +7263,21 @@ export class SmithproxyApp extends LitElement {
     const loredMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-webhook-sift-lored-mode');
     if (!loredMode || !['disabled', 'optional', 'required'].includes(loredMode.value)) return undefined;
     changes.push({path: 'settings.webhook.sift_lored_mode', value: loredMode.value});
-    const apiKeysMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-api-keys-mode');
     const apiKeysInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-keys-value');
-    if (!apiKeysMode || !apiKeysInput || !['unchanged', 'replace', 'clear'].includes(apiKeysMode.value)) {
+    if (!apiKeysInput) return undefined;
+    let keys: unknown;
+    try {
+      keys = JSON.parse(apiKeysInput.value);
+    } catch {
+      keys = undefined;
+    }
+    if (!Array.isArray(keys) || keys.length > 256 ||
+        !keys.every(key => typeof key === 'string' && key.length > 0 &&
+          key.length <= 65536 && !key.includes('\0'))) {
+      this.draftError = 'API keys must be a JSON string array containing at most 256 values.';
       return undefined;
     }
-    if (apiKeysMode.value === 'clear') {
-      changes.push({path: 'settings.http_api.keys', value: []});
-    } else if (apiKeysMode.value === 'replace') {
-      let keys: unknown;
-      try {
-        keys = JSON.parse(apiKeysInput.value);
-      } catch {
-        keys = undefined;
-      }
-      if (!Array.isArray(keys) || keys.length === 0 || keys.length > 256 ||
-          !keys.every(key => typeof key === 'string' && key.length > 0 &&
-            key.length <= 65536 && !key.includes('\0'))) {
-        this.draftError = 'API key replacement must be a non-empty JSON string array.';
-        return undefined;
-      }
-      changes.push({path: 'settings.http_api.keys', value: keys as string[]});
-    }
+    changes.push({path: 'settings.http_api.keys', value: keys as string[]});
     const writeOnlyFields = [
       ['webhook.url', 'webhook-url', 'url'], ['syslog_server', 'syslog-server', 'host'],
       ['write_payload_dir', 'payload-directory', 'path'], ['log_file', 'log-file', 'path'],
@@ -7307,27 +7300,21 @@ export class SmithproxyApp extends LitElement {
       ['webhook.bind_interface', 'webhook-bind-interface', 'host'],
     ] as const;
     for (const [path, id, kind] of writeOnlyFields) {
-      const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-write-${id}-mode`);
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-write-${id}-value`);
-      if (!mode || !input || !['unchanged', 'replace', 'clear'].includes(mode.value)) return undefined;
-      if (mode.value === 'unchanged') continue;
-      if (mode.value === 'clear') {
-        changes.push({path: `settings.${path}`, value: ''});
-        continue;
-      }
+      if (!input) return undefined;
       const replacement = input.value;
-      let valid = replacement.length > 0 && replacement.length <= 1024 &&
-        !/[\u0000-\u001f\u007f]/u.test(replacement);
-      if (kind === 'path') valid = valid && replacement.startsWith('/');
-      if (kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
-      if (kind === 'ipv4') {
+      const empty = replacement.length === 0;
+      let valid = replacement.length <= 1024 && !/[\u0000-\u001f\u007f]/u.test(replacement);
+      if (!empty && kind === 'path') valid = valid && replacement.startsWith('/');
+      if (!empty && kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
+      if (!empty && kind === 'ipv4') {
         const octets = replacement.split('.');
         valid = valid && octets.length === 4 && octets.every(octet =>
           /^\d{1,3}$/u.test(octet) && Number(octet) <= 255 && String(Number(octet)) === octet,
         );
       }
-      if (kind === 'filename') valid = valid && replacement.length <= 128 && !/[\\/]/u.test(replacement);
-      if (kind === 'url' && valid) {
+      if (!empty && kind === 'filename') valid = valid && replacement.length <= 128 && !/[\\/]/u.test(replacement);
+      if (!empty && kind === 'url' && valid) {
         try {
           const url = new URL(replacement);
           valid = ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
@@ -7336,7 +7323,7 @@ export class SmithproxyApp extends LitElement {
         }
       }
       if (!valid) {
-        this.draftError = 'A replacement value is invalid for its configuration field.';
+        this.draftError = 'A configuration value is invalid for its field.';
         return undefined;
       }
       changes.push({path: `settings.${path}`, value: replacement});
@@ -7415,23 +7402,17 @@ export class SmithproxyApp extends LitElement {
       ['remote.bind_interface', 'bind-interface', 'interface'],
     ] as const;
     for (const [path, id, kind] of writeOnlyFields) {
-      const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-write-${id}-mode`);
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#captures-write-${id}-value`);
-      if (!mode || !input || !['unchanged', 'replace', 'clear'].includes(mode.value)) return undefined;
-      if (mode.value === 'unchanged') continue;
-      if (mode.value === 'clear') {
-        changes.push({path: `captures.${path}`, value: ''});
-        continue;
-      }
+      if (!input) return undefined;
       const replacement = input.value;
-      let valid = replacement.length > 0 && replacement.length <= 1024 &&
-        !/[\u0000-\u001f\u007f]/u.test(replacement);
-      if (kind === 'path') valid = valid && replacement.startsWith('/');
-      if (kind === 'filename') valid = valid && replacement.length <= 128 && !/[\\/]/u.test(replacement);
-      if (kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
-      if (kind === 'interface') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
+      const empty = replacement.length === 0;
+      let valid = replacement.length <= 1024 && !/[\u0000-\u001f\u007f]/u.test(replacement);
+      if (!empty && kind === 'path') valid = valid && replacement.startsWith('/');
+      if (!empty && kind === 'filename') valid = valid && replacement.length <= 128 && !/[\\/]/u.test(replacement);
+      if (!empty && kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
+      if (!empty && kind === 'interface') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
       if (!valid) {
-        this.draftError = 'A capture replacement value is invalid for its field.';
+        this.draftError = 'A capture value is invalid for its field.';
         return undefined;
       }
       changes.push({path: `captures.${path}`, value: replacement});
@@ -13647,25 +13628,14 @@ export class SmithproxyApp extends LitElement {
       <input id="settings-tuning-${id}" type="number" min=${String(minimum)} max=${String(maximum)}
         .value=${String(scalar(tuningPaths.get(id)!, value))} .readOnly=${locked(tuningPaths.get(id)!)} />
     `;
-    const writeOnlyField = (id: string, label: string, configured: boolean, _secret = false) => {
+    const writeOnlyField = (id: string, label: string, _configured: boolean, secret = false) => {
       const fieldLocked = locked(writeOnlyPaths.get(id)!);
       return html`
-      <label for="settings-write-${id}-mode">${label}</label>
-      <div class="write-only-control">
-        <select id="settings-write-${id}-mode" ?disabled=${fieldLocked}>
-          <option value="unchanged">${configured ? 'Keep current value' : 'Keep empty'}</option>
-          <option value="replace">Replace</option>
-          <option value="clear">Clear</option>
-        </select>
-        <input id="settings-write-${id}-value" type="text"
-          aria-label="${label} replacement"
+      <label for="settings-write-${id}-value">${label}</label>
+        <input id="settings-write-${id}-value" type=${secret ? 'password' : 'text'}
+          aria-label=${label}
           .value=${scalar(writeOnlyPaths.get(id)!, currentTextValues.get(id) ?? '')}
-          placeholder="Empty" autocomplete="off" .readOnly=${fieldLocked}
-          @input=${() => {
-            const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-write-${id}-mode`);
-            if (mode && !fieldLocked) mode.value = 'replace';
-          }} />
-      </div>
+          placeholder="Empty" autocomplete="off" .readOnly=${fieldLocked} />
     `;
     };
     const missingGroups = [
@@ -13864,22 +13834,11 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('api-header', 'API header access', settings.httpApi.allowApiHeader)}
         ${writeOnlyField('api-bind-address', 'API bind address', settings.httpApi.bindAddressConfigured)}
         ${writeOnlyField('api-bind-interface', 'API bind interface', settings.httpApi.bindInterfaceConfigured)}
-        <label for="settings-api-keys-mode">HTTP API keys</label>
-        <div class="write-only-control">
-          <select id="settings-api-keys-mode" ?disabled=${locked('settings.http_api.keys')}>
-            <option value="unchanged">Keep ${settings.httpApi.keyCount} configured key${settings.httpApi.keyCount === 1 ? '' : 's'}</option>
-            <option value="replace">Replace all</option>
-            <option value="clear">Clear all</option>
-          </select>
+        <label for="settings-api-keys-value">HTTP API keys</label>
           <input id="settings-api-keys-value" type="text" autocomplete="off"
-            aria-label="HTTP API keys replacement" placeholder='["new-key", "overlap-key"]'
+            aria-label="HTTP API keys" placeholder='["api-key", "overlap-key"]'
             .value=${JSON.stringify(strings('settings.http_api.keys', settings.httpApi.keys))}
-            @input=${() => {
-              const mode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-api-keys-mode');
-              if (mode && !locked('settings.http_api.keys')) mode.value = 'replace';
-            }}
             .readOnly=${locked('settings.http_api.keys')} />
-        </div>
         <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
         <input id="settings-api-allowed-ips"
           .value=${strings('settings.http_api.allowed_ips', settings.httpApi.allowedIps).join(', ')}
@@ -14007,22 +13966,11 @@ export class SmithproxyApp extends LitElement {
       ['local-suffix', 'captures.local.file_suffix'], ['remote-destination', 'captures.remote.tun_dst'],
       ['bind-interface', 'captures.remote.bind_interface'],
     ]);
-    const writeOnlyField = (id: string, label: string, configured: boolean) => html`
-      <label for="captures-write-${id}-mode">${label}</label>
-      <div class="write-only-control">
-        <select id="captures-write-${id}-mode" ?disabled=${disabled}>
-          <option value="unchanged">${configured ? 'Keep current value' : 'Keep empty'}</option>
-          <option value="replace">Replace</option>
-          <option value="clear">Clear</option>
-        </select>
-        <input id="captures-write-${id}-value" aria-label="${label} replacement"
+    const writeOnlyField = (id: string, label: string, _configured: boolean) => html`
+      <label for="captures-write-${id}-value">${label}</label>
+        <input id="captures-write-${id}-value" aria-label=${label}
           .value=${scalar(textPaths.get(id)!, currentValues.get(id) ?? '')}
-          placeholder="Empty" autocomplete="off"
-          @input=${() => {
-            const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-write-${id}-mode`);
-            if (mode && !disabled) mode.value = 'replace';
-          }} .readOnly=${disabled} />
-      </div>
+          placeholder="Empty" autocomplete="off" .readOnly=${disabled} />
     `;
     return html`
       ${captures.editable ? nothing : html`<div class="privacy-note section">
