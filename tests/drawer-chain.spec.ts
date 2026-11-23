@@ -941,12 +941,13 @@ async function mockSystemApi(
         features: ['sinkhole'],
         action: 'accept', nat: '', routing: 'main', tls_profile: 'inspect',
         ssh_profile: 'default-ssh', detection_profile: 'detect', content_profile: 'capture', auth_profile: 'legacy-auth',
-        dns_profile: 'resolver', script_profile: 'audit',
+        dns_profile: 'resolver', script_profile: 'audit', ingress_role: 'Office', egress_role: 'Outside',
       }, ...(state.secondPolicy ? [{
         id: 'policy-1', name: 'Policy 2', enabled: true, protocol: 'tcp', sources: ['office'],
         source_ports: [], destinations: ['internet'], destination_ports: [], features: [],
         action: 'reject', nat: '', routing: '', tls_profile: '', ssh_profile: '',
         detection_profile: '', content_profile: '', auth_profile: '', dns_profile: '', script_profile: '',
+        ingress_role: '', egress_role: '',
       }] : [])],
       addresses: [
         {id: 'address-0', name: 'office', type: 'cidr', type_editable: true, value: '10.0.0.0/24'},
@@ -1685,6 +1686,29 @@ test('saves only fields changed since the editor opened', async ({page}) => {
   await nat.selectOption('');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
+  await expect(page.getByText('Draft: 2 changes')).toBeVisible();
+});
+
+test('saves policy interface-role selectors in one draft mutation', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', draftMutationBatches: []};
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Policy', exact: true}).click();
+  await page.getByRole('button', {name: /Policy 1 office internet accept/i}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Policy 1'});
+  const ingressRole = editor.getByLabel('Ingress interface role');
+  const egressRole = editor.getByLabel('Egress interface role');
+  await expect(ingressRole).toHaveValue('Office');
+  await expect(egressRole).toHaveValue('Outside');
+  await ingressRole.fill('');
+  await egressRole.fill('Guest');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect.poll(() => state.draftMutationBatches).toEqual([[
+    {path: 'policy.[0].ingress_role', value: ''},
+    {path: 'policy.[0].egress_role', value: 'Guest'},
+  ]]);
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
 });
 
