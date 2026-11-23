@@ -805,6 +805,8 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         *value, "certs_ca_key_password", maximum_value_length, true);
     const auto certificate_transparency_log = bounded_string(
         *value, "certs_ctlog", maximum_value_length, true);
+    const auto custom_certificate_fallback_directory = bounded_string(
+        *value, "custom_cert_fallback_dir", maximum_value_length, true);
     const auto ca_bundle_path = bounded_string(*value, "ca_bundle_path", maximum_value_length, true);
     const auto ca_bundle_file = bounded_string(*value, "ca_bundle_file", maximum_value_length, true);
     const auto messages_directory = bounded_string(*value, "messages_dir", maximum_value_length, true);
@@ -928,6 +930,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !ssl_key_log_file || !syslog_server || !syslog_port || !syslog_facility ||
         !syslog_level || !syslog_family || (*syslog_family != 4U && *syslog_family != 6U) ||
         !udp_quick_ports || !certificates_path || !certificate_password || !certificate_transparency_log ||
+        !custom_certificate_fallback_directory ||
         !ca_bundle_path || !ca_bundle_file ||
         !messages_directory || !payload_file_prefix || !payload_file_suffix || !cli_port ||
         *cli_port < 1024U ||
@@ -984,6 +987,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *syslog_family, udp_quick_ports->size(), *udp_quick_ports,
                 !certificates_path->empty(),
                 !certificate_password->empty(), !certificate_transparency_log->empty(),
+                !custom_certificate_fallback_directory->empty(),
                 !ca_bundle_path->empty(), !ca_bundle_file->empty(),
                 !messages_directory->empty(), !payload_file_prefix->empty(),
                 !payload_file_suffix->empty(), *cli_port, !cli_password->empty(),
@@ -1005,7 +1009,8 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *webhook_task_debug, *webhook_task_debug_dump, std::move(interface_roles),
                 std::move(present_groups),
                 *payload_directory, *log_file, *ssl_key_log_file, *syslog_server,
-                *certificates_path, *certificate_transparency_log, *ca_bundle_path,
+                *certificates_path, *certificate_transparency_log,
+                *custom_certificate_fallback_directory, *ca_bundle_path,
                 *ca_bundle_file, *messages_directory, *payload_file_prefix,
                 *payload_file_suffix, *admin_group, *bind_address, *bind_interface,
                 *webhook_url, *webhook_sift_url, *webhook_sift_tenant,
@@ -1130,12 +1135,16 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
     const auto ttl = optional_decimal(remote, "tun_ttl", 1U, 255U);
     const auto bind_interface = bounded_string(remote, "bind_interface", maximum_name_length, true);
     const auto checksums = boolean_scalar(options, "calculate_checksums", false);
+    const auto metadata = boolean_scalar(options, "metadata", false);
+    const auto statistics = boolean_scalar(options, "statistics", false);
+    const auto transport = boolean_scalar(options, "transport", false);
+    const auto protocol_events = boolean_scalar(options, "protocol_events", false);
     if (!local_enabled || !local_dir || !local_prefix || !local_suffix || !local_format ||
         (*local_format != "pcap_single" && *local_format != "pcap" && *local_format != "smcap") ||
         !local_quota || !remote_enabled || !tunnel_type || *tunnel_type != "gre" || !gre_format ||
         (*gre_format != "traffic" && *gre_format != "pcapng" && *gre_format != "spq1") ||
         !destination || !ttl ||
-        !bind_interface || !checksums) {
+        !bind_interface || !checksums || !metadata || !statistics || !transport || !protocol_events) {
         return {std::nullopt, "Smithproxy returned invalid capture setting fields"};
     }
     return {ConfigCaptureSettings{
@@ -1143,7 +1152,7 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
                 !local_suffix->empty(), *local_format, *local_quota,
                 *remote_enabled, *tunnel_type, *gre_format,
                 remote.find("tun_dst") == remote.end() || !destination->empty(), *ttl,
-                !bind_interface->empty(), *checksums,
+                !bind_interface->empty(), *checksums, *metadata, *statistics, *transport, *protocol_events,
                 local_value != value->end() && remote_value != value->end() &&
                     options_value != value->end(),
                 *local_dir, *local_prefix, *local_suffix, *destination, *bind_interface,

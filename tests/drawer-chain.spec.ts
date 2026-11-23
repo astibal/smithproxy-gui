@@ -1101,6 +1101,8 @@ async function mockSystemApi(
           certificates_path: '/etc/smithproxy/certs',
           certificate_password_configured: true, certificate_transparency_log_configured: true,
           certificate_transparency_log: '/etc/smithproxy/ct.log',
+          custom_certificate_fallback_directory_configured: true,
+          custom_certificate_fallback_directory: '/var/lib/smithproxy/custom-certs',
           ca_bundle_path_configured: true, ca_bundle_path: '/etc/ssl/certs',
           ca_bundle_file_configured: false, ca_bundle_file: '',
           messages_directory_configured: true, messages_directory: '/etc/smithproxy/messages',
@@ -1156,6 +1158,10 @@ async function mockSystemApi(
           bind_interface_configured: false, bind_interface: '',
         },
         calculate_checksums: true,
+        metadata: true,
+        statistics: false,
+        transport: true,
+        protocol_events: false,
       },
       security_assets: {
         certificate_authorities: [{id: 'certificate-authority-0', name: 'default', path_configured: true,
@@ -7398,6 +7404,10 @@ test('saves typed system and capture settings without exposing write-only values
   await settingsEditor.getByLabel('Neighbor cache entries').fill('9000');
   await settingsEditor.getByLabel('Certificate transparency log file', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Certificate transparency log file replacement').fill('/private/ct-log.cnf');
+  await settingsEditor.getByLabel('Custom certificate fallback directory', {exact: true})
+    .selectOption('replace');
+  await settingsEditor.getByLabel('Custom certificate fallback directory replacement')
+    .fill('/var/lib/smithproxy/custom-certs-next');
   await settingsEditor.getByLabel('CA bundle file', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('CA bundle file replacement').fill('/private/ca-bundle.pem');
   await settingsEditor.getByLabel('Administration group', {exact: true}).selectOption('replace');
@@ -7461,6 +7471,10 @@ test('saves typed system and capture settings without exposing write-only values
   await captureEditor.getByLabel('Local capture').selectOption('true');
   await captureEditor.getByLabel('Local format').selectOption('smcap');
   await captureEditor.getByLabel('Tunnel TTL').fill('32');
+  await captureEditor.getByLabel('Session metadata blocks').selectOption('false');
+  await captureEditor.getByLabel('Flow statistics blocks').selectOption('true');
+  await captureEditor.getByLabel('Transport security blocks').selectOption('false');
+  await captureEditor.getByLabel('Protocol lifecycle events').selectOption('true');
   await captureEditor.getByLabel('Local directory', {exact: true}).selectOption('replace');
   await captureEditor.getByLabel('Local directory replacement').fill('/new/private/captures');
   await captureEditor.getByLabel('Remote destination', {exact: true}).selectOption('clear');
@@ -7470,6 +7484,10 @@ test('saves typed system and capture settings without exposing write-only values
   await expect(captureCard).toContainText('Local captureEnabled');
   await expect(captureCard).toContainText('Format / quotasmcap / 1024 MiB');
   await expect(captureCard).toContainText('TTL / bound interface32 / Default');
+  await expect(captureCard).toContainText('Session metadataExcluded');
+  await expect(captureCard).toContainText('Flow statisticsIncluded');
+  await expect(captureCard).toContainText('Transport securityExcluded');
+  await expect(captureCard).toContainText('Protocol eventsIncluded');
   await expect(captureCard.getByText('Pending', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: /Review draft · \d+/u}).click();
@@ -7477,6 +7495,8 @@ test('saves typed system and capture settings without exposing write-only values
   await expect(changes).toContainText('settings.ssl_workers');
   await expect(changes).toContainText('settings.ssl_port');
   await expect(changes).toContainText('settings.dtls_port');
+  await expect(changes).toContainText('settings.custom_cert_fallback_dir');
+  await expect(changes).toContainText('captures.options.protocol_events');
   await expect(changes).toContainText('settings.socks_port');
   await expect(changes).toContainText('settings.tpool_log');
   await expect(changes).toContainText('settings.socks.ipver_mixing');

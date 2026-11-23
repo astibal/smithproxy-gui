@@ -243,6 +243,8 @@ const snapshot: ConfigSnapshot = {
       certificatesPath: '/etc/smithproxy/certs',
       certificatePasswordConfigured: true, certificateTransparencyLogConfigured: true,
       certificateTransparencyLog: '/etc/smithproxy/ct.log',
+      customCertificateFallbackDirectoryConfigured: true,
+      customCertificateFallbackDirectory: '/var/lib/smithproxy/custom-certs',
       caBundlePathConfigured: true, caBundlePath: '/etc/ssl/certs',
       caBundleFileConfigured: false, caBundleFile: '',
       messagesDirectoryConfigured: true, messagesDirectory: '/etc/smithproxy/messages',
@@ -301,6 +303,7 @@ const snapshot: ConfigSnapshot = {
       bindInterfaceConfigured: false, bindInterface: '',
     },
     calculateChecksums: true,
+    metadata: true, statistics: true, transport: true, protocolEvents: true,
   },
   securityAssets: {
     certificateAuthorities: [{id: 'certificate-authority-0', name: 'default', pathConfigured: true,

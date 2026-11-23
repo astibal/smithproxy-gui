@@ -47,7 +47,7 @@ FULL_TYPED_FIELDS = {
         "sslkeylog_file", "syslog_server", "syslog_port", "syslog_facility",
         "syslog_level", "syslog_family", "ssl_autodetect", "udp_quick_ports",
         "certs_path", "certs_ca_key_password", "certs_ctlog", "ca_bundle_path",
-        "ca_bundle_file", "admin", "tuning", "messages_dir",
+        "ca_bundle_file", "custom_cert_fallback_dir", "admin", "tuning", "messages_dir",
         "write_payload_file_prefix", "write_payload_file_suffix", "cli", "web_rating",
         "tpool_log", "socks", "http_connect", "ssl_autodetect_harder", "ssl_use_ktls", "nameservers",
         "http_api", "webhook",
@@ -64,7 +64,8 @@ FULL_TYPED_FIELDS = {
         "local.enabled", "local.dir", "local.file_prefix", "local.file_suffix",
         "local.pcap_quota", "local.format", "remote.enabled", "remote.tun_type",
         "remote.gre_format", "remote.tun_dst", "remote.tun_ttl",
-        "remote.bind_interface", "options.calculate_checksums",
+        "remote.bind_interface", "options.calculate_checksums", "options.metadata",
+        "options.statistics", "options.transport", "options.protocol_events",
     },
     "ssh_profiles": {
         "name", "host_key", "hostkey_policy", "shell", "exec", "subsystem",

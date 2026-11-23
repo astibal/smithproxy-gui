@@ -412,6 +412,7 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
         std::string_view{"write_payload_dir"}, std::string_view{"log_file"},
         std::string_view{"sslkeylog_file"}, std::string_view{"certs_path"},
         std::string_view{"certs_ca_key_password"}, std::string_view{"certs_ctlog"},
+        std::string_view{"custom_cert_fallback_dir"},
         std::string_view{"ca_bundle_path"}, std::string_view{"ca_bundle_file"},
         std::string_view{"admin.group"}, std::string_view{"messages_dir"},
         std::string_view{"write_payload_file_prefix"}, std::string_view{"write_payload_file_suffix"},
@@ -426,7 +427,10 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
 }
 
 Result validate_capture(const std::string_view field, const DraftScalar& value) {
-    if (field == "local.enabled" || field == "remote.enabled" || field == "options.calculate_checksums") {
+    if (field == "local.enabled" || field == "remote.enabled" ||
+        field == "options.calculate_checksums" || field == "options.metadata" ||
+        field == "options.statistics" || field == "options.transport" ||
+        field == "options.protocol_events") {
         return valid(boolean(value));
     }
     if (field == "local.format") return valid(enumerated(value, {"pcap_single", "pcap", "smcap"}));

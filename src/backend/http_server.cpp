@@ -479,7 +479,8 @@ bool sensitive_draft_path(const std::string_view path) {
     constexpr std::array sensitive_paths{
         "settings.webhook.url", "settings.syslog_server", "settings.write_payload_dir",
         "settings.log_file", "settings.sslkeylog_file", "settings.certs_path",
-        "settings.certs_ca_key_password", "settings.certs_ctlog", "settings.ca_bundle_path",
+        "settings.certs_ca_key_password", "settings.certs_ctlog",
+        "settings.custom_cert_fallback_dir", "settings.ca_bundle_path",
         "settings.ca_bundle_file", "settings.admin.group", "settings.messages_dir",
         "settings.write_payload_file_prefix", "settings.write_payload_file_suffix",
         "settings.cli.enable_password", "settings.web_rating.wot_key", "settings.http_api.keys",
@@ -2027,6 +2028,10 @@ private:
                        (value.certificate_transparency_log_configured ? "true" : "false") +
                        ",\"certificate_transparency_log\":" +
                        json_string(value.certificate_transparency_log) +
+                       ",\"custom_certificate_fallback_directory_configured\":" +
+                       (value.custom_certificate_fallback_directory_configured ? "true" : "false") +
+                       ",\"custom_certificate_fallback_directory\":" +
+                       json_string(value.custom_certificate_fallback_directory) +
                        ",\"ca_bundle_path_configured\":" +
                        (value.ca_bundle_path_configured ? "true" : "false") +
                        ",\"ca_bundle_path\":" + json_string(value.ca_bundle_path) +
@@ -2160,7 +2165,11 @@ private:
                        ",\"bind_interface_configured\":" +
                        (value.remote_bind_interface_configured ? "true" : "false") +
                        ",\"bind_interface\":" + json_string(value.remote_bind_interface) + "}" +
-                       ",\"calculate_checksums\":" + (value.calculate_checksums ? "true" : "false") + "}";
+                       ",\"calculate_checksums\":" + (value.calculate_checksums ? "true" : "false") +
+                       ",\"metadata\":" + (value.metadata ? "true" : "false") +
+                       ",\"statistics\":" + (value.statistics ? "true" : "false") +
+                       ",\"transport\":" + (value.transport ? "true" : "false") +
+                       ",\"protocol_events\":" + (value.protocol_events ? "true" : "false") + "}";
         }
         std::string security_assets{"null"};
         if (snapshot.security_assets) {

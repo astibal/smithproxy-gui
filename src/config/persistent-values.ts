@@ -185,6 +185,7 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
       ['syslog_port', settings.logging.syslogPort], ['syslog_facility', settings.logging.syslogFacility],
       ['syslog_level', settings.logging.syslogLevel], ['syslog_family', settings.logging.syslogFamily],
       ['udp_quick_ports', settings.auxiliary.udpQuickPorts], ['cli.port', settings.auxiliary.cliPort],
+      ['custom_cert_fallback_dir', settings.auxiliary.customCertificateFallbackDirectory],
       ['tpool_log', settings.auxiliary.threadPoolLogging],
       ['socks.async_dns', settings.auxiliary.socksAsyncDns],
       ['socks.ipver_mixing', settings.auxiliary.socksIpVersionMixing],
@@ -236,6 +237,10 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     set('captures.remote.gre_format', capture.remote.greFormat);
     set('captures.remote.tun_ttl', capture.remote.ttl);
     set('captures.options.calculate_checksums', capture.calculateChecksums);
+    set('captures.options.metadata', capture.metadata);
+    set('captures.options.statistics', capture.statistics);
+    set('captures.options.transport', capture.transport);
+    set('captures.options.protocol_events', capture.protocolEvents);
   }
   if (snapshot.securityAssets) {
     snapshot.securityAssets.certificateAuthorities.forEach((item, index) =>

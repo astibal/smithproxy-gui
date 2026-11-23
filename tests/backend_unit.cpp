@@ -1995,7 +1995,7 @@ int main() {
     assert(!parse_config_debug(
         R"({"success":{"debug":{"log":{"proxy":{}}}}})").debug);
     const auto captures = parse_config_captures(
-        R"({"success":{"captures":{"local":{"enabled":"true","dir":"/private/captures","format":"pcap_single","pcap_quota":"512"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"192.0.2.10","tun_ttl":"1","bind_interface":"private0"},"options":{"calculate_checksums":"true"}}}})");
+        R"({"success":{"captures":{"local":{"enabled":"true","dir":"/private/captures","format":"pcap_single","pcap_quota":"512"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"192.0.2.10","tun_ttl":"1","bind_interface":"private0"},"options":{"calculate_checksums":"true","metadata":"true","statistics":"false","transport":"true","protocol_events":"false"}}}})");
     assert(captures.captures);
     assert(captures.captures->editable);
     assert(captures.captures->local_enabled);

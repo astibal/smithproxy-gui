@@ -239,6 +239,8 @@ const debugFields = [
 const captureBooleanFields = [
   ['local.enabled', 'local-enabled'], ['remote.enabled', 'remote-enabled'],
   ['options.calculate_checksums', 'checksums'],
+  ['options.metadata', 'metadata'], ['options.statistics', 'statistics'],
+  ['options.transport', 'transport'], ['options.protocol_events', 'protocol-events'],
 ] as const;
 
 type ProfileCreateType =
@@ -3694,6 +3696,7 @@ export class SmithproxyApp extends LitElement {
       'settings.ca_bundle_file', 'settings.admin.group', 'settings.messages_dir',
       'settings.write_payload_file_prefix', 'settings.write_payload_file_suffix',
       'settings.cli.enable_password', 'settings.web_rating.wot_key', 'settings.http_api.keys',
+      'settings.custom_cert_fallback_dir',
       'settings.http_api.bind_address', 'settings.http_api.bind_interface',
       'settings.webhook.sift_url', 'settings.webhook.sift_tenant_id',
       'settings.webhook.sift_instance_id', 'settings.webhook.hostid',
@@ -7287,6 +7290,7 @@ export class SmithproxyApp extends LitElement {
       ['sslkeylog_file', 'tls-key-log-file', 'path'], ['certs_path', 'certificates-path', 'path'],
       ['certs_ca_key_password', 'certificate-password', 'secret'],
       ['certs_ctlog', 'certificate-transparency-log', 'file'],
+      ['custom_cert_fallback_dir', 'custom-certificate-fallback-directory', 'path'],
       ['ca_bundle_path', 'ca-bundle-path', 'path'], ['ca_bundle_file', 'ca-bundle-file', 'file'],
       ['admin.group', 'admin-group', 'text'], ['messages_dir', 'messages-directory', 'path'],
       ['write_payload_file_prefix', 'payload-prefix', 'filename'],
@@ -11344,6 +11348,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>CA bundle file</dt><dd><code>${settings.auxiliary.caBundleFile || 'Not configured'}</code></dd>
                 <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured · redacted' : 'Not configured'}</dd>
                 <dt>Certificate transparency log</dt><dd><code>${settings.auxiliary.certificateTransparencyLog || 'Not configured'}</code></dd>
+                <dt>Custom certificate fallback</dt><dd><code>${settings.auxiliary.customCertificateFallbackDirectory || 'Disabled'}</code></dd>
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
@@ -11459,6 +11464,10 @@ export class SmithproxyApp extends LitElement {
                 <dt>Remote target</dt><dd><code>${captures.remote.destination || 'Not configured'}</code></dd>
                 <dt>TTL / bound interface</dt><dd>${captureSetting('remote.tun_ttl', captures.remote.ttl)} / <code>${captures.remote.bindInterface || 'Default'}</code></dd>
                 <dt>Checksums</dt><dd>${captureSetting('options.calculate_checksums', captures.calculateChecksums) ? 'Calculated' : 'Preserved'}</dd>
+                <dt>Session metadata</dt><dd>${captureSetting('options.metadata', captures.metadata) ? 'Included' : 'Excluded'}</dd>
+                <dt>Flow statistics</dt><dd>${captureSetting('options.statistics', captures.statistics) ? 'Included' : 'Excluded'}</dd>
+                <dt>Transport security</dt><dd>${captureSetting('options.transport', captures.transport) ? 'Included' : 'Excluded'}</dd>
+                <dt>Protocol events</dt><dd>${captureSetting('options.protocol_events', captures.protocolEvents) ? 'Included' : 'Excluded'}</dd>
               </dl>
             </article>
           ` : nothing}
@@ -13503,6 +13512,7 @@ export class SmithproxyApp extends LitElement {
       ['cli-password', 'settings.cli.enable_password'], ['certificates-path', 'settings.certs_path'],
       ['certificate-password', 'settings.certs_ca_key_password'],
       ['certificate-transparency-log', 'settings.certs_ctlog'],
+      ['custom-certificate-fallback-directory', 'settings.custom_cert_fallback_dir'],
       ['ca-bundle-path', 'settings.ca_bundle_path'], ['ca-bundle-file', 'settings.ca_bundle_file'],
       ['admin-group', 'settings.admin.group'], ['messages-directory', 'settings.messages_dir'],
       ['payload-prefix', 'settings.write_payload_file_prefix'],
@@ -13703,6 +13713,10 @@ export class SmithproxyApp extends LitElement {
         ${writeOnlyField('certificates-path', 'Certificates path', settings.auxiliary.certificatesPathConfigured)}
         ${writeOnlyField('certificate-password', 'Certificate password', settings.auxiliary.certificatePasswordConfigured, true)}
         ${writeOnlyField('certificate-transparency-log', 'Certificate transparency log file', settings.auxiliary.certificateTransparencyLogConfigured)}
+        ${writeOnlyField(
+          'custom-certificate-fallback-directory', 'Custom certificate fallback directory',
+          settings.auxiliary.customCertificateFallbackDirectoryConfigured,
+        )}
         ${writeOnlyField('ca-bundle-path', 'CA bundle path', settings.auxiliary.caBundlePathConfigured)}
         ${writeOnlyField('ca-bundle-file', 'CA bundle file', settings.auxiliary.caBundleFileConfigured)}
           </div>
@@ -13933,6 +13947,14 @@ export class SmithproxyApp extends LitElement {
           <div class="form-grid">
         <label for="captures-checksums">Calculate checksums</label>
         ${booleanField('checksums', captures.calculateChecksums)}
+        <label for="captures-metadata">Session metadata blocks</label>
+        ${booleanField('metadata', captures.metadata)}
+        <label for="captures-statistics">Flow statistics blocks</label>
+        ${booleanField('statistics', captures.statistics)}
+        <label for="captures-transport">Transport security blocks</label>
+        ${booleanField('transport', captures.transport)}
+        <label for="captures-protocol-events">Protocol lifecycle events</label>
+        ${booleanField('protocol-events', captures.protocolEvents)}
           </div>
         </fieldset>
       </div>

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "upstream": {
     "repository": "astibal/smithproxy",
-    "revision": "e85418d1aade90751d80c06bdebe13f3c173daa5",
+    "revision": "ae0415f69624618d7c611ff7a336280352a50f5b",
     "reference_config": "etc/smithproxy.cfg"
   },
   "status_definitions": {
@@ -28,7 +28,7 @@
         "log_console", "sslkeylog_file", "syslog_server", "syslog_port",
         "syslog_facility", "syslog_level", "syslog_family", "ssl_autodetect",
         "udp_quick_ports", "certs_path", "certs_ca_key_password", "certs_ctlog",
-        "ca_bundle_path", "ca_bundle_file", "admin", "tuning",
+        "ca_bundle_path", "ca_bundle_file", "custom_cert_fallback_dir", "admin", "tuning",
         "messages_dir", "write_payload_file_prefix", "write_payload_file_suffix",
         "cli", "web_rating", "tpool_log", "socks", "http_connect",
         "ssl_autodetect_harder", "ssl_use_ktls", "nameservers", "http_api", "webhook"
@@ -93,7 +93,8 @@
         "local.enabled", "local.dir", "local.file_prefix", "local.file_suffix",
         "local.pcap_quota", "local.format", "remote.enabled", "remote.tun_type",
         "remote.gre_format", "remote.tun_dst", "remote.tun_ttl",
-        "remote.bind_interface", "options.calculate_checksums"
+        "remote.bind_interface", "options.calculate_checksums", "options.metadata",
+        "options.statistics", "options.transport", "options.protocol_events"
       ],
       "notes": "All active capture fields are typed and editable. Numeric quotas accept the full lossless JSON integer range supported by the GUI transport. Paths, filename components, destination addresses, and interface names use write-only replace/clear controls and remain redacted in draft responses."
     },

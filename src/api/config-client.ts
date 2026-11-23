@@ -103,6 +103,7 @@ const settingsProvenanceFields = new Set([
 const captureProvenanceFields = new Set([
   'local.enabled', 'local.format', 'local.pcap_quota', 'remote.enabled',
   'remote.gre_format', 'remote.tun_ttl', 'options.calculate_checksums',
+  'options.metadata', 'options.statistics', 'options.transport', 'options.protocol_events',
 ]);
 
 const debugProvenanceFields = new Set([
@@ -774,6 +775,14 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         certificateTransparencyLog: optionalString(
           value.settings.auxiliary.certificate_transparency_log, 'certificate transparency log', 4096,
         ),
+        customCertificateFallbackDirectoryConfigured: safeBoolean(
+          value.settings.auxiliary.custom_certificate_fallback_directory_configured,
+          'custom certificate fallback directory state',
+        ),
+        customCertificateFallbackDirectory: optionalString(
+          value.settings.auxiliary.custom_certificate_fallback_directory,
+          'custom certificate fallback directory', 4096,
+        ),
         caBundlePathConfigured: safeBoolean(
           value.settings.auxiliary.ca_bundle_path_configured, 'CA bundle path state',
         ),
@@ -1022,6 +1031,10 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         bindInterface: optionalString(value.captures.remote.bind_interface, 'remote capture interface', 255),
       },
       calculateChecksums: safeBoolean(value.captures.calculate_checksums, 'capture checksum state'),
+      metadata: safeBoolean(value.captures.metadata, 'capture metadata state'),
+      statistics: safeBoolean(value.captures.statistics, 'capture statistics state'),
+      transport: safeBoolean(value.captures.transport, 'capture transport state'),
+      protocolEvents: safeBoolean(value.captures.protocol_events, 'capture protocol-event state'),
     };
   }
   let securityAssets: SecurityAssets | null = null;

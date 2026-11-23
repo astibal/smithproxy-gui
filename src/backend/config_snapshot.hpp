@@ -232,6 +232,7 @@ struct ConfigSystemSettings {
     bool certificates_path_configured{};
     bool certificate_password_configured{};
     bool certificate_transparency_log_configured{};
+    bool custom_certificate_fallback_directory_configured{};
     bool ca_bundle_path_configured{};
     bool ca_bundle_file_configured{};
     bool messages_directory_configured{};
@@ -299,6 +300,7 @@ struct ConfigSystemSettings {
     std::string syslog_server;
     std::string certificates_path;
     std::string certificate_transparency_log;
+    std::string custom_certificate_fallback_directory;
     std::string ca_bundle_path;
     std::string ca_bundle_file;
     std::string messages_directory;
@@ -345,6 +347,10 @@ struct ConfigCaptureSettings {
     std::uint64_t remote_ttl{};
     bool remote_bind_interface_configured{};
     bool calculate_checksums{};
+    bool metadata{};
+    bool statistics{};
+    bool transport{};
+    bool protocol_events{};
     bool editable{};
     std::string local_directory;
     std::string local_file_prefix;

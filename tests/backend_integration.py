@@ -179,7 +179,10 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                 "enabled": "false", "tun_type": "gre", "gre_format": "traffic",
                 "tun_dst": "192.0.2.10", "tun_ttl": "1", "bind_interface": "private0",
             },
-            "options": {"calculate_checksums": "true"},
+            "options": {
+                "calculate_checksums": "true", "metadata": "true",
+                "statistics": "false", "transport": "true", "protocol_events": "false",
+            },
         },
         "tls_ca": {
             "default": {"path": "/private/ca/default"},
@@ -873,6 +876,8 @@ def main() -> int:
                 "certificate_password_configured": True,
                 "certificate_transparency_log_configured": True,
                 "certificate_transparency_log": "/private/ct-log-list.cnf",
+                "custom_certificate_fallback_directory_configured": False,
+                "custom_certificate_fallback_directory": "",
                 "ca_bundle_path_configured": True,
                 "ca_bundle_path": "/private/ca-bundle",
                 "ca_bundle_file_configured": True,

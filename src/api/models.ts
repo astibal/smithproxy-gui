@@ -228,6 +228,8 @@ export interface SystemSettings {
     certificatePasswordConfigured: boolean;
     certificateTransparencyLogConfigured: boolean;
     certificateTransparencyLog: string;
+    customCertificateFallbackDirectoryConfigured: boolean;
+    customCertificateFallbackDirectory: string;
     caBundlePathConfigured: boolean;
     caBundlePath: string;
     caBundleFileConfigured: boolean;
@@ -330,6 +332,10 @@ export interface CaptureSettings {
     bindInterface: string;
   };
   calculateChecksums: boolean;
+  metadata: boolean;
+  statistics: boolean;
+  transport: boolean;
+  protocolEvents: boolean;
 }
 
 export interface DebugSettings {
