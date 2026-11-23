@@ -345,7 +345,8 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
         std::string_view{"ssl_use_ktls"}, std::string_view{"http_api.key_extend_on_access"},
         std::string_view{"http_api.loopback_only"}, std::string_view{"http_api.pam_login"},
         std::string_view{"http_api.allow_api_header"}, std::string_view{"webhook.enabled"},
-        std::string_view{"webhook.tls_verify"}, std::string_view{"webhook.sift"},
+        std::string_view{"webhook.tls_verify"}, std::string_view{"webhook.synchronous_mode"},
+        std::string_view{"webhook.sift"}, std::string_view{"webhook.sift_lored_include_url"},
         std::string_view{"webhook.api_override"},
         std::string_view{"webhook.task_debug"}, std::string_view{"webhook.task_debug_dump"},
         std::string_view{"default_write_payload"}, std::string_view{"log_console"},
@@ -376,6 +377,9 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
         IntegerRule{"tuning.host_write_full", 1024, 1024000000},
         IntegerRule{"tuning.host_io_batch", 16384, 16777216},
         IntegerRule{"tuning.tls_write_chunk", 1024, 1048576},
+        IntegerRule{"tuning.quic_listener_rcvbuf", 0, 1073741824},
+        IntegerRule{"tuning.quic_inbox_packets", 1, 1048576},
+        IntegerRule{"tuning.quic_inbox_bytes", 1024, 1073741824},
         IntegerRule{"tuning.host_open_timeout", 0, 65535},
         IntegerRule{"tuning.host_idle_timeout", 0, 65535},
         IntegerRule{"tuning.nbr_cache_size", 1, 2147483647},
@@ -407,6 +411,9 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
         }));
     }
     if (field == "http_api.keys") return valid(opaque_string_list(value, 65536U));
+    if (field == "webhook.sift_lored_mode") {
+        return valid(enumerated(value, {"disabled", "optional", "required"}));
+    }
     constexpr std::array write_only{
         std::string_view{"webhook.url"}, std::string_view{"syslog_server"},
         std::string_view{"write_payload_dir"}, std::string_view{"log_file"},

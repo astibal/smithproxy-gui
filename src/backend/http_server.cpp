@@ -2059,6 +2059,10 @@ private:
                        ",\"host_write_full\":" + std::to_string(value.tuning_host_write_full) +
                        ",\"host_io_batch\":" + std::to_string(value.tuning_host_io_batch) +
                        ",\"tls_write_chunk\":" + std::to_string(value.tuning_tls_write_chunk) +
+                       ",\"quic_listener_receive_buffer\":" +
+                       std::to_string(value.tuning_quic_listener_receive_buffer) +
+                       ",\"quic_inbox_packets\":" + std::to_string(value.tuning_quic_inbox_packets) +
+                       ",\"quic_inbox_bytes\":" + std::to_string(value.tuning_quic_inbox_bytes) +
                        ",\"host_open_timeout\":" + std::to_string(value.tuning_host_open_timeout) +
                        ",\"host_idle_timeout\":" + std::to_string(value.tuning_host_idle_timeout) +
                        ",\"neighbor_cache_size\":" + std::to_string(value.tuning_neighbor_cache_size) + "}" +
@@ -2092,6 +2096,8 @@ private:
                        ",\"bind_interface\":" + json_string(value.api_bind_interface) + "}" +
                        ",\"webhook\":{\"enabled\":" + (value.webhook_enabled ? "true" : "false") +
                        ",\"tls_verify\":" + (value.webhook_tls_verify ? "true" : "false") +
+                       ",\"synchronous_mode\":" +
+                       (value.webhook_synchronous_mode ? "true" : "false") +
                        ",\"url_configured\":" + (value.webhook_url_configured ? "true" : "false") +
                        ",\"url\":" + json_string(value.webhook_url) +
                        ",\"sift_enabled\":" + (value.webhook_sift_enabled ? "true" : "false") +
@@ -2102,6 +2108,9 @@ private:
                        ",\"sift_instance_configured\":" + (value.webhook_sift_instance_configured ? "true" : "false") +
                        ",\"sift_instance\":" + json_string(value.webhook_sift_instance) +
                        ",\"sift_payload_limit_per_direction\":" + std::to_string(value.webhook_sift_payload_limit) +
+                       ",\"sift_lored_mode\":" + json_string(value.webhook_sift_lored_mode) +
+                       ",\"sift_lored_include_url\":" +
+                       (value.webhook_sift_lored_include_url ? "true" : "false") +
                        ",\"hostid_configured\":" + (value.webhook_host_id_configured ? "true" : "false") +
                        ",\"hostid\":" + json_string(value.webhook_host_id) +
                        ",\"bind_interface_configured\":" + (value.webhook_bind_interface_configured ? "true" : "false") +

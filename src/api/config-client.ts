@@ -239,6 +239,12 @@ function allowedInteger(value: unknown, label: string, allowed: ReadonlyArray<nu
   return value;
 }
 
+function allowedString(value: unknown, label: string, allowed: ReadonlyArray<string>): string {
+  const parsed = safeString(value, label, 64);
+  if (!allowed.includes(parsed)) throw new Error(`Invalid ${label}.`);
+  return parsed;
+}
+
 function safeBoolean(value: unknown, label: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`Invalid ${label}.`);
   return value;
@@ -837,6 +843,16 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
           tlsWriteChunk: rangedInteger(
             value.settings.auxiliary.tuning.tls_write_chunk, 'TLS write chunk', 1024, 1048576,
           ),
+          quicListenerReceiveBuffer: rangedInteger(
+            value.settings.auxiliary.tuning.quic_listener_receive_buffer,
+            'QUIC listener receive buffer', 0, 1073741824,
+          ),
+          quicInboxPackets: rangedInteger(
+            value.settings.auxiliary.tuning.quic_inbox_packets, 'QUIC inbox packets', 1, 1048576,
+          ),
+          quicInboxBytes: rangedInteger(
+            value.settings.auxiliary.tuning.quic_inbox_bytes, 'QUIC inbox bytes', 1024, 1073741824,
+          ),
           hostOpenTimeout: safeInteger(
             value.settings.auxiliary.tuning.host_open_timeout, 'host open timeout', 65535,
           ),
@@ -895,6 +911,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       webhook: {
         enabled: safeBoolean(value.settings.webhook.enabled, 'webhook state'),
         tlsVerify: safeBoolean(value.settings.webhook.tls_verify, 'webhook TLS verification state'),
+        synchronousMode: safeBoolean(
+          value.settings.webhook.synchronous_mode, 'webhook synchronous state',
+        ),
         urlConfigured: safeBoolean(value.settings.webhook.url_configured, 'webhook URL state'),
         url: optionalString(value.settings.webhook.url, 'webhook URL', 4096),
         siftEnabled: safeBoolean(value.settings.webhook.sift_enabled, 'Sift state'),
@@ -913,6 +932,13 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         siftPayloadLimitPerDirection: rangedInteger(
           value.settings.webhook.sift_payload_limit_per_direction,
           'Sift payload limit', 1, 1073741824,
+        ),
+        siftLoredMode: allowedString(
+          value.settings.webhook.sift_lored_mode, 'Sift LoreD mode',
+          ['disabled', 'optional', 'required'],
+        ) as 'disabled' | 'optional' | 'required',
+        siftLoredIncludeUrl: safeBoolean(
+          value.settings.webhook.sift_lored_include_url, 'Sift LoreD URL disclosure state',
         ),
         hostIdConfigured: safeBoolean(value.settings.webhook.hostid_configured, 'webhook host ID state'),
         hostId: optionalString(value.settings.webhook.hostid, 'webhook host ID', 4096),

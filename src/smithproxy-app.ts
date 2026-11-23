@@ -186,7 +186,10 @@ const systemBooleanFields = [
   ['http_api.loopback_only', 'api-loopback'],
   ['http_api.pam_login', 'api-pam'], ['http_api.allow_api_header', 'api-header'],
   ['webhook.enabled', 'webhook-enabled'], ['webhook.tls_verify', 'webhook-tls'],
-  ['webhook.sift', 'webhook-sift'], ['webhook.api_override', 'webhook-override'],
+  ['webhook.synchronous_mode', 'webhook-synchronous'],
+  ['webhook.sift', 'webhook-sift'],
+  ['webhook.sift_lored_include_url', 'webhook-sift-lored-include-url'],
+  ['webhook.api_override', 'webhook-override'],
   ['webhook.task_debug', 'webhook-task-debug'],
   ['webhook.task_debug_dump', 'webhook-task-debug-dump'],
   ['default_write_payload', 'logging-default-payload'], ['log_console', 'logging-console'],
@@ -225,6 +228,9 @@ const systemTuningFields = [
   ['host_write_full', 'host-write-full', 1024, 1024000000],
   ['host_io_batch', 'host-io-batch', 16384, 16777216],
   ['tls_write_chunk', 'tls-write-chunk', 1024, 1048576],
+  ['quic_listener_rcvbuf', 'quic-listener-rcvbuf', 0, 1073741824],
+  ['quic_inbox_packets', 'quic-inbox-packets', 1, 1048576],
+  ['quic_inbox_bytes', 'quic-inbox-bytes', 1024, 1073741824],
   ['host_open_timeout', 'host-open-timeout', 0, 65535],
   ['host_idle_timeout', 'host-idle-timeout', 0, 65535],
   ['nbr_cache_size', 'neighbor-cache-size', 1, 2147483647],
@@ -7262,6 +7268,9 @@ export class SmithproxyApp extends LitElement {
       return undefined;
     }
     changes.push({path: 'settings.webhook.sift_payload_limit_per_direction', value: siftPayloadLimitValue});
+    const loredMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-webhook-sift-lored-mode');
+    if (!loredMode || !['disabled', 'optional', 'required'].includes(loredMode.value)) return undefined;
+    changes.push({path: 'settings.webhook.sift_lored_mode', value: loredMode.value});
     const apiKeysMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-api-keys-mode');
     const apiKeysInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-keys-value');
     if (!apiKeysMode || !apiKeysInput || !['unchanged', 'replace', 'clear'].includes(apiKeysMode.value)) {
@@ -11375,6 +11384,8 @@ export class SmithproxyApp extends LitElement {
                 <dt>Host buffer</dt><dd>${setting('tuning.host_bufsz_min', settings.auxiliary.tuning.hostBufferMin)} bytes</dd>
                 <dt>Maximum multiplier</dt><dd>${setting('tuning.host_bufsz_max_multiplier', settings.auxiliary.tuning.hostBufferMaxMultiplier)}</dd>
                 <dt>I/O batch</dt><dd>${setting('tuning.host_io_batch', settings.auxiliary.tuning.hostIoBatch).toLocaleString()} bytes</dd>
+                <dt>QUIC receive buffer</dt><dd>${setting('tuning.quic_listener_rcvbuf', settings.auxiliary.tuning.quicListenerReceiveBuffer).toLocaleString()} bytes</dd>
+                <dt>QUIC inbox</dt><dd>${setting('tuning.quic_inbox_packets', settings.auxiliary.tuning.quicInboxPackets).toLocaleString()} packets / ${setting('tuning.quic_inbox_bytes', settings.auxiliary.tuning.quicInboxBytes).toLocaleString()} bytes</dd>
                 <dt>Open / idle timeout</dt><dd>${setting('tuning.host_open_timeout', settings.auxiliary.tuning.hostOpenTimeout)}s / ${setting('tuning.host_idle_timeout', settings.auxiliary.tuning.hostIdleTimeout)}s</dd>
                 <dt>Neighbor cache</dt><dd>${setting('tuning.nbr_cache_size', settings.auxiliary.tuning.neighborCacheSize).toLocaleString()} entries</dd>
               </dl>
@@ -11410,12 +11421,14 @@ export class SmithproxyApp extends LitElement {
                 <dt>Webhook</dt><dd>${setting('webhook.enabled', settings.webhook.enabled) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>URL</dt><dd><code>${settings.webhook.url || 'Not configured'}</code></dd>
                 <dt>TLS verification</dt><dd>${setting('webhook.tls_verify', settings.webhook.tlsVerify) ? 'Required' : 'Disabled'}</dd>
+                <dt>Delivery mode</dt><dd>${setting('webhook.synchronous_mode', settings.webhook.synchronousMode) ? 'Synchronous' : 'Asynchronous'}</dd>
                 <dt>Sift</dt><dd>${setting('webhook.sift', settings.webhook.siftEnabled) ? 'Enabled' : 'Disabled'}</dd>
                 <dt>Sift endpoint</dt><dd><code>${settings.webhook.siftUrl || 'Not configured'}</code></dd>
                 <dt>Sift tenant / instance</dt><dd><code>${settings.webhook.siftTenant || 'Not configured'}</code> / <code>${settings.webhook.siftInstance || 'Not configured'}</code></dd>
                 <dt>Host identity</dt><dd><code>${settings.webhook.hostId || 'Not configured'}</code></dd>
                 <dt>Bound interface</dt><dd><code>${settings.webhook.bindInterface || 'Default'}</code></dd>
                 <dt>Sift payload limit</dt><dd>${setting('webhook.sift_payload_limit_per_direction', settings.webhook.siftPayloadLimitPerDirection)} bytes / direction</dd>
+                <dt>LoreD enrichment</dt><dd>${setting('webhook.sift_lored_mode', settings.webhook.siftLoredMode)} · URLs ${setting('webhook.sift_lored_include_url', settings.webhook.siftLoredIncludeUrl) ? 'included' : 'excluded'}</dd>
                 <dt>Ping interval</dt><dd>${setting('webhook.ping_interval', settings.webhook.pingInterval)}s</dd>
                 <dt>API override</dt><dd>${setting('webhook.api_override', settings.webhook.apiOverride) ? 'Allowed' : 'Blocked'}</dd>
                 <dt>Nameservers</dt><dd>${settingStrings('nameservers', settings.nameservers).join(', ') || 'None'}</dd>
@@ -13738,6 +13751,9 @@ export class SmithproxyApp extends LitElement {
         ${tuningField('host-write-full', 'Queued write threshold (bytes)', settings.auxiliary.tuning.hostWriteFull, 1024, 1024000000)}
         ${tuningField('host-io-batch', 'Host I/O batch (bytes)', settings.auxiliary.tuning.hostIoBatch, 16384, 16777216)}
         ${tuningField('tls-write-chunk', 'TLS write chunk (bytes)', settings.auxiliary.tuning.tlsWriteChunk, 1024, 1048576)}
+        ${tuningField('quic-listener-rcvbuf', 'QUIC listener receive buffer (bytes)', settings.auxiliary.tuning.quicListenerReceiveBuffer, 0, 1073741824)}
+        ${tuningField('quic-inbox-packets', 'QUIC inbox packets per worker', settings.auxiliary.tuning.quicInboxPackets, 1, 1048576)}
+        ${tuningField('quic-inbox-bytes', 'QUIC inbox bytes per worker', settings.auxiliary.tuning.quicInboxBytes, 1024, 1073741824)}
         ${tuningField('host-open-timeout', 'Host open timeout (seconds)', settings.auxiliary.tuning.hostOpenTimeout, 0, 65535)}
         ${tuningField('host-idle-timeout', 'Host idle timeout (seconds)', settings.auxiliary.tuning.hostIdleTimeout, 0, 65535)}
         ${tuningField('neighbor-cache-size', 'Neighbor cache entries', settings.auxiliary.tuning.neighborCacheSize, 1, 2147483647)}
@@ -13785,7 +13801,19 @@ export class SmithproxyApp extends LitElement {
           <div class="form-grid">
         ${booleanField('webhook-enabled', 'Webhook', settings.webhook.enabled)}
         ${booleanField('webhook-tls', 'Webhook TLS verification', settings.webhook.tlsVerify)}
+        ${booleanField('webhook-synchronous', 'Synchronous webhook delivery', settings.webhook.synchronousMode)}
         ${booleanField('webhook-sift', 'Webhook Sift', settings.webhook.siftEnabled)}
+        <label for="settings-webhook-sift-lored-mode">Sift LoreD mode</label>
+        <select id="settings-webhook-sift-lored-mode"
+          .value=${String(scalar('settings.webhook.sift_lored_mode', settings.webhook.siftLoredMode))}
+          ?disabled=${locked('settings.webhook.sift_lored_mode')}>
+          <option value="disabled">Disabled</option><option value="optional">Optional</option>
+          <option value="required">Required</option>
+        </select>
+        ${booleanField(
+          'webhook-sift-lored-include-url', 'Include observed URLs in LoreD requests',
+          settings.webhook.siftLoredIncludeUrl,
+        )}
         ${booleanField('webhook-override', 'Webhook API override', settings.webhook.apiOverride)}
         ${numericField('webhook-sift-payload-limit', 'Sift payload limit per direction', settings.webhook.siftPayloadLimitPerDirection, 1, 1073741824)}
         ${numericField('webhook-ping-interval', 'Webhook ping interval (seconds)', settings.webhook.pingInterval, 0, 2147483647)}

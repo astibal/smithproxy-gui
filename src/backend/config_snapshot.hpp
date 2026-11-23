@@ -247,6 +247,9 @@ struct ConfigSystemSettings {
     std::uint64_t tuning_host_write_full{};
     std::uint64_t tuning_host_io_batch{};
     std::uint64_t tuning_tls_write_chunk{};
+    std::uint64_t tuning_quic_listener_receive_buffer{};
+    std::uint64_t tuning_quic_inbox_packets{};
+    std::uint64_t tuning_quic_inbox_bytes{};
     std::uint64_t tuning_host_open_timeout{};
     std::uint64_t tuning_host_idle_timeout{};
     std::uint64_t tuning_neighbor_cache_size{};
@@ -274,12 +277,15 @@ struct ConfigSystemSettings {
     bool api_bind_interface_configured{};
     bool webhook_enabled{};
     bool webhook_tls_verify{};
+    bool webhook_synchronous_mode{};
     bool webhook_url_configured{};
     bool webhook_sift_enabled{};
     bool webhook_sift_url_configured{};
     bool webhook_sift_tenant_configured{};
     bool webhook_sift_instance_configured{};
     std::uint64_t webhook_sift_payload_limit{};
+    std::string webhook_sift_lored_mode;
+    bool webhook_sift_lored_include_url{};
     bool webhook_host_id_configured{};
     bool webhook_bind_interface_configured{};
     bool webhook_api_override{};

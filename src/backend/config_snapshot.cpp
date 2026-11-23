@@ -849,6 +849,12 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto tuning_host_write_full = optional_decimal(tuning, "host_write_full", 200000U, 1024000000U);
     const auto tuning_host_io_batch = optional_decimal(tuning, "host_io_batch", 262144U, 16777216U);
     const auto tuning_tls_write_chunk = optional_decimal(tuning, "tls_write_chunk", 20480U, 1048576U);
+    const auto tuning_quic_listener_receive_buffer = optional_decimal(
+        tuning, "quic_listener_rcvbuf", 1048576U, 1073741824U);
+    const auto tuning_quic_inbox_packets = optional_decimal(
+        tuning, "quic_inbox_packets", 4096U, 1048576U);
+    const auto tuning_quic_inbox_bytes = optional_decimal(
+        tuning, "quic_inbox_bytes", 16777216U, 1073741824U);
     const auto tuning_host_open_timeout = optional_decimal(tuning, "host_open_timeout", 7U, 65535U);
     const auto tuning_host_idle_timeout = optional_decimal(tuning, "host_idle_timeout", 3600U, 65535U);
     const auto tuning_neighbor_cache_size = optional_decimal(tuning, "nbr_cache_size", 8000U, 2147483647U);
@@ -899,6 +905,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const Json& webhook = webhook_value != value->end() && webhook_value->is_object() ? *webhook_value : empty;
     const auto webhook_enabled = boolean_scalar(webhook, "enabled", false);
     const auto webhook_tls_verify = boolean_scalar(webhook, "tls_verify", true);
+    const auto webhook_synchronous_mode = boolean_scalar(webhook, "synchronous_mode", false);
     const auto webhook_url = bounded_string(webhook, "url", maximum_value_length, true);
     const auto webhook_sift = boolean_scalar(webhook, "sift", false);
     const auto webhook_sift_url = bounded_string(webhook, "sift_url", maximum_value_length, true);
@@ -906,6 +913,15 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
     const auto webhook_sift_instance = bounded_string(webhook, "sift_instance_id", maximum_value_length, true);
     const auto webhook_sift_payload_limit = optional_decimal(
         webhook, "sift_payload_limit_per_direction", 262144U, 1073741824U);
+    auto webhook_sift_lored_mode = bounded_string(
+        webhook, "sift_lored_mode", 16U, true);
+    // Older configurations predate LoreD integration; their absent value has
+    // the same meaning as the explicit disabled mode written by Smithproxy.
+    if (webhook_sift_lored_mode && webhook_sift_lored_mode->empty()) {
+        *webhook_sift_lored_mode = "disabled";
+    }
+    const auto webhook_sift_lored_include_url = boolean_scalar(
+        webhook, "sift_lored_include_url", false);
     const auto webhook_host_id = bounded_string(webhook, "hostid", maximum_value_length, true);
     const auto webhook_bind_interface = bounded_string(webhook, "bind_interface", maximum_value_length, true);
     const auto webhook_api_override = boolean_scalar(webhook, "api_override", false);
@@ -938,7 +954,10 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         *tuning_host_buffer_min < 1500U || !tuning_host_buffer_max_multiplier ||
         *tuning_host_buffer_max_multiplier == 0U || !tuning_host_write_full ||
         *tuning_host_write_full < 1024U || !tuning_host_io_batch || *tuning_host_io_batch < 16384U ||
-        !tuning_tls_write_chunk || *tuning_tls_write_chunk < 1024U || !tuning_host_open_timeout ||
+        !tuning_tls_write_chunk || *tuning_tls_write_chunk < 1024U ||
+        !tuning_quic_listener_receive_buffer || !tuning_quic_inbox_packets ||
+        *tuning_quic_inbox_packets < 1U || !tuning_quic_inbox_bytes ||
+        *tuning_quic_inbox_bytes < 1024U || !tuning_host_open_timeout ||
         !tuning_host_idle_timeout || !tuning_neighbor_cache_size || *tuning_neighbor_cache_size == 0U ||
         !thread_pool_logging || !socks_async_dns ||
         !socks_ip_version_mixing || !socks_prefer_ipv6 || !socks_proxy_authorization ||
@@ -947,9 +966,14 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         !tls_autodetect_harder || !kernel_tls || !nameservers || !api_keys || !allowed_ips ||
         !api_key_timeout || *api_key_timeout == 0U || !api_port || *api_port < 1024U || !key_extend ||
         !loopback_only || !pam_login || !api_header || !bind_address || !bind_interface ||
-        !webhook_enabled || !webhook_tls_verify || !webhook_url || !webhook_sift ||
+        !webhook_enabled || !webhook_tls_verify || !webhook_synchronous_mode ||
+        !webhook_url || !webhook_sift ||
         !webhook_sift_url || !webhook_sift_tenant || !webhook_sift_instance ||
-        !webhook_sift_payload_limit || *webhook_sift_payload_limit == 0U || !webhook_host_id ||
+        !webhook_sift_payload_limit || *webhook_sift_payload_limit == 0U ||
+        !webhook_sift_lored_mode ||
+        (*webhook_sift_lored_mode != "disabled" && *webhook_sift_lored_mode != "optional" &&
+         *webhook_sift_lored_mode != "required") || !webhook_sift_lored_include_url ||
+        !webhook_host_id ||
         !webhook_bind_interface || !webhook_api_override || !webhook_ping_interval ||
         !webhook_neighbor_update_interval || !webhook_neighbor_tag_refresh_age ||
         !webhook_task_debug || !webhook_task_debug_dump) {
@@ -993,17 +1017,21 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 !payload_file_suffix->empty(), *cli_port, !cli_password->empty(),
                 !rating_key->empty(), !admin_group->empty(), *tuning_host_buffer_min,
                 *tuning_host_buffer_max_multiplier, *tuning_host_write_full, *tuning_host_io_batch,
-                *tuning_tls_write_chunk, *tuning_host_open_timeout, *tuning_host_idle_timeout,
+                *tuning_tls_write_chunk, *tuning_quic_listener_receive_buffer,
+                *tuning_quic_inbox_packets, *tuning_quic_inbox_bytes,
+                *tuning_host_open_timeout, *tuning_host_idle_timeout,
                 *tuning_neighbor_cache_size, *thread_pool_logging, *socks_async_dns,
                 *socks_ip_version_mixing, *socks_prefer_ipv6, *socks_proxy_authorization,
                 *http_connect_proxy_authorization, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, nameservers->size(), *nameservers,
                 *api_keys, allowed_ips->size(), *allowed_ips,
                 *api_key_timeout, *api_port, *key_extend, *loopback_only, *pam_login, *api_header,
-                !bind_address->empty(), !bind_interface->empty(), *webhook_enabled, *webhook_tls_verify,
+                !bind_address->empty(), !bind_interface->empty(), *webhook_enabled,
+                *webhook_tls_verify, *webhook_synchronous_mode,
                 !webhook_url->empty(), *webhook_sift, !webhook_sift_url->empty(),
                 !webhook_sift_tenant->empty(), !webhook_sift_instance->empty(),
-                *webhook_sift_payload_limit, !webhook_host_id->empty(),
+                *webhook_sift_payload_limit, *webhook_sift_lored_mode,
+                *webhook_sift_lored_include_url, !webhook_host_id->empty(),
                 !webhook_bind_interface->empty(), *webhook_api_override, *webhook_ping_interval,
                 *webhook_neighbor_update_interval, *webhook_neighbor_tag_refresh_age,
                 *webhook_task_debug, *webhook_task_debug_dump, std::move(interface_roles),

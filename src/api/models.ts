@@ -251,6 +251,9 @@ export interface SystemSettings {
       hostWriteFull: number;
       hostIoBatch: number;
       tlsWriteChunk: number;
+      quicListenerReceiveBuffer: number;
+      quicInboxPackets: number;
+      quicInboxBytes: number;
       hostOpenTimeout: number;
       hostIdleTimeout: number;
       neighborCacheSize: number;
@@ -285,6 +288,7 @@ export interface SystemSettings {
   webhook: {
     enabled: boolean;
     tlsVerify: boolean;
+    synchronousMode: boolean;
     urlConfigured: boolean;
     url: string;
     siftEnabled: boolean;
@@ -295,6 +299,8 @@ export interface SystemSettings {
     siftInstanceConfigured: boolean;
     siftInstance: string;
     siftPayloadLimitPerDirection: number;
+    siftLoredMode: 'disabled' | 'optional' | 'required';
+    siftLoredIncludeUrl: boolean;
     hostIdConfigured: boolean;
     hostId: string;
     bindInterfaceConfigured: boolean;

@@ -1112,7 +1112,8 @@ async function mockSystemApi(
           web_rating_key_configured: false, admin_group_configured: true, admin_group: 'smithproxy-admin',
           tuning: {
             host_buffer_min: 2048, host_buffer_max_multiplier: 1024, host_write_full: 200000,
-            host_io_batch: 262144, tls_write_chunk: 20480, host_open_timeout: 7,
+            host_io_batch: 262144, tls_write_chunk: 20480, quic_listener_receive_buffer: 1048576,
+            quic_inbox_packets: 4096, quic_inbox_bytes: 16777216, host_open_timeout: 7,
             host_idle_timeout: 3600, neighbor_cache_size: 8000,
           },
           thread_pool_logging: false, socks_async_dns: true,
@@ -1129,11 +1130,13 @@ async function mockSystemApi(
           bind_interface_configured: false, bind_interface: '',
         },
         webhook: {
-          enabled: false, tls_verify: true, url_configured: false, url: '', sift_enabled: false,
+          enabled: false, tls_verify: true, synchronous_mode: false,
+          url_configured: false, url: '', sift_enabled: false,
           sift_url_configured: true, sift_url: 'https://sift.example',
           sift_tenant_configured: true, sift_tenant: 'tenant',
           sift_instance_configured: false, sift_instance: '',
-          sift_payload_limit_per_direction: 262144, hostid_configured: false,
+          sift_payload_limit_per_direction: 262144, sift_lored_mode: 'disabled',
+          sift_lored_include_url: false, hostid_configured: false,
           hostid: '', bind_interface_configured: false, bind_interface: '',
           api_override: false, ping_interval: 120,
           nbr_update_interval: 900, nbr_tag_refresh_age: 300, task_debug: false,
@@ -7390,6 +7393,9 @@ test('saves typed system and capture settings without exposing write-only values
   await settingsEditor.getByLabel('Webhook URL', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Webhook URL replacement').fill('https://hooks.example.test/smithproxy');
   await settingsEditor.getByLabel('Sift payload limit per direction').fill('524288');
+  await settingsEditor.getByLabel('Synchronous webhook delivery').selectOption('true');
+  await settingsEditor.getByLabel('Sift LoreD mode').selectOption('required');
+  await settingsEditor.getByLabel('Include observed URLs in LoreD requests').selectOption('true');
   await settingsEditor.getByLabel('Sift URL', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Sift URL replacement').fill('http://private-sift.test/webhook');
   await settingsEditor.getByLabel('Sift tenant ID', {exact: true}).selectOption('replace');
@@ -7401,6 +7407,9 @@ test('saves typed system and capture settings without exposing write-only values
   await settingsEditor.getByLabel('Webhook bind interface', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Webhook bind interface replacement').fill('private-webhook0');
   await settingsEditor.getByLabel('Initial host buffer (bytes)').fill('4096');
+  await settingsEditor.getByLabel('QUIC listener receive buffer (bytes)').fill('2097152');
+  await settingsEditor.getByLabel('QUIC inbox packets per worker').fill('8192');
+  await settingsEditor.getByLabel('QUIC inbox bytes per worker').fill('33554432');
   await settingsEditor.getByLabel('Neighbor cache entries').fill('9000');
   await settingsEditor.getByLabel('Certificate transparency log file', {exact: true}).selectOption('replace');
   await settingsEditor.getByLabel('Certificate transparency log file replacement').fill('/private/ct-log.cnf');
@@ -7516,12 +7525,18 @@ test('saves typed system and capture settings without exposing write-only values
   await expect(changes).toContainText('settings.http_api.bind_interface');
   await expect(changes).toContainText('settings.webhook.url');
   await expect(changes).toContainText('settings.webhook.sift_payload_limit_per_direction');
+  await expect(changes).toContainText('settings.webhook.synchronous_mode');
+  await expect(changes).toContainText('settings.webhook.sift_lored_mode');
+  await expect(changes).toContainText('settings.webhook.sift_lored_include_url');
   await expect(changes).toContainText('settings.webhook.sift_url');
   await expect(changes).toContainText('settings.webhook.sift_tenant_id');
   await expect(changes).toContainText('settings.webhook.sift_instance_id');
   await expect(changes).toContainText('settings.webhook.hostid');
   await expect(changes).toContainText('settings.webhook.bind_interface');
   await expect(changes).toContainText('settings.tuning.host_bufsz_min');
+  await expect(changes).toContainText('settings.tuning.quic_listener_rcvbuf');
+  await expect(changes).toContainText('settings.tuning.quic_inbox_packets');
+  await expect(changes).toContainText('settings.tuning.quic_inbox_bytes');
   await expect(changes).toContainText('settings.tuning.nbr_cache_size');
   await expect(changes).toContainText('settings.certs_ctlog');
   await expect(changes).toContainText('settings.ca_bundle_file');
