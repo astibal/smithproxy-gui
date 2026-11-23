@@ -280,10 +280,10 @@ def main() -> int:
             assert structural_collections == [
                 "address_objects", "port_objects", "proto_objects", "routing",
                 "tls_profiles", "content_profiles", "ssh_profiles", "script_profiles",
-                "detection_profiles", "alg_dns_profiles", "tls_ca", "policy",
+                "auth_profiles", "detection_profiles", "alg_dns_profiles", "tls_ca", "policy",
                 "content_profiles.content_rules", "starttls_signatures",
                 "detection_signatures", "starttls_signatures.flow",
-                "detection_signatures.flow",
+                "detection_signatures.flow", "settings.interfaces",
             ]
 
             status, _, body = request(port, "/api/v1/config/snapshot", headers=gateway_headers)
@@ -325,7 +325,7 @@ def main() -> int:
                     "op": "create", "local_id": "create-script-1",
                     "collection": "script_profiles", "client_id": "audit-script",
                     "position": {"last": True},
-                    "fields": {"name": "audit-script", "type": "0"},
+                    "fields": {"name": "audit-script", "type": 0},
                 },
             }
             status, _, body = request(

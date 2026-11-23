@@ -11,6 +11,7 @@ import {
   type DraftCreateOperation,
   type DraftDeleteOperation,
   type DraftMoveOperation,
+  type DraftPosition,
   type DraftPreflight,
   type DraftScalar,
   type DraftSnapshot,
@@ -26,6 +27,7 @@ import type {
   ConfigValue,
   ConfigUsage,
   DebugSettings,
+  InterfaceRoleRule,
   PolicySummary,
   PortObject,
   ProfileObject,
@@ -212,6 +214,8 @@ const systemNumericFields = [
   ['udp_port', 'port-udp', 1024, 65535], ['quic_port', 'port-quic', 1, 65535],
   ['dtls_port', 'port-dtls', 1024, 65535], ['socks_port', 'port-socks', 1024, 65535],
   ['http_connect_port', 'port-http-connect', 1024, 65535],
+  ['ssl_ocsp_status_ttl', 'ocsp-status-ttl', 0, 2147483647],
+  ['ssl_crl_status_ttl', 'crl-status-ttl', 0, 2147483647],
   ['write_pcap_single_quota', 'logging-pcap-quota', 0, Number.MAX_SAFE_INTEGER],
   ['log_level', 'logging-level', 0, 8], ['syslog_port', 'logging-syslog-port', 0, 65535],
   ['syslog_facility', 'logging-syslog-facility', 0, 32],
@@ -3895,9 +3899,11 @@ export class SmithproxyApp extends LitElement {
     const optionalGroups = new Set([
       'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
     ]);
-    return !optionalGroups.has(group) || settings.presentGroups.includes(
-      group as (typeof settings.presentGroups)[number],
-    );
+    // Atomic v2 commits create a missing optional settings group in the same
+    // candidate before writing its typed leaves. Defaults therefore remain
+    // editable on minimal and legacy configurations instead of becoming a
+    // read-only representation that an administrator cannot materialize.
+    return !optionalGroups.has(group) || this.draftAvailable;
   }
 
   private profileCreateTypeAvailable(type: ProfileCreateType): boolean {
@@ -4170,7 +4176,7 @@ export class SmithproxyApp extends LitElement {
         x11: action('x11', value.x11), agent: action('agent', value.agent)};
       omitted = '';
     } else if (profile.script) {
-      const runtime = profile.script.runtime === 'python' ? '0' : profile.script.runtime === 'go' ? '1' : '-1';
+      const runtime = profile.script.runtime === 'python' ? 0 : profile.script.runtime === 'go' ? 1 : -1;
       fields = {name, type: scalar('type', runtime), 'script-file': profile.script.modulePath};
       omitted = '';
     } else {
@@ -5911,7 +5917,7 @@ export class SmithproxyApp extends LitElement {
         this.drawerError = 'Script runtime and the optional module path must fit the configuration limits.';
         return;
       }
-      fields = {name, type: runtime.value, 'script-file': moduleValue};
+      fields = {name, type: Number(runtime.value), 'script-file': moduleValue};
     }
 
     const existing = operation;
@@ -7013,7 +7019,7 @@ export class SmithproxyApp extends LitElement {
           this.draftError = 'The script module path must contain at most 1024 printable characters.';
           return undefined;
         }
-        const configuredType = runtime.value === 'python' ? '0' : runtime.value === 'go' ? '1' : '-1';
+        const configuredType = runtime.value === 'python' ? 0 : runtime.value === 'go' ? 1 : -1;
         return [
           {path: `script_profiles.[${index}].name`, value: normalizedName},
           ...renameChanges,
@@ -7090,16 +7096,15 @@ export class SmithproxyApp extends LitElement {
       const ifName = value('name');
       const ifAddress = value('address');
       const role = value('role');
-      const current = settings.interfaceRoles[index]!;
       if (ifName === undefined || ifAddress === undefined || role === undefined ||
-          (current.interfaceName && !ifName) || (current.interfaceAddress && !ifAddress) || !role ||
+          (!ifName && !ifAddress) || !role ||
           [ifName, ifAddress, role].some(item => item.length > 128 || /[\u0000-\u001f\u007f]/u.test(item))) {
-        this.draftError = 'Configured interface selectors and their role must remain non-empty bounded values.';
+        this.draftError = 'Each interface role requires at least one selector and a bounded role name.';
         return undefined;
       }
       const base = `settings.interfaces.[${index}]`;
-      if (current.interfaceName) changes.push({path: `${base}.match.if_name`, value: ifName});
-      if (current.interfaceAddress) changes.push({path: `${base}.match.if_address`, value: ifAddress});
+      changes.push({path: `${base}.match.if_name`, value: ifName});
+      changes.push({path: `${base}.match.if_address`, value: ifAddress});
       changes.push({path: `${base}.role`, value: role});
     }
     for (const [path, id] of systemBooleanFields) {
@@ -7343,6 +7348,128 @@ export class SmithproxyApp extends LitElement {
       changes.push({path: `captures.${path}`, value: replacement});
     }
     return changes;
+  }
+
+  private interfaceRoleRows(): Array<DraftOrderedRow<InterfaceRoleRule>> {
+    const operations = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation | DraftMoveOperation =>
+        operation.collection === 'settings.interfaces' &&
+        (operation.op === 'create' || operation.op === 'move'),
+    );
+    return this.draftOrderedRows(this.snapshot?.settings?.interfaceRoles ?? [], operations);
+  }
+
+  private async createInterfaceRole(): Promise<void> {
+    if (!this.draftClient || !this.collectionTransactionsAvailable('settings.interfaces') ||
+        this.draftSaving || this.draftCommitting) return;
+    const value = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
+      `#settings-new-interface-role-${field}`,
+    )?.value.trim();
+    const ifName = value('name');
+    const ifAddress = value('address');
+    const role = value('role');
+    const values = [ifName ?? '', ifAddress ?? '', role ?? ''];
+    if (ifName === undefined || ifAddress === undefined || role === undefined ||
+        (!ifName && !ifAddress) || !role ||
+        values.some(item => item.length > 128 || /[\u0000-\u001f\u007f]/u.test(item))) {
+      this.draftError = 'A role requires an interface name or address selector and a bounded role name.';
+      return;
+    }
+    this.draftSaving = true;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const localId = `create-interface-role-${crypto.randomUUID()}`;
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create', localId, collection: 'settings.interfaces', clientId: localId,
+        parentId: null, position: {kind: 'last', reference: null},
+        fields: {'match.if_name': ifName, 'match.if_address': ifAddress, role},
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.draftError = error instanceof Error ? error.message : 'The interface role could not be staged.';
+      await this.loadDraft();
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  private async deleteInterfaceRole(row: DraftOrderedRow<InterfaceRoleRule>): Promise<void> {
+    if (row.kind === 'create') {
+      await this.removeDraftOperation(row.operation.localId);
+      return;
+    }
+    if (!this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const conflicting = this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.collection === 'settings.interfaces' && 'entityId' in operation &&
+      operation.entityId === row.item.id);
+    const anchorsPendingPosition = this.workspaceDraft?.structuralOperations.some(operation =>
+      operation.collection === 'settings.interfaces' &&
+      (operation.op === 'create' || operation.op === 'move') &&
+      operation.position.reference === row.item.id);
+    if (conflicting || anchorsPendingPosition) {
+      this.draftError = 'Remove pending moves that use this interface role before deleting it.';
+      return;
+    }
+    const confirmationKey = `settings.interfaces:${row.item.id}`;
+    if (this.structuralDeleteArmedKey !== confirmationKey) {
+      this.structuralDeleteArmedKey = confirmationKey;
+      this.draftError = 'Delete is armed. Select the same interface role again to confirm.';
+      return;
+    }
+    this.draftSaving = true;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'delete', localId: `delete-interface-role-${crypto.randomUUID()}`,
+        collection: 'settings.interfaces', entityId: row.item.id,
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.structuralDeleteArmedKey = undefined;
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.draftError = error instanceof Error ? error.message : 'The interface role could not be deleted.';
+      await this.loadDraft();
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  private async moveInterfaceRole(rowId: string, direction: -1 | 1): Promise<void> {
+    if (!this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const rows = this.interfaceRoleRows();
+    const index = rows.findIndex(row => row.id === rowId);
+    const reference = rows[index + direction];
+    const row = rows[index];
+    if (index < 0 || !row || !reference) return;
+    const position: DraftPosition = direction < 0
+      ? {kind: 'before', reference: reference.id}
+      : {kind: 'after', reference: reference.id};
+    const operation: DraftCreateOperation | DraftMoveOperation = row.kind === 'create'
+      ? {...row.operation, position}
+      : {op: 'move', localId: `move-interface-role-${row.item.id}`,
+          collection: 'settings.interfaces', entityId: row.item.id, position};
+    this.draftSaving = true;
+    this.draftError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, operation);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.draftError = error instanceof Error ? error.message : 'The interface role could not be moved.';
+      await this.loadDraft();
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
   }
 
   private handleKeydown(event: KeyboardEvent): void {
@@ -8458,8 +8585,8 @@ export class SmithproxyApp extends LitElement {
       'request id', 'randomize', 'cached responses',
     );
     if (item.script) {
-      const type = scalar('type', item.script.runtime === 'python' ? '0' : item.script.runtime === 'go' ? '1' : '-1');
-      values.push(type === '0' ? 'python' : type === '1' ? 'go' : 'unknown',
+      const type = scalar('type', item.script.runtime === 'python' ? 0 : item.script.runtime === 'go' ? 1 : -1);
+      values.push(type === 0 ? 'python' : type === 1 ? 'go' : 'unknown',
         Number(item.script.modulePathConfigured), 'runtime', 'module path');
     }
     if (item.authentication) values.push(
@@ -8515,9 +8642,9 @@ export class SmithproxyApp extends LitElement {
     }
     if (item.script) {
       const type = scalar(
-        'type', item.script.runtime === 'python' ? '0' : item.script.runtime === 'go' ? '1' : '-1',
+        'type', item.script.runtime === 'python' ? 0 : item.script.runtime === 'go' ? 1 : -1,
       );
-      const runtime = type === '0' ? 'Python' : type === '1' ? 'Go' : 'Unknown runtime';
+      const runtime = type === 0 ? 'Python' : type === 1 ? 'Go' : 'Unknown runtime';
       return `${runtime} · module ${item.script.modulePathConfigured ? 'configured' : 'not configured'}`;
     }
     if (item.authentication) {
@@ -12725,7 +12852,7 @@ export class SmithproxyApp extends LitElement {
         ` : html`
           <label for="profile-create-script-runtime-${entry.id}">Runtime</label>
           <select id="profile-create-script-runtime-${entry.id}"
-            .value=${stringField('type', '-1')} ?disabled=${readOnly}>
+            .value=${String(field('type', -1))} ?disabled=${readOnly}>
             <option value="-1">Unspecified</option><option value="0">Python</option><option value="1">Go</option>
           </select>
           <label for="profile-create-script-module-${entry.id}">Module path</label>
@@ -12971,9 +13098,10 @@ export class SmithproxyApp extends LitElement {
     );
     const passRejectSelect = (id: string, field: string, value: boolean) =>
       this.renderPassRejectSelect(id, persistent(field, value), fieldReadOnly(field));
-    const configuredScriptType = script?.runtime === 'python' ? '0' : script?.runtime === 'go' ? '1' : '-1';
-    const persistentScriptType = persistent('type', configuredScriptType);
-    const scriptRuntime = persistentScriptType === '0' ? 'python' : persistentScriptType === '1' ? 'go' : 'unknown';
+    const configuredScriptType = script?.runtime === 'python' ? 0 : script?.runtime === 'go' ? 1 : -1;
+    // Normalize the selected scalar before mapping the bounded enum to UI labels.
+    const persistentScriptType = Number(persistent('type', configuredScriptType));
+    const scriptRuntime = persistentScriptType === 0 ? 'python' : persistentScriptType === 1 ? 'go' : 'unknown';
     return html`
       <div class=${routing || tls || content || ssh ? 'form-grid wide-form-grid' : 'form-grid'}>
         <label for=${mapped ? `profile-name-${entry.id}` : nothing}>Name</label>
@@ -13507,35 +13635,73 @@ export class SmithproxyApp extends LitElement {
     const missingGroups = [
       'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
     ].filter(group => !settings.presentGroups.includes(group as (typeof settings.presentGroups)[number]));
+    const interfaceRoleRows = this.interfaceRoleRows();
+    const interfaceRoleStructural = this.collectionTransactionsAvailable('settings.interfaces');
     return html`
       ${missingGroups.length > 0 ? html`<div class="privacy-note section">
-        Defaults are shown for absent settings groups. Their fields stay read-only until the running
-        configuration contains: ${missingGroups.join(', ')}.
+        Defaults are shown for absent settings groups. Saving any of their fields creates the group
+        atomically with the change: ${missingGroups.join(', ')}.
       </div>` : nothing}
       <div class="form-grid wide-form-grid">
         <fieldset class="editor-group" data-settings-group="interfaces">
           <legend>Interface roles</legend>
           <p>Ordered selectors assign semantic roles used by policy ingress and egress matching.</p>
-          ${settings.interfaceRoles.length > 0 ? settings.interfaceRoles.map((rule, index) => {
-            const base = `settings.interfaces.[${index}]`;
+          ${interfaceRoleRows.length > 0 ? interfaceRoleRows.map((row, rowIndex) => {
+            const liveIndex = row.kind === 'live' ? row.configIndex : -1;
+            const rule = row.kind === 'live' ? row.item : {
+              id: row.id,
+              interfaceName: String(row.operation.fields['match.if_name'] ?? ''),
+              interfaceAddress: String(row.operation.fields['match.if_address'] ?? ''),
+              role: String(row.operation.fields['role'] ?? ''),
+            };
+            const base = `settings.interfaces.[${liveIndex}]`;
+            const pending = row.kind === 'create';
             return html`<div class="form-grid">
-              <label for="settings-interface-role-${index}-name">Interface name</label>
-              <input id="settings-interface-role-${index}-name" maxlength="128"
-                .value=${scalar(`${base}.match.if_name`, rule.interfaceName)}
-                .readOnly=${!rule.interfaceName || locked(`${base}.match.if_name`)}
+              <label for="settings-interface-role-${rowIndex}-name">Interface name</label>
+              <input id=${pending ? nothing : `settings-interface-role-${liveIndex}-name`} maxlength="128"
+                .value=${pending ? rule.interfaceName : scalar(`${base}.match.if_name`, rule.interfaceName)}
+                .readOnly=${pending || locked(`${base}.match.if_name`)}
                 placeholder=${rule.interfaceName ? 'Exact interface name' : 'Not configured'} />
-              <label for="settings-interface-role-${index}-address">Interface address</label>
-              <input id="settings-interface-role-${index}-address" maxlength="128"
-                .value=${scalar(`${base}.match.if_address`, rule.interfaceAddress)}
-                .readOnly=${!rule.interfaceAddress || locked(`${base}.match.if_address`)}
+              <label for="settings-interface-role-${rowIndex}-address">Interface address</label>
+              <input id=${pending ? nothing : `settings-interface-role-${liveIndex}-address`} maxlength="128"
+                .value=${pending ? rule.interfaceAddress : scalar(`${base}.match.if_address`, rule.interfaceAddress)}
+                .readOnly=${pending || locked(`${base}.match.if_address`)}
                 placeholder=${rule.interfaceAddress ? 'Address or CIDR' : 'Not configured'} />
-              <label for="settings-interface-role-${index}-role">Assigned role</label>
-              <input id="settings-interface-role-${index}-role" maxlength="128" required
-                .value=${scalar(`${base}.role`, rule.role)} .readOnly=${locked(`${base}.role`)} />
+              <label for="settings-interface-role-${rowIndex}-role">Assigned role</label>
+              <input id=${pending ? nothing : `settings-interface-role-${liveIndex}-role`} maxlength="128" required
+                .value=${pending ? rule.role : scalar(`${base}.role`, rule.role)}
+                .readOnly=${pending || locked(`${base}.role`)} />
+              <span></span><span class="inline-actions">
+                <button class="secondary" type="button" aria-label=${`Move ${rule.role} role up`}
+                  ?disabled=${!interfaceRoleStructural || rowIndex === 0 || this.draftSaving}
+                  @click=${() => this.moveInterfaceRole(row.id, -1)}>↑</button>
+                <button class="secondary" type="button" aria-label=${`Move ${rule.role} role down`}
+                  ?disabled=${!interfaceRoleStructural || rowIndex === interfaceRoleRows.length - 1 || this.draftSaving}
+                  @click=${() => this.moveInterfaceRole(row.id, 1)}>↓</button>
+                <button class=${this.structuralDeleteArmedKey === `settings.interfaces:${row.id}`
+                    ? 'danger' : 'secondary danger-button'} type="button"
+                  aria-label=${`Delete ${rule.role} interface role`}
+                  ?disabled=${!interfaceRoleStructural || this.draftSaving}
+                  @click=${() => this.deleteInterfaceRole(row)}>
+                  ${this.structuralDeleteArmedKey === `settings.interfaces:${row.id}`
+                    ? 'Confirm delete' : 'Delete'}
+                </button>
+                ${pending ? html`<span class="muted">Pending create</span>` : nothing}
+              </span>
             </div>`;
-          }) : html`<div class="metrics-message">
-            No interface role rules are configured. This Smithproxy transaction contract can edit existing
-            rules, but does not yet advertise structural creation or deletion for this ordered list.
+          }) : html`<div class="metrics-message">No interface role rules are configured.</div>`}
+          ${interfaceRoleStructural ? html`<div class="form-grid section">
+            <label for="settings-new-interface-role-name">New interface name</label>
+            <input id="settings-new-interface-role-name" maxlength="128" placeholder="Optional exact name" />
+            <label for="settings-new-interface-role-address">New interface address</label>
+            <input id="settings-new-interface-role-address" maxlength="128" placeholder="Optional address or CIDR" />
+            <label for="settings-new-interface-role-role">New assigned role</label>
+            <input id="settings-new-interface-role-role" maxlength="128" required placeholder="Required role" />
+            <span></span><span><button class="secondary" type="button"
+              ?disabled=${this.draftSaving || this.draftCommitting}
+              @click=${() => this.createInterfaceRole()}>Add interface role</button></span>
+          </div>` : html`<div class="privacy-note section">
+            The connected Smithproxy version does not advertise structural interface-role changes.
           </div>`}
         </fieldset>
         <fieldset class="editor-group" data-settings-group="traffic">
@@ -13582,13 +13748,8 @@ export class SmithproxyApp extends LitElement {
         ${numericField('port-quic', 'QUIC port', settings.ports.quic, 1, 65535)}
         ${numericField('port-socks', 'SOCKS port', settings.ports.socks, 1024, 65535)}
         ${numericField('port-http-connect', 'HTTP CONNECT port', settings.ports.httpConnect, 1024, 65535)}
-        <label for="settings-ocsp-status-ttl">OCSP status TTL (seconds)</label>
-        <input id="settings-ocsp-status-ttl" type="number" .value=${String(settings.ocspStatusTtl)} readonly />
-        <label for="settings-crl-status-ttl">CRL status TTL (seconds)</label>
-        <input id="settings-crl-status-ttl" type="number" .value=${String(settings.crlStatusTtl)} readonly />
-        <span class="form-span privacy-note">
-          Status-cache TTLs are reported by Smithproxy but its configuration schema marks them read-only.
-        </span>
+        ${numericField('ocsp-status-ttl', 'OCSP status TTL (seconds)', settings.ocspStatusTtl, 0, 2147483647)}
+        ${numericField('crl-status-ttl', 'CRL status TTL (seconds)', settings.crlStatusTtl, 0, 2147483647)}
           </div>
         </fieldset>
         <fieldset class="editor-group" data-settings-group="logging">

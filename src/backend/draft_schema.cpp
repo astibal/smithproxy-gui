@@ -110,6 +110,33 @@ bool string_list(const DraftScalar& value, const std::size_t maximum_length = 12
     return true;
 }
 
+// Validate a complete replacement of legacy authentication identity mappings,
+// including the explicit empty-list representation used to clear the group.
+bool auth_identities(const DraftScalar& value) {
+    if (const auto* empty = strings(value); empty != nullptr) return empty->empty();
+    const auto* identities = std::get_if<DraftAuthIdentities>(&value);
+    if (identities == nullptr || identities->empty() || identities->size() > 256U) return false;
+    std::vector<std::string_view> names;
+    names.reserve(identities->size());
+    for (const auto& identity : *identities) {
+        if (!valid_config_group_name(identity.name) ||
+            (identity.detection_profile.empty() && identity.content_profile.empty() &&
+             identity.tls_profile.empty() && identity.alg_dns_profile.empty())) {
+            return false;
+        }
+        const std::array references{
+            std::string_view{identity.detection_profile}, std::string_view{identity.content_profile},
+            std::string_view{identity.tls_profile}, std::string_view{identity.alg_dns_profile},
+        };
+        for (const auto reference : references) {
+            if (!reference.empty() && !valid_config_group_name(reference)) return false;
+        }
+        if (std::find(names.begin(), names.end(), identity.name) != names.end()) return false;
+        names.emplace_back(identity.name);
+    }
+    return true;
+}
+
 bool enumerated_string_list(
     const DraftScalar& value, const std::initializer_list<std::string_view> choices) {
     if (!string_list(value)) return false;
@@ -170,7 +197,7 @@ Result validate_policy(const std::string_view field, const DraftScalar& value) {
         std::string_view{"routing"}, std::string_view{"tls_profile"},
         std::string_view{"ssh_profile"}, std::string_view{"detection_profile"},
         std::string_view{"content_profile"}, std::string_view{"alg_dns_profile"},
-        std::string_view{"script_profile"},
+        std::string_view{"script_profile"}, std::string_view{"auth_profile"},
     };
     if (one_of(field, references)) return valid(bounded_text(value, 128U, true));
     return Result::UnknownPath;
@@ -300,8 +327,14 @@ Result validate_indexed(const std::string_view path, const DraftScalar& value) {
     }
     if (const auto field = indexed_suffix(path, "script_profiles")) {
         if (*field == "name") return valid(config_group_name(value));
-        if (*field == "type") return valid(enumerated(value, {"-1", "0", "1"}));
+        if (*field == "type") return valid(bounded_integer(value, -1, 1));
         if (*field == "script-file") return valid(bounded_text(value, 1024U, true));
+        return Result::UnknownPath;
+    }
+    if (const auto field = indexed_suffix(path, "auth_profiles")) {
+        if (*field == "name") return valid(config_group_name(value));
+        if (*field == "authenticate" || *field == "resolve") return valid(boolean(value));
+        if (*field == "identities") return valid(auth_identities(value));
         return Result::UnknownPath;
     }
     if (const auto field = indexed_suffix(path, "detection_profiles")) {
@@ -368,6 +401,8 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
         IntegerRule{"ssl_port", 1024, 65535}, IntegerRule{"udp_port", 1024, 65535},
         IntegerRule{"dtls_port", 1024, 65535}, IntegerRule{"quic_port", 1, 65535},
         IntegerRule{"socks_port", 1024, 65535}, IntegerRule{"http_connect_port", 1024, 65535},
+        IntegerRule{"ssl_ocsp_status_ttl", 0, 2147483647},
+        IntegerRule{"ssl_crl_status_ttl", 0, 2147483647},
         IntegerRule{"write_pcap_single_quota", 0, 9007199254740991LL}, IntegerRule{"log_level", 0, 8},
         IntegerRule{"syslog_port", 0, 65535}, IntegerRule{"syslog_facility", 0, 32},
         IntegerRule{"syslog_level", 0, 8}, IntegerRule{"syslog_family", 4, 6},

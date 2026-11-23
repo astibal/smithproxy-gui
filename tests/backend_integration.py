@@ -1324,7 +1324,7 @@ def main() -> int:
                 body=json.dumps({
                     "expected_version": 2,
                     "path": "policy.[0].auth_profile",
-                    "value": "private-auth",
+                    "value": "x" * 129,
                 }),
             ), 400, "draft.change_rejected")
             status, _, body = request(
@@ -1348,7 +1348,7 @@ def main() -> int:
                 body=json.dumps({
                     "expected_version": 2,
                     "path": "auth_profiles.[0].identities",
-                    "value": [{"name": "unsupported", "tls_profile": "inspect"}],
+                    "value": [{"name": "missing-profile-binding"}],
                 }),
             ), 400, "draft.change_rejected")
             batch_change = json.dumps({

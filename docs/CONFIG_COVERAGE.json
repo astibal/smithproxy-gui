@@ -2,7 +2,7 @@
   "schema_version": 1,
   "upstream": {
     "repository": "astibal/smithproxy",
-    "revision": "ae0415f69624618d7c611ff7a336280352a50f5b",
+    "revision": "6bf502abe5d44377284cacafc2413613096f5daf",
     "reference_config": "etc/smithproxy.cfg"
   },
   "status_definitions": {
@@ -29,11 +29,12 @@
         "syslog_facility", "syslog_level", "syslog_family", "ssl_autodetect",
         "udp_quick_ports", "certs_path", "certs_ca_key_password", "certs_ctlog",
         "ca_bundle_path", "ca_bundle_file", "custom_cert_fallback_dir", "admin", "tuning",
+        "interfaces.match.if_name", "interfaces.match.if_address", "interfaces.role",
         "messages_dir", "write_payload_file_prefix", "write_payload_file_suffix",
         "cli", "web_rating", "tpool_log", "socks", "http_connect",
         "ssl_autodetect_harder", "ssl_use_ktls", "nameservers", "http_api", "webhook"
       ],
-      "notes": "All active writable settings emitted by the current Smithproxy saver are administrator-visible, typed, and editable with ranges aligned to the pinned upstream schema. Non-QUIC worker pools accept non-negative counts and defer the target-specific hardware ceiling to authoritative Smithproxy validation; QUIC accepts -1, 0, or 1. Non-canonical legacy live worker values remain readable without being resubmitted when unrelated settings change. OCSP and CRL status TTLs remain visible but read-only because upstream marks them VALUE_NONE. Integer quotas accept the full lossless JSON range. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys remain visible and reopen from drafts without re-entry. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."
+      "notes": "All active settings emitted by the current Smithproxy saver are administrator-visible, typed, and editable with ranges aligned to the pinned upstream schema. Missing optional settings groups are materialized atomically when their defaults are first changed. Ordered interface-role selectors support complete create, edit, reorder, and delete operations. Non-QUIC worker pools accept non-negative counts and defer the target-specific hardware ceiling to authoritative Smithproxy validation; QUIC accepts -1, 0, or 1. Non-canonical legacy live worker values remain readable without being resubmitted when unrelated settings change. OCSP and CRL cache TTLs are fully editable. Integer quotas accept the full lossless JSON range. HTTP API and webhook identities, endpoints, bind targets, administration identity, filesystem paths, credentials, API keys, syslog targets, filename components, and rating keys remain visible and reopen from drafts without re-entry. Deprecated thread-spray tuning keys are accepted and ignored by Smithproxy and are intentionally not exposed."
     },
     {
       "name": "debug",
@@ -177,7 +178,7 @@
         "script_profile", "auth_profile", "nat", "routing", "features",
         "ingress_role", "egress_role", "disabled"
       ],
-      "notes": "All active policy fields returned by the snapshot contract, including ingress and egress interface-role selectors, are represented by typed edit and ordered structural create drawers. The obsolete auth_profile value remains readable only for legacy compatibility and is never shown, copied, created, or edited. Empty source, source-port, destination, destination-port, ingress-role, and egress-role selectors preserve Smithproxy wildcard semantics. New action, NAT, and feature writes are constrained to the pinned Smithproxy enums; non-canonical legacy live values remain readable and can be migrated without resubmitting them when another field changes. References resolve live entities by their current draft-visible names and named objects or profiles created earlier in the same workspace draft; pending creates reopen their structural drawer and pending renames retain the stable live entity ID. Ordered creates and moves may target earlier pending policies through transaction-scoped client identifiers while use-before-create choices remain unavailable. Existing policies support optimistic first, before, and last move operations; restoring the original position removes the pending move. Selected live policies can move first or last in one atomic batch while preserving their internal order and avoiding no-op drafts. Confirmed single or selected-policy structural deletion is staged atomically and rejects conflicting pending field edits, structural operations, and removal of a position anchor used by another pending policy. Structural operations remain capability-gated on stable entity IDs."
+      "notes": "All active policy fields returned by the snapshot contract, including ingress and egress interface-role selectors and legacy authentication-profile assignment, are represented by typed edit and ordered structural create drawers. Empty source, source-port, destination, destination-port, ingress-role, egress-role, and profile selectors preserve Smithproxy wildcard or disabled semantics. New action, NAT, and feature writes are constrained to the pinned Smithproxy enums; non-canonical legacy live values remain readable and can be migrated without resubmitting them when another field changes. References resolve live entities by their current draft-visible names and named objects or profiles created earlier in the same workspace draft; pending creates reopen their structural drawer and pending renames retain the stable live entity ID. Ordered creates and moves may target earlier pending policies through transaction-scoped client identifiers while use-before-create choices remain unavailable. Existing policies support optimistic first, before, and last move operations; restoring the original position removes the pending move. Selected live policies can move first or last in one atomic batch while preserving their internal order and avoiding no-op drafts. Confirmed single or selected-policy structural deletion is staged atomically and rejects conflicting pending field edits, structural operations, and removal of a position anchor used by another pending policy. Structural operations remain capability-gated on stable entity IDs."
     },
     {
       "name": "starttls_signatures",

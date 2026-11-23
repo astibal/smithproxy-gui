@@ -77,6 +77,39 @@ nlohmann::json explicit_scalar_json(const DraftScalar& value) {
     }, value);
 }
 
+// Expand one logical identity replacement into typed remove/add/set operations
+// so the candidate never stores an object-valued pseudo-scalar.
+bool append_auth_identity_replacement(
+    nlohmann::json& operations, const std::string& path,
+    const std::vector<std::string>& existing_names, const DraftScalar& value) {
+    const auto* identities = std::get_if<DraftAuthIdentities>(&value);
+    const auto* empty = std::get_if<std::vector<std::string>>(&value);
+    if (identities == nullptr && (empty == nullptr || !empty->empty())) return false;
+    if (!existing_names.empty()) {
+        operations.push_back({
+            {"op", "remove"}, {"path", path}, {"entries", existing_names},
+        });
+    }
+    if (identities == nullptr) return true;
+    for (const auto& identity : *identities) {
+        operations.push_back({{"op", "add"}, {"path", path}, {"name", identity.name}});
+        const std::array fields{
+            std::pair{"detection_profile", std::string_view{identity.detection_profile}},
+            std::pair{"content_profile", std::string_view{identity.content_profile}},
+            std::pair{"tls_profile", std::string_view{identity.tls_profile}},
+            std::pair{"alg_dns_profile", std::string_view{identity.alg_dns_profile}},
+        };
+        for (const auto& [field, reference] : fields) {
+            if (reference.empty()) continue;
+            operations.push_back({
+                {"op", "set"}, {"path", path + "." + identity.name + "." + field},
+                {"value", {{"type", "string"}, {"data", reference}}},
+            });
+        }
+    }
+    return true;
+}
+
 std::optional<std::string> transaction_config_path(
     const std::string_view logical_path, const ConfigSnapshot& snapshot) {
     const auto marker = logical_path.find(".[");
@@ -191,6 +224,20 @@ bool named_collection(const std::string_view collection) {
     return std::find(collections.begin(), collections.end(), collection) != collections.end();
 }
 
+std::optional<std::string_view> optional_settings_group(const std::string_view path) {
+    constexpr std::array groups{
+        "cli", "web_rating", "admin", "tuning", "socks", "http_connect", "http_api", "webhook",
+    };
+    constexpr std::string_view prefix{"settings."};
+    if (!path.starts_with(prefix)) return std::nullopt;
+    const auto relative = path.substr(prefix.size());
+    const auto separator = relative.find('.');
+    const auto group = relative.substr(0U, separator);
+    const auto found = std::find(groups.begin(), groups.end(), group);
+    if (found == groups.end()) return std::nullopt;
+    return *found;
+}
+
 bool append_named_create(
     nlohmann::json& operations, const DraftCreateOperation& create) {
     if (!named_collection(create.collection) || create.parent_id ||
@@ -208,6 +255,13 @@ bool append_named_create(
     });
     for (const auto& [field, scalar] : create.fields) {
         if (field == "name") continue;
+        if (create.collection == "auth_profiles" && field == "identities") {
+            if (!append_auth_identity_replacement(
+                    operations, create.collection + "." + object_name + ".identities", {}, scalar)) {
+                return false;
+            }
+            continue;
+        }
         auto value = explicit_scalar_json(scalar);
         if (value.is_null()) return false;
         operations.push_back({
@@ -296,6 +350,45 @@ bool append_policy_operation(
             return true;
         } else {
             return append_ordered_move(operations, "policy", rows, item.entity_id, item.position);
+        }
+    }, operation);
+}
+
+bool append_interface_role_operation(
+    nlohmann::json& operations, std::vector<std::string>& rows,
+    const DraftStructuralOperation& operation) {
+    return std::visit([&](const auto& item) {
+        using Operation = std::decay_t<decltype(item)>;
+        constexpr std::string_view collection{"settings.interfaces"};
+        if (item.collection != collection) return false;
+        if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
+            if (item.parent_id || item.fields.empty()) return false;
+            operations.push_back({{"op", "add"}, {"path", collection}, {"name", ""}});
+            const auto index = rows.size();
+            for (const auto& [field, scalar] : item.fields) {
+                auto value = explicit_scalar_json(scalar);
+                if (value.is_null()) return false;
+                operations.push_back({
+                    {"op", "set"},
+                    {"path", std::string(collection) + ".[" + std::to_string(index) + "]." + field},
+                    {"value", std::move(value)},
+                });
+            }
+            const auto row_id = "client:" + item.client_id;
+            rows.push_back(row_id);
+            if (item.position.kind == DraftPositionKind::Last) return true;
+            return append_ordered_move(operations, collection, rows, row_id, item.position);
+        } else if constexpr (std::is_same_v<Operation, DraftDeleteOperation>) {
+            const auto index = row_index(rows, item.entity_id);
+            if (!index) return false;
+            operations.push_back({
+                {"op", "remove"}, {"path", collection},
+                {"entries", nlohmann::json::array({std::to_string(*index)})},
+            });
+            rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(*index));
+            return true;
+        } else {
+            return append_ordered_move(operations, collection, rows, item.entity_id, item.position);
         }
     }, operation);
 }
@@ -721,6 +814,28 @@ TransactionEnvelope build_transaction_v2_operations(
         }
     }
 
+    // Optional settings groups are absent from some valid legacy and minimal
+    // configurations. Materialize only groups touched by this draft, inside
+    // the same isolated candidate, before their explicitly typed leaves are
+    // written. This keeps a clean installation fully administrable without
+    // mutating unrelated defaults.
+    std::set<std::string, std::less<>> present_settings_groups;
+    if (snapshot.settings) {
+        present_settings_groups.insert(
+            snapshot.settings->present_groups.begin(), snapshot.settings->present_groups.end());
+    }
+    std::set<std::string, std::less<>> added_settings_groups;
+    for (const auto& change : draft.changes) {
+        const auto group = optional_settings_group(change.path);
+        if (!group || present_settings_groups.contains(*group) ||
+            !added_settings_groups.emplace(*group).second) {
+            continue;
+        }
+        operations.push_back({
+            {"op", "add"}, {"path", "settings"}, {"name", std::string(*group)},
+        });
+    }
+
     // Scalar paths are bound to the base snapshot. Apply them after named
     // prerequisites exist, but before ordered collections can shift indices.
     std::set<std::string, std::less<>> paths;
@@ -730,6 +845,27 @@ TransactionEnvelope build_transaction_v2_operations(
             return {std::nullopt, "transaction.invalid_draft"};
         }
         auto path = transaction_config_path(change.path, snapshot);
+        if (path && change.path.starts_with("auth_profiles.[") &&
+            change.path.ends_with("].identities")) {
+            const auto profile = std::find_if(snapshot.profiles.begin(), snapshot.profiles.end(),
+                [&](const auto& item) {
+                    return item.authentication &&
+                           *path == "auth_profiles." + item.name + ".identities";
+                });
+            if (profile == snapshot.profiles.end()) {
+                return {std::nullopt, "transaction.invalid_draft"};
+            }
+            std::vector<std::string> existing_names;
+            existing_names.reserve(profile->authentication->identities.size());
+            for (const auto& identity : profile->authentication->identities) {
+                existing_names.push_back(identity.name);
+            }
+            if (!append_auth_identity_replacement(
+                    operations, *path, existing_names, change.value)) {
+                return {std::nullopt, "transaction.invalid_draft"};
+            }
+            continue;
+        }
         auto value = explicit_scalar_json(change.value);
         if (!path || value.is_null()) return {std::nullopt, "transaction.invalid_draft"};
         operations.push_back({
@@ -744,6 +880,13 @@ TransactionEnvelope build_transaction_v2_operations(
     for (const auto& policy : snapshot.policies) policy_rows.push_back(policy.id);
     auto content_rows = content_rule_rows(snapshot);
     auto signatures = signature_rows(snapshot);
+    std::vector<std::string> interface_role_rows;
+    if (snapshot.settings) {
+        interface_role_rows.reserve(snapshot.settings->interface_roles.size());
+        for (const auto& role : snapshot.settings->interface_roles) {
+            interface_role_rows.push_back(role.id);
+        }
+    }
     for (const auto& operation : draft.structural_operations) {
         const auto collection = draft_structural_collection(operation);
         if (collection == "policy") {
@@ -754,6 +897,12 @@ TransactionEnvelope build_transaction_v2_operations(
         }
         if (collection == "content_profiles.content_rules") {
             if (!append_content_rule_operation(operations, content_rows, operation)) {
+                return {std::nullopt, "transaction.invalid_draft"};
+            }
+            continue;
+        }
+        if (collection == "settings.interfaces") {
+            if (!append_interface_role_operation(operations, interface_role_rows, operation)) {
                 return {std::nullopt, "transaction.invalid_draft"};
             }
             continue;

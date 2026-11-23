@@ -133,6 +133,19 @@ describe('DraftClient', () => {
         },
       },
     });
+    await client.upsertOperation(4, {
+      op: 'create', localId: 'create-interface-role-1', collection: 'settings.interfaces',
+      clientId: 'create-interface-role-1', parentId: null, position: {kind: 'last', reference: null},
+      fields: {'match.if_name': 'lan0', 'match.if_address': '', role: 'inside'},
+    });
+    expect(JSON.parse(String((fetcher.mock.calls.at(-1)?.[1] as RequestInit).body))).toEqual({
+      expected_version: 4,
+      operation: {
+        op: 'create', local_id: 'create-interface-role-1', collection: 'settings.interfaces',
+        client_id: 'create-interface-role-1', position: {last: true},
+        fields: {'match.if_name': 'lan0', 'match.if_address': '', role: 'inside'},
+      },
+    });
     await expect(client.upsertOperation(-1, {
       op: 'delete', localId: 'delete-address-1', collection: 'address_objects',
       entityId: 'cfg:address:old',

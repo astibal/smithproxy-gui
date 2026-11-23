@@ -1386,6 +1386,7 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
             {"content_profiles", false, false, "builtin:v2"},
             {"ssh_profiles", false, false, "builtin:v2"},
             {"script_profiles", false, false, "builtin:v2"},
+            {"auth_profiles", false, false, "builtin:v2"},
             {"detection_profiles", false, false, "builtin:v2"},
             {"alg_dns_profiles", false, false, "builtin:v2"},
             {"tls_ca", false, false, "builtin:v2"},
@@ -1395,6 +1396,7 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
             {"detection_signatures", true, false, "builtin:v2"},
             {"starttls_signatures.flow", true, true, "builtin:v2"},
             {"detection_signatures.flow", true, true, "builtin:v2"},
+            {"settings.interfaces", true, false, "builtin:v2"},
         };
         if (state_document.contains("capabilities")) {
             const auto& advertised = state_document["capabilities"];

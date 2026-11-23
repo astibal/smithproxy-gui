@@ -33,7 +33,7 @@ export type DraftStructuralCollection =
   | 'tls_profiles' | 'content_profiles' | 'content_profiles.content_rules'
   | 'ssh_profiles' | 'script_profiles' | 'auth_profiles' | 'detection_profiles'
   | 'alg_dns_profiles' | 'tls_ca' | 'starttls_signatures' | 'starttls_signatures.flow'
-  | 'detection_signatures' | 'detection_signatures.flow';
+  | 'detection_signatures' | 'detection_signatures.flow' | 'settings.interfaces';
 
 export interface DraftCreateOperation extends DraftStructuralOperationBase {
   op: 'create';
@@ -213,7 +213,7 @@ const structuralCollections = new Set<DraftStructuralCollection>([
   'tls_profiles', 'content_profiles', 'content_profiles.content_rules',
   'ssh_profiles', 'script_profiles', 'auth_profiles', 'detection_profiles',
   'alg_dns_profiles', 'tls_ca', 'starttls_signatures', 'starttls_signatures.flow',
-  'detection_signatures', 'detection_signatures.flow',
+  'detection_signatures', 'detection_signatures.flow', 'settings.interfaces',
 ]);
 
 function localIdentifier(value: unknown): string {
@@ -269,7 +269,7 @@ function structuralOperation(value: unknown): DraftStructuralOperation {
     }
     const fields: Record<string, DraftScalar> = {};
     for (const [name, raw] of Object.entries(value.fields)) {
-      if (!/^[a-z][a-z0-9_-]{0,95}$/u.test(name)) {
+      if (name.length > 96 || !/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/u.test(name)) {
         throw new Error('Invalid structural create field.');
       }
       fields[name] = scalar(raw);

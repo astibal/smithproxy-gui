@@ -204,7 +204,8 @@ int main() {
             }})},
         }},
     });
-    assert(!parsed_auth_create);
+    assert(parsed_auth_create);
+    assert(valid_draft_structural_operation(*parsed_auth_create));
     const DraftCreateOperation create_policy{
         .local_id = "create-policy-1",
         .collection = "policy",
@@ -652,9 +653,11 @@ int main() {
     assert(validate_draft_schema({"settings.quic_workers", std::int64_t{2}}) ==
            DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({"settings.ssl_ocsp_status_ttl", std::int64_t{1800}}) ==
-           DraftSchemaResult::UnknownPath);
+           DraftSchemaResult::Valid);
     assert(validate_draft_schema({"settings.ssl_crl_status_ttl", std::int64_t{86400}}) ==
-           DraftSchemaResult::UnknownPath);
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"settings.ssl_ocsp_status_ttl", std::int64_t{-1}}) ==
+           DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({"settings.log_level", std::int64_t{8}}) ==
            DraftSchemaResult::Valid);
     assert(validate_draft_schema({"settings.log_level", std::int64_t{9}}) ==
@@ -737,7 +740,7 @@ int main() {
         {"tls_profiles.[0].client_cert_action", std::string("use_configured")},
         {"content_profiles.[0].write_format", std::string("smcap")},
         {"ssh_profiles.[0].hostkey_policy", std::string("strict")},
-        {"script_profiles.[0].type", std::string("0")},
+        {"script_profiles.[0].type", std::int64_t{0}},
         {"detection_profiles.[0].mode", std::int64_t{2}},
         {"alg_dns_profiles.[0].randomize_id", true},
         {"tls_ca.[0].path", std::string("/etc/smithproxy/ca.pem")},
@@ -746,17 +749,23 @@ int main() {
     }) == DraftMutationResult::Applied);
     assert(validate_draft_schema({
         "auth_profiles.[0].authenticate", true,
-    }) == DraftSchemaResult::UnknownPath);
+    }) == DraftSchemaResult::Valid);
     assert(validate_draft_schema({
         "policy.[0].auth_profile", std::string("legacy-auth"),
-    }) == DraftSchemaResult::UnknownPath);
+    }) == DraftSchemaResult::Valid);
     assert(validate_draft_schema({
         "auth_profiles.[0].identities", DraftAuthIdentities{{
             .name = "integration_user", .detection_profile = "detect",
             .content_profile = "capture", .tls_profile = "inspect",
             .alg_dns_profile = "dns-default",
         }},
-    }) == DraftSchemaResult::UnknownPath);
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "auth_profiles.[0].identities", std::vector<std::string>{},
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "settings.interfaces.[0].match.if_name", std::string("lan0"),
+    }) == DraftSchemaResult::Valid);
     assert(validate_draft_schema({
         "policy.[0].src", std::vector<std::string>{},
     }) == DraftSchemaResult::Valid);
@@ -1000,8 +1009,7 @@ int main() {
     }};
     const auto identity_envelope = build_transaction_envelope(
         identity_transaction_draft, TransactionMode::Validate, idempotency_key, ready_transaction);
-    assert(!identity_envelope.body);
-    assert(identity_envelope.error_code == "transaction.invalid_draft");
+    assert(identity_envelope.body);
     DraftSnapshot structural_draft{
         .id = "workspace-draft",
         .base_revision = transaction_draft.base_revision,
@@ -1236,6 +1244,81 @@ int main() {
         },
     }));
 
+    ConfigProfile auth_profile;
+    auth_profile.id = "auth-0";
+    auth_profile.name = "legacy-auth";
+    auth_profile.type = "authentication";
+    auth_profile.authentication = ConfigAuthProfile{
+        .authenticate = true,
+        .resolve = true,
+        .identity_count = 1U,
+        .identities = {{
+            .name = "old_user", .detection_profile = "", .content_profile = "",
+            .tls_profile = "inspect", .alg_dns_profile = "",
+        }},
+        .profile_references = {},
+        .private_profile_ids = {},
+    };
+    transaction_snapshot.profiles.push_back(std::move(auth_profile));
+    v2_draft.structural_operations.clear();
+    v2_draft.changes = {{
+        "auth_profiles.[0].identities", DraftAuthIdentities{{
+            .name = "new_user", .detection_profile = "strict-detection",
+            .content_profile = "capture", .tls_profile = "inspect",
+            .alg_dns_profile = "resolver",
+        }},
+    }};
+    const auto auth_identity_envelope = build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(auth_identity_envelope.body);
+    assert(nlohmann::json::parse(*auth_identity_envelope.body) == nlohmann::json::array({
+        {
+            {"op", "remove"}, {"path", "auth_profiles.legacy-auth.identities"},
+            {"entries", nlohmann::json::array({"old_user"})},
+        },
+        {{"op", "add"}, {"path", "auth_profiles.legacy-auth.identities"}, {"name", "new_user"}},
+        {
+            {"op", "set"}, {"path", "auth_profiles.legacy-auth.identities.new_user.detection_profile"},
+            {"value", {{"type", "string"}, {"data", "strict-detection"}}},
+        },
+        {
+            {"op", "set"}, {"path", "auth_profiles.legacy-auth.identities.new_user.content_profile"},
+            {"value", {{"type", "string"}, {"data", "capture"}}},
+        },
+        {
+            {"op", "set"}, {"path", "auth_profiles.legacy-auth.identities.new_user.tls_profile"},
+            {"value", {{"type", "string"}, {"data", "inspect"}}},
+        },
+        {
+            {"op", "set"}, {"path", "auth_profiles.legacy-auth.identities.new_user.alg_dns_profile"},
+            {"value", {{"type", "string"}, {"data", "resolver"}}},
+        },
+    }));
+
+    v2_draft.changes.clear();
+    v2_draft.structural_operations = {DraftCreateOperation{
+        .local_id = "create-auth-1",
+        .collection = "auth_profiles",
+        .client_id = "new-auth",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {
+            {"name", std::string("branch-auth")}, {"authenticate", true}, {"resolve", false},
+            {"identities", DraftAuthIdentities{{
+                .name = "branch_user", .detection_profile = "strict-detection",
+                .content_profile = "", .tls_profile = "", .alg_dns_profile = "",
+            }}},
+        },
+    }};
+    const auto auth_create_envelope = build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(auth_create_envelope.body);
+    const auto auth_create_operations = nlohmann::json::parse(*auth_create_envelope.body);
+    assert(auth_create_operations[0] == nlohmann::json({
+        {"op", "add"}, {"path", "auth_profiles"}, {"name", "branch-auth"},
+    }));
+    assert(auth_create_operations[2] == nlohmann::json({
+        {"op", "add"}, {"path", "auth_profiles.branch-auth.identities"}, {"name", "branch_user"},
+    }));
+
     const auto policy_row = [](std::string id, std::string name) {
         ConfigPolicy policy;
         policy.id = std::move(id);
@@ -1299,6 +1382,99 @@ int main() {
         {
             {"op", "remove"}, {"path", "policy"},
             {"entries", nlohmann::json::array({"1"})},
+        },
+    }));
+
+    transaction_snapshot.settings = ConfigSystemSettings{};
+    v2_draft.changes = {
+        {"settings.http_api.port", std::int64_t{55555}},
+        {"settings.http_api.keys", std::vector<std::string>{"administrator-key"}},
+        {"settings.webhook.url", std::string("https://events.example/")},
+    };
+    v2_draft.structural_operations.clear();
+    const auto optional_settings_envelope =
+        build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(optional_settings_envelope.body);
+    assert(nlohmann::json::parse(*optional_settings_envelope.body) == nlohmann::json::array({
+        {{"op", "add"}, {"path", "settings"}, {"name", "http_api"}},
+        {{"op", "add"}, {"path", "settings"}, {"name", "webhook"}},
+        {
+            {"op", "set"}, {"path", "settings.http_api.port"},
+            {"value", {{"type", "int"}, {"data", 55555}}},
+        },
+        {
+            {"op", "set"}, {"path", "settings.http_api.keys"},
+            {"value", {{"type", "string_array"}, {"data", {"administrator-key"}}}},
+        },
+        {
+            {"op", "set"}, {"path", "settings.webhook.url"},
+            {"value", {{"type", "string"}, {"data", "https://events.example/"}}},
+        },
+    }));
+    transaction_snapshot.settings->present_groups = {"http_api"};
+    const auto existing_optional_settings_envelope =
+        build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(existing_optional_settings_envelope.body);
+    const auto existing_optional_operations =
+        nlohmann::json::parse(*existing_optional_settings_envelope.body);
+    assert(existing_optional_operations.front() == nlohmann::json({
+        {"op", "add"}, {"path", "settings"}, {"name", "webhook"},
+    }));
+
+    transaction_snapshot.settings->interface_roles = {
+        {.id = "interface-role-0", .if_name = "lan0", .if_address = "", .role = "inside"},
+        {.id = "interface-role-1", .if_name = "wan0", .if_address = "", .role = "outside"},
+    };
+    v2_draft.changes = {
+        {"settings.interfaces.[1].role", std::string("internet")},
+    };
+    v2_draft.structural_operations = {
+        DraftCreateOperation{
+            .local_id = "create-interface-role-1",
+            .collection = "settings.interfaces",
+            .client_id = "new-interface-role",
+            .parent_id = std::nullopt,
+            .position = {DraftPositionKind::Before, "interface-role-1"},
+            .fields = {
+                {"match.if_name", std::string("dmz0")},
+                {"match.if_address", std::string("")},
+                {"role", std::string("dmz")},
+            },
+        },
+        DraftDeleteOperation{
+            .local_id = "delete-interface-role-1",
+            .collection = "settings.interfaces",
+            .entity_id = "interface-role-0",
+        },
+    };
+    const auto interface_role_envelope =
+        build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(interface_role_envelope.body);
+    assert(nlohmann::json::parse(*interface_role_envelope.body) == nlohmann::json::array({
+        {
+            {"op", "set"}, {"path", "settings.interfaces.[1].role"},
+            {"value", {{"type", "string"}, {"data", "internet"}}},
+        },
+        {{"op", "add"}, {"path", "settings.interfaces"}, {"name", ""}},
+        {
+            {"op", "set"}, {"path", "settings.interfaces.[2].match.if_address"},
+            {"value", {{"type", "string"}, {"data", ""}}},
+        },
+        {
+            {"op", "set"}, {"path", "settings.interfaces.[2].match.if_name"},
+            {"value", {{"type", "string"}, {"data", "dmz0"}}},
+        },
+        {
+            {"op", "set"}, {"path", "settings.interfaces.[2].role"},
+            {"value", {{"type", "string"}, {"data", "dmz"}}},
+        },
+        {
+            {"op", "move"}, {"path", "settings.interfaces"}, {"source", 2},
+            {"target", 1}, {"position", "before"},
+        },
+        {
+            {"op", "remove"}, {"path", "settings.interfaces"},
+            {"entries", nlohmann::json::array({"0"})},
         },
     }));
 

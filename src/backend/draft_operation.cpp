@@ -33,6 +33,7 @@ constexpr std::array collection_schemas{
                      "content_profiles.[0].content_rules.[0]", "match"},
     CollectionSchema{"ssh_profiles", "ssh_profiles.[0]", "name"},
     CollectionSchema{"script_profiles", "script_profiles.[0]", "name"},
+    CollectionSchema{"auth_profiles", "auth_profiles.[0]", "name"},
     CollectionSchema{"detection_profiles", "detection_profiles.[0]", "name"},
     CollectionSchema{"alg_dns_profiles", "alg_dns_profiles.[0]", "name"},
     CollectionSchema{"tls_ca", "tls_ca.[0]", "name"},
@@ -40,6 +41,7 @@ constexpr std::array collection_schemas{
     CollectionSchema{"starttls_signatures.flow", "starttls_signatures.[0].flow.[0]", "signature"},
     CollectionSchema{"detection_signatures", "detection_signatures.[0]", "name"},
     CollectionSchema{"detection_signatures.flow", "detection_signatures.[0].flow.[0]", "signature"},
+    CollectionSchema{"settings.interfaces", "settings.interfaces.[0]", "role"},
 };
 
 const CollectionSchema* collection_schema(const std::string_view id) {
@@ -77,13 +79,24 @@ bool valid_entity_identifier(const std::string_view value) {
 }
 
 bool valid_field_name(const std::string_view value) {
-    if (value.empty() || value.size() > 96U ||
-        !ascii_lower(static_cast<unsigned char>(value.front()))) {
-        return false;
+    if (value.empty() || value.size() > 96U) return false;
+    bool segment_start = true;
+    for (const unsigned char character : value) {
+        if (segment_start) {
+            if (!ascii_lower(character)) return false;
+            segment_start = false;
+            continue;
+        }
+        if (character == '.') {
+            segment_start = true;
+            continue;
+        }
+        if (!ascii_lower(character) && !ascii_digit(character) &&
+            character != '_' && character != '-') {
+            return false;
+        }
     }
-    return std::all_of(value.begin(), value.end(), [](const unsigned char character) {
-        return ascii_lower(character) || ascii_digit(character) || character == '_' || character == '-';
-    });
+    return !segment_start;
 }
 
 bool valid_position(const DraftPosition& position) {

@@ -1698,6 +1698,68 @@ test('saves an existing interface-role rule without replacing the ordered list',
   ]]);
 });
 
+test('creates and reorders interface-role rules through structural drafts', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, structuralCollections: ['settings.interfaces'],
+    structuralMutationRequests: [], configRevision: `sha256:${'1'.repeat(64)}`,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'System settings', exact: true}).click();
+  const trafficCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Traffic admission'}),
+  });
+  await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await editor.getByLabel('New interface name').fill('dmz0');
+  await editor.getByLabel('New assigned role').fill('DMZ');
+  await editor.getByRole('button', {name: 'Add interface role'}).click();
+
+  await expect.poll(() => state.structuralMutationRequests?.length).toBe(1);
+  const create = state.structuralMutationRequests![0]!.operation;
+  expect(create).toMatchObject({
+    op: 'create', collection: 'settings.interfaces', position: {last: true},
+    fields: {'match.if_name': 'dmz0', 'match.if_address': '', role: 'DMZ'},
+  });
+  await expect(editor.getByText('Pending create')).toBeVisible();
+  await editor.getByRole('button', {name: 'Move DMZ role up'}).click();
+
+  await expect.poll(() => state.structuralMutationRequests?.length).toBe(2);
+  expect(state.structuralMutationRequests![1]!.operation).toMatchObject({
+    op: 'create', collection: 'settings.interfaces',
+    position: {before: 'interface-role-0'},
+  });
+});
+
+test('requires confirmation before deleting an interface-role rule', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, structuralCollections: ['settings.interfaces'],
+    structuralMutationRequests: [], configRevision: `sha256:${'1'.repeat(64)}`,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'System settings', exact: true}).click();
+  const trafficCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Traffic admission'}),
+  });
+  await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await editor.getByRole('button', {name: 'Delete Inside interface role'}).click();
+  await expect(editor.getByRole('button', {name: 'Delete Inside interface role'}))
+    .toHaveText('Confirm delete');
+  expect(state.structuralMutationRequests).toHaveLength(0);
+  await editor.getByRole('button', {name: 'Delete Inside interface role'}).click();
+
+  await expect.poll(() => state.structuralMutationRequests?.length).toBe(1);
+  expect(state.structuralMutationRequests![0]!.operation).toMatchObject({
+    op: 'delete', collection: 'settings.interfaces', entity_id: 'interface-role-0',
+  });
+});
+
 test('renames referenced configuration entities atomically across pending references', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, namedRenamesReady: true, draftMutationBatches: [],
@@ -2934,10 +2996,11 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
 });
 
 test('enables all named profile editors without exposing ordered structural operations', async ({page}) => {
-  await mockSystemApi(page, {
+  const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true,
-    namedStructuralDraftsReady: true,
-  }, true);
+    namedStructuralDraftsReady: true, draftMutationBatches: [],
+  };
+  await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
@@ -2963,9 +3026,69 @@ test('enables all named profile editors without exposing ordered structural oper
   await expect(identityEditor.getByLabel('Detection').nth(0)).toHaveValue('detect');
   await expect(identityEditor.getByLabel('Identity name').nth(1)).toHaveValue('bob');
   await expect(identityEditor.getByLabel('TLS').nth(1)).toHaveValue('inspect');
+  await identityEditor.getByLabel('Content').nth(0).selectOption('capture');
+  await identityEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(identityEditor).not.toBeVisible();
+  expect(state.draftMutationBatches).toEqual([[{
+    path: 'auth_profiles.[0].identities',
+    value: [
+      {name: 'alice', detection_profile: 'detect', content_profile: 'capture'},
+      {name: 'bob', tls_profile: 'inspect'},
+    ],
+  }]]);
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await expect(page.getByRole('button', {name: 'New policy'})).toBeDisabled();
+});
+
+test('creates an authentication profile and complete identity mappings', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    namedStructuralDraftsReady: true, structuralMutationRequests: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
+  await page.getByRole('button', {name: 'New profile'}).click();
+  let editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByLabel('Name').fill('branch-auth');
+  await editor.getByLabel('Profile type').selectOption('authentication');
+  await editor.getByLabel('Authenticate').selectOption('true');
+  await editor.getByLabel('Resolve identities').selectOption('false');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor).not.toBeVisible();
+
+  expect(state.structuralMutationRequests).toHaveLength(1);
+  expect(state.structuralMutationRequests![0]).toMatchObject({
+    expectedVersion: 0,
+    operation: {
+      op: 'create', collection: 'auth_profiles',
+      fields: {name: 'branch-auth', authenticate: true, resolve: false},
+    },
+  });
+
+  await page.getByRole('button', {name: /branch-auth authentication/i}).click();
+  editor = page.getByRole('dialog', {name: 'Create profile'});
+  await editor.getByRole('button', {name: /No mappings configured/i}).click();
+  const identities = page.getByRole('dialog', {name: 'branch-auth identities'});
+  await identities.getByLabel('Identity name').fill('branch_user');
+  await identities.getByLabel('Detection').selectOption('detect');
+  await identities.getByLabel('TLS').selectOption('inspect');
+  await identities.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(identities).not.toBeVisible();
+
+  expect(state.structuralMutationRequests).toHaveLength(2);
+  expect(state.structuralMutationRequests![1]).toMatchObject({
+    expectedVersion: 1,
+    operation: {
+      op: 'create', collection: 'auth_profiles',
+      fields: {
+        name: 'branch-auth', authenticate: true, resolve: false,
+        identities: [{name: 'branch_user', detection_profile: 'detect', tls_profile: 'inspect'}],
+      },
+    },
+  });
 });
 
 test('creates complete typed routing detection and DNS profiles', async ({page}) => {
@@ -3133,7 +3256,7 @@ test('creates and reopens complete content SSH and script profiles', async ({pag
   expect(state.structuralMutationRequests![2]).toMatchObject({
     expectedVersion: 2, csrf: '1', operation: {
       op: 'create', collection: 'script_profiles',
-      fields: {name: 'branch-script', type: '0', 'script-file': '/private/branch.py'},
+      fields: {name: 'branch-script', type: 0, 'script-file': '/private/branch.py'},
     },
   });
 
@@ -5149,7 +5272,7 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
       origin('content_profiles.[0].write_format', 'pcap', 'pcap_single'),
       origin('ssh_profiles.[0].shell', false, true),
       origin('alg_dns_profiles.[0].randomize_id', false, true),
-      origin('script_profiles.[0].type', '1', '0'),
+      origin('script_profiles.[0].type', 1, 0),
       origin('auth_profiles.[0].authenticate', false, true),
     ],
   };
@@ -7200,7 +7323,7 @@ test('projects pending listener settings into Network and opens their real edito
   await expect(editor.getByLabel('Require SOCKS authentication')).toHaveValue('true');
 });
 
-test('keeps absent nested settings groups visible but read-only', async ({page}) => {
+test('materializes absent nested settings groups through editable defaults', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
     absentSettingsGroups: ['cli', 'tuning', 'http_api', 'webhook'],
@@ -7220,17 +7343,24 @@ test('keeps absent nested settings groups visible but read-only', async ({page})
     'cli, tuning, http_api, webhook',
   );
   await expect(editor.getByLabel('Plaintext port')).not.toHaveAttribute('readonly', '');
-  await expect(editor.getByLabel('CLI port', {exact: true})).toHaveAttribute('readonly', '');
-  await expect(editor.getByLabel('Initial host buffer (bytes)')).toHaveAttribute('readonly', '');
-  await expect(editor.getByLabel('API port')).toHaveAttribute('readonly', '');
-  await expect(editor.getByLabel('HTTP API keys', {exact: true})).toHaveAttribute('readonly', '');
-  await expect(editor.getByLabel('Webhook', {exact: true})).toBeDisabled();
+  await expect(editor.getByLabel('CLI port', {exact: true})).not.toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('Initial host buffer (bytes)')).not.toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('API port')).not.toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('HTTP API keys', {exact: true})).not.toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('Webhook', {exact: true})).toBeEnabled();
 
   await editor.getByLabel('Policy failure').selectOption('true');
+  await editor.getByLabel('CLI port', {exact: true}).fill('50001');
+  await editor.getByLabel('HTTP API keys', {exact: true}).fill('["first-administrator-key"]');
+  await editor.getByLabel('Webhook', {exact: true}).selectOption('true');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect.poll(() => state.draftMutationBatches).toEqual([[
+  await expect.poll(() => state.draftMutationBatches?.length).toBe(1);
+  expect(state.draftMutationBatches![0]).toEqual(expect.arrayContaining([
     {path: 'settings.policy_fail_open', value: true},
-  ]]);
+    {path: 'settings.cli.port', value: 50001},
+    {path: 'settings.http_api.keys', value: ['first-administrator-key']},
+    {path: 'settings.webhook.enabled', value: true},
+  ]));
 });
 
 test('preserves legacy worker values while enforcing pinned worker semantics', async ({page}) => {
@@ -7317,9 +7447,8 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(settingsEditor.getByLabel('CLI port', {exact: true})).toHaveAttribute('min', '1024');
   await expect(settingsEditor.getByLabel('API port')).toHaveAttribute('min', '1024');
   await expect(settingsEditor.getByLabel('API port')).toHaveAttribute('max', '65535');
-  await expect(settingsEditor.getByLabel('OCSP status TTL (seconds)')).toHaveAttribute('readonly', '');
-  await expect(settingsEditor.getByLabel('CRL status TTL (seconds)')).toHaveAttribute('readonly', '');
-  await expect(settingsEditor.getByText(/configuration schema marks them read-only/i)).toBeVisible();
+  await expect(settingsEditor.getByLabel('OCSP status TTL (seconds)')).not.toHaveAttribute('readonly', '');
+  await expect(settingsEditor.getByLabel('CRL status TTL (seconds)')).not.toHaveAttribute('readonly', '');
   await expect(settingsEditor.getByLabel('Protect local destinations')).toHaveValue('true');
   await expect(settingsEditor.getByLabel('Require SOCKS authentication')).toHaveValue('false');
   await expect(settingsEditor.getByLabel('Require HTTP CONNECT authentication')).toHaveValue('false');
@@ -7339,6 +7468,8 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await settingsEditor.getByLabel('API header access').selectOption('true');
   await settingsEditor.getByLabel('API token TTL (seconds)').fill('900');
   await settingsEditor.getByLabel('API port').fill('55580');
+  await settingsEditor.getByLabel('OCSP status TTL (seconds)').fill('3600');
+  await settingsEditor.getByLabel('CRL status TTL (seconds)').fill('172800');
   await settingsEditor.getByLabel('Refresh tokens on access').selectOption('false');
   await settingsEditor.getByLabel('API bind address').fill('192.0.2.77');
   await settingsEditor.getByLabel('API bind interface').fill('private-api0');
@@ -7589,7 +7720,7 @@ test('searches the complete readable configuration without unsafe markup', async
       {path: 'tls_profiles.[0].client_cert_action', value: 'empty_client_cert'},
       {path: 'content_profiles.[0].write_format', value: 'smcap'},
       {path: 'ssh_profiles.[0].hostkey_policy', value: 'accept-new'},
-      {path: 'script_profiles.[0].type', value: '1'},
+      {path: 'script_profiles.[0].type', value: 1},
       {path: 'settings.nameservers', value: ['pending-resolver.example']},
       {path: 'settings.tuning.host_io_batch', value: 7654321},
       {path: 'captures.remote.gre_format', value: 'pcapng'},
@@ -7696,7 +7827,7 @@ test('finds pending structural creates without indexing legacy redaction sentine
     }, {
       op: 'create', local_id: 'search-script', client_id: 'search-script',
       collection: 'script_profiles', position: {last: true},
-      fields: {name: 'pending-script', type: '0', 'script-file': '[redacted:replace]'},
+      fields: {name: 'pending-script', type: 0, 'script-file': '[redacted:replace]'},
     }, {
       op: 'create', local_id: 'search-tls', client_id: 'search-tls',
       collection: 'tls_profiles', position: {last: true},
