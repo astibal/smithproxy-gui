@@ -1948,10 +1948,22 @@ private:
                 profiles += "null";
             } else {
                 const auto& authentication = *profile.authentication;
+                std::string identities{"["};
+                for (std::size_t index = 0U; index < authentication.identities.size(); ++index) {
+                    if (index != 0U) identities += ',';
+                    const auto& identity = authentication.identities[index];
+                    identities += "{\"name\":" + json_string(identity.name) +
+                                  ",\"detection_profile\":" + json_string(identity.detection_profile) +
+                                  ",\"content_profile\":" + json_string(identity.content_profile) +
+                                  ",\"tls_profile\":" + json_string(identity.tls_profile) +
+                                  ",\"alg_dns_profile\":" + json_string(identity.alg_dns_profile) + '}';
+                }
+                identities += ']';
                 profiles += "{\"authenticate\":" +
                             std::string(authentication.authenticate ? "true" : "false") +
                             ",\"resolve\":" + (authentication.resolve ? "true" : "false") +
                             ",\"identity_count\":" + std::to_string(authentication.identity_count) +
+                            ",\"identities\":" + identities +
                             ",\"deprecated\":true}";
             }
             profiles += '}';

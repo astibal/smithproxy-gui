@@ -166,10 +166,19 @@ export interface ScriptProfileDetails {
   modulePath: string;
 }
 
+export interface ConfigAuthIdentity {
+  name: string;
+  detection_profile?: string;
+  content_profile?: string;
+  tls_profile?: string;
+  alg_dns_profile?: string;
+}
+
 export interface AuthenticationProfileDetails {
   authenticate: boolean;
   resolve: boolean;
   identityCount: number;
+  identities: ReadonlyArray<ConfigAuthIdentity>;
   deprecated: true;
 }
 

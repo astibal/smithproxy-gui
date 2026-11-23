@@ -302,14 +302,10 @@ const supportedProfileCreateTypes = new Set<ProfileCreateType>(
   Object.keys(profileCreateCollections) as ProfileCreateType[],
 );
 
-// Keep parsing legacy authentication profiles, but do not expose a workflow
-// for a runtime feature which is currently a no-op in Smithproxy.
 const visibleProfileCreateTypes = new Set<ProfileCreateType>(
-  [...supportedProfileCreateTypes].filter(type => type !== 'authentication'),
+  supportedProfileCreateTypes,
 );
-const visiblePolicyProfileAssignments = policyProfileAssignments.filter(
-  assignment => assignment.kind !== 'authentication',
-);
+const visiblePolicyProfileAssignments = policyProfileAssignments;
 
 const initialRuntimeMetrics: RuntimeMetricsSnapshot = {
   state: 'starting',
@@ -4170,9 +4166,8 @@ export class SmithproxyApp extends LitElement {
     } else if (profile.authentication) {
       const value = profile.authentication;
       fields = {name, authenticate: scalar('authenticate', value.authenticate),
-        resolve: scalar('resolve', value.resolve)};
-      omitted = value.identityCount > 0
-        ? `${value.identityCount} write-only identity mapping${value.identityCount === 1 ? '' : 's'}` : '';
+        resolve: scalar('resolve', value.resolve),
+        identities: value.identities.map(identity => ({...identity}))};
     } else if (profile.content) {
       const value = profile.content;
       fields = {name, write_payload: scalar('write_payload', value.writePayload),
@@ -4309,7 +4304,7 @@ export class SmithproxyApp extends LitElement {
 
   private openProfile(id: string, origin?: HTMLElement): void {
     const profile = this.snapshot?.profiles.find(item => item.id === id);
-    if (!profile || profile.authentication) return;
+    if (!profile) return;
     this.openObjectDrawer({kind: 'profile', id: profile.id, title: this.profileDisplayName(profile)}, origin);
   }
 
@@ -4317,7 +4312,9 @@ export class SmithproxyApp extends LitElement {
     if (!profile.authentication || !this.draftAvailable) return;
     if (!this.authIdentityEditors.has(profile.id)) {
       this.authIdentityEditors = new Map(this.authIdentityEditors).set(profile.id, {
-        mode: 'replace', rows: [{name: ''}],
+        mode: 'replace',
+        rows: profile.authentication.identities.length > 0
+          ? profile.authentication.identities.map(identity => ({...identity})) : [{name: ''}],
       });
     }
     this.openObjectDrawer({
@@ -5866,7 +5863,12 @@ export class SmithproxyApp extends LitElement {
       const resolve = element<HTMLSelectElement>('resolve');
       if (!authenticate || !resolve ||
           [authenticate.value, resolve.value].some(value => !['true', 'false'].includes(value))) return;
-      fields = {name, authenticate: authenticate.value === 'true', resolve: resolve.value === 'true'};
+      const existingIdentities = operation?.fields['identities'] ??
+        this.profileCreatePrefills.get(entry.id)?.fields['identities'];
+      fields = {
+        name, authenticate: authenticate.value === 'true', resolve: resolve.value === 'true',
+        ...(Array.isArray(existingIdentities) ? {identities: existingIdentities} : {}),
+      };
     } else if (type === 'content') {
       const format = element<HTMLSelectElement>('content-format');
       const filterMode = element<HTMLSelectElement>('content-filter-mode');
@@ -5940,9 +5942,7 @@ export class SmithproxyApp extends LitElement {
     }
 
     const existing = operation;
-    const comparableExistingFields = existing && type === 'authentication'
-      ? Object.fromEntries(Object.entries(existing.fields).filter(([field]) => field !== 'identities'))
-      : existing?.fields;
+    const comparableExistingFields = existing?.fields;
     const unchanged = existing?.collection === collection && comparableExistingFields !== undefined &&
       Object.keys(comparableExistingFields).length === Object.keys(fields).length &&
       Object.entries(fields).every(([field, value]) => comparableExistingFields[field] !== undefined &&
@@ -5950,10 +5950,6 @@ export class SmithproxyApp extends LitElement {
     if (unchanged) {
       this.drawerError = undefined;
       this.markDrawerSaved(entry);
-      return;
-    }
-    if (type === 'authentication' && typeof existing?.fields['identities'] === 'string') {
-      this.drawerError = 'Re-enter the complete write-only identity mapping after changing this pending profile.';
       return;
     }
     this.draftSaving = true;
@@ -8966,7 +8962,7 @@ export class SmithproxyApp extends LitElement {
       return {item, name, number, matches: this.searchMatches([name, number], query)};
     }).filter(item => item.matches);
     const profilePrefixes = this.profileOriginPrefixes();
-    const profiles = this.snapshot.profiles.filter(item => !item.authentication).map(item => {
+    const profiles = this.snapshot.profiles.map(item => {
       const prefix = profilePrefixes.get(item.id);
       const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
       const details = this.profileSearchValues(item, prefix);
@@ -9177,7 +9173,7 @@ export class SmithproxyApp extends LitElement {
       .filter(row => kindMatches('protocol') && usageMatches(row.usage > 0) && queryMatches([
         fieldText(row.operation, 'name'), fieldNumber(row.operation, 'id') ?? '', 'protocol', 'pending',
       ]));
-    const profileRows = (this.snapshot?.profiles ?? []).filter(item => !item.authentication).map(item => {
+    const profileRows = (this.snapshot?.profiles ?? []).map(item => {
       const prefix = profilePrefixes.get(item.id);
       const name = prefix ? this.presentedValue(`${prefix}name`, item.name) : item.name;
       const summary = this.profileInventorySummary(item, prefix);
@@ -9193,7 +9189,7 @@ export class SmithproxyApp extends LitElement {
       return {operation, type, summary: this.pendingProfileInventorySummary(operation, type),
         usage: pendingUsage(operation)};
     })
-      .filter(row => row.type !== 'authentication' && kindMatches('profile') && profileTypeMatches(row.type) &&
+      .filter(row => kindMatches('profile') && profileTypeMatches(row.type) &&
         usageMatches(row.usage > 0) && queryMatches([
         fieldText(row.operation, 'name'), row.type ?? 'profile', row.summary, 'profile', 'pending',
       ]));
@@ -9247,9 +9243,8 @@ export class SmithproxyApp extends LitElement {
       return {operation, kind, name, summary};
     }).filter(row => kindMatches('security') && securityTypeMatches(row.kind) && securityFilterAvailable &&
       queryMatches([row.name, row.summary, row.kind, 'signature', 'trust', 'pending']));
-    const liveProfileCount = this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0;
-    const pendingProfileCount = pendingProfiles.filter(operation =>
-      profileTypes.get(operation.collection) !== 'authentication').length;
+    const liveProfileCount = this.snapshot?.profiles.length ?? 0;
+    const pendingProfileCount = pendingProfiles.length;
     const totalCount = (this.snapshot?.addresses.length ?? 0) + (this.snapshot?.ports.length ?? 0) +
       (this.snapshot?.protocols.length ?? 0) + liveProfileCount +
       (this.snapshot?.securityAssets?.certificateAuthorities.length ?? 0) +
@@ -12714,13 +12709,15 @@ export class SmithproxyApp extends LitElement {
           ${booleanSelect('resolve', 'Resolve identities', booleanField('resolve', true))}
           <label>Identity mappings</label>
           <button class="reference" type="button" ?disabled=${readOnly || operation === undefined}
-            title=${operation ? 'Open the write-only identity mapping editor' : 'Save the profile before adding identities'}
+            title=${operation ? 'Open the identity mapping editor' : 'Save the profile before adding identities'}
             @click=${(event: MouseEvent) => this.openAuthIdentityCreate(
               entry, event.currentTarget as HTMLElement,
             )}>
-            <span>${typeof operation?.fields['identities'] === 'string'
-              ? this.draftValueSummary('auth_profiles.[0].identities', operation.fields['identities'])
-              : operation ? 'No mappings configured' : 'Save profile first'}</span><span>Edit →</span>
+            <span>${Array.isArray(operation?.fields['identities'])
+              ? `${operation.fields['identities'].length} configured`
+              : typeof operation?.fields['identities'] === 'string'
+                ? this.draftValueSummary('auth_profiles.[0].identities', operation.fields['identities'])
+                : operation ? 'No mappings configured' : 'Save profile first'}</span><span>Edit →</span>
           </button>
         ` : type === 'content' ? html`
           <fieldset class="editor-group">
@@ -12821,15 +12818,14 @@ export class SmithproxyApp extends LitElement {
       </div>
       ${prefill ? html`<div class="scope-note">
         Prefilled from ${prefill.sourceName}. Persistent and pending values are copied; temporary augment overlays are not.
-        ${prefill.omitted ? html` For security, ${prefill.omitted} ${prefill.omitted.includes(' and ') ||
+        ${prefill.omitted ? html` ${prefill.omitted} ${prefill.omitted.includes(' and ') ||
           /(?:entries|mappings|rules)$/u.test(prefill.omitted) ? 'are' : 'is'} not copied.` : nothing}
       </div>` : nothing}
       <div class="impact">
         The complete profile remains in the workspace draft until you commit the draft.
       </div>
       ${type === 'authentication' ? html`<div class="privacy-note section">
-        Save the profile first, then add complete write-only identity mappings in the nested editor.
-        Pending replacements must be fully re-entered before this create operation can be changed.
+        Save the profile first, then review or edit its complete identity mappings in the nested editor.
       </div>` : ['tls', 'content', 'ssh', 'script'].includes(type) ? html`<div class="privacy-note section">
         Write-only values are accepted by the management service, redacted from draft responses, and cleared from this editor.
         Reopening a pending profile requires explicit re-entry before it can be updated.
@@ -12939,15 +12935,15 @@ export class SmithproxyApp extends LitElement {
       this.updateAuthIdentityEditor(entry.id, next);
       markDirty();
     };
-    const renderOptions = (kind: 'detection' | 'content' | 'tls' | 'dns') => html`
-      <option value="">None</option>
-      ${profileOptions(kind).map(name => html`<option value=${name}>${name}</option>`)}
+    const renderOptions = (kind: 'detection' | 'content' | 'tls' | 'dns', selected = '') => html`
+      <option value="" ?selected=${selected === ''}>None</option>
+      ${profileOptions(kind).map(name => html`<option value=${name} ?selected=${name === selected}>${name}</option>`)}
     `;
     return html`
       <div class="identity-editor">
-        <div class="privacy-note">
-          Identity names and bindings are write-only. ${configuredCount} mappings are configured.
-          ${pending ? 'A pending write-only change exists; re-enter every value to replace it.' : ''}
+        <div class="scope-note">
+          ${configuredCount} identity mapping${configuredCount === 1 ? ' is' : 's are'} configured.
+          ${pending ? 'A pending replacement exists; the editor shows the persistent baseline.' : ''}
         </div>
         <div class="identity-toolbar">
           <label for="auth-identities-mode-${entry.id}">Draft action
@@ -12979,25 +12975,25 @@ export class SmithproxyApp extends LitElement {
                   <select id="auth-identity-detection-${entry.id}-${index}" .value=${row.detection_profile ?? ''}
                     @change=${(event: Event) => this.updateAuthIdentityRow(
                       entry.id, index, 'detection_profile', (event.currentTarget as HTMLSelectElement).value,
-                    )}>${renderOptions('detection')}</select>
+                    )}>${renderOptions('detection', row.detection_profile)}</select>
                 </label>
                 <label class="identity-field" for="auth-identity-content-${entry.id}-${index}"><small>Content</small>
                   <select id="auth-identity-content-${entry.id}-${index}" .value=${row.content_profile ?? ''}
                     @change=${(event: Event) => this.updateAuthIdentityRow(
                       entry.id, index, 'content_profile', (event.currentTarget as HTMLSelectElement).value,
-                    )}>${renderOptions('content')}</select>
+                    )}>${renderOptions('content', row.content_profile)}</select>
                 </label>
                 <label class="identity-field" for="auth-identity-tls-${entry.id}-${index}"><small>TLS</small>
                   <select id="auth-identity-tls-${entry.id}-${index}" .value=${row.tls_profile ?? ''}
                     @change=${(event: Event) => this.updateAuthIdentityRow(
                       entry.id, index, 'tls_profile', (event.currentTarget as HTMLSelectElement).value,
-                    )}>${renderOptions('tls')}</select>
+                    )}>${renderOptions('tls', row.tls_profile)}</select>
                 </label>
                 <label class="identity-field" for="auth-identity-dns-${entry.id}-${index}"><small>DNS</small>
                   <select id="auth-identity-dns-${entry.id}-${index}" .value=${row.alg_dns_profile ?? ''}
                     @change=${(event: Event) => this.updateAuthIdentityRow(
                       entry.id, index, 'alg_dns_profile', (event.currentTarget as HTMLSelectElement).value,
-                    )}>${renderOptions('dns')}</select>
+                    )}>${renderOptions('dns', row.alg_dns_profile)}</select>
                 </label>
                 <button class="secondary danger-button" type="button" data-edit-control="true"
                   aria-label="Remove identity ${index + 1}"
@@ -13482,7 +13478,8 @@ export class SmithproxyApp extends LitElement {
             @click=${(event: MouseEvent) => this.openAuthIdentities(
               profile, event.currentTarget as HTMLElement,
             )}>
-            <span>${authentication.identityCount} redacted entries</span><span>Edit →</span>
+            <span>${authentication.identityCount} ${authentication.identityCount === 1 ? 'entry' : 'entries'}</span>
+            <span>Edit →</span>
           </button>
             </div>
           </fieldset>
@@ -15123,7 +15120,7 @@ export class SmithproxyApp extends LitElement {
     const portCount = effectiveCount(this.snapshot?.ports.length ?? 0, ['port_objects']);
     const protocolCount = effectiveCount(this.snapshot?.protocols.length ?? 0, ['proto_objects']);
     const profileCount = effectiveCount(
-      this.snapshot?.profiles.filter(profile => !profile.authentication).length ?? 0,
+      this.snapshot?.profiles.length ?? 0,
       ['routing', 'tls_profiles', 'content_profiles', 'ssh_profiles', 'script_profiles',
         'detection_profiles', 'alg_dns_profiles'],
     );

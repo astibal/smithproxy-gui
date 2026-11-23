@@ -139,10 +139,19 @@ struct ConfigPrivateProfileReference {
     std::string name;
 };
 
+struct ConfigAuthIdentity {
+    std::string name;
+    std::string detection_profile;
+    std::string content_profile;
+    std::string tls_profile;
+    std::string alg_dns_profile;
+};
+
 struct ConfigAuthProfile {
     bool authenticate{};
     bool resolve{};
     std::uint64_t identity_count{};
+    std::vector<ConfigAuthIdentity> identities;
     std::vector<ConfigPrivateProfileReference> profile_references;
     std::vector<std::string> private_profile_ids;
 };

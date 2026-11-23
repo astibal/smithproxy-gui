@@ -1065,7 +1065,15 @@ async function mockSystemApi(
           id: 'authentication-0', name: 'legacy-auth', type: 'authentication',
           private_reference_count: 0, routing: null, tls: null,
           detection: null, content: null, ssh: null, dns: null, script: null,
-          authentication: {authenticate: true, resolve: true, identity_count: 2, deprecated: true},
+          authentication: {
+            authenticate: true, resolve: true, identity_count: 2, deprecated: true,
+            identities: [
+              {name: 'alice', detection_profile: 'detect', content_profile: '', tls_profile: '',
+                alg_dns_profile: ''},
+              {name: 'bob', detection_profile: '', content_profile: '', tls_profile: 'inspect',
+                alg_dns_profile: ''},
+            ],
+          },
         }, ...(state.unusedProfile ? [{
           id: 'detection-1', name: 'unused-detection', type: 'detection',
           private_reference_count: state.privateProfileReferences ?? 0, routing: null, tls: null,
@@ -2991,7 +2999,7 @@ test('creates and reopens bounded port and protocol objects', async ({page}) => 
   await expectNoWcagViolations(page);
 });
 
-test('enables named profile editors without exposing ordered structural operations', async ({page}) => {
+test('enables all named profile editors without exposing ordered structural operations', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready', validationReady: true, commitReady: true,
     namedStructuralDraftsReady: true,
@@ -3008,10 +3016,19 @@ test('enables named profile editors without exposing ordered structural operatio
   const editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Name')).toBeEditable();
   await expect(editor.getByLabel('Profile type')).toBeEnabled();
-  await expect(editor.getByLabel('Profile type').locator('option[value="authentication"]')).toHaveCount(0);
+  await expect(editor.getByLabel('Profile type').locator('option[value="authentication"]')).toHaveCount(1);
   await editor.getByRole('button', {name: 'Cancel'}).click();
-  await expect(page.getByRole('group', {name: 'Profiles and routing'})
-    .getByRole('button', {name: /legacy-auth/i})).toHaveCount(0);
+  const authentication = page.getByRole('group', {name: 'Profiles and routing'})
+    .getByRole('button', {name: /legacy-auth/i});
+  await expect(authentication).toBeVisible();
+  await authentication.click();
+  const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
+  await authenticationEditor.getByRole('button', {name: /2 entries/i}).click();
+  const identityEditor = page.getByRole('dialog', {name: 'legacy-auth identities'});
+  await expect(identityEditor.getByLabel('Identity name').nth(0)).toHaveValue('alice');
+  await expect(identityEditor.getByLabel('Detection').nth(0)).toHaveValue('detect');
+  await expect(identityEditor.getByLabel('Identity name').nth(1)).toHaveValue('bob');
+  await expect(identityEditor.getByLabel('TLS').nth(1)).toHaveValue('inspect');
 
   await page.getByRole('button', {name: 'Policy', exact: true}).click();
   await expect(page.getByRole('button', {name: 'New policy'})).toBeDisabled();

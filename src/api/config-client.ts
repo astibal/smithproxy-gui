@@ -1,6 +1,7 @@
 import type {
   AddressObject,
   CaptureSettings,
+  ConfigAuthIdentity,
   DebugSettings,
   SecurityAssets,
   ConfigClient,
@@ -257,6 +258,27 @@ function nullableInteger(value: unknown, label: string): number | null {
 function boundedArray(value: unknown, label: string, maximum: number): unknown[] {
   if (!Array.isArray(value) || value.length > maximum) throw new Error(`Invalid ${label}.`);
   return value;
+}
+
+function safeAuthIdentities(value: unknown): ReadonlyArray<ConfigAuthIdentity> {
+  return boundedArray(value, 'authentication identities', MAX_REFERENCES).map((item, index) => {
+    if (!isObject(item)) throw new Error(`Invalid authentication identity ${index + 1}.`);
+    const optionalProfile = (field: string): string | undefined => {
+      const parsed = optionalString(item[field], `authentication identity ${field}`);
+      return parsed || undefined;
+    };
+    const detection = optionalProfile('detection_profile');
+    const content = optionalProfile('content_profile');
+    const tls = optionalProfile('tls_profile');
+    const dns = optionalProfile('alg_dns_profile');
+    return {
+      name: safeString(item.name, 'authentication identity name', 128),
+      ...(detection ? {detection_profile: detection} : {}),
+      ...(content ? {content_profile: content} : {}),
+      ...(tls ? {tls_profile: tls} : {}),
+      ...(dns ? {alg_dns_profile: dns} : {}),
+    };
+  });
 }
 
 function stringArray(value: unknown, label: string): string[] {
@@ -580,6 +602,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         authenticate: safeBoolean(item.authentication.authenticate, 'authentication state'),
         resolve: safeBoolean(item.authentication.resolve, 'authentication resolution state'),
         identityCount: safeInteger(item.authentication.identity_count, 'authentication identity count', MAX_REFERENCES),
+        identities: safeAuthIdentities(item.authentication.identities),
         deprecated: true,
       };
     } else if (item.authentication !== null) {

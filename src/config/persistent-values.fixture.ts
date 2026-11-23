@@ -217,7 +217,13 @@ const snapshot: ConfigSnapshot = {
       id: 'authentication-0', name: 'legacy-auth', type: 'authentication', privateReferenceCount: 0,
       routing: null, tls: null,
       detection: null, content: null, ssh: null, dns: null, script: null,
-      authentication: {authenticate: true, resolve: true, identityCount: 2, deprecated: true},
+      authentication: {
+        authenticate: true, resolve: true, identityCount: 2, deprecated: true,
+        identities: [
+          {name: 'alice', detection_profile: 'detect'},
+          {name: 'bob', tls_profile: 'tls'},
+        ],
+      },
       usedBy: [{id: 'policy-office', kind: 'policy', name: 'office'}],
     },
   ],

@@ -966,6 +966,15 @@ def main() -> int:
             assert detection_profile["private_reference_count"] == 1
             assert all(item["private_reference_count"] == 0
                        for item in config_snapshot["profiles"] if item["type"] != "detection")
+            authentication_profile = next(
+                item for item in config_snapshot["profiles"] if item["type"] == "authentication")
+            assert authentication_profile["authentication"]["identities"] == [{
+                "name": "private-identity-name",
+                "detection_profile": "default-detection",
+                "content_profile": "",
+                "tls_profile": "",
+                "alg_dns_profile": "",
+            }]
             content_profile = next(
                 item for item in config_snapshot["profiles"] if item["type"] == "content")
             assert content_profile["content"]["rules"] == [{
@@ -992,7 +1001,7 @@ def main() -> int:
             assert b"private-sift.example" in config_body
             assert b"private-tenant" in config_body
             assert b"private-instance" in config_body
-            assert b"private-identity-name" not in config_body
+            assert b"private-identity-name" in config_body
             assert b"private-host-id" in config_body
             assert b"private-webhook0" in config_body
             assert b"ct-log-list" in config_body

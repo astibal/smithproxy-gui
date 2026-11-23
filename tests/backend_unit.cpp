@@ -1855,6 +1855,10 @@ int main() {
     assert(auth_profiles.profiles->front().authentication);
     assert(auth_profiles.profiles->front().authentication->identity_count == 2U);
     assert(!auth_profiles.profiles->front().authentication->resolve);
+    assert(auth_profiles.profiles->front().authentication->identities.size() == 2U);
+    assert(auth_profiles.profiles->front().authentication->identities[0].name == "alice");
+    assert(auth_profiles.profiles->front().authentication->identities[0].tls_profile == "strict");
+    assert(auth_profiles.profiles->front().authentication->identities[1].name == "bob");
     std::vector<ConfigProfile> profiles_with_private_references{
         tls_profiles.profiles->front(), detection_profiles.profiles->front(),
         auth_profiles.profiles->front(),

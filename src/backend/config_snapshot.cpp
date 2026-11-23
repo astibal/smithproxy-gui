@@ -668,6 +668,8 @@ ConfigProfileParseResult parse_config_profiles(
                 return {std::nullopt, "Smithproxy returned an invalid authentication profile"};
             }
             std::set<std::pair<std::string, std::string>> unique_references;
+            std::vector<ConfigAuthIdentity> parsed_identities;
+            parsed_identities.reserve(*identity_count);
             const auto identities = profile.find("identities");
             if (identities != profile.end()) {
                 constexpr std::array reference_fields{
@@ -676,14 +678,29 @@ ConfigProfileParseResult parse_config_profiles(
                     std::pair{"tls_profile", "tls"},
                     std::pair{"alg_dns_profile", "dns"},
                 };
-                for (const auto& identity : *identities) {
+                for (auto identity = identities->begin(); identity != identities->end(); ++identity) {
+                    if (!valid_name(identity.key())) {
+                        return {std::nullopt, "Smithproxy returned an invalid authentication identity name"};
+                    }
+                    ConfigAuthIdentity parsed{
+                        .name = identity.key(),
+                        .detection_profile = {},
+                        .content_profile = {},
+                        .tls_profile = {},
+                        .alg_dns_profile = {},
+                    };
                     for (const auto& [field, reference_type] : reference_fields) {
-                        const auto reference = bounded_string(identity, field, maximum_name_length, true);
+                        const auto reference = bounded_string(*identity, field, maximum_name_length, true);
                         if (!reference) {
                             return {std::nullopt, "Smithproxy returned an invalid authentication identity"};
                         }
                         if (!reference->empty()) unique_references.emplace(reference_type, *reference);
+                        if (reference_type == std::string_view{"detection"}) parsed.detection_profile = *reference;
+                        else if (reference_type == std::string_view{"content"}) parsed.content_profile = *reference;
+                        else if (reference_type == std::string_view{"tls"}) parsed.tls_profile = *reference;
+                        else parsed.alg_dns_profile = *reference;
                     }
+                    parsed_identities.push_back(std::move(parsed));
                 }
             }
             std::vector<ConfigPrivateProfileReference> references;
@@ -692,7 +709,8 @@ ConfigProfileParseResult parse_config_profiles(
                 references.push_back({std::move(reference_type), std::move(reference_name)});
             }
             authentication = ConfigAuthProfile{
-                *authenticate, *resolve, *identity_count, std::move(references), {},
+                *authenticate, *resolve, *identity_count, std::move(parsed_identities),
+                std::move(references), {},
             };
         }
         result.push_back({stable_id(std::string(type).c_str(), index++), name, std::string(type),
