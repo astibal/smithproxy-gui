@@ -226,6 +226,7 @@ export interface SystemSettings {
     certificatesPathConfigured: boolean;
     certificatesPath: string;
     certificatePasswordConfigured: boolean;
+    certificatePassword: string;
     certificateTransparencyLogConfigured: boolean;
     certificateTransparencyLog: string;
     customCertificateFallbackDirectoryConfigured: boolean;
@@ -242,7 +243,9 @@ export interface SystemSettings {
     payloadFileSuffix: string;
     cliPort: number;
     cliPasswordConfigured: boolean;
+    cliPassword: string;
     webRatingKeyConfigured: boolean;
+    webRatingKey: string;
     adminGroupConfigured: boolean;
     adminGroup: string;
     tuning: {
@@ -272,6 +275,7 @@ export interface SystemSettings {
   nameservers: ReadonlyArray<string>;
   httpApi: {
     keyCount: number;
+    keys: ReadonlyArray<string>;
     allowedIpCount: number;
     allowedIps: ReadonlyArray<string>;
     keyTimeout: number;

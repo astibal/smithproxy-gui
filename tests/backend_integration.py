@@ -877,6 +877,7 @@ def main() -> int:
                 "certificates_path_configured": True,
                 "certificates_path": "/private/certs",
                 "certificate_password_configured": True,
+                "certificate_password": "private-ca-password",
                 "certificate_transparency_log_configured": True,
                 "certificate_transparency_log": "/private/ct-log-list.cnf",
                 "custom_certificate_fallback_directory_configured": False,
@@ -893,7 +894,9 @@ def main() -> int:
                 "payload_file_suffix": "private-suffix",
                 "cli_port": 50000,
                 "cli_password_configured": True,
+                "cli_password": "private-cli-password",
                 "web_rating_key_configured": True,
+                "web_rating_key": "private-rating-key",
                 "admin_group_configured": True,
                 "admin_group": "private-admins",
                 "tuning": {
@@ -914,6 +917,7 @@ def main() -> int:
             assert config_snapshot["settings"]["nameservers"] == ["192.0.2.53"]
             assert config_snapshot["settings"]["http_api"] == {
                 "key_count": 1,
+                "keys": ["backend-secret-value"],
                 "allowed_ip_count": 1,
                 "allowed_ips": ["127.0.0.1"],
                 "key_timeout": 3600,
@@ -974,7 +978,12 @@ def main() -> int:
             }]
             assert secret.encode() not in config_body
             assert gateway_secret.encode() not in config_body
-            assert b"backend-secret-value" not in config_body
+            # The authenticated administration API intentionally returns the
+            # complete editable configuration, including configured secrets.
+            assert b"backend-secret-value" in config_body
+            assert b"private-ca-password" in config_body
+            assert b"private-cli-password" in config_body
+            assert b"private-rating-key" in config_body
             assert b"192.0.2.77" in config_body
             assert b"private-api0" in config_body
             assert b"private-webhook.example" in config_body
@@ -993,10 +1002,6 @@ def main() -> int:
             assert b"/private/payloads" in config_body
             assert b"/private/log" in config_body
             assert b"192.0.2.60" in config_body
-            for private_value in (
-                b"private-ca-password", b"private-cli-password", b"private-rating-key",
-            ):
-                assert private_value not in config_body
             for operational_value in (
                 b"/private/certs", b"/private/ca-bundle", b"/private/messages",
                 b"private-prefix", b"private-suffix",

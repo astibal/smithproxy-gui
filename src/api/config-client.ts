@@ -774,6 +774,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         certificatePasswordConfigured: safeBoolean(
           value.settings.auxiliary.certificate_password_configured, 'certificate password state',
         ),
+        certificatePassword: optionalString(
+          value.settings.auxiliary.certificate_password, 'certificate password', 65536,
+        ),
         certificateTransparencyLogConfigured: safeBoolean(
           value.settings.auxiliary.certificate_transparency_log_configured,
           'certificate transparency log state',
@@ -819,9 +822,11 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         cliPasswordConfigured: safeBoolean(
           value.settings.auxiliary.cli_password_configured, 'CLI password state',
         ),
+        cliPassword: optionalString(value.settings.auxiliary.cli_password, 'CLI password', 65536),
         webRatingKeyConfigured: safeBoolean(
           value.settings.auxiliary.web_rating_key_configured, 'web-rating key state',
         ),
+        webRatingKey: optionalString(value.settings.auxiliary.web_rating_key, 'web-rating key', 65536),
         adminGroupConfigured: safeBoolean(
           value.settings.auxiliary.admin_group_configured, 'administration group state',
         ),
@@ -889,6 +894,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       nameservers,
       httpApi: {
         keyCount: safeInteger(value.settings.http_api.key_count, 'API key count', MAX_REFERENCES),
+        keys: boundedArray(value.settings.http_api.keys, 'API keys', MAX_REFERENCES)
+          .map(item => safeString(item, 'API key', 65536)),
         allowedIpCount: safeInteger(value.settings.http_api.allowed_ip_count, 'API allowed-IP count', MAX_REFERENCES),
         allowedIps,
         keyTimeout: rangedInteger(value.settings.http_api.key_timeout, 'API key timeout', 1, 4294967295),

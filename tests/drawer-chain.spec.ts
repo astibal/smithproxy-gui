@@ -1099,7 +1099,8 @@ async function mockSystemApi(
         auxiliary: {
           udp_quick_port_count: 1, udp_quick_ports: ['0'], certificates_path_configured: true,
           certificates_path: '/etc/smithproxy/certs',
-          certificate_password_configured: true, certificate_transparency_log_configured: true,
+          certificate_password_configured: true, certificate_password: 'private-ca-password',
+          certificate_transparency_log_configured: true,
           certificate_transparency_log: '/etc/smithproxy/ct.log',
           custom_certificate_fallback_directory_configured: true,
           custom_certificate_fallback_directory: '/var/lib/smithproxy/custom-certs',
@@ -1108,8 +1109,9 @@ async function mockSystemApi(
           messages_directory_configured: true, messages_directory: '/etc/smithproxy/messages',
           payload_file_prefix_configured: false, payload_file_prefix: '',
           payload_file_suffix_configured: false, payload_file_suffix: '',
-          cli_port: 50000, cli_password_configured: false,
-          web_rating_key_configured: false, admin_group_configured: true, admin_group: 'smithproxy-admin',
+          cli_port: 50000, cli_password_configured: false, cli_password: '',
+          web_rating_key_configured: false, web_rating_key: '',
+          admin_group_configured: true, admin_group: 'smithproxy-admin',
           tuning: {
             host_buffer_min: 2048, host_buffer_max_multiplier: 1024, host_write_full: 200000,
             host_io_batch: 262144, tls_write_chunk: 20480, quic_listener_receive_buffer: 1048576,
@@ -1123,7 +1125,7 @@ async function mockSystemApi(
         tls_autodetect: true, tls_autodetect_harder: false, kernel_tls: false,
         nameserver_count: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
         http_api: {
-          key_count: 1, allowed_ip_count: 1, allowed_ips: ['127.0.0.1'],
+          key_count: 1, keys: ['backend-secret-value'], allowed_ip_count: 1, allowed_ips: ['127.0.0.1'],
           key_timeout: 3600, port: 55555, key_extend_on_access: true,
           loopback_only: true, pam_login: false, allow_api_header: false,
           bind_address_configured: true, bind_address: '127.0.0.1',
@@ -7325,7 +7327,7 @@ test('preserves legacy worker values while enforcing pinned worker semantics', a
   ]);
 });
 
-test('saves typed system and capture settings without exposing write-only values', async ({page}) => {
+test('shows and saves the complete typed system and capture configuration', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
@@ -7361,6 +7363,10 @@ test('saves typed system and capture settings without exposing write-only values
   await expect(settingsEditor.getByLabel('Protect local destinations')).toHaveValue('true');
   await expect(settingsEditor.getByLabel('Require SOCKS authentication')).toHaveValue('false');
   await expect(settingsEditor.getByLabel('Require HTTP CONNECT authentication')).toHaveValue('false');
+  await expect(settingsEditor.getByLabel('Certificate password replacement'))
+    .toHaveValue('private-ca-password');
+  await expect(settingsEditor.getByLabel('HTTP API keys replacement'))
+    .toHaveValue('["backend-secret-value"]');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('1023');
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText(/numeric values must be integers within their documented ranges/i))

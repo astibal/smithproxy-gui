@@ -298,13 +298,15 @@ struct ConfigSystemSettings {
     // Optional libconfig groups which are present in the running tree. Values
     // from absent groups are defaults for display and cannot be updated with Set.
     std::vector<std::string> present_groups;
-    // Administrator-visible locations and endpoints. Passwords and API keys
-    // intentionally remain represented only by configured/not-configured state.
+    // Complete administrator-visible settings. The management endpoint is an
+    // authenticated administrative boundary, so it must not silently redact
+    // values which the same administrator can read and edit in Smithproxy.
     std::string payload_directory;
     std::string log_file;
     std::string ssl_key_log_file;
     std::string syslog_server;
     std::string certificates_path;
+    std::string certificate_password;
     std::string certificate_transparency_log;
     std::string custom_certificate_fallback_directory;
     std::string ca_bundle_path;
@@ -312,7 +314,10 @@ struct ConfigSystemSettings {
     std::string messages_directory;
     std::string payload_file_prefix;
     std::string payload_file_suffix;
+    std::string cli_password;
+    std::string web_rating_key;
     std::string admin_group;
+    std::vector<std::string> api_keys;
     std::string api_bind_address;
     std::string api_bind_interface;
     std::string webhook_url;

@@ -2024,6 +2024,7 @@ private:
                        ",\"certificates_path\":" + json_string(value.certificates_path) +
                        ",\"certificate_password_configured\":" +
                        (value.certificate_password_configured ? "true" : "false") +
+                       ",\"certificate_password\":" + json_string(value.certificate_password) +
                        ",\"certificate_transparency_log_configured\":" +
                        (value.certificate_transparency_log_configured ? "true" : "false") +
                        ",\"certificate_transparency_log\":" +
@@ -2050,8 +2051,10 @@ private:
                        ",\"cli_port\":" + std::to_string(value.cli_port) +
                        ",\"cli_password_configured\":" +
                        (value.cli_password_configured ? "true" : "false") +
+                       ",\"cli_password\":" + json_string(value.cli_password) +
                        ",\"web_rating_key_configured\":" +
                        (value.web_rating_key_configured ? "true" : "false") +
+                       ",\"web_rating_key\":" + json_string(value.web_rating_key) +
                        ",\"admin_group_configured\":" + (value.admin_group_configured ? "true" : "false") +
                        ",\"admin_group\":" + json_string(value.admin_group) +
                        ",\"tuning\":{\"host_buffer_min\":" + std::to_string(value.tuning_host_buffer_min) +
@@ -2080,6 +2083,7 @@ private:
                        ",\"nameserver_count\":" + std::to_string(value.nameserver_count) +
                        ",\"nameservers\":" + string_array_json(value.nameservers) +
                        ",\"http_api\":{\"key_count\":" + std::to_string(value.api_key_count) +
+                       ",\"keys\":" + string_array_json(value.api_keys) +
                        ",\"allowed_ip_count\":" + std::to_string(value.api_allowed_ip_count) +
                        ",\"allowed_ips\":" + string_array_json(value.api_allowed_ips) +
                        ",\"key_timeout\":" + std::to_string(value.api_key_timeout) +

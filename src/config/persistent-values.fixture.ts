@@ -241,7 +241,8 @@ const snapshot: ConfigSnapshot = {
     auxiliary: {
       udpQuickPortCount: 1, udpQuickPorts: ['0'], certificatesPathConfigured: true,
       certificatesPath: '/etc/smithproxy/certs',
-      certificatePasswordConfigured: true, certificateTransparencyLogConfigured: true,
+      certificatePasswordConfigured: true, certificatePassword: 'private-ca-password',
+      certificateTransparencyLogConfigured: true,
       certificateTransparencyLog: '/etc/smithproxy/ct.log',
       customCertificateFallbackDirectoryConfigured: true,
       customCertificateFallbackDirectory: '/var/lib/smithproxy/custom-certs',
@@ -250,8 +251,9 @@ const snapshot: ConfigSnapshot = {
       messagesDirectoryConfigured: true, messagesDirectory: '/etc/smithproxy/messages',
       payloadFilePrefixConfigured: false, payloadFilePrefix: '',
       payloadFileSuffixConfigured: false, payloadFileSuffix: '',
-      cliPort: 50000, cliPasswordConfigured: false,
-      webRatingKeyConfigured: false, adminGroupConfigured: true, adminGroup: 'smithproxy-admin',
+      cliPort: 50000, cliPasswordConfigured: false, cliPassword: '',
+      webRatingKeyConfigured: false, webRatingKey: '',
+      adminGroupConfigured: true, adminGroup: 'smithproxy-admin',
       tuning: {
         hostBufferMin: 2048, hostBufferMaxMultiplier: 1024, hostWriteFull: 200000,
         hostIoBatch: 262144, tlsWriteChunk: 20480, quicListenerReceiveBuffer: 1048576,
@@ -265,7 +267,7 @@ const snapshot: ConfigSnapshot = {
     tlsAutodetect: true, tlsAutodetectHarder: false, kernelTls: false,
     nameserverCount: 2, nameservers: ['192.0.2.53', '2001:db8::53'],
     httpApi: {
-      keyCount: 1, allowedIpCount: 1, allowedIps: ['127.0.0.1'],
+      keyCount: 1, keys: ['backend-secret-value'], allowedIpCount: 1, allowedIps: ['127.0.0.1'],
       keyTimeout: 3600, port: 55555, keyExtendOnAccess: true,
       loopbackOnly: true, pamLogin: false, allowApiHeader: false,
       bindAddressConfigured: true, bindAddress: '127.0.0.1',

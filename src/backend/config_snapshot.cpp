@@ -141,17 +141,6 @@ std::optional<std::size_t> optional_named_object_size(const Json& object, const 
     return value->size();
 }
 
-std::optional<std::size_t> optional_string_array_size(
-    const Json& object, const char* key, const std::size_t maximum_item_length = maximum_value_length) {
-    const auto value = object.find(key);
-    if (value == object.end()) return 0U;
-    if (!value->is_array() || value->size() > maximum_references) return std::nullopt;
-    for (const auto& item : *value) {
-        if (!item.is_string() || item.get_ref<const std::string&>().size() > maximum_item_length) return std::nullopt;
-    }
-    return value->size();
-}
-
 std::optional<bool> boolean_scalar(const Json& object, const char* key, const bool fallback) {
     const auto value = object.find(key);
     if (value == object.end()) return fallback;
@@ -887,7 +876,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
         return {std::nullopt, "Smithproxy returned invalid HTTP API settings"};
     }
     const Json& http_api = http_api_value != value->end() && http_api_value->is_object() ? *http_api_value : empty;
-    const auto api_keys = optional_string_array_size(http_api, "keys");
+    const auto api_keys = string_array(http_api, "keys", true);
     const auto allowed_ips = string_array(http_api, "allowed_ips", true);
     const auto api_key_timeout = optional_decimal(http_api, "key_timeout", 3600U, 4294967295U);
     const auto api_port = optional_decimal(http_api, "port", 55555U, 65535U);
@@ -1024,7 +1013,7 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *socks_ip_version_mixing, *socks_prefer_ipv6, *socks_proxy_authorization,
                 *http_connect_proxy_authorization, *tls_autodetect,
                 *tls_autodetect_harder, *kernel_tls, nameservers->size(), *nameservers,
-                *api_keys, allowed_ips->size(), *allowed_ips,
+                api_keys->size(), allowed_ips->size(), *allowed_ips,
                 *api_key_timeout, *api_port, *key_extend, *loopback_only, *pam_login, *api_header,
                 !bind_address->empty(), !bind_interface->empty(), *webhook_enabled,
                 *webhook_tls_verify, *webhook_synchronous_mode,
@@ -1037,10 +1026,11 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *webhook_task_debug, *webhook_task_debug_dump, std::move(interface_roles),
                 std::move(present_groups),
                 *payload_directory, *log_file, *ssl_key_log_file, *syslog_server,
-                *certificates_path, *certificate_transparency_log,
+                *certificates_path, *certificate_password, *certificate_transparency_log,
                 *custom_certificate_fallback_directory, *ca_bundle_path,
                 *ca_bundle_file, *messages_directory, *payload_file_prefix,
-                *payload_file_suffix, *admin_group, *bind_address, *bind_interface,
+                *payload_file_suffix, *cli_password, *rating_key, *admin_group, *api_keys,
+                *bind_address, *bind_interface,
                 *webhook_url, *webhook_sift_url, *webhook_sift_tenant,
                 *webhook_sift_instance, *webhook_host_id, *webhook_bind_interface,
             }, {}};

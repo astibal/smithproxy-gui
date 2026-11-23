@@ -13539,6 +13539,28 @@ export class SmithproxyApp extends LitElement {
       ['webhook-host-id', 'settings.webhook.hostid'],
       ['webhook-bind-interface', 'settings.webhook.bind_interface'],
     ]);
+    const currentTextValues: ReadonlyMap<string, string> = new Map([
+      ['payload-directory', settings.logging.payloadDirectory], ['log-file', settings.logging.file],
+      ['tls-key-log-file', settings.logging.sslKeyFile], ['syslog-server', settings.logging.syslogServer],
+      ['cli-password', settings.auxiliary.cliPassword],
+      ['certificates-path', settings.auxiliary.certificatesPath],
+      ['certificate-password', settings.auxiliary.certificatePassword],
+      ['certificate-transparency-log', settings.auxiliary.certificateTransparencyLog],
+      ['custom-certificate-fallback-directory', settings.auxiliary.customCertificateFallbackDirectory],
+      ['ca-bundle-path', settings.auxiliary.caBundlePath], ['ca-bundle-file', settings.auxiliary.caBundleFile],
+      ['admin-group', settings.auxiliary.adminGroup],
+      ['messages-directory', settings.auxiliary.messagesDirectory],
+      ['payload-prefix', settings.auxiliary.payloadFilePrefix],
+      ['payload-suffix', settings.auxiliary.payloadFileSuffix],
+      ['web-rating-key', settings.auxiliary.webRatingKey],
+      ['api-bind-address', settings.httpApi.bindAddress],
+      ['api-bind-interface', settings.httpApi.bindInterface],
+      ['webhook-url', settings.webhook.url], ['webhook-sift-url', settings.webhook.siftUrl],
+      ['webhook-sift-tenant', settings.webhook.siftTenant],
+      ['webhook-sift-instance', settings.webhook.siftInstance],
+      ['webhook-host-id', settings.webhook.hostId],
+      ['webhook-bind-interface', settings.webhook.bindInterface],
+    ]);
     const booleanField = (id: string, label: string, value: boolean) => html`
       <label for="settings-${id}">${label}</label>
       ${this.renderBooleanSelect(
@@ -13563,21 +13585,23 @@ export class SmithproxyApp extends LitElement {
       <input id="settings-tuning-${id}" type="number" min=${String(minimum)} max=${String(maximum)}
         .value=${String(scalar(tuningPaths.get(id)!, value))} .readOnly=${locked(tuningPaths.get(id)!)} />
     `;
-    const writeOnlyField = (
-      id: string, label: string, configured: boolean, secret = false,
-    ) => {
+    const writeOnlyField = (id: string, label: string, configured: boolean, _secret = false) => {
       const fieldLocked = locked(writeOnlyPaths.get(id)!);
       return html`
       <label for="settings-write-${id}-mode">${label}</label>
       <div class="write-only-control">
         <select id="settings-write-${id}-mode" ?disabled=${fieldLocked}>
-          <option value="unchanged">${configured ? 'Keep configured value' : 'Keep empty'}</option>
+          <option value="unchanged">${configured ? 'Keep current value' : 'Keep empty'}</option>
           <option value="replace">Replace</option>
           <option value="clear">Clear</option>
         </select>
-        <input id="settings-write-${id}-value" type=${secret ? 'password' : 'text'}
-          aria-label="${label} replacement" placeholder="New value (write-only)"
-          autocomplete=${secret ? 'new-password' : 'off'} .readOnly=${fieldLocked} />
+        <input id="settings-write-${id}-value" type="text"
+          aria-label="${label} replacement" .value=${currentTextValues.get(id) ?? ''}
+          placeholder="Empty" autocomplete="off" .readOnly=${fieldLocked}
+          @input=${() => {
+            const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#settings-write-${id}-mode`);
+            if (mode && !fieldLocked) mode.value = 'replace';
+          }} />
       </div>
     `;
     };
@@ -13784,8 +13808,13 @@ export class SmithproxyApp extends LitElement {
             <option value="replace">Replace all</option>
             <option value="clear">Clear all</option>
           </select>
-          <input id="settings-api-keys-value" type="password" autocomplete="new-password"
+          <input id="settings-api-keys-value" type="text" autocomplete="off"
             aria-label="HTTP API keys replacement" placeholder='["new-key", "overlap-key"]'
+            .value=${JSON.stringify(settings.httpApi.keys)}
+            @input=${() => {
+              const mode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-api-keys-mode');
+              if (mode && !locked('settings.http_api.keys')) mode.value = 'replace';
+            }}
             .readOnly=${locked('settings.http_api.keys')} />
         </div>
         <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
