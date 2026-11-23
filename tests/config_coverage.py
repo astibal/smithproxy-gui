@@ -89,7 +89,8 @@ FULL_TYPED_FIELDS = {
     "policy": {
         "name", "action", "proto", "src", "sport", "dst", "dport", "features",
         "tls_profile", "ssh_profile", "detection_profile", "content_profile",
-        "alg_dns_profile", "script_profile", "auth_profile", "nat", "routing", "disabled",
+        "alg_dns_profile", "script_profile", "auth_profile", "nat", "routing",
+        "ingress_role", "egress_role", "disabled",
     },
     "script_profiles": {"name", "type", "script-file"},
 }
@@ -108,11 +109,10 @@ FULL_READ_FIELDS = {
         "cat", "name", "side", "severity", "group", "enables", "engine",
         "flow", "type", "signature", "bytes_start", "bytes_max",
     },
+    "tls_ca": {"name", "path_configured", "path"},
 }
 
-PARTIAL_FIELDS = {
-    "tls_ca": {"name", "path_configured"},
-}
+PARTIAL_FIELDS = {}
 
 LEGACY_METADATA_FIELDS = {
     "auth_profiles": {"name", "authenticate", "resolve", "identity_count"},
