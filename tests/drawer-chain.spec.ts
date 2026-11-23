@@ -7244,7 +7244,7 @@ test('preserves legacy worker values while enforcing pinned worker semantics', a
   ]);
 });
 
-test('saves typed system and capture settings without exposing redacted values', async ({page}) => {
+test('saves typed system and capture settings without exposing write-only values', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
@@ -7397,7 +7397,7 @@ test('saves typed system and capture settings without exposing redacted values',
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await expect(captureCard).toContainText('Local captureEnabled');
   await expect(captureCard).toContainText('Format / quotasmcap / 1024 MiB');
-  await expect(captureCard).toContainText('TTL / bound interface32 / No');
+  await expect(captureCard).toContainText('TTL / bound interface32 / Default');
   await expect(captureCard.getByText('Pending', {exact: true})).toBeVisible();
 
   await page.getByRole('button', {name: /Review draft · \d+/u}).click();
@@ -7596,7 +7596,7 @@ test('searches the complete readable configuration without unsafe markup', async
   await search.fill('certificate authority');
   const authorityResult = results.getByRole('button').filter({hasText: 'Certificate authority'});
   await expect(authorityResult).toContainText('branch-ca');
-  await expect(authorityResult).toContainText('Path configured · redacted');
+  await expect(authorityResult).toContainText('/etc/smithproxy/default-ca.pem');
   await authorityResult.click();
   await expect(page.getByRole('dialog', {name: 'Edit branch-ca'})).toBeVisible();
   await page.keyboard.press('Escape');
