@@ -207,6 +207,16 @@ function matcherExpression(value: unknown): string {
   return value;
 }
 
+/** Adds a stable location to a boundary-validation error without reflecting input data. */
+function withParseContext<T>(context: string, parse: () => T): T {
+  try {
+    return parse();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Invalid response data.';
+    throw new Error(`${context}: ${detail}`, {cause: error});
+  }
+}
+
 function safeInteger(value: unknown, label: string, maximum: number): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > maximum) {
     throw new Error(`Invalid ${label}.`);
@@ -1024,68 +1034,74 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     }
     const authorityIds = new Set<string>();
     const authorityNames = new Set<string>();
-    const certificateAuthorities = value.security_assets.certificate_authorities.map(item => {
-      if (!isObject(item)) throw new Error('Invalid certificate authority summary.');
-      const id = safeString(item.id, 'certificate authority ID', 128);
-      const name = safeString(item.name, 'certificate authority name', 128);
-      if (!id || !name || authorityIds.has(id) || authorityNames.has(name)) {
-        throw new Error('Invalid certificate authority identity.');
-      }
-      authorityIds.add(id);
-      authorityNames.add(name);
-      return {
-        id,
-        name,
-        pathConfigured: safeBoolean(item.path_configured, 'certificate authority path state'),
-        path: optionalString(item.path, 'certificate authority path', 4096),
-      };
-    });
+    const certificateAuthorities = value.security_assets.certificate_authorities.map((item, index) =>
+      withParseContext(`Certificate authority ${index + 1}`, () => {
+        if (!isObject(item)) throw new Error('Invalid certificate authority summary.');
+        const id = safeString(item.id, 'certificate authority ID', 128);
+        const name = safeString(item.name, 'certificate authority name', 128);
+        if (!id || !name || authorityIds.has(id) || authorityNames.has(name)) {
+          throw new Error('Invalid certificate authority identity.');
+        }
+        authorityIds.add(id);
+        authorityNames.add(name);
+        return {
+          id,
+          name,
+          pathConfigured: safeBoolean(item.path_configured, 'certificate authority path state'),
+          path: optionalString(item.path, 'certificate authority path', 4096),
+        };
+      }),
+    );
     const signatureIds = new Set<string>();
     const flowIds = new Set<string>();
-    const signatures = value.security_assets.signatures.map(item => {
-      if (!isObject(item)) throw new Error('Invalid signature definition.');
-      const id = safeString(item.id, 'signature ID', 128);
-      const kind = safeString(item.kind, 'signature kind', 16);
-      const side = safeString(item.side, 'signature side', 16);
-      if (signatureIds.has(id) || !['starttls', 'detection'].includes(kind) ||
-          !['client', 'server'].includes(side)) {
-        throw new Error('Invalid signature identity.');
-      }
-      signatureIds.add(id);
-      const flow = boundedArray(item.flow, 'signature flow', MAX_REFERENCES).map(step => {
-        if (!isObject(step)) throw new Error('Invalid signature flow step.');
-        const flowId = safeString(step.id, 'signature flow ID', 128);
-        const flowSide = safeString(step.side, 'signature flow side', 8);
-        const type = safeString(step.type, 'signature flow type', 16);
-        if (flowIds.has(flowId) || !['r', 'w'].includes(flowSide) ||
-            !['regex', 'simple'].includes(type)) {
-          throw new Error('Invalid signature flow step.');
+    const signatures = value.security_assets.signatures.map((item, signatureIndex) =>
+      withParseContext(`Signature ${signatureIndex + 1}`, () => {
+        if (!isObject(item)) throw new Error('Invalid signature definition.');
+        const id = safeString(item.id, 'signature ID', 128);
+        const kind = safeString(item.kind, 'signature kind', 16);
+        const side = safeString(item.side, 'signature side', 16);
+        if (signatureIds.has(id) || !['starttls', 'detection'].includes(kind) ||
+            !['client', 'server'].includes(side)) {
+          throw new Error('Invalid signature identity.');
         }
-        flowIds.add(flowId);
+        signatureIds.add(id);
+        const flow = boundedArray(item.flow, 'signature flow', MAX_REFERENCES).map((step, flowIndex) =>
+          withParseContext(`Flow step ${flowIndex + 1}`, () => {
+            if (!isObject(step)) throw new Error('Invalid signature flow step.');
+            const flowId = safeString(step.id, 'signature flow ID', 128);
+            const flowSide = safeString(step.side, 'signature flow side', 8);
+            const type = safeString(step.type, 'signature flow type', 16);
+            if (flowIds.has(flowId) || !['r', 'w'].includes(flowSide) ||
+                !['regex', 'simple'].includes(type)) {
+              throw new Error('Invalid signature flow step.');
+            }
+            flowIds.add(flowId);
+            return {
+              id: flowId,
+              side: flowSide as 'r' | 'w',
+              type: type as 'regex' | 'simple',
+              expressionConfigured: safeBoolean(step.expression_configured, 'signature expression state'),
+              expression: matcherExpression(step.expression),
+              bytesStart: safeInteger(step.bytes_start, 'signature byte offset', Number.MAX_SAFE_INTEGER),
+              bytesMax: safeInteger(step.bytes_max, 'signature byte window', Number.MAX_SAFE_INTEGER),
+            };
+          }),
+        );
+        if (flow.length === 0) throw new Error('Invalid signature flow.');
         return {
-          id: flowId,
-          side: flowSide as 'r' | 'w',
-          type: type as 'regex' | 'simple',
-          expressionConfigured: safeBoolean(step.expression_configured, 'signature expression state'),
-          expression: matcherExpression(step.expression),
-          bytesStart: safeInteger(step.bytes_start, 'signature byte offset', Number.MAX_SAFE_INTEGER),
-          bytesMax: safeInteger(step.bytes_max, 'signature byte window', Number.MAX_SAFE_INTEGER),
+          id,
+          kind: kind as 'starttls' | 'detection',
+          category: optionalString(item.category, 'signature category'),
+          name: safeString(item.name, 'signature name', 128),
+          side: side as 'client' | 'server',
+          severity: rangedInteger(item.severity, 'signature severity', -2147483648, 2147483647),
+          group: optionalString(item.group, 'signature group'),
+          enables: optionalString(item.enables, 'signature enable target'),
+          engine: optionalString(item.engine, 'signature engine'),
+          flow,
         };
-      });
-      if (flow.length === 0) throw new Error('Invalid signature flow.');
-      return {
-        id,
-        kind: kind as 'starttls' | 'detection',
-        category: optionalString(item.category, 'signature category'),
-        name: safeString(item.name, 'signature name', 128),
-        side: side as 'client' | 'server',
-        severity: rangedInteger(item.severity, 'signature severity', -2147483648, 2147483647),
-        group: optionalString(item.group, 'signature group'),
-        enables: optionalString(item.enables, 'signature enable target'),
-        engine: optionalString(item.engine, 'signature engine'),
-        flow,
-      };
-    });
+      }),
+    );
     securityAssets = {
       certificateAuthorities,
       certificateAuthorityCount: safeInteger(

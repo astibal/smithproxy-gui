@@ -525,9 +525,29 @@ describe('ApiConfigClient', () => {
       ...liveSnapshot,
       security_assets: {
         ...liveSnapshot.security_assets,
+        certificate_authorities: [
+          ...liveSnapshot.security_assets.certificate_authorities,
+          {...liveSnapshot.security_assets.certificate_authorities[0], id: 'certificate-authority-1'},
+        ],
+      },
+    })).toThrow('Certificate authority 2: Invalid certificate authority identity');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      security_assets: {
+        ...liveSnapshot.security_assets,
         detection_flow_step_count: 2,
       },
     })).toThrow('Invalid signature posture');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      security_assets: {
+        ...liveSnapshot.security_assets,
+        signatures: liveSnapshot.security_assets.signatures.map((signature, index) => index === 1
+          ? {...signature, flow: signature.flow.map((step, flowIndex) => flowIndex === 0
+              ? {...step, expression: 'invalid\0matcher'} : step)}
+          : signature),
+      },
+    })).toThrow('Signature 2: Flow step 1: Invalid signature expression');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot, augment_support: false,
       value_origins: [{
