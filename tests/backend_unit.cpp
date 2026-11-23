@@ -1789,7 +1789,8 @@ int main() {
     assert(tls_profiles.profiles->front().tls->redirect_warning_ports ==
            std::vector<std::uint64_t>({443U, 44443U}));
     assert(tls_profiles.profiles->front().tls->failed_certificate_override_timeout == 900U);
-    assert(tls_profiles.profiles->front().tls->sni_bypass_entries == 1U);
+    assert(tls_profiles.profiles->front().tls->sni_bypass ==
+           std::vector<std::string>{"secret.example"});
     assert(tls_profiles.profiles->front().tls->alerts == "unusual");
     assert(!parse_config_profiles(
         R"({"success":{"tls_profiles":{"bad":{"alerts":"verbose"}}}})",

@@ -970,6 +970,8 @@ def main() -> int:
                 item for item in config_snapshot["profiles"] if item["type"] == "content")
             assert content_profile["content"]["rules"] == [{
                 "id": "content-rule-0-0",
+                "match": "private-content-match",
+                "replacement": "private-content-replacement",
                 "match_configured": True,
                 "replacement_configured": True,
                 "replacement_has_value": True,
@@ -1051,8 +1053,8 @@ def main() -> int:
             assert b"/private/ca/default" in config_body
             assert b"secret-starttls-regex" in config_body
             assert b"secret-detection-regex" in config_body
-            assert b"private-content-match" not in config_body
-            assert b"private-content-replacement" not in config_body
+            assert b"private-content-match" in config_body
+            assert b"private-content-replacement" in config_body
 
             status, _, body = request(configured_port, "/api/v1/auth/session")
             assert status == 200

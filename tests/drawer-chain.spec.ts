@@ -983,7 +983,8 @@ async function mockSystemApi(
             failed_certificate_override: false, failed_certificate_override_timeout: 600,
             failed_certificate_override_timeout_type: 0,
             ssl_key_log: false, client_hello_timeout_ms: 3000, handshake_timeout_ms: 10000,
-            sni_bypass_entries: 2, client_certificate_action: 'use_configured', alerts: 'unusual',
+            sni_bypass: ['private.example', '*.internal.example'],
+            client_certificate_action: 'use_configured', alerts: 'unusual',
           },
           detection: null,
           content: null,
@@ -1027,13 +1028,15 @@ async function mockSystemApi(
             write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
             webhook_locks_traffic: false, ja4_tls_client_hello: true,
             ja4_tls_client_hello_ignores_sni: false, ja4_tls_server_hello: true,
-            ja4_http: false, session_filter_configured: true,
+            ja4_http: false, session_filter: 'tcp.port == 443', session_filter_configured: true,
             rules_present: state.contentRulesPresent ?? true,
             rule_count: state.contentRulesPresent === false ? 0 : 2,
             rules: state.contentRulesPresent === false ? [] : [
-              {id: 'content-rule-0-0', match_configured: true, replacement_configured: true,
+              {id: 'content-rule-0-0', match: 'secret', replacement: 'masked',
+                match_configured: true, replacement_configured: true,
                replacement_has_value: false, fill_length: true, replace_each_nth: 0},
-              {id: 'content-rule-0-1', match_configured: true, replacement_configured: true,
+              {id: 'content-rule-0-1', match: 'token', replacement: '',
+                match_configured: true, replacement_configured: true,
                replacement_has_value: true, fill_length: false, replace_each_nth: 3},
             ],
           },
@@ -3726,7 +3729,7 @@ test('duplicates a typed profile from persistent and pending values without augm
   });
 });
 
-test('omits write-only values and nested rules from a duplicated content profile', async ({page}) => {
+test('copies readable values while keeping nested rules separate in a duplicated content profile', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
     structuralMutationRequests: [],
@@ -3742,9 +3745,10 @@ test('omits write-only values and nested rules from a duplicated content profile
   const createEditor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(createEditor.getByLabel('Name')).toHaveValue('capture-copy');
   await expect(createEditor.getByLabel('Profile type')).toHaveValue('content');
-  await expect(createEditor.getByLabel('Session filter', {exact: true})).toHaveValue('empty');
+  await expect(createEditor.getByLabel('Session filter', {exact: true})).toHaveValue('replace');
+  await expect(createEditor.getByLabel('New session filter')).toHaveValue('tcp.port == 443');
   await expect(createEditor.locator('.scope-note')).toContainText(
-    'the write-only session filter and 2 nested content rules are not copied',
+    '2 nested content rules are not copied',
   );
   await expect(createEditor.getByLabel('Capture format')).toHaveValue('pcap_single');
   await expect(createEditor.getByLabel('Webhook', {exact: true})).toHaveValue('true');
@@ -3759,14 +3763,14 @@ test('omits write-only values and nested rules from a duplicated content profile
         name: 'capture-copy', write_payload: false, write_format: 'pcap_single',
         webhook_enable: true, webhook_lock_traffic: false, ja4_tls_ch: true,
         ja4_tls_ch_ignore_sni: false, ja4_tls_sh: true, ja4_http: false,
-        rules_session_filter: '',
+        rules_session_filter: 'tcp.port == 443',
       },
     },
   });
   expect(state.structuralMutationRequests![0].operation.fields).not.toHaveProperty('content_rules');
 });
 
-test('prefills every remaining typed profile while keeping private values empty', async ({page}) => {
+test('prefills every remaining typed profile with complete administrator values', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
   }, true);
@@ -3793,10 +3797,9 @@ test('prefills every remaining typed profile while keeping private values empty'
 
   createEditor = await duplicate(/inspect tls/i, 'inspect');
   await expect(createEditor.getByLabel('Certificate warning ports')).toHaveValue('443, 44443');
-  await expect(createEditor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('empty');
-  await expect(createEditor.locator('.scope-note')).toContainText(
-    '2 write-only SNI bypass entries are not copied',
-  );
+  await expect(createEditor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('replace');
+  await expect(createEditor.getByLabel('New SNI bypass list'))
+    .toHaveValue('["private.example","*.internal.example"]');
   await closePair(createEditor);
 
   createEditor = await duplicate(/resolver dns/i, 'resolver');
@@ -3805,20 +3808,16 @@ test('prefills every remaining typed profile while keeping private values empty'
   await closePair(createEditor);
 
   createEditor = await duplicate(/default-ssh ssh/i, 'default-ssh');
-  await expect(createEditor.getByLabel('Host-key path', {exact: true})).toHaveValue('empty');
+  await expect(createEditor.getByLabel('Host-key path', {exact: true})).toHaveValue('replace');
+  await expect(createEditor.getByLabel('New host-key path')).toHaveValue('/etc/ssh/ssh_host_ed25519_key');
   await expect(createEditor.getByLabel('Shell')).toHaveValue('pass');
   await expect(createEditor.getByLabel('Exec')).toHaveValue('reject');
-  await expect(createEditor.locator('.scope-note')).toContainText(
-    'the write-only host-key path is not copied',
-  );
   await closePair(createEditor);
 
   createEditor = await duplicate(/audit script/i, 'audit');
   await expect(createEditor.getByLabel('Runtime')).toHaveValue('0');
-  await expect(createEditor.getByLabel('Module path', {exact: true})).toHaveValue('empty');
-  await expect(createEditor.locator('.scope-note')).toContainText(
-    'the write-only module path is not copied',
-  );
+  await expect(createEditor.getByLabel('Module path', {exact: true})).toHaveValue('replace');
+  await expect(createEditor.getByLabel('New script module path')).toHaveValue('/etc/smithproxy/audit.py');
 });
 
 test('blocks primitive object duplication while deletion is pending', async ({page}) => {

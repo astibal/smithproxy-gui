@@ -4153,10 +4153,9 @@ export class SmithproxyApp extends LitElement {
         client_hello_timeout: scalar('client_hello_timeout', value.clientHelloTimeoutMs),
         handshake_timeout: scalar('handshake_timeout', value.handshakeTimeoutMs),
         client_cert_action: scalar('client_cert_action', value.clientCertificateAction),
-        alerts: scalar('alerts', value.alerts), sni_filter_bypass: [],
+        alerts: scalar('alerts', value.alerts), sni_filter_bypass: value.sniBypass,
       };
-      omitted = value.sniBypassEntries > 0
-        ? `${value.sniBypassEntries} write-only SNI bypass entr${value.sniBypassEntries === 1 ? 'y' : 'ies'}` : '';
+      omitted = '';
     } else if (profile.detection) {
       const value = profile.detection;
       fields = {name, mode: scalar('mode', value.mode),
@@ -4182,25 +4181,24 @@ export class SmithproxyApp extends LitElement {
         ja4_tls_ch: scalar('ja4_tls_ch', value.ja4TlsClientHello),
         ja4_tls_ch_ignore_sni: scalar('ja4_tls_ch_ignore_sni', value.ja4TlsClientHelloIgnoresSni),
         ja4_tls_sh: scalar('ja4_tls_sh', value.ja4TlsServerHello),
-        ja4_http: scalar('ja4_http', value.ja4Http), rules_session_filter: ''};
-      omitted = [value.sessionFilterConfigured ? 'the write-only session filter' : '',
-        value.ruleCount > 0 ? `${value.ruleCount} nested content rule${value.ruleCount === 1 ? '' : 's'}` : '']
-        .filter(Boolean).join(' and ');
+        ja4_http: scalar('ja4_http', value.ja4Http), rules_session_filter: value.sessionFilter};
+      omitted = value.ruleCount > 0
+        ? `${value.ruleCount} nested content rule${value.ruleCount === 1 ? '' : 's'}` : '';
     } else if (profile.ssh) {
       const value = profile.ssh;
       const action = (field: string, fallback: boolean) => scalar(field, fallback) ? 'pass' : 'reject';
-      fields = {name, hostkey_policy: scalar('hostkey_policy', value.hostKeyPolicy), host_key: '',
+      fields = {name, hostkey_policy: scalar('hostkey_policy', value.hostKeyPolicy), host_key: value.hostKey,
         shell: action('shell', value.shell), exec: action('exec', value.exec),
         subsystem: action('subsystem', value.subsystem), pty: action('pty', value.pty),
         environment: action('environment', value.environment),
         local_forward: action('local_forward', value.localForward),
         remote_forward: action('remote_forward', value.remoteForward),
         x11: action('x11', value.x11), agent: action('agent', value.agent)};
-      omitted = value.hostKeyConfigured ? 'the write-only host-key path' : '';
+      omitted = '';
     } else if (profile.script) {
       const runtime = profile.script.runtime === 'python' ? '0' : profile.script.runtime === 'go' ? '1' : '-1';
-      fields = {name, type: scalar('type', runtime), 'script-file': ''};
-      omitted = profile.script.modulePathConfigured ? 'the write-only module path' : '';
+      fields = {name, type: scalar('type', runtime), 'script-file': profile.script.modulePath};
+      omitted = '';
     } else {
       return;
     }
@@ -8520,7 +8518,7 @@ export class SmithproxyApp extends LitElement {
       booleanNumber('sslkeylog', item.tls.sslKeyLog),
       scalar('client_hello_timeout', item.tls.clientHelloTimeoutMs),
       scalar('handshake_timeout', item.tls.handshakeTimeoutMs),
-      item.tls.sniBypassEntries, scalar('client_cert_action', item.tls.clientCertificateAction),
+      item.tls.sniBypass.length, scalar('client_cert_action', item.tls.clientCertificateAction),
       scalar('alerts', item.tls.alerts),
       'inspection', 'pfs', 'certificate', 'ocsp', 'alpn', 'sni', 'alerts',
     );
@@ -12492,6 +12490,11 @@ export class SmithproxyApp extends LitElement {
       const value = field(name, fallback);
       return typeof value === 'string' && !value.startsWith('[redacted:') ? value : fallback;
     };
+    const sensitiveField = (name: string): string | ReadonlyArray<string> => {
+      const value = field(name, '');
+      if (typeof value === 'string') return value;
+      return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : '';
+    };
     const readOnly = !this.namedTransactionsAvailable();
     const booleanSelect = (id: string, label: string, value: boolean) => html`
       <label for="profile-create-${id}-${entry.id}">${label}</label>
@@ -12503,11 +12506,15 @@ export class SmithproxyApp extends LitElement {
       <select id="profile-create-${id}-${entry.id}" .value=${value} ?disabled=${readOnly}>
         <option value="pass">Pass</option><option value="reject">Reject</option>
       </select>`;
-    const writeOnlyMode = (id: string, label: string) => html`
+    const redactedValue = (value: string | ReadonlyArray<string>) =>
+      typeof value === 'string' && value.startsWith('[redacted:');
+    const valueMode = (value: string | ReadonlyArray<string>) =>
+      redactedValue(value) ? 'unchanged' : value.length > 0 ? 'replace' : 'empty';
+    const writeOnlyMode = (id: string, label: string, value: string | ReadonlyArray<string>) => html`
       <label for="profile-create-${id}-mode-${entry.id}">${label}</label>
       <select id="profile-create-${id}-mode-${entry.id}"
-        .value=${operation ? 'unchanged' : 'empty'} ?disabled=${readOnly}>
-        ${operation ? html`<option value="unchanged">Re-entry required before update</option>` : nothing}
+        .value=${valueMode(value)} ?disabled=${readOnly}>
+        ${redactedValue(value) ? html`<option value="unchanged">Keep pending replacement</option>` : nothing}
         <option value="empty">Keep empty</option><option value="replace">Set value</option>
       </select>`;
     return html`
@@ -12675,11 +12682,11 @@ export class SmithproxyApp extends LitElement {
             .value=${stringField('alerts', 'unusual')} ?disabled=${readOnly}>
             <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
           </select>
-          ${writeOnlyMode('tls-bypass', 'SNI bypass list')}
+          ${writeOnlyMode('tls-bypass', 'SNI bypass list', sensitiveField('sni_filter_bypass'))}
           <label for="profile-create-tls-bypass-${entry.id}">Bypass value</label>
           <textarea id="profile-create-tls-bypass-${entry.id}" maxlength="65536"
-            aria-label="New SNI bypass list" autocomplete="off" placeholder='["private.example"] (write-only)'
-            .readOnly=${readOnly}></textarea>
+            aria-label="New SNI bypass list" autocomplete="off" placeholder='["private.example"]'
+            .value=${JSON.stringify(stringList('sni_filter_bypass'))} .readOnly=${readOnly}></textarea>
             </div>
           </fieldset>
         ` : type === 'detection' ? html`
@@ -12745,11 +12752,11 @@ export class SmithproxyApp extends LitElement {
             <legend>Session scope</legend>
             <p>Limits this profile with a private, write-only session expression.</p>
             <div class="form-grid">
-          ${writeOnlyMode('content-filter', 'Session filter')}
+          ${writeOnlyMode('content-filter', 'Session filter', sensitiveField('rules_session_filter'))}
           <label for="profile-create-content-filter-${entry.id}">Filter value</label>
           <textarea id="profile-create-content-filter-${entry.id}" maxlength="65536"
-            aria-label="New session filter" autocomplete="off" placeholder="Write-only expression"
-            .readOnly=${readOnly}></textarea>
+            aria-label="New session filter" autocomplete="off" placeholder="Optional expression"
+            .value=${stringField('rules_session_filter', '')} .readOnly=${readOnly}></textarea>
             </div>
           </fieldset>
         ` : type === 'ssh' ? html`
@@ -12763,11 +12770,11 @@ export class SmithproxyApp extends LitElement {
             <option value="insecure">Insecure</option><option value="accept-new">Accept new</option>
             <option value="strict">Strict</option>
           </select>
-          ${writeOnlyMode('ssh-host-key', 'Host-key path')}
+          ${writeOnlyMode('ssh-host-key', 'Host-key path', sensitiveField('host_key'))}
           <label for="profile-create-ssh-host-key-${entry.id}">Host-key value</label>
           <input id="profile-create-ssh-host-key-${entry.id}" maxlength="1024"
-            aria-label="New host-key path" autocomplete="off" placeholder="Write-only path"
-            .readOnly=${readOnly} />
+            aria-label="New host-key path" autocomplete="off" placeholder="Optional path"
+            .value=${stringField('host_key', '')} .readOnly=${readOnly} />
             </div>
           </fieldset>
           <fieldset class="editor-group">
@@ -12797,11 +12804,11 @@ export class SmithproxyApp extends LitElement {
             .value=${stringField('type', '-1')} ?disabled=${readOnly}>
             <option value="-1">Unspecified</option><option value="0">Python</option><option value="1">Go</option>
           </select>
-          ${writeOnlyMode('script-module', 'Module path')}
+          ${writeOnlyMode('script-module', 'Module path', sensitiveField('script-file'))}
           <label for="profile-create-script-module-${entry.id}">Module value</label>
           <input id="profile-create-script-module-${entry.id}" maxlength="1024"
-            aria-label="New script module path" autocomplete="off" placeholder="Write-only path"
-            .readOnly=${readOnly} />
+            aria-label="New script module path" autocomplete="off" placeholder="Optional path"
+            .value=${stringField('script-file', '')} .readOnly=${readOnly} />
         `}
       </div>
       ${prefill ? html`<div class="scope-note">
@@ -13219,7 +13226,7 @@ export class SmithproxyApp extends LitElement {
           <label for="tls-write-sni-${entry.id}-mode">SNI bypass list</label>
           <div class="write-only-control">
             <select id="tls-write-sni-${entry.id}-mode" ?disabled=${mappedReadOnly}>
-              <option value="unchanged">Keep ${tls.sniBypassEntries} configured entries</option>
+              <option value="unchanged">Keep ${tls.sniBypass.length} configured entries</option>
               <option value="replace">Replace</option><option value="clear">Clear</option>
             </select>
             <textarea id="tls-write-sni-${entry.id}-value" aria-label="SNI bypass list replacement"

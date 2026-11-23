@@ -94,6 +94,7 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     set(`${base}.sslkeylog`, profile.sslKeyLog);
     set(`${base}.client_hello_timeout`, profile.clientHelloTimeoutMs);
     set(`${base}.handshake_timeout`, profile.handshakeTimeoutMs);
+    set(`${base}.sni_filter_bypass`, profile.sniBypass);
     set(`${base}.client_cert_action`, profile.clientCertificateAction);
     set(`${base}.alerts`, profile.alerts);
   });
@@ -117,8 +118,11 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     set(`${base}.ja4_tls_ch_ignore_sni`, profile.ja4TlsClientHelloIgnoresSni);
     set(`${base}.ja4_tls_sh`, profile.ja4TlsServerHello);
     set(`${base}.ja4_http`, profile.ja4Http);
+    set(`${base}.rules_session_filter`, profile.sessionFilter);
     profile.rules.forEach((rule, ruleIndex) => {
       const ruleBase = `${base}.content_rules.[${ruleIndex}]`;
+      set(`${ruleBase}.match`, rule.match);
+      set(`${ruleBase}.replace`, rule.replacement);
       set(`${ruleBase}.fill_length`, rule.fillLength);
       set(`${ruleBase}.replace_each_nth`, rule.replaceEachNth);
     });
@@ -128,6 +132,7 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     const profile = item.ssh!;
     set(`${base}.name`, item.name);
     set(`${base}.hostkey_policy`, profile.hostKeyPolicy);
+    set(`${base}.host_key`, profile.hostKey);
     set(`${base}.shell`, profile.shell ? 'pass' : 'reject');
     set(`${base}.exec`, profile.exec ? 'pass' : 'reject');
     set(`${base}.subsystem`, profile.subsystem ? 'pass' : 'reject');
@@ -151,6 +156,7 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     const profile = item.script!;
     set(`${base}.name`, item.name);
     set(`${base}.type`, profile.runtime === 'python' ? '0' : profile.runtime === 'go' ? '1' : '-1');
+    set(`${base}.script-file`, profile.modulePath);
   });
   profiles(item => item.authentication !== null).forEach((item, index) => {
     const base = `auth_profiles.[${index}]`;

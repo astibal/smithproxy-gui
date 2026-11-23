@@ -452,7 +452,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         sslKeyLog: safeBoolean(item.tls.ssl_key_log, 'TLS key log state'),
         clientHelloTimeoutMs: safeInteger(item.tls.client_hello_timeout_ms, 'TLS client hello timeout', 2147483647),
         handshakeTimeoutMs: safeInteger(item.tls.handshake_timeout_ms, 'TLS handshake timeout', 2147483647),
-        sniBypassEntries: safeInteger(item.tls.sni_bypass_entries, 'TLS SNI bypass count', MAX_REFERENCES),
+        sniBypass: stringArray(item.tls.sni_bypass, 'TLS SNI bypass values'),
         clientCertificateAction,
         alerts: alerts as 'all' | 'unusual' | 'mute',
       };
@@ -481,6 +481,8 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       const rules = boundedArray(item.content.rules, 'content rules', MAX_REFERENCES).map(rule => {
         if (!isObject(rule)) throw new Error('Invalid content rule.');
         const id = safeString(rule.id, 'content rule ID', 128);
+        const match = matcherExpression(rule.match);
+        const replacement = matcherExpression(rule.replacement);
         const matchConfigured = safeBoolean(rule.match_configured, 'content rule match state');
         const replacementConfigured = safeBoolean(
           rule.replacement_configured, 'content rule replacement state',
@@ -497,7 +499,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         }
         contentRuleIds.add(id);
         return {
-          id, matchConfigured: true as const, replacementConfigured, replacementHasValue,
+          id, match, replacement, matchConfigured: true as const, replacementConfigured, replacementHasValue,
           fillLength, replaceEachNth,
         };
       });
@@ -516,6 +518,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
         ),
         ja4TlsServerHello: safeBoolean(item.content.ja4_tls_server_hello, 'content JA4 server state'),
         ja4Http: safeBoolean(item.content.ja4_http, 'content JA4 HTTP state'),
+        sessionFilter: matcherExpression(item.content.session_filter),
         sessionFilterConfigured: safeBoolean(
           item.content.session_filter_configured, 'content session-filter state',
         ),

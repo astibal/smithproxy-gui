@@ -101,7 +101,7 @@ export interface TlsProfileDetails {
   sslKeyLog: boolean;
   clientHelloTimeoutMs: number;
   handshakeTimeoutMs: number;
-  sniBypassEntries: number;
+  sniBypass: ReadonlyArray<string>;
   clientCertificateAction: string;
   alerts: 'all' | 'unusual' | 'mute';
 }
@@ -114,6 +114,8 @@ export interface DetectionProfileDetails {
 
 export interface ContentRuleSummary {
   id: string;
+  match: string;
+  replacement: string;
   matchConfigured: true;
   replacementConfigured: boolean;
   replacementHasValue: boolean;
@@ -130,6 +132,7 @@ export interface ContentProfileDetails {
   ja4TlsClientHelloIgnoresSni: boolean;
   ja4TlsServerHello: boolean;
   ja4Http: boolean;
+  sessionFilter: string;
   sessionFilterConfigured: boolean;
   rulesPresent: boolean;
   ruleCount: number;

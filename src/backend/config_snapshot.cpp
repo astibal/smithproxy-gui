@@ -545,7 +545,7 @@ ConfigProfileParseResult parse_config_profiles(
                 *ocsp_mode, *stapling, *stapling_mode, *alpn, *sni_cert, *ip_cert, *custom_only,
                 *no_fallback, *dns_cache, *dns_tree, *warning_ports, *failed_replacement,
                 *failed_override, *override_timeout, *override_timeout_type, *key_log,
-                *hello_timeout, *handshake_timeout, bypass->size(),
+                *hello_timeout, *handshake_timeout, *bypass,
                 client_action->empty() ? "use_configured" : *client_action,
                 alerts->empty() ? "all" : *alerts,
             };
@@ -592,7 +592,8 @@ ConfigProfileParseResult parse_config_profiles(
                         return {std::nullopt, "Smithproxy returned invalid content rule"};
                     }
                     const auto replacement_configured = rule.find("replace") != rule.end();
-                    rules.push_back({stable_id(("content-rule-" + std::to_string(index)).c_str(), rule_index++), true,
+                    rules.push_back({stable_id(("content-rule-" + std::to_string(index)).c_str(), rule_index++),
+                                     *match, *replacement, true,
                                      replacement_configured, !replacement->empty(),
                                      *fill_length, *replace_each_nth});
                 }
@@ -606,7 +607,8 @@ ConfigProfileParseResult parse_config_profiles(
             content = ConfigContentProfile{
                 *write_payload, write_format->empty() ? "pcap_single" : *write_format,
                 *webhook, *webhook_lock, *ja4_client, *ja4_ignore_sni, *ja4_server, *ja4_http,
-                !session_filter->empty(), configured_rules != profile.end(), rules.size(), std::move(rules),
+                *session_filter, !session_filter->empty(), configured_rules != profile.end(),
+                rules.size(), std::move(rules),
             };
         } else if (type == "ssh") {
             const auto host_key = bounded_string(profile, "host_key", maximum_value_length);

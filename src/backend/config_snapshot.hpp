@@ -70,7 +70,7 @@ struct ConfigTlsProfile {
     bool ssl_key_log{};
     std::uint64_t client_hello_timeout_ms{};
     std::uint64_t handshake_timeout_ms{};
-    std::uint64_t sni_bypass_entries{};
+    std::vector<std::string> sni_bypass;
     std::string client_certificate_action;
     std::string alerts;
 };
@@ -83,6 +83,8 @@ struct ConfigDetectionProfile {
 
 struct ConfigContentRule {
     std::string id;
+    std::string match;
+    std::string replacement;
     bool match_configured{};
     bool replacement_configured{};
     bool replacement_has_value{};
@@ -99,6 +101,7 @@ struct ConfigContentProfile {
     bool ja4_tls_client_hello_ignores_sni{};
     bool ja4_tls_server_hello{};
     bool ja4_http{};
+    std::string session_filter;
     bool session_filter_configured{};
     bool rules_present{};
     std::uint64_t rule_count{};

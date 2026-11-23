@@ -1851,7 +1851,7 @@ private:
                             ",\"ssl_key_log\":" + (tls.ssl_key_log ? "true" : "false") +
                             ",\"client_hello_timeout_ms\":" + std::to_string(tls.client_hello_timeout_ms) +
                             ",\"handshake_timeout_ms\":" + std::to_string(tls.handshake_timeout_ms) +
-                            ",\"sni_bypass_entries\":" + std::to_string(tls.sni_bypass_entries) +
+                            ",\"sni_bypass\":" + string_array_json(tls.sni_bypass) +
                             ",\"client_certificate_action\":" + json_string(tls.client_certificate_action) +
                             ",\"alerts\":" + json_string(tls.alerts) + "}";
             }
@@ -1875,6 +1875,8 @@ private:
                     if (rule_index != 0U) rules += ',';
                     const auto& rule = content.rules[rule_index];
                     rules += "{\"id\":" + json_string(rule.id) +
+                             ",\"match\":" + json_string(rule.match) +
+                             ",\"replacement\":" + json_string(rule.replacement) +
                              ",\"match_configured\":" + (rule.match_configured ? "true" : "false") +
                              ",\"replacement_configured\":" +
                              (rule.replacement_configured ? "true" : "false") +
@@ -1898,6 +1900,7 @@ private:
                             ",\"ja4_http\":" + (content.ja4_http ? "true" : "false") +
                             ",\"session_filter_configured\":" +
                             (content.session_filter_configured ? "true" : "false") +
+                            ",\"session_filter\":" + json_string(content.session_filter) +
                             ",\"rules_present\":" +
                             (content.rules_present ? "true" : "false") +
                             ",\"rule_count\":" + std::to_string(content.rule_count) +
