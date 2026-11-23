@@ -217,68 +217,32 @@ describe('DraftClient', () => {
     await expect(client.load()).rejects.toThrow(message);
   });
 
-  it.each([
-    [{
-      id: 'workspace-draft', base_revision: null, version: 1,
-      changes: [{path: 'settings.certs_ca_key_password', value: 'private-password'}],
-      structural_operations: [],
-    }, 'Unredacted sensitive draft change'],
-    [{
-      id: 'workspace-draft', base_revision: null, version: 1, changes: [],
-      structural_operations: [{
-        op: 'create', local_id: 'create-auth', collection: 'auth_profiles', client_id: 'create-auth',
-        position: {last: true}, fields: {
-          name: 'branch-auth', identities: [{name: 'private-user', tls_profile: 'inspect'}],
-        },
-      }],
-    }, 'Unredacted sensitive structural draft field'],
-    [{
-      id: 'workspace-draft', base_revision: null, version: 1, changes: [],
-      structural_operations: [{
-        op: 'create', local_id: 'create-ca', collection: 'tls_ca', client_id: 'create-ca',
-        position: {last: true}, fields: {name: 'private-ca', path: '/private/ca.pem'},
-      }],
-    }, 'Unredacted sensitive structural draft field'],
-    [{
-      id: 'workspace-draft', base_revision: null, version: 1,
-      changes: [{path: 'tls_profiles.[0].sni_filter_bypass', value: ['private.example']}],
-      structural_operations: [],
-    }, 'Unredacted sensitive draft change'],
-    [{
-      id: 'workspace-draft', base_revision: null, version: 1,
-      changes: [{
-        path: 'auth_profiles.[0].identities',
-        value: [{name: 'private-user', tls_profile: 'inspect'}],
-      }],
-      structural_operations: [],
-    }, 'Unredacted sensitive draft change'],
-    [{
-      id: 'workspace-draft', base_revision: null, version: 1,
-      changes: [{path: 'settings.http_api.keys', value: '[redacted:replace:257]'}],
-      structural_operations: [],
-    }, 'Unredacted sensitive draft change'],
-  ])('rejects unredacted sensitive draft responses %#', async (payload, message) => {
-    const client = new DraftClient('/api/v1', async () => response(payload));
-    await expect(client.load()).rejects.toThrow(message);
-  });
-
-  it('accepts bounded redaction sentinels in sensitive draft responses', async () => {
+  it('accepts complete administrator-visible values in draft responses', async () => {
     const client = new DraftClient('/api/v1', async () => response({
       id: 'workspace-draft', base_revision: null, version: 1,
       changes: [
-        {path: 'settings.certs_ca_key_password', value: '[redacted:replace]'},
-        {path: 'settings.http_api.keys', value: '[redacted:replace:2]'},
-        {path: 'auth_profiles.[0].identities', value: '[redacted:replace:2]'},
+        {path: 'settings.certs_ca_key_password', value: 'private-password'},
+        {path: 'settings.http_api.keys', value: ['private-api-1', 'private-api-2']},
+        {path: 'auth_profiles.[0].identities', value: [{name: 'alice', tls_profile: 'inspect'}]},
       ],
       structural_operations: [{
         op: 'create', local_id: 'create-ca', collection: 'tls_ca', client_id: 'create-ca',
-        position: {last: true}, fields: {name: 'private-ca', path: '[redacted:replace]'},
+        position: {last: true}, fields: {name: 'private-ca', path: '/private/ca.pem'},
       }, {
         op: 'create', local_id: 'create-auth', collection: 'auth_profiles', client_id: 'create-auth',
-        position: {last: true}, fields: {name: 'branch-auth', identities: '[redacted:replace:2]'},
+        position: {last: true}, fields: {
+          name: 'branch-auth', identities: [{name: 'branch-user', content_profile: 'capture'}],
+        },
       }],
     }));
-    await expect(client.load()).resolves.toMatchObject({version: 1});
+    await expect(client.load()).resolves.toMatchObject({
+      version: 1,
+      changes: [
+        {value: 'private-password'},
+        {value: ['private-api-1', 'private-api-2']},
+        {value: [{name: 'alice', tls_profile: 'inspect'}]},
+      ],
+    });
   });
 
   it('validates and sends atomic batches including typed arrays', async () => {
@@ -288,7 +252,7 @@ describe('DraftClient', () => {
         {path: 'policy.[0].name', value: 'office'},
         {path: 'policy.[0].dst', value: ['internet', 'backup']},
         {path: 'tls_profiles.[0].redirect_warning_ports', value: [443, 44443]},
-        {path: 'auth_profiles.[0].identities', value: '[redacted:replace:1]'},
+        {path: 'auth_profiles.[0].identities', value: [{name: 'alice', tls_profile: 'inspect'}]},
       ],
       structural_operations: [],
     }));

@@ -1444,54 +1444,14 @@ def main() -> int:
             assert commit_audit["target_count"] == 0
             assert b"new-private-password" not in commit_audit_body
             assert b"secret content replacement" not in commit_audit_body
-            expected_redactions = {
-                "settings.certs_ca_key_password": "[redacted:replace]",
-                "settings.http_api.keys": "[redacted:replace:2]",
-                "settings.http_api.bind_address": "[redacted:replace]",
-                "settings.http_api.bind_interface": "[redacted:replace]",
-                "settings.webhook.sift_url": "[redacted:replace]",
-                "settings.webhook.sift_tenant_id": "[redacted:replace]",
-                "settings.webhook.sift_instance_id": "[redacted:replace]",
-                "settings.webhook.hostid": "[redacted:replace]",
-                "settings.webhook.bind_interface": "[redacted:replace]",
-                "settings.certs_ctlog": "[redacted:replace]",
-                "settings.ca_bundle_file": "[redacted:replace]",
-                "settings.admin.group": "[redacted:replace]",
-                "captures.local.dir": "[redacted:replace]",
-                "captures.remote.tun_dst": "[redacted:clear]",
-                "ssh_profiles.[0].host_key": "[redacted:replace]",
-                "script_profiles.[0].script-file": "[redacted:replace]",
-                "tls_profiles.[0].sni_filter_bypass": "[redacted:replace:1]",
-                "content_profiles.[0].rules_session_filter": "[redacted:replace]",
-                "tls_ca.[0].path": "[redacted:replace]",
-                "content_profiles.[0].content_rules.[0].match": "[redacted:replace]",
-                "content_profiles.[0].content_rules.[0].replace": "[redacted:replace]",
-                "detection_signatures.[0].flow.[0].signature": "[redacted:replace]",
+            submitted_changes = {
+                item["path"]: item["value"] for item in json.loads(batch_change)["changes"]
             }
-            for sensitive_path, expected_redaction in expected_redactions.items():
-                assert changes_by_path[sensitive_path] == expected_redaction
-            assert b"new-private-password" not in body
-            assert b"new-api-key" not in body
-            assert b"overlap-api-key" not in body
-            assert b"192.0.2.88" not in body
-            assert b"private-api1" not in body
-            assert b"new-private-sift" not in body
-            assert b"new-private-tenant" not in body
-            assert b"new-private-instance" not in body
-            assert b"new-private-host" not in body
-            assert b"private-webhook1" not in body
-            assert b"ct-log.cnf" not in body
-            assert b"ca-bundle.pem" not in body
-            assert b"new-private-admins" not in body
-            assert b"/new/private/captures" not in body
-            assert b"/new/private/ssh-key" not in body
-            assert b"/new/private/audit.py" not in body
-            assert b"private.example" not in body
-            assert b"secret session expression" not in body
-            assert b"secret content match" not in body
-            assert b"secret content replacement" not in body
-            assert b"/new/private/ca/default" not in body
-            assert b"secret replacement regex" not in body
+            for path, expected_value in submitted_changes.items():
+                assert changes_by_path[path] == expected_value
+            assert b"new-private-password" in body
+            assert b"new-api-key" in body
+            assert b"secret content replacement" in body
             remove_change = json.dumps({
                 "expected_version": 3, "path": "policy.[0].action"})
             assert request(

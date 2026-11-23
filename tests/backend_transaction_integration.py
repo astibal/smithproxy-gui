@@ -384,8 +384,8 @@ def main() -> int:
             )
             mutated = json.loads(body)
             assert status == 200
-            assert PRIVATE_VALUE.encode() not in body
-            assert mutated["changes"][-1]["value"] == "[redacted:replace]"
+            assert PRIVATE_VALUE.encode() in body
+            assert mutated["changes"][-1]["value"] == PRIVATE_VALUE
 
             status, _, body = request(
                 port, "/api/v1/config/draft/operations/batch", "POST",
@@ -429,7 +429,7 @@ def main() -> int:
             mutated = json.loads(body)
             assert status == 200
             assert len(mutated["structural_operations"]) == 5
-            assert b"private signature matcher" not in body
+            assert b"private signature matcher" in body
 
             TransactionSmithproxy.reject_next_prepare = True
             status, _, body = request(

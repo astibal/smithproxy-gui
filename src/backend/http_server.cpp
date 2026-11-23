@@ -475,6 +475,8 @@ bool loopback_authority(const std::string_view authority) {
            (ntohl(parsed.s_addr) & 0xff000000U) == 0x7f000000U;
 }
 
+// Marks values that preflight and audit summaries must never echo, even though
+// the authenticated draft API returns them to the administrator for editing.
 bool sensitive_draft_path(const std::string_view path) {
     constexpr std::array sensitive_paths{
         "settings.webhook.url", "settings.syslog_server", "settings.write_payload_dir",
@@ -487,13 +489,10 @@ bool sensitive_draft_path(const std::string_view path) {
         "settings.http_api.bind_address", "settings.http_api.bind_interface",
         "settings.webhook.sift_url", "settings.webhook.sift_tenant_id",
         "settings.webhook.sift_instance_id", "settings.webhook.hostid",
-        "settings.webhook.bind_interface",
-        "captures.local.dir", "captures.local.file_prefix", "captures.local.file_suffix",
-        "captures.remote.tun_dst", "captures.remote.bind_interface",
+        "settings.webhook.bind_interface", "captures.local.dir", "captures.local.file_prefix",
+        "captures.local.file_suffix", "captures.remote.tun_dst", "captures.remote.bind_interface",
     };
-    if (std::find(sensitive_paths.begin(), sensitive_paths.end(), path) != sensitive_paths.end()) {
-        return true;
-    }
+    if (std::find(sensitive_paths.begin(), sensitive_paths.end(), path) != sensitive_paths.end()) return true;
     return (path.starts_with("ssh_profiles.[") && path.ends_with("].host_key")) ||
            (path.starts_with("script_profiles.[") && path.ends_with("].script-file")) ||
            (path.starts_with("tls_profiles.[") && path.ends_with("].sni_filter_bypass")) ||
@@ -503,26 +502,12 @@ bool sensitive_draft_path(const std::string_view path) {
             (path.ends_with("].match") || path.ends_with("].replace"))) ||
            (path.starts_with("auth_profiles.[") && path.ends_with("].identities")) ||
            (path.starts_with("tls_ca.[") && path.ends_with("].path")) ||
-           ((path.starts_with("starttls_signatures.[") ||
-             path.starts_with("detection_signatures.[")) && path.ends_with("].signature"));
+           ((path.starts_with("starttls_signatures.[") || path.starts_with("detection_signatures.[")) &&
+            path.ends_with("].signature"));
 }
 
-nlohmann::json draft_value_json(const std::string_view path, const DraftScalar& value) {
-    if (!sensitive_draft_path(path)) {
-        return std::visit([](const auto& item) { return nlohmann::json(item); }, value);
-    }
-    if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
-        return text->empty() ? "[redacted:clear]" : "[redacted:replace]";
-    }
-    if (const auto* items = std::get_if<std::vector<std::string>>(&value); items != nullptr) {
-        return items->empty() ? nlohmann::json("[redacted:clear]")
-                              : nlohmann::json("[redacted:replace:" +
-                                               std::to_string(items->size()) + "]");
-    }
-    if (const auto* identities = std::get_if<DraftAuthIdentities>(&value); identities != nullptr) {
-        return "[redacted:replace:" + std::to_string(identities->size()) + "]";
-    }
-    return "[redacted:replace]";
+nlohmann::json draft_value_json(const std::string_view, const DraftScalar& value) {
+    return std::visit([](const auto& item) { return nlohmann::json(item); }, value);
 }
 
 nlohmann::json draft_position_json(const DraftPosition& position) {
@@ -1609,8 +1594,7 @@ private:
                     nlohmann::json fields = nlohmann::json::object();
                     for (const auto& [name, value] : item.fields) {
                         const auto path = draft_structural_field_path(item.collection, name);
-                        fields[name] = path ? draft_value_json(*path, value)
-                                            : nlohmann::json("[redacted:replace]");
+                        fields[name] = draft_value_json(path.value_or(std::string{}), value);
                     }
                     nlohmann::json result{
                         {"local_id", item.local_id}, {"op", "create"},
