@@ -830,6 +830,9 @@ export class SmithproxyApp extends LitElement {
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
     .metric, .monitor-panel { border: 1px solid var(--app-border); border-radius: 4px; background: var(--app-surface); }
     .metric { min-height: 116px; padding: 15px 16px; }
+    .metric-action { appearance: none; color: inherit; font: inherit; text-align: left; width: 100%; cursor: pointer; }
+    .metric-action:hover { border-color: var(--app-accent); background: var(--app-surface-hover); }
+    .metric-action:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
     .metric-label { color: var(--app-muted); font-size: 12px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
     .metric-value { display: block; margin-top: 8px; font-size: 25px; font-weight: 700; }
     .metric-value.success { color: var(--app-success); }
@@ -10009,7 +10012,7 @@ export class SmithproxyApp extends LitElement {
     }
     return html`
       <div class="content dashboard" tabindex="0">
-        ${this.renderRuntimeSummary()}
+        ${this.renderRuntimeSummary(true)}
         <div class="section-head">
           <div><h2>Network activity</h2><p>Neighborhood, listener workload, and interface synchronization</p></div>
         </div>
@@ -10602,7 +10605,7 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
-  private renderRuntimeSummary() {
+  private renderRuntimeSummary(interactive = false) {
     if (!this.metricsAvailable) {
       return this.renderUnavailableMonitoringSection(
         'Runtime metrics summary', 'Runtime traffic',
@@ -10613,6 +10616,12 @@ export class SmithproxyApp extends LitElement {
     const presentation = this.collectorPresentation(
       metrics.state, metrics.lastSuccessAtUnixMs, 5_000,
     );
+    const metric = (
+      target: 'sessions' | 'traffic' | 'listeners', label: string, content: unknown,
+    ) => interactive ? html`
+      <button class="metric metric-action" type="button" title=${label}
+        @click=${() => this.openRuntimeMetricDetails(target)}>${content}</button>
+    ` : html`<article class="metric">${content}</article>`;
     return html`
       <section class="runtime-summary" aria-label="Runtime metrics summary">
         <div class="runtime-heading">
@@ -10622,30 +10631,44 @@ export class SmithproxyApp extends LitElement {
           </span>
         </div>
         <div class="metric-grid">
-          <article class="metric">
+          ${metric('sessions', 'Open active sessions', html`
             <span class="metric-label">Active sessions</span>
             <strong class="metric-value">${metrics.totals.sessionsActive.toLocaleString()}</strong>
             <span class="metric-note">Current established proxy connections</span>
-          </article>
-          <article class="metric">
+          `)}
+          ${metric('traffic', 'Open total session traffic', html`
             <span class="metric-label">Total sessions</span>
             <strong class="metric-value">${metrics.totals.sessionsTotal.toLocaleString()}</strong>
             <span class="metric-note">Since Smithproxy started</span>
-          </article>
-          <article class="metric">
+          `)}
+          ${metric('traffic', 'Open processed traffic', html`
             <span class="metric-label">Traffic processed</span>
             <strong class="metric-value">${this.formatBytes(metrics.totals.bytesUp + metrics.totals.bytesDown)}</strong>
             <span class="metric-note">${this.formatBytes(metrics.totals.bytesUp)} up · ${this.formatBytes(metrics.totals.bytesDown)} down</span>
-          </article>
-          <article class="metric">
+          `)}
+          ${metric('listeners', 'Open listener workers', html`
             <span class="metric-label">Workers</span>
             <strong class="metric-value">${metrics.totals.workers.toLocaleString()}</strong>
             <span class="metric-note">Last success: ${this.timeLabel(metrics.lastSuccessAtUnixMs)}</span>
-          </article>
+          `)}
         </div>
         ${this.renderCollectorNotice(presentation, metrics.lastSuccessAtUnixMs)}
       </section>
     `;
+  }
+
+  /** Opens the real administrator surface represented by an aggregate runtime metric. */
+  private openRuntimeMetricDetails(target: 'sessions' | 'traffic' | 'listeners'): void {
+    if (target === 'listeners') {
+      this.activeSection = 'Network';
+      this.networkView = 'configuration';
+      this.networkNavigationExpanded = true;
+    } else {
+      this.activeSection = 'Monitoring';
+      this.monitoringView = target;
+      this.monitoringNavigationExpanded = true;
+    }
+    window.scrollTo({top: 0, behavior: 'smooth'});
   }
 
   private renderRuntimeHistory() {
@@ -10807,7 +10830,7 @@ export class SmithproxyApp extends LitElement {
   private renderDashboard() {
     return html`
       <div class="content dashboard" tabindex="0">
-        ${this.renderRuntimeSummary()}
+        ${this.renderRuntimeSummary(true)}
         ${this.renderActiveAlerts()}
         ${this.renderOperationalHealth()}
         ${this.renderConfigurationInventory()}

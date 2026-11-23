@@ -5913,6 +5913,28 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
   await expect(page.getByRole('heading', {level: 1, name: 'All signatures'})).toBeVisible();
 });
 
+test('opens real operational views from dashboard runtime metrics', async ({page}) => {
+  await mockSystemApi(page, {smithproxy: 'ready'}, true);
+  await page.goto('/');
+
+  const runtime = page.getByRole('region', {name: 'Runtime metrics summary'});
+  await runtime.getByRole('button', {name: /Active sessions/u}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'Monitoring'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Sessions', exact: true})).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('table', {name: 'Observed proxy sessions'})).toBeVisible();
+
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
+  await runtime.getByRole('button', {name: /Traffic processed/u}).click();
+  await expect(page.getByRole('button', {name: 'Traffic', exact: true})).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('region', {name: 'Runtime history'})).toBeVisible();
+
+  await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
+  await runtime.getByRole('button', {name: /Workers/u}).click();
+  await expect(page.getByRole('heading', {level: 1, name: 'Network'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Listeners', exact: true})).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('table', {name: 'Configured ingress modes'})).toBeVisible();
+});
+
 test('opens focused profile, trust, and signature views from shallow object navigation', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
