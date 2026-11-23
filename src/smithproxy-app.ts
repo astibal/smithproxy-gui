@@ -119,6 +119,9 @@ type NetworkView = 'overview' | 'neighborhood' | 'interfaces' | 'configuration';
 type MonitoringView = 'overview' | 'traffic' | 'sessions' | 'tls';
 type LogsView = 'events' | 'audit';
 type SystemView = 'configuration' | 'settings' | 'captures' | 'backend' | 'appearance' | 'control-plane';
+type SettingsGroup = 'interfaces' | 'traffic' | 'workers' | 'listeners' | 'logging' |
+  'administration' | 'resolution' | 'certificates' | 'assets' | 'tuning' |
+  'management-api' | 'webhook' | 'debug';
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
 
@@ -4522,8 +4525,7 @@ export class SmithproxyApp extends LitElement {
 
   private openSystemDrawer(
     kind: 'settings' | 'captures', origin?: HTMLElement,
-    settingsGroup?: 'traffic' | 'workers' | 'listeners' | 'logging' | 'administration' |
-      'resolution' | 'certificates' | 'assets' | 'tuning' | 'management-api' | 'webhook',
+    settingsGroup?: SettingsGroup,
   ): void {
     if ((kind === 'settings' && !this.snapshot?.settings) ||
         (kind === 'captures' && !this.snapshot?.captures)) return;
@@ -8840,6 +8842,226 @@ export class SmithproxyApp extends LitElement {
     return values;
   }
 
+  /** Groups searchable system values by the administrator task that owns their editor. */
+  private systemSearchGroups(settings: SystemSettings, debug: DebugSettings | null): ReadonlyArray<{
+    group: SettingsGroup;
+    name: string;
+    detail: string;
+    values: ReadonlyArray<string | number>;
+  }> {
+    const scalar = <T extends ConfigScalar>(path: string, fallback: T): T =>
+      this.presentedValue(`settings.${path}`, fallback);
+    const strings = (path: string, fallback: ReadonlyArray<string>): ReadonlyArray<string> =>
+      this.presentedListValue(`settings.${path}`, fallback, 'string');
+    const flag = (path: string, fallback: boolean): number => Number(scalar(path, fallback));
+    const configured = (value: boolean): number => Number(value);
+    const groups: Array<{
+      group: SettingsGroup;
+      name: string;
+      detail: string;
+      values: Array<string | number>;
+    }> = [
+      {
+        group: 'interfaces', name: 'Interface roles',
+        detail: 'Ordered interface name and address classification',
+        values: ['interface', 'role', 'inside', 'outside', ...settings.interfaceRoles.flatMap(rule => [
+          rule.interfaceName, rule.interfaceAddress, rule.role,
+        ])],
+      },
+      {
+        group: 'traffic', name: 'Traffic admission',
+        detail: 'Ingress methods, proxy authentication, and failure policy',
+        values: [
+          'traffic admission', 'tproxy', 'redirect', 'socks', 'http connect', 'proxy authentication',
+          'local destinations', 'fail open', 'fail closed',
+          flag('accept_tproxy', settings.acceptTproxy), flag('accept_redirect', settings.acceptRedirect),
+          flag('accept_socks', settings.acceptSocks),
+          flag('accept_http_connect', settings.acceptHttpConnect), flag('accept_api', settings.acceptApi),
+          flag('extended_local_destination_protection', settings.extendedLocalDestinationProtection),
+          flag('policy_fail_open', settings.policyFailOpen),
+          flag('policy_access_request_fail_open', settings.accessRequestFailOpen),
+          flag('socks.proxy_authorization', settings.auxiliary.socksProxyAuthorization),
+          flag('http_connect.proxy_authorization', settings.auxiliary.httpConnectProxyAuthorization),
+        ],
+      },
+      {
+        group: 'workers', name: 'Worker pools', detail: 'Runtime concurrency for every listener family',
+        values: [
+          'workers', 'plaintext', 'tls', 'udp', 'dtls', 'quic', 'socks', 'http connect',
+          scalar('plaintext_workers', settings.workers.plaintext), scalar('ssl_workers', settings.workers.tls),
+          scalar('udp_workers', settings.workers.udp), scalar('dtls_workers', settings.workers.dtls),
+          scalar('quic_workers', settings.workers.quic), scalar('socks_workers', settings.workers.socks),
+          scalar('http_connect_workers', settings.workers.httpConnect),
+        ],
+      },
+      {
+        group: 'listeners', name: 'Listener endpoints',
+        detail: 'Service ports and certificate-status cache lifetimes',
+        values: [
+          'listeners', 'ports', 'plaintext', 'tls', 'udp', 'dtls', 'quic', 'socks', 'http connect',
+          'ocsp ttl', 'crl ttl', scalar('plaintext_port', settings.ports.plaintext),
+          scalar('ssl_port', settings.ports.tls), scalar('udp_port', settings.ports.udp),
+          scalar('dtls_port', settings.ports.dtls), scalar('quic_port', settings.ports.quic),
+          scalar('socks_port', settings.ports.socks),
+          scalar('http_connect_port', settings.ports.httpConnect),
+          scalar('ssl_ocsp_status_ttl', settings.ocspStatusTtl),
+          scalar('ssl_crl_status_ttl', settings.crlStatusTtl),
+        ],
+      },
+      {
+        group: 'logging', name: 'Logging and payloads',
+        detail: 'Log destinations, syslog, key logs, and payload filenames',
+        values: [
+          'logging', 'payload', 'syslog', 'pcap quota', 'tls key log',
+          flag('default_write_payload', settings.logging.defaultWritePayload),
+          scalar('write_pcap_single_quota', settings.logging.pcapSingleQuota),
+          scalar('log_level', settings.logging.level), flag('log_console', settings.logging.console),
+          scalar('syslog_port', settings.logging.syslogPort),
+          scalar('syslog_facility', settings.logging.syslogFacility),
+          scalar('syslog_level', settings.logging.syslogLevel),
+          scalar('syslog_family', settings.logging.syslogFamily),
+          scalar('write_payload_dir', settings.logging.payloadDirectory),
+          scalar('log_file', settings.logging.file), scalar('sslkeylog_file', settings.logging.sslKeyFile),
+          scalar('syslog_server', settings.logging.syslogServer),
+          scalar('write_payload_file_prefix', settings.auxiliary.payloadFilePrefix),
+          scalar('write_payload_file_suffix', settings.auxiliary.payloadFileSuffix),
+        ],
+      },
+      {
+        group: 'administration', name: 'Local administration',
+        detail: 'CLI access and local administrator identity',
+        values: [
+          'local administration', 'cli', 'enable password', 'admin group',
+          scalar('cli.port', settings.auxiliary.cliPort),
+          scalar('cli.enable_password', settings.auxiliary.cliPassword),
+          scalar('admin.group', settings.auxiliary.adminGroup),
+          configured(settings.auxiliary.cliPasswordConfigured),
+          configured(settings.auxiliary.adminGroupConfigured),
+        ],
+      },
+      {
+        group: 'resolution', name: 'Name resolution',
+        detail: 'Resolver selection and SOCKS address-family behavior',
+        values: [
+          'name resolution', 'nameserver', 'dns', 'udp quick ports', 'ipv6',
+          flag('socks.async_dns', settings.auxiliary.socksAsyncDns),
+          flag('socks.ipver_mixing', settings.auxiliary.socksIpVersionMixing),
+          flag('socks.prefer_ipv6', settings.auxiliary.socksPreferIpv6),
+          ...strings('udp_quick_ports', settings.auxiliary.udpQuickPorts),
+          ...strings('nameservers', settings.nameservers),
+        ],
+      },
+      {
+        group: 'certificates', name: 'Certificate resources',
+        detail: 'Certificate stores, CA bundles, passwords, and CT data',
+        values: [
+          'certificate', 'ca bundle', 'certificate transparency', 'custom certificate fallback',
+          scalar('certs_path', settings.auxiliary.certificatesPath),
+          scalar('certs_ca_key_password', settings.auxiliary.certificatePassword),
+          scalar('certs_ctlog', settings.auxiliary.certificateTransparencyLog),
+          scalar('custom_cert_fallback_dir', settings.auxiliary.customCertificateFallbackDirectory),
+          scalar('ca_bundle_path', settings.auxiliary.caBundlePath),
+          scalar('ca_bundle_file', settings.auxiliary.caBundleFile),
+          configured(settings.auxiliary.certificatesPathConfigured),
+          configured(settings.auxiliary.certificatePasswordConfigured),
+          configured(settings.auxiliary.certificateTransparencyLogConfigured),
+          configured(settings.auxiliary.customCertificateFallbackDirectoryConfigured),
+          configured(settings.auxiliary.caBundlePathConfigured),
+          configured(settings.auxiliary.caBundleFileConfigured),
+        ],
+      },
+      {
+        group: 'assets', name: 'Supporting resources',
+        detail: 'Message templates and external reputation data',
+        values: [
+          'supporting resources', 'message assets', 'web rating', 'reputation',
+          scalar('messages_dir', settings.auxiliary.messagesDirectory),
+          scalar('web_rating.wot_key', settings.auxiliary.webRatingKey),
+          configured(settings.auxiliary.messagesDirectoryConfigured),
+          configured(settings.auxiliary.webRatingKeyConfigured),
+        ],
+      },
+      {
+        group: 'tuning', name: 'Performance tuning',
+        detail: 'Buffers, timeouts, caches, TLS, and QUIC capacity',
+        values: [
+          'performance tuning', 'buffer', 'timeout', 'cache', 'tls autodetect', 'kernel tls', 'quic inbox',
+          scalar('tuning.host_bufsz_min', settings.auxiliary.tuning.hostBufferMin),
+          scalar('tuning.host_bufsz_max_multiplier', settings.auxiliary.tuning.hostBufferMaxMultiplier),
+          scalar('tuning.host_write_full', settings.auxiliary.tuning.hostWriteFull),
+          scalar('tuning.host_io_batch', settings.auxiliary.tuning.hostIoBatch),
+          scalar('tuning.tls_write_chunk', settings.auxiliary.tuning.tlsWriteChunk),
+          scalar('tuning.quic_listener_rcvbuf', settings.auxiliary.tuning.quicListenerReceiveBuffer),
+          scalar('tuning.quic_inbox_packets', settings.auxiliary.tuning.quicInboxPackets),
+          scalar('tuning.quic_inbox_bytes', settings.auxiliary.tuning.quicInboxBytes),
+          scalar('tuning.host_open_timeout', settings.auxiliary.tuning.hostOpenTimeout),
+          scalar('tuning.host_idle_timeout', settings.auxiliary.tuning.hostIdleTimeout),
+          scalar('tuning.nbr_cache_size', settings.auxiliary.tuning.neighborCacheSize),
+          flag('ssl_autodetect', settings.tlsAutodetect),
+          flag('ssl_autodetect_harder', settings.tlsAutodetectHarder), flag('ssl_use_ktls', settings.kernelTls),
+        ],
+      },
+      {
+        group: 'management-api', name: 'Management API',
+        detail: 'API keys, allowed clients, authentication, and listener exposure',
+        values: [
+          'management api', 'http api', 'api key', 'allowed ip', 'pam', 'loopback', 'api header',
+          scalar('http_api.key_timeout', settings.httpApi.keyTimeout),
+          scalar('http_api.port', settings.httpApi.port),
+          flag('http_api.key_extend_on_access', settings.httpApi.keyExtendOnAccess),
+          flag('http_api.loopback_only', settings.httpApi.loopbackOnly),
+          flag('http_api.pam_login', settings.httpApi.pamLogin),
+          flag('http_api.allow_api_header', settings.httpApi.allowApiHeader),
+          ...strings('http_api.keys', settings.httpApi.keys),
+          ...strings('http_api.allowed_ips', settings.httpApi.allowedIps),
+          scalar('http_api.bind_address', settings.httpApi.bindAddress),
+          scalar('http_api.bind_interface', settings.httpApi.bindInterface),
+        ],
+      },
+      {
+        group: 'webhook', name: 'Webhook integration',
+        detail: 'Webhook delivery, Sift, LoreD, and external identity',
+        values: [
+          'webhook', 'sift', 'lored', 'tenant', 'instance', 'host identity',
+          flag('webhook.enabled', settings.webhook.enabled),
+          flag('webhook.tls_verify', settings.webhook.tlsVerify),
+          flag('webhook.synchronous_mode', settings.webhook.synchronousMode),
+          flag('webhook.sift', settings.webhook.siftEnabled),
+          scalar('webhook.sift_lored_mode', settings.webhook.siftLoredMode),
+          flag('webhook.sift_lored_include_url', settings.webhook.siftLoredIncludeUrl),
+          flag('webhook.api_override', settings.webhook.apiOverride),
+          scalar('webhook.sift_payload_limit_per_direction', settings.webhook.siftPayloadLimitPerDirection),
+          scalar('webhook.ping_interval', settings.webhook.pingInterval),
+          scalar('webhook.nbr_update_interval', settings.webhook.neighborUpdateInterval),
+          scalar('webhook.nbr_tag_refresh_age', settings.webhook.neighborTagRefreshAge),
+          flag('webhook.task_debug', settings.webhook.taskDebug),
+          flag('webhook.task_debug_dump', settings.webhook.taskDebugDump),
+          scalar('webhook.url', settings.webhook.url), scalar('webhook.sift_url', settings.webhook.siftUrl),
+          scalar('webhook.sift_tenant_id', settings.webhook.siftTenant),
+          scalar('webhook.sift_instance_id', settings.webhook.siftInstance),
+          scalar('webhook.hostid', settings.webhook.hostId),
+          scalar('webhook.bind_interface', settings.webhook.bindInterface),
+        ],
+      },
+    ];
+    if (debug) {
+      groups.push({
+        group: 'debug', name: 'Developer diagnostics',
+        detail: 'Verbose logging and per-module troubleshooting overrides',
+        values: [
+          'debug', 'diagnostics', 'payload crc', 'socket events', 'source lines', 'module override',
+          Number(this.presentedValue('debug.log_data_crc', debug.logDataCrc)),
+          Number(this.presentedValue('debug.log_sockets', debug.logSockets)),
+          Number(this.presentedValue('debug.log_online_cx_name', debug.logOnlineConnectionName)),
+          Number(this.presentedValue('debug.log_srclines', debug.logSourceLines)),
+          Number(this.presentedValue('debug.log_srclines_always', debug.logSourceLinesAlways)),
+          ...debug.moduleOverrides.flatMap(override => [override.name, String(override.value)]),
+        ],
+      });
+    }
+    return groups;
+  }
+
   private captureSearchValues(captures: CaptureSettings): ReadonlyArray<string | number> {
     return [
       'capture', 'captures', 'local capture', 'remote capture', 'gre',
@@ -9090,7 +9312,13 @@ export class SmithproxyApp extends LitElement {
       });
     }).filter(item => item.matches);
     const settings = this.snapshot.settings;
-    const systemMatches = settings
+    const systemGroups = settings
+      ? this.systemSearchGroups(settings, this.snapshot.debug)
+        .filter(group => this.searchMatches([group.name, group.detail, ...group.values], query))
+      : [];
+    // Keep future upstream fields discoverable until they receive a dedicated
+    // administrator task group instead of silently dropping a former match.
+    const unclassifiedSystemMatch = settings && systemGroups.length === 0
       ? this.searchMatches(this.systemSearchValues(settings, this.snapshot.debug), query)
       : false;
     const captures = this.snapshot.captures;
@@ -9100,7 +9328,7 @@ export class SmithproxyApp extends LitElement {
     const pendingCreates = this.pendingCreateSearchEntries(query);
     const count = policies.length + addresses.length + ports.length + protocols.length + profiles.length +
       authorities.length + signatures.length + contentRules.length + pendingCreates.length +
-      Number(systemMatches) + Number(capturesMatch);
+      systemGroups.length + Number(unclassifiedSystemMatch) + Number(capturesMatch);
     const row = (kind: string, name: string, detail: string, open: (origin: HTMLElement) => void) => html`
       <button class="row object-row" type="button"
         @click=${(event: MouseEvent) => open(event.currentTarget as HTMLElement)}>
@@ -9126,7 +9354,14 @@ export class SmithproxyApp extends LitElement {
             ${signatures.map(result => row('Signature', result.name, result.detail, origin => this.openSignature(result.item.id, origin)))}
             ${pendingCreates.map(result => row(result.kind, result.name, result.detail,
               origin => this.openDraftStructuralOperation(result.operation.localId, origin)))}
-            ${systemMatches ? row('System', 'System settings', 'Typed runtime configuration', origin => this.openSystemDrawer('settings', origin)) : nothing}
+            ${systemGroups.map(result => row(
+              'System setting', result.name, result.detail,
+              origin => this.openSystemDrawer('settings', origin, result.group),
+            ))}
+            ${unclassifiedSystemMatch ? row(
+              'System setting', 'Other system settings', 'Typed runtime configuration',
+              origin => this.openSystemDrawer('settings', origin),
+            ) : nothing}
             ${capturesMatch ? row('Captures', 'Capture settings', 'Local and remote capture', origin => this.openSystemDrawer('captures', origin)) : nothing}
           </div>`}
       </div>`;
@@ -13908,7 +14143,7 @@ export class SmithproxyApp extends LitElement {
           </div>
         </fieldset>
         ${this.snapshot?.debug ? html`
-          <details class="editor-group">
+          <details class="editor-group" data-settings-group="debug">
             <summary>Developer diagnostics</summary>
             <p>Verbose logging and per-module overrides intended for troubleshooting.</p>
             <div class="form-grid">

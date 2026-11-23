@@ -7782,15 +7782,19 @@ test('searches the complete readable configuration without unsafe markup', async
   await page.keyboard.press('Escape');
 
   await search.fill('syslog');
-  const systemResult = results.getByRole('button').filter({hasText: 'System settings'});
+  const systemResult = results.getByRole('button').filter({hasText: 'Logging and payloads'});
   await expect(systemResult).toBeVisible();
   await systemResult.click();
   await expect(page.getByRole('dialog', {name: 'Edit System settings'})).toBeVisible();
+  await expect(page.getByRole('group', {name: 'Logging and payloads'})).toBeInViewport();
   await page.keyboard.press('Escape');
 
-  for (const query of ['pending-resolver.example', '7654321']) {
+  for (const [query, task] of [
+    ['pending-resolver.example', 'Name resolution'],
+    ['7654321', 'Performance tuning'],
+  ] as const) {
     await search.fill(query);
-    await expect(results.getByRole('button').filter({hasText: 'System settings'})).toHaveCount(1);
+    await expect(results.getByRole('button').filter({hasText: task})).toHaveCount(1);
   }
 
   await search.fill('remote capture');
@@ -7804,7 +7808,7 @@ test('searches the complete readable configuration without unsafe markup', async
   await expect(results.getByRole('button').filter({hasText: 'Capture settings'})).toHaveCount(1);
 
   await search.fill('never-index-this.example');
-  await expect(results.getByRole('button').filter({hasText: 'System settings'})).toHaveCount(1);
+  await expect(results.getByRole('button').filter({hasText: 'Webhook integration'})).toHaveCount(1);
 
   await search.fill('<script>');
   await expect(page.getByRole('heading', {name: 'No matches'})).toBeVisible();
