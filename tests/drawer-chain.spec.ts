@@ -1068,6 +1068,9 @@ async function mockSystemApi(
         }] : []),
       ],
       settings: {
+        interface_roles: [{
+          id: 'interface-role-0', if_name: 'lan*', if_address: '10.0.0.0/8', role: 'Inside',
+        }],
         present_groups: [
           'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
         ].filter(group => !state.absentSettingsGroups?.includes(group)),
@@ -1710,6 +1713,30 @@ test('saves policy interface-role selectors in one draft mutation', async ({page
     {path: 'policy.[0].egress_role', value: 'Guest'},
   ]]);
   await expect(page.getByText('Draft: 2 changes')).toBeVisible();
+});
+
+test('saves an existing interface-role rule without replacing the ordered list', async ({page}) => {
+  const state: MockState = {smithproxy: 'ready', draftMutationBatches: []};
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'System settings', exact: true}).click();
+  const trafficCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Traffic admission'}),
+  });
+  await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit System settings'});
+  await editor.getByLabel('Interface name').fill('lan0');
+  await editor.getByLabel('Interface address').fill('192.0.2.0/24');
+  await editor.getByLabel('Assigned role').fill('Office');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect.poll(() => state.draftMutationBatches).toEqual([[
+    {path: 'settings.interfaces.[0].match.if_name', value: 'lan0'},
+    {path: 'settings.interfaces.[0].match.if_address', value: '192.0.2.0/24'},
+    {path: 'settings.interfaces.[0].role', value: 'Office'},
+  ]]);
 });
 
 test('renames referenced configuration entities atomically across pending references', async ({page}) => {
