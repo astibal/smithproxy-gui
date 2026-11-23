@@ -161,7 +161,8 @@ const snapshot: ConfigSnapshot = {
       routing: null, tls: null,
       detection: null,
       content: {
-        writePayload: false, writeFormat: 'pcap_single', webhookEnabled: false,
+        writePayload: false, writeFormat: 'pcap_single', writeLimitClient: 0, writeLimitServer: 0,
+        webhookEnabled: false,
         webhookLocksTraffic: false, ja4TlsClientHello: true, ja4TlsClientHelloIgnoresSni: true,
         ja4TlsServerHello: false, ja4Http: true, sessionFilter: 'tcp.port == 443',
         sessionFilterConfigured: true,

@@ -126,6 +126,8 @@ export interface ContentRuleSummary {
 export interface ContentProfileDetails {
   writePayload: boolean;
   writeFormat: 'smcap' | 'pcap' | 'pcap_single';
+  writeLimitClient: number;
+  writeLimitServer: number;
   webhookEnabled: boolean;
   webhookLocksTraffic: boolean;
   ja4TlsClientHello: boolean;

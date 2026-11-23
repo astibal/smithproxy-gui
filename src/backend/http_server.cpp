@@ -1872,6 +1872,8 @@ private:
                 rules += ']';
                 profiles += "{\"write_payload\":" + std::string(content.write_payload ? "true" : "false") +
                             ",\"write_format\":" + json_string(content.write_format) +
+                            ",\"write_limit_client\":" + std::to_string(content.write_limit_client) +
+                            ",\"write_limit_server\":" + std::to_string(content.write_limit_server) +
                             ",\"webhook_enabled\":" + (content.webhook_enabled ? "true" : "false") +
                             ",\"webhook_locks_traffic\":" +
                             (content.webhook_locks_traffic ? "true" : "false") +

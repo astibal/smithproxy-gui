@@ -62,7 +62,8 @@ const indexedProvenanceFields: Readonly<Record<string, ReadonlySet<string>>> = {
     'sslkeylog', 'alerts',
   ]),
   content_profiles: new Set([
-    'name', 'write_payload', 'write_format', 'webhook_enable', 'webhook_lock_traffic',
+    'name', 'write_payload', 'write_format', 'write_limit_client', 'write_limit_server',
+    'webhook_enable', 'webhook_lock_traffic',
     'ja4_tls_ch', 'ja4_tls_ch_ignore_sni', 'ja4_tls_sh', 'ja4_http',
   ]),
   ssh_profiles: new Set([
@@ -532,6 +533,12 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       content = {
         writePayload: safeBoolean(item.content.write_payload, 'content payload state'),
         writeFormat: writeFormat as 'smcap' | 'pcap' | 'pcap_single',
+        writeLimitClient: safeInteger(
+          item.content.write_limit_client, 'content client capture limit', Number.MAX_SAFE_INTEGER,
+        ),
+        writeLimitServer: safeInteger(
+          item.content.write_limit_server, 'content server capture limit', Number.MAX_SAFE_INTEGER,
+        ),
         webhookEnabled: safeBoolean(item.content.webhook_enabled, 'content webhook state'),
         webhookLocksTraffic: safeBoolean(item.content.webhook_locks_traffic, 'content webhook lock state'),
         ja4TlsClientHello: safeBoolean(item.content.ja4_tls_client_hello, 'content JA4 client state'),

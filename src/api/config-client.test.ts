@@ -79,7 +79,8 @@ const liveSnapshot = {
       id: 'content-0', name: 'capture', type: 'content', private_reference_count: 0,
       routing: null, tls: null, detection: null,
       content: {
-        write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
+        write_payload: false, write_format: 'pcap_single', write_limit_client: 0,
+        write_limit_server: 0, webhook_enabled: true,
         webhook_locks_traffic: true, ja4_tls_client_hello: true,
         ja4_tls_client_hello_ignores_sni: true, ja4_tls_server_hello: false,
         ja4_http: true, session_filter: 'tcp.port == 443',

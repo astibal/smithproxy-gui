@@ -7,9 +7,11 @@ describe('persistent configuration values', () => {
     const snapshot = await new ConfigFixtureClient().loadSnapshot();
     const values = persistentConfigurationValues(snapshot);
 
-    expect(values.size).toBe(311);
+    expect(values.size).toBe(313);
     expect(values.get('policy.[0].src')).toEqual(['office-net']);
     expect(values.get('address_objects.[0].value')).toBe('10.20.0.0/16');
+    expect(values.get('content_profiles.[0].write_limit_client')).toBe(0);
+    expect(values.get('content_profiles.[0].write_limit_server')).toBe(0);
     expect(values.get('port_objects.[0].start')).toBe(443);
     expect(values.get('proto_objects.[0].id')).toBe(6);
     expect(values.get('routing.[0].dnat_address')).toEqual(['internet']);

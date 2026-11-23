@@ -4138,6 +4138,8 @@ export class SmithproxyApp extends LitElement {
       const value = profile.content;
       fields = {name, write_payload: scalar('write_payload', value.writePayload),
         write_format: scalar('write_format', value.writeFormat),
+        write_limit_client: scalar('write_limit_client', value.writeLimitClient),
+        write_limit_server: scalar('write_limit_server', value.writeLimitServer),
         webhook_enable: scalar('webhook_enable', value.webhookEnabled),
         webhook_lock_traffic: scalar('webhook_lock_traffic', value.webhookLocksTraffic),
         ja4_tls_ch: scalar('ja4_tls_ch', value.ja4TlsClientHello),
@@ -5846,6 +5848,8 @@ export class SmithproxyApp extends LitElement {
       };
     } else if (type === 'content') {
       const format = element<HTMLSelectElement>('content-format');
+      const clientLimit = element<HTMLInputElement>('content-write-limit-client');
+      const serverLimit = element<HTMLInputElement>('content-write-limit-server');
       const filterMode = element<HTMLSelectElement>('content-filter-mode');
       const filter = this.renderRoot.querySelector<HTMLTextAreaElement>(
         `#profile-create-content-filter-${entry.id}`,
@@ -5862,7 +5866,12 @@ export class SmithproxyApp extends LitElement {
         if (!input || !['true', 'false'].includes(input.value)) return;
         booleanValues[fieldName] = input.value === 'true';
       }
-      if (!format || !filterMode || !filter || !['smcap', 'pcap', 'pcap_single'].includes(format.value) ||
+      const parsedClientLimit = clientLimit ? Number(clientLimit.value) : Number.NaN;
+      const parsedServerLimit = serverLimit ? Number(serverLimit.value) : Number.NaN;
+      const validLimits = Number.isSafeInteger(parsedClientLimit) && parsedClientLimit >= 0 &&
+        Number.isSafeInteger(parsedServerLimit) && parsedServerLimit >= 0;
+      if (!format || !filterMode || !filter || !validLimits ||
+          !['smcap', 'pcap', 'pcap_single'].includes(format.value) ||
           !['empty', 'replace'].includes(filterMode.value) ||
           (filterMode.value === 'replace' &&
             (filter.value.length === 0 || filter.value.length > 65536 || filter.value.includes('\0')))) {
@@ -5872,6 +5881,7 @@ export class SmithproxyApp extends LitElement {
         return;
       }
       fields = {name, ...booleanValues, write_format: format.value,
+        write_limit_client: parsedClientLimit, write_limit_server: parsedServerLimit,
         rules_session_filter: filterMode.value === 'replace' ? filter.value : ''};
     } else if (type === 'ssh') {
       const policy = element<HTMLSelectElement>('ssh-policy');
@@ -6970,9 +6980,19 @@ export class SmithproxyApp extends LitElement {
           changes.push({path: `content_profiles.[${index}].${path}`, value: select.value === 'true'});
         }
         const format = this.renderRoot.querySelector<HTMLSelectElement>(`#content-format-${entry.id}`);
+        const clientLimit = this.renderRoot.querySelector<HTMLInputElement>(
+          `#content-write-limit-client-${entry.id}`,
+        );
+        const serverLimit = this.renderRoot.querySelector<HTMLInputElement>(
+          `#content-write-limit-server-${entry.id}`,
+        );
         const filterMode = this.renderRoot.querySelector<HTMLSelectElement>(`#content-write-filter-${entry.id}-mode`);
         const filterInput = this.renderRoot.querySelector<HTMLTextAreaElement>(`#content-write-filter-${entry.id}-value`);
-        if (!format || !filterMode || !filterInput ||
+        const parsedClientLimit = clientLimit ? Number(clientLimit.value) : Number.NaN;
+        const parsedServerLimit = serverLimit ? Number(serverLimit.value) : Number.NaN;
+        const validLimits = Number.isSafeInteger(parsedClientLimit) && parsedClientLimit >= 0 &&
+          Number.isSafeInteger(parsedServerLimit) && parsedServerLimit >= 0;
+        if (!format || !filterMode || !filterInput || !validLimits ||
             !['smcap', 'pcap', 'pcap_single'].includes(format.value) ||
             !['unchanged', 'replace', 'clear'].includes(filterMode.value)) {
           this.draftError = 'Content capture format is invalid.';
@@ -6989,6 +7009,8 @@ export class SmithproxyApp extends LitElement {
           ...renameChanges,
           ...changes,
           {path: `content_profiles.[${index}].write_format`, value: format.value},
+          {path: `content_profiles.[${index}].write_limit_client`, value: parsedClientLimit},
+          {path: `content_profiles.[${index}].write_limit_server`, value: parsedServerLimit},
           ...(filterMode.value === 'replace'
             ? [{path: `content_profiles.[${index}].rules_session_filter`, value: filterReplacement}]
             : filterMode.value === 'clear'
@@ -12735,6 +12757,14 @@ export class SmithproxyApp extends LitElement {
             <option value="smcap">SMCAP</option><option value="pcap">PCAP</option>
             <option value="pcap_single">Single PCAP</option>
           </select>
+          <label for="profile-create-content-write-limit-client-${entry.id}">Client capture limit (bytes)</label>
+          <input id="profile-create-content-write-limit-client-${entry.id}" type="number" min="0"
+            max="9007199254740991" step="1"
+            .value=${String(field('write_limit_client', 0))} ?disabled=${readOnly}>
+          <label for="profile-create-content-write-limit-server-${entry.id}">Server capture limit (bytes)</label>
+          <input id="profile-create-content-write-limit-server-${entry.id}" type="number" min="0"
+            max="9007199254740991" step="1"
+            .value=${String(field('write_limit_server', 0))} ?disabled=${readOnly}>
             </div>
           </fieldset>
           <fieldset class="editor-group">
@@ -13282,6 +13312,16 @@ export class SmithproxyApp extends LitElement {
             <option value="smcap">SMCAP</option><option value="pcap">PCAP</option>
             <option value="pcap_single">Single PCAP</option>
           </select>
+          <label for="content-write-limit-client-${entry.id}">Client capture limit (bytes)</label>
+          <input id="content-write-limit-client-${entry.id}" type="number" min="0"
+            max="9007199254740991" step="1"
+            .value=${String(persistent('write_limit_client', content.writeLimitClient))}
+            ?disabled=${fieldReadOnly('write_limit_client')}>
+          <label for="content-write-limit-server-${entry.id}">Server capture limit (bytes)</label>
+          <input id="content-write-limit-server-${entry.id}" type="number" min="0"
+            max="9007199254740991" step="1"
+            .value=${String(persistent('write_limit_server', content.writeLimitServer))}
+            ?disabled=${fieldReadOnly('write_limit_server')}>
             </div>
           </fieldset>
           <fieldset class="editor-group">

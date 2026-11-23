@@ -112,6 +112,8 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     set(`${base}.name`, item.name);
     set(`${base}.write_payload`, profile.writePayload);
     set(`${base}.write_format`, profile.writeFormat);
+    set(`${base}.write_limit_client`, profile.writeLimitClient);
+    set(`${base}.write_limit_server`, profile.writeLimitServer);
     set(`${base}.webhook_enable`, profile.webhookEnabled);
     set(`${base}.webhook_lock_traffic`, profile.webhookLocksTraffic);
     set(`${base}.ja4_tls_ch`, profile.ja4TlsClientHello);

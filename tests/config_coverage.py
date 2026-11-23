@@ -95,7 +95,7 @@ FULL_TYPED_FIELDS = {
     },
     "script_profiles": {"name", "type", "script-file"},
     "content_profiles": {
-        "name", "write_payload", "write_format", "webhook_enable",
+        "name", "write_payload", "write_format", "write_limit_client", "write_limit_server", "webhook_enable",
         "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh",
         "ja4_http", "rules_session_filter", "content_rules",
     },

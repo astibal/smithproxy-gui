@@ -560,6 +560,11 @@ ConfigProfileParseResult parse_config_profiles(
         } else if (type == "content") {
             const auto write_payload = required_boolean_scalar(profile, "write_payload");
             const auto write_format = bounded_string(profile, "write_format", 16U, true);
+            constexpr std::uint64_t maximum_json_safe_integer = 9007199254740991ULL;
+            const auto write_limit_client = optional_decimal(
+                profile, "write_limit_client", 0U, maximum_json_safe_integer);
+            const auto write_limit_server = optional_decimal(
+                profile, "write_limit_server", 0U, maximum_json_safe_integer);
             const auto webhook = boolean_scalar(profile, "webhook_enable", false);
             const auto webhook_lock = boolean_scalar(profile, "webhook_lock_traffic", false);
             const auto ja4_client = boolean_scalar(profile, "ja4_tls_ch", false);
@@ -598,7 +603,7 @@ ConfigProfileParseResult parse_config_profiles(
                                      *fill_length, *replace_each_nth});
                 }
             }
-            if (!write_payload || !write_format ||
+            if (!write_payload || !write_format || !write_limit_client || !write_limit_server ||
                 (*write_format != "" && *write_format != "smcap" && *write_format != "pcap" &&
                  *write_format != "pcap_single") || !webhook || !webhook_lock || !ja4_client ||
                 !ja4_ignore_sni || !ja4_server || !ja4_http || !session_filter) {
@@ -606,6 +611,7 @@ ConfigProfileParseResult parse_config_profiles(
             }
             content = ConfigContentProfile{
                 *write_payload, write_format->empty() ? "pcap_single" : *write_format,
+                *write_limit_client, *write_limit_server,
                 *webhook, *webhook_lock, *ja4_client, *ja4_ignore_sni, *ja4_server, *ja4_http,
                 *session_filter, !session_filter->empty(), configured_rules != profile.end(),
                 rules.size(), std::move(rules),

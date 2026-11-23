@@ -95,6 +95,8 @@ struct ConfigContentRule {
 struct ConfigContentProfile {
     bool write_payload{};
     std::string write_format;
+    std::uint64_t write_limit_client{};
+    std::uint64_t write_limit_server{};
     bool webhook_enabled{};
     bool webhook_locks_traffic{};
     bool ja4_tls_client_hello{};

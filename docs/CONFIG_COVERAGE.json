@@ -104,7 +104,7 @@
       "read": "full",
       "edit": "typed",
       "sensitivity": "rule-bearing",
-      "tracked_fields": ["name", "write_payload", "write_format", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http", "rules_session_filter", "content_rules"],
+      "tracked_fields": ["name", "write_payload", "write_format", "write_limit_client", "write_limit_server", "webhook_enable", "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http", "rules_session_filter", "content_rules"],
       "notes": "All content-profile fields and nested rule expressions are administrator-visible, typed, editable, structurally creatable, reorderable, and deletable. Draft values are returned in full and reopen without re-entry; expression byte sequences are preserved when an unchanged textarea is saved."
     },
     {

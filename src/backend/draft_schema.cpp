@@ -231,6 +231,9 @@ Result validate_content(const std::string_view field, const DraftScalar& value) 
     if (field == "name") return valid(config_group_name(value));
     if (one_of(field, booleans)) return valid(boolean(value));
     if (field == "write_format") return valid(enumerated(value, {"smcap", "pcap", "pcap_single"}));
+    if (field == "write_limit_client" || field == "write_limit_server") {
+        return valid(bounded_integer(value, 0LL, 9007199254740991LL));
+    }
     if (field == "rules_session_filter") return valid(opaque_text(value, 65536U, true));
     return Result::UnknownPath;
 }

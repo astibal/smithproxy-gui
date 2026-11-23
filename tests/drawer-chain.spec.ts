@@ -957,7 +957,8 @@ async function mockSystemApi(
           routing: null, tls: null,
           detection: null,
           content: {
-            write_payload: false, write_format: 'pcap_single', webhook_enabled: true,
+            write_payload: false, write_format: 'pcap_single', write_limit_client: 0,
+            write_limit_server: 0, webhook_enabled: true,
             webhook_locks_traffic: false, ja4_tls_client_hello: true,
             ja4_tls_client_hello_ignores_sni: false, ja4_tls_server_hello: true,
             ja4_http: false, session_filter: 'tcp.port == 443', session_filter_configured: true,
@@ -3074,6 +3075,8 @@ test('creates and reopens complete content SSH and script profiles', async ({pag
   await expect(editor.getByRole('group', {name: 'Session scope'})).toBeVisible();
   await editor.getByLabel('Payload capture').selectOption('true');
   await editor.getByLabel('Capture format').selectOption('pcap_single');
+  await editor.getByLabel('Client capture limit (bytes)').fill('4096');
+  await editor.getByLabel('Server capture limit (bytes)').fill('8192');
   await editor.getByLabel('Webhook', {exact: true}).selectOption('true');
   await editor.getByLabel('JA4 TLS ClientHello').selectOption('true');
   await editor.getByLabel('Session filter', {exact: true}).selectOption('replace');
@@ -3112,6 +3115,7 @@ test('creates and reopens complete content SSH and script profiles', async ({pag
       op: 'create', collection: 'content_profiles',
       fields: {
         name: 'branch-content', write_payload: true, write_format: 'pcap_single',
+        write_limit_client: 4096, write_limit_server: 8192,
         webhook_enable: true, webhook_lock_traffic: false,
         ja4_tls_ch: true, ja4_tls_ch_ignore_sni: false, ja4_tls_sh: false, ja4_http: false,
         rules_session_filter: 'PRIVATE-CONTENT-FILTER',
@@ -3698,6 +3702,8 @@ test('copies readable values while keeping nested rules separate in a duplicated
     '2 nested content rules are not copied',
   );
   await expect(createEditor.getByLabel('Capture format')).toHaveValue('pcap_single');
+  await expect(createEditor.getByLabel('Client capture limit (bytes)')).toHaveValue('0');
+  await expect(createEditor.getByLabel('Server capture limit (bytes)')).toHaveValue('0');
   await expect(createEditor.getByLabel('Webhook', {exact: true})).toHaveValue('true');
 
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
@@ -3708,6 +3714,7 @@ test('copies readable values while keeping nested rules separate in a duplicated
       op: 'create', collection: 'content_profiles',
       fields: {
         name: 'capture-copy', write_payload: false, write_format: 'pcap_single',
+        write_limit_client: 0, write_limit_server: 0,
         webhook_enable: true, webhook_lock_traffic: false, ja4_tls_ch: true,
         ja4_tls_ch_ignore_sni: false, ja4_tls_sh: true, ja4_http: false,
         rules_session_filter: 'tcp.port == 443',

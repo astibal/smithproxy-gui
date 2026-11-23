@@ -1806,10 +1806,12 @@ int main() {
     assert(detection_profiles.profiles->front().detection->mode == 2U);
     assert(!detection_profiles.profiles->front().detection->knowledge_base_enabled);
     const auto content_profiles = parse_config_profiles(
-        R"({"success":{"content_profiles":{"capture":{"write_payload":"false","write_format":"pcap_single","webhook_enable":"true","rules_session_filter":"sensitive regex","content_rules":[{"match":"secret","replace":"redacted","fill_length":"true","replace_each_nth":"3"}]}}}})",
+        R"({"success":{"content_profiles":{"capture":{"write_payload":"false","write_format":"pcap_single","write_limit_client":"4096","write_limit_server":"8192","webhook_enable":"true","rules_session_filter":"sensitive regex","content_rules":[{"match":"secret","replace":"redacted","fill_length":"true","replace_each_nth":"3"}]}}}})",
         "content_profiles", "content");
     assert(content_profiles.profiles);
     assert(content_profiles.profiles->front().content);
+    assert(content_profiles.profiles->front().content->write_limit_client == 4096U);
+    assert(content_profiles.profiles->front().content->write_limit_server == 8192U);
     assert(content_profiles.profiles->front().content->session_filter_configured);
     assert(content_profiles.profiles->front().content->rule_count == 1U);
     assert(content_profiles.profiles->front().content->rules.front().match_configured);
@@ -1824,6 +1826,9 @@ int main() {
         "content_profiles", "content").profiles);
     assert(!parse_config_profiles(
         R"({"success":{"content_profiles":{"bad":{"write_payload":"false","write_format":"raw"}}}})",
+        "content_profiles", "content").profiles);
+    assert(!parse_config_profiles(
+        R"({"success":{"content_profiles":{"bad":{"write_payload":"false","write_limit_client":"9007199254740992"}}}})",
         "content_profiles", "content").profiles);
     const auto ssh_profiles = parse_config_profiles(
         R"({"success":{"ssh_profiles":{"strict":{"host_key":"/sensitive/key/path","hostkey_policy":"strict","shell":"pass","exec":"reject","subsystem":"pass","pty":"pass","environment":"reject","local_forward":"reject","remote_forward":"reject","x11":"reject","agent":"reject"}}}})",
