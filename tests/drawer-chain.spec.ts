@@ -3080,8 +3080,7 @@ test('creates and reopens complete content SSH and script profiles', async ({pag
   await editor.getByLabel('Server capture limit (bytes)').fill('8192');
   await editor.getByLabel('Webhook', {exact: true}).selectOption('true');
   await editor.getByLabel('JA4 TLS ClientHello').selectOption('true');
-  await editor.getByLabel('Session filter', {exact: true}).selectOption('replace');
-  await editor.getByLabel('New session filter').fill('PRIVATE-CONTENT-FILTER');
+  await editor.getByLabel('Session filter', {exact: true}).fill('PRIVATE-CONTENT-FILTER');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
 
@@ -3093,8 +3092,7 @@ test('creates and reopens complete content SSH and script profiles', async ({pag
   await expect(editor.getByRole('group', {name: 'Session permissions'})).toBeVisible();
   await expect(editor.getByRole('group', {name: 'Forwarding permissions'})).toBeVisible();
   await editor.getByLabel('Upstream host-key policy').selectOption('strict');
-  await editor.getByLabel('Host-key path', {exact: true}).selectOption('replace');
-  await editor.getByLabel('New host-key path').fill('/private/branch-host-key');
+  await editor.getByLabel('Host-key path', {exact: true}).fill('/private/branch-host-key');
   await editor.getByLabel('Exec').selectOption('pass');
   await editor.getByLabel('Subsystem').selectOption('pass');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
@@ -3105,8 +3103,7 @@ test('creates and reopens complete content SSH and script profiles', async ({pag
   await editor.getByLabel('Profile type').selectOption('script');
   await editor.getByLabel('Name').fill('branch-script');
   await editor.getByLabel('Runtime').selectOption('0');
-  await editor.getByLabel('Module path', {exact: true}).selectOption('replace');
-  await editor.getByLabel('New script module path').fill('/private/branch.py');
+  await editor.getByLabel('Module path', {exact: true}).fill('/private/branch.py');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
 
@@ -3145,8 +3142,7 @@ test('creates and reopens complete content SSH and script profiles', async ({pag
   const contentRow = table.getByRole('row').filter({hasText: 'content_profiles · create'});
   await contentRow.getByRole('button', {name: 'Edit'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
-  await expect(editor.getByLabel('Session filter', {exact: true})).toHaveValue('replace');
-  await expect(editor.getByLabel('New session filter')).toHaveValue('PRIVATE-CONTENT-FILTER');
+  await expect(editor.getByLabel('Session filter', {exact: true})).toHaveValue('PRIVATE-CONTENT-FILTER');
   await editor.getByLabel('Name').fill('branch-content-updated');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
@@ -3179,8 +3175,7 @@ test('creates and reopens a complete fail-closed TLS profile', async ({page}) =>
   await editor.getByLabel('OCSP certificate checks').selectOption('2');
   await editor.getByLabel('Certificate warning ports').fill('443, 8443');
   await editor.getByLabel('Override timeout', {exact: true}).fill('900');
-  await editor.getByLabel('SNI bypass list', {exact: true}).selectOption('replace');
-  await editor.getByLabel('New SNI bypass list').fill('["private.example"]');
+  await editor.getByLabel('SNI bypass list', {exact: true}).fill('["private.example"]');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
 
@@ -3217,8 +3212,7 @@ test('creates and reopens a complete fail-closed TLS profile', async ({page}) =>
   await expect(editor.getByLabel('Profile type')).toHaveValue('tls');
   await expect(editor.getByLabel('OCSP certificate checks')).toHaveValue('2');
   await expect(editor.getByLabel('Certificate warning ports')).toHaveValue('443, 8443');
-  await expect(editor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('replace');
-  await expect(editor.getByLabel('New SNI bypass list')).toHaveValue('["private.example"]');
+  await expect(editor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('["private.example"]');
   await editor.getByLabel('Name').fill('branch-tls-updated');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
@@ -3697,8 +3691,7 @@ test('copies readable values while keeping nested rules separate in a duplicated
   const createEditor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(createEditor.getByLabel('Name')).toHaveValue('capture-copy');
   await expect(createEditor.getByLabel('Profile type')).toHaveValue('content');
-  await expect(createEditor.getByLabel('Session filter', {exact: true})).toHaveValue('replace');
-  await expect(createEditor.getByLabel('New session filter')).toHaveValue('tcp.port == 443');
+  await expect(createEditor.getByLabel('Session filter', {exact: true})).toHaveValue('tcp.port == 443');
   await expect(createEditor.locator('.scope-note')).toContainText(
     '2 nested content rules are not copied',
   );
@@ -3752,8 +3745,7 @@ test('prefills every remaining typed profile with complete administrator values'
 
   createEditor = await duplicate(/inspect tls/i, 'inspect');
   await expect(createEditor.getByLabel('Certificate warning ports')).toHaveValue('443, 44443');
-  await expect(createEditor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('replace');
-  await expect(createEditor.getByLabel('New SNI bypass list'))
+  await expect(createEditor.getByLabel('SNI bypass list', {exact: true}))
     .toHaveValue('["private.example","*.internal.example"]');
   await closePair(createEditor);
 
@@ -3763,16 +3755,15 @@ test('prefills every remaining typed profile with complete administrator values'
   await closePair(createEditor);
 
   createEditor = await duplicate(/default-ssh ssh/i, 'default-ssh');
-  await expect(createEditor.getByLabel('Host-key path', {exact: true})).toHaveValue('replace');
-  await expect(createEditor.getByLabel('New host-key path')).toHaveValue('/etc/ssh/ssh_host_ed25519_key');
+  await expect(createEditor.getByLabel('Host-key path', {exact: true}))
+    .toHaveValue('/etc/ssh/ssh_host_ed25519_key');
   await expect(createEditor.getByLabel('Shell')).toHaveValue('pass');
   await expect(createEditor.getByLabel('Exec')).toHaveValue('reject');
   await closePair(createEditor);
 
   createEditor = await duplicate(/audit script/i, 'audit');
   await expect(createEditor.getByLabel('Runtime')).toHaveValue('0');
-  await expect(createEditor.getByLabel('Module path', {exact: true})).toHaveValue('replace');
-  await expect(createEditor.getByLabel('New script module path')).toHaveValue('/etc/smithproxy/audit.py');
+  await expect(createEditor.getByLabel('Module path', {exact: true})).toHaveValue('/etc/smithproxy/audit.py');
 });
 
 test('blocks primitive object duplication while deletion is pending', async ({page}) => {

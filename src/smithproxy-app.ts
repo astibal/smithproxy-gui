@@ -5785,7 +5785,6 @@ export class SmithproxyApp extends LitElement {
       const handshakeTimeout = element<HTMLInputElement>('tls-handshake-timeout');
       const clientAction = element<HTMLSelectElement>('tls-client-action');
       const alerts = element<HTMLSelectElement>('tls-alerts');
-      const bypassMode = element<HTMLSelectElement>('tls-bypass-mode');
       const bypass = this.renderRoot.querySelector<HTMLTextAreaElement>(
         `#profile-create-tls-bypass-${entry.id}`,
       );
@@ -5794,30 +5793,21 @@ export class SmithproxyApp extends LitElement {
       const validPositiveInteger = (input: HTMLInputElement | null): input is HTMLInputElement =>
         input !== null && Number.isInteger(input.valueAsNumber) && input.valueAsNumber >= 1 &&
         input.valueAsNumber <= 2147483647;
-      let bypassValues: ReadonlyArray<string> = [];
-      if (bypassMode?.value === 'replace') {
-        let parsed: unknown;
-        try { parsed = JSON.parse(bypass?.value ?? ''); } catch { parsed = undefined; }
-        if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 256 ||
-            !parsed.every(item => typeof item === 'string' && printable(item, 1024)) ||
-            new Set(parsed).size !== parsed.length) {
-          this.drawerError = 'SNI bypass must be a unique non-empty JSON string array with at most 256 entries.';
-          return;
-        }
-        bypassValues = parsed;
-      }
+      let parsedBypass: unknown;
+      try { parsedBypass = JSON.parse(bypass?.value ?? ''); } catch { parsedBypass = undefined; }
+      const validBypass = Array.isArray(parsedBypass) && parsedBypass.length <= 256 &&
+        parsedBypass.every(item => typeof item === 'string' && printable(item, 1024)) &&
+        new Set(parsedBypass).size === parsedBypass.length;
       if (!ocspMode || !staplingMode || !warningPorts || !overrideTimeoutType || !clientAction || !alerts ||
-          !bypassMode || !bypass || !['0', '1', '2'].includes(ocspMode.value) ||
+          !bypass || !validBypass || !['0', '1', '2'].includes(ocspMode.value) ||
           !['0', '1', '2'].includes(staplingMode.value) || !['0', '1'].includes(overrideTimeoutType.value) ||
           !validPositiveInteger(overrideTimeout) || !validPositiveInteger(helloTimeout) ||
           !validPositiveInteger(handshakeTimeout) || ports.length > 256 ||
           !ports.every(port => Number.isInteger(port) && port >= 0 && port <= 65535) ||
           new Set(ports).size !== ports.length ||
           !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
-          !['all', 'unusual', 'mute'].includes(alerts.value) || !['empty', 'replace'].includes(bypassMode.value)) {
-        this.drawerError = operation
-          ? 'Provide a valid SNI bypass list or explicitly select an empty list before updating.'
-          : 'TLS timeouts, policy selections, warning ports, and the SNI bypass list must be valid.';
+          !['all', 'unusual', 'mute'].includes(alerts.value)) {
+        this.drawerError = 'TLS timeouts, policy selections, warning ports, and the SNI bypass list must be valid.';
         return;
       }
       fields = {
@@ -5828,7 +5818,7 @@ export class SmithproxyApp extends LitElement {
         client_hello_timeout: helloTimeout.valueAsNumber,
         handshake_timeout: handshakeTimeout.valueAsNumber,
         client_cert_action: clientAction.value, alerts: alerts.value,
-        sni_filter_bypass: bypassMode.value === 'replace' ? bypassValues : [],
+        sni_filter_bypass: parsedBypass as string[],
       };
     } else if (type === 'detection') {
       const mode = element<HTMLSelectElement>('mode');
@@ -5861,7 +5851,6 @@ export class SmithproxyApp extends LitElement {
       const format = element<HTMLSelectElement>('content-format');
       const clientLimit = element<HTMLInputElement>('content-write-limit-client');
       const serverLimit = element<HTMLInputElement>('content-write-limit-server');
-      const filterMode = element<HTMLSelectElement>('content-filter-mode');
       const filter = this.renderRoot.querySelector<HTMLTextAreaElement>(
         `#profile-create-content-filter-${entry.id}`,
       );
@@ -5881,22 +5870,17 @@ export class SmithproxyApp extends LitElement {
       const parsedServerLimit = serverLimit ? Number(serverLimit.value) : Number.NaN;
       const validLimits = Number.isSafeInteger(parsedClientLimit) && parsedClientLimit >= 0 &&
         Number.isSafeInteger(parsedServerLimit) && parsedServerLimit >= 0;
-      if (!format || !filterMode || !filter || !validLimits ||
+      if (!format || !filter || !validLimits ||
           !['smcap', 'pcap', 'pcap_single'].includes(format.value) ||
-          !['empty', 'replace'].includes(filterMode.value) ||
-          (filterMode.value === 'replace' &&
-            (filter.value.length === 0 || filter.value.length > 65536 || filter.value.includes('\0')))) {
-        this.drawerError = operation
-          ? 'Provide a valid session filter or explicitly select an empty filter before updating.'
-          : 'Content profile fields and the optional session filter must fit the configuration limits.';
+          filter.value.length > 65536 || filter.value.includes('\0')) {
+        this.drawerError = 'Content profile fields and the optional session filter must fit the configuration limits.';
         return;
       }
       fields = {name, ...booleanValues, write_format: format.value,
         write_limit_client: parsedClientLimit, write_limit_server: parsedServerLimit,
-        rules_session_filter: filterMode.value === 'replace' ? filter.value : ''};
+        rules_session_filter: filter.value};
     } else if (type === 'ssh') {
       const policy = element<HTMLSelectElement>('ssh-policy');
-      const hostKeyMode = element<HTMLSelectElement>('ssh-host-key-mode');
       const hostKey = element<HTMLInputElement>('ssh-host-key');
       const actionNames = [
         ['ssh-shell', 'shell'], ['ssh-exec', 'exec'], ['ssh-subsystem', 'subsystem'],
@@ -5911,30 +5895,23 @@ export class SmithproxyApp extends LitElement {
         actions[fieldName] = input.value;
       }
       const hostKeyValue = hostKey?.value.trim() ?? '';
-      if (!policy || !hostKeyMode || !hostKey || !['insecure', 'accept-new', 'strict'].includes(policy.value) ||
-          !['empty', 'replace'].includes(hostKeyMode.value) ||
-          (hostKeyMode.value === 'replace' && !printable(hostKeyValue, 1024))) {
-        this.drawerError = operation
-          ? 'Provide a valid host-key path or explicitly select an empty path before updating.'
-          : 'SSH profile fields and the optional host-key path must fit the configuration limits.';
+      if (!policy || !hostKey || !['insecure', 'accept-new', 'strict'].includes(policy.value) ||
+          !printable(hostKeyValue, 1024, true)) {
+        this.drawerError = 'SSH profile fields and the optional host-key path must fit the configuration limits.';
         return;
       }
       fields = {name, hostkey_policy: policy.value, ...actions,
-        host_key: hostKeyMode.value === 'replace' ? hostKeyValue : ''};
+        host_key: hostKeyValue};
     } else {
       const runtime = element<HTMLSelectElement>('script-runtime');
-      const moduleMode = element<HTMLSelectElement>('script-module-mode');
       const modulePath = element<HTMLInputElement>('script-module');
       const moduleValue = modulePath?.value.trim() ?? '';
-      if (!runtime || !moduleMode || !modulePath || !['-1', '0', '1'].includes(runtime.value) ||
-          !['empty', 'replace'].includes(moduleMode.value) ||
-          (moduleMode.value === 'replace' && !printable(moduleValue, 1024))) {
-        this.drawerError = operation
-          ? 'Provide a valid module path or explicitly select an empty path before updating.'
-          : 'Script runtime and the optional module path must fit the configuration limits.';
+      if (!runtime || !modulePath || !['-1', '0', '1'].includes(runtime.value) ||
+          !printable(moduleValue, 1024, true)) {
+        this.drawerError = 'Script runtime and the optional module path must fit the configuration limits.';
         return;
       }
-      fields = {name, type: runtime.value, 'script-file': moduleMode.value === 'replace' ? moduleValue : ''};
+      fields = {name, type: runtime.value, 'script-file': moduleValue};
     }
 
     const existing = operation;
@@ -5961,15 +5938,6 @@ export class SmithproxyApp extends LitElement {
       this.profileCreateTypes.set(entry.id, type);
       this.profileCreatePrefills.delete(entry.id);
       this.applyDraft(draft);
-      for (const selector of [
-        `#profile-create-content-filter-${entry.id}`,
-        `#profile-create-ssh-host-key-${entry.id}`,
-        `#profile-create-script-module-${entry.id}`,
-        `#profile-create-tls-bypass-${entry.id}`,
-      ]) {
-        const secret = this.renderRoot.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
-        if (secret) secret.value = '';
-      }
       this.markDrawerSaved(entry);
       await this.loadDraftPreflight();
     } catch (error) {
@@ -12455,11 +12423,6 @@ export class SmithproxyApp extends LitElement {
       const value = field(name, fallback);
       return typeof value === 'string' && !value.startsWith('[redacted:') ? value : fallback;
     };
-    const sensitiveField = (name: string): string | ReadonlyArray<string> => {
-      const value = field(name, '');
-      if (typeof value === 'string') return value;
-      return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : '';
-    };
     const readOnly = !type || !this.collectionTransactionsAvailable(profileCreateCollections[type]);
     const booleanSelect = (id: string, label: string, value: boolean) => html`
       <label for="profile-create-${id}-${entry.id}">${label}</label>
@@ -12470,17 +12433,6 @@ export class SmithproxyApp extends LitElement {
       <label for="profile-create-${id}-${entry.id}">${label}</label>
       <select id="profile-create-${id}-${entry.id}" .value=${value} ?disabled=${readOnly}>
         <option value="pass">Pass</option><option value="reject">Reject</option>
-      </select>`;
-    const redactedValue = (value: string | ReadonlyArray<string>) =>
-      typeof value === 'string' && value.startsWith('[redacted:');
-    const valueMode = (value: string | ReadonlyArray<string>) =>
-      redactedValue(value) ? 'unchanged' : value.length > 0 ? 'replace' : 'empty';
-    const writeOnlyMode = (id: string, label: string, value: string | ReadonlyArray<string>) => html`
-      <label for="profile-create-${id}-mode-${entry.id}">${label}</label>
-      <select id="profile-create-${id}-mode-${entry.id}"
-        .value=${valueMode(value)} ?disabled=${readOnly}>
-        ${redactedValue(value) ? html`<option value="unchanged">Keep pending replacement</option>` : nothing}
-        <option value="empty">Keep empty</option><option value="replace">Set value</option>
       </select>`;
     return html`
       <div class="form-grid wide-form-grid">
@@ -12647,10 +12599,9 @@ export class SmithproxyApp extends LitElement {
             .value=${stringField('alerts', 'unusual')} ?disabled=${readOnly}>
             <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
           </select>
-          ${writeOnlyMode('tls-bypass', 'SNI bypass list', sensitiveField('sni_filter_bypass'))}
-          <label for="profile-create-tls-bypass-${entry.id}">Bypass value</label>
+          <label for="profile-create-tls-bypass-${entry.id}">SNI bypass list</label>
           <textarea id="profile-create-tls-bypass-${entry.id}" maxlength="65536"
-            aria-label="New SNI bypass list" autocomplete="off" placeholder='["private.example"]'
+            aria-label="SNI bypass list" autocomplete="off" placeholder='["private.example"]'
             .value=${JSON.stringify(stringList('sni_filter_bypass'))} .readOnly=${readOnly}></textarea>
             </div>
           </fieldset>
@@ -12727,10 +12678,9 @@ export class SmithproxyApp extends LitElement {
             <legend>Session scope</legend>
             <p>Limits this profile with a complete administrator-visible session expression.</p>
             <div class="form-grid">
-          ${writeOnlyMode('content-filter', 'Session filter', sensitiveField('rules_session_filter'))}
-          <label for="profile-create-content-filter-${entry.id}">Filter value</label>
+          <label for="profile-create-content-filter-${entry.id}">Session filter</label>
           <textarea id="profile-create-content-filter-${entry.id}" maxlength="65536"
-            aria-label="New session filter" autocomplete="off" placeholder="Optional expression"
+            aria-label="Session filter" autocomplete="off" placeholder="Optional expression"
             .value=${stringField('rules_session_filter', '')} .readOnly=${readOnly}></textarea>
             </div>
           </fieldset>
@@ -12745,10 +12695,9 @@ export class SmithproxyApp extends LitElement {
             <option value="insecure">Insecure</option><option value="accept-new">Accept new</option>
             <option value="strict">Strict</option>
           </select>
-          ${writeOnlyMode('ssh-host-key', 'Host-key path', sensitiveField('host_key'))}
-          <label for="profile-create-ssh-host-key-${entry.id}">Host-key value</label>
+          <label for="profile-create-ssh-host-key-${entry.id}">Host-key path</label>
           <input id="profile-create-ssh-host-key-${entry.id}" maxlength="1024"
-            aria-label="New host-key path" autocomplete="off" placeholder="Optional path"
+            aria-label="Host-key path" autocomplete="off" placeholder="Optional path"
             .value=${stringField('host_key', '')} .readOnly=${readOnly} />
             </div>
           </fieldset>
@@ -12779,10 +12728,9 @@ export class SmithproxyApp extends LitElement {
             .value=${stringField('type', '-1')} ?disabled=${readOnly}>
             <option value="-1">Unspecified</option><option value="0">Python</option><option value="1">Go</option>
           </select>
-          ${writeOnlyMode('script-module', 'Module path', sensitiveField('script-file'))}
-          <label for="profile-create-script-module-${entry.id}">Module value</label>
+          <label for="profile-create-script-module-${entry.id}">Module path</label>
           <input id="profile-create-script-module-${entry.id}" maxlength="1024"
-            aria-label="New script module path" autocomplete="off" placeholder="Optional path"
+            aria-label="Module path" autocomplete="off" placeholder="Optional path"
             .value=${stringField('script-file', '')} .readOnly=${readOnly} />
         `}
       </div>
