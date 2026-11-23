@@ -9819,6 +9819,18 @@ export class SmithproxyApp extends LitElement {
     const presentation = this.collectorPresentation(
       interfaces.state, interfaces.lastSuccessAtUnixMs, 30_000,
     );
+    const inventoryValid = interfaces.snapshotValid && interfaces.rolesValid;
+    const synchronizationClean = interfaces.synchronizationErrors === 0;
+    const diagnosticsHealthy = presentation.current && inventoryValid && synchronizationClean;
+    const diagnosticsTone: StatusTone = diagnosticsHealthy
+      ? 'success' : !inventoryValid || !synchronizationClean ? 'danger' : presentation.tone;
+    let diagnosticsLabel = presentation.label;
+    if (diagnosticsHealthy) diagnosticsLabel = 'Healthy';
+    else if (!interfaces.snapshotValid) diagnosticsLabel = 'Invalid interface snapshot';
+    else if (!interfaces.rolesValid) diagnosticsLabel = 'Invalid role map';
+    else if (!synchronizationClean) {
+      diagnosticsLabel = `${interfaces.synchronizationErrors.toLocaleString()} synchronization errors`;
+    }
     return html`
       <section class="runtime-summary" aria-label="Network interfaces">
         <div class="runtime-heading">
@@ -9903,9 +9915,7 @@ export class SmithproxyApp extends LitElement {
         <details class="diagnostic-section">
           <summary>
             <div><h4>Synchronization diagnostics</h4><p>Internal collection state for troubleshooting</p></div>
-            <span class="runtime-state ${presentation.tone}">
-              ${interfaces.state === 'ready' ? 'Healthy' : presentation.label}
-            </span>
+            <span class="runtime-state ${diagnosticsTone}">${diagnosticsLabel}</span>
           </summary>
           <div class="diagnostic-content">
             <div class="table">

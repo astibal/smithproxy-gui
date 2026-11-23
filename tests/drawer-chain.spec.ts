@@ -106,6 +106,9 @@ type MockState = {
   authSessionRequests?: number;
   metricsRequests?: number;
   metricsDelayMs?: number;
+  interfaceSnapshotValid?: boolean;
+  interfaceRolesValid?: boolean;
+  interfaceSynchronizationErrors?: number;
   now?: number;
   collectorLastSuccessAgeMs?: number;
   configFetches?: number;
@@ -488,8 +491,8 @@ async function mockSystemApi(
       checked_at_unix_ms: sampledAt,
       last_success_at_unix_ms: collectorLastSuccess(sampledAt),
       generation: 42,
-      snapshot_valid: true,
-      roles_valid: true,
+      snapshot_valid: state.interfaceSnapshotValid ?? true,
+      roles_valid: state.interfaceRolesValid ?? true,
       route_generation: 8,
       role_generation: 3,
       route_changed_at: '2026-11-12T10:00:00Z',
@@ -497,7 +500,7 @@ async function mockSystemApi(
       synchronization_running: true,
       synchronization_attempts: 3,
       synchronization_successes: 3,
-      synchronization_errors: 0,
+      synchronization_errors: state.interfaceSynchronizationErrors ?? 0,
       event_datagrams: 15,
       changed_event_datagrams: 4,
       interfaces: 3,
@@ -7161,6 +7164,24 @@ test('organizes operational surfaces into focused administrator views', async ({
   await diagnostics.locator('summary').click();
   await expect(page.getByRole('heading', {name: 'Augment overlays'})).toBeVisible();
   await expectNoWcagViolations(page);
+});
+
+test('does not report invalid interface synchronization as healthy', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', interfaceRolesValid: false, interfaceSynchronizationErrors: 2,
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('button', {name: 'Interfaces', exact: true}).click();
+
+  const diagnostics = page.locator('details.diagnostic-section').filter({
+    hasText: 'Synchronization diagnostics',
+  });
+  await expect(diagnostics.locator('summary')).toContainText('Invalid role map');
+  await expect(diagnostics.locator('summary')).not.toContainText('Healthy');
+  await diagnostics.locator('summary').click();
+  await expect(diagnostics).toContainText('Role validityInvalid');
+  await expect(diagnostics).toContainText('Errors2');
 });
 
 test('uses the Logs navigation badge only for events requiring attention', async ({page}) => {
