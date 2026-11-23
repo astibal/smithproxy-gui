@@ -6452,14 +6452,8 @@ export class SmithproxyApp extends LitElement {
       const contentProfiles = this.snapshot.profiles.filter(item => item.content !== null);
       const profileIndex = profile ? contentProfiles.findIndex(item => item.id === profile.id) : -1;
       const ruleIndex = profile?.content?.rules.findIndex(rule => rule.id === entry.id) ?? -1;
-      const matchMode = this.renderRoot.querySelector<HTMLSelectElement>(
-        `#content-rule-write-match-${entry.id}-mode`,
-      );
       const match = this.renderRoot.querySelector<HTMLTextAreaElement>(
         `#content-rule-write-match-${entry.id}-value`,
-      );
-      const replacementMode = this.renderRoot.querySelector<HTMLSelectElement>(
-        `#content-rule-write-replacement-${entry.id}-mode`,
       );
       const replacement = this.renderRoot.querySelector<HTMLTextAreaElement>(
         `#content-rule-write-replacement-${entry.id}-value`,
@@ -6470,10 +6464,8 @@ export class SmithproxyApp extends LitElement {
       const replaceEachNth = this.renderRoot.querySelector<HTMLInputElement>(
         `#content-rule-replace-each-${entry.id}`,
       );
-      if (profileIndex < 0 || ruleIndex < 0 || !matchMode || !match || !replacementMode || !replacement ||
-          !fillLength || !replaceEachNth || !['true', 'false'].includes(fillLength.value) ||
-          !['unchanged', 'replace'].includes(matchMode.value) ||
-          !['unchanged', 'replace', 'clear'].includes(replacementMode.value)) return undefined;
+      if (profileIndex < 0 || ruleIndex < 0 || !match || !replacement ||
+          !fillLength || !replaceEachNth || !['true', 'false'].includes(fillLength.value)) return undefined;
       const replaceEachValue = replaceEachNth.valueAsNumber;
       if (!Number.isInteger(replaceEachValue) || replaceEachValue < -2147483648 ||
           replaceEachValue > 2147483647) {
@@ -6482,21 +6474,16 @@ export class SmithproxyApp extends LitElement {
       }
       const validExpression = (value: string) =>
         value.length > 0 && value.length <= 65536 && !value.includes('\0');
-      if ((matchMode.value === 'replace' && !validExpression(match.value)) ||
-          (replacementMode.value === 'replace' && !validExpression(replacement.value))) {
-        this.draftError = 'Content rule replacements must contain 1 to 65536 characters.';
+      if (!validExpression(match.value) || replacement.value.length > 65536 || replacement.value.includes('\0')) {
+        this.draftError = 'Content matches require 1 to 65536 characters; replacements may be empty.';
         return undefined;
       }
       const base = `content_profiles.[${profileIndex}].content_rules.[${ruleIndex}]`;
       return [
         {path: `${base}.fill_length`, value: fillLength.value === 'true'},
         {path: `${base}.replace_each_nth`, value: replaceEachValue},
-        ...(matchMode.value === 'replace' ? [{path: `${base}.match`, value: match.value}] : []),
-        ...(replacementMode.value === 'replace'
-          ? [{path: `${base}.replace`, value: replacement.value}]
-          : replacementMode.value === 'clear'
-            ? [{path: `${base}.replace`, value: ''}]
-            : []),
+        {path: `${base}.match`, value: match.value},
+        {path: `${base}.replace`, value: replacement.value},
       ];
     }
     if (entry.kind === 'signature') {
@@ -6550,24 +6537,21 @@ export class SmithproxyApp extends LitElement {
       const type = this.renderRoot.querySelector<HTMLSelectElement>(`#signature-flow-type-${entry.id}`);
       const start = this.renderRoot.querySelector<HTMLInputElement>(`#signature-flow-start-${entry.id}`);
       const maximum = this.renderRoot.querySelector<HTMLInputElement>(`#signature-flow-maximum-${entry.id}`);
-      const mode = this.renderRoot.querySelector<HTMLSelectElement>(
-        `#signature-flow-write-expression-${entry.id}-mode`,
-      );
       const expression = this.renderRoot.querySelector<HTMLTextAreaElement>(
         `#signature-flow-write-expression-${entry.id}-value`,
       );
-      if (signatureIndex < 0 || flowIndex < 0 || !side || !type || !start || !maximum || !mode ||
-          !expression || !['r', 'w'].includes(side.value) || !['regex', 'simple'].includes(type.value) ||
-          !['unchanged', 'replace'].includes(mode.value)) return undefined;
+      if (signatureIndex < 0 || flowIndex < 0 || !side || !type || !start || !maximum ||
+          !expression || !['r', 'w'].includes(side.value) || !['regex', 'simple'].includes(type.value)) {
+        return undefined;
+      }
       const bytesStart = start.valueAsNumber;
       const bytesMax = maximum.valueAsNumber;
       if (![bytesStart, bytesMax].every(value => Number.isSafeInteger(value) && value >= 0)) {
         this.draftError = 'Signature byte positions must be non-negative safe integers.';
         return undefined;
       }
-      if (mode.value === 'replace' &&
-          (expression.value.length === 0 || expression.value.length > 65536 || expression.value.includes('\0'))) {
-        this.draftError = 'A replacement expression from 1 to 65536 characters is required.';
+      if (expression.value.length === 0 || expression.value.length > 65536 || expression.value.includes('\0')) {
+        this.draftError = 'A signature expression from 1 to 65536 characters is required.';
         return undefined;
       }
       const base = `${signature.kind}_signatures.[${signatureIndex}].flow.[${flowIndex}]`;
@@ -6576,19 +6560,15 @@ export class SmithproxyApp extends LitElement {
         {path: `${base}.type`, value: type.value},
         {path: `${base}.bytes_start`, value: bytesStart},
         {path: `${base}.bytes_max`, value: bytesMax},
-        ...(mode.value === 'replace'
-          ? [{path: `${base}.signature`, value: expression.value}]
-          : []),
+        {path: `${base}.signature`, value: expression.value},
       ];
     }
     if (entry.kind === 'authority') {
       const authorities = this.snapshot.securityAssets?.certificateAuthorities ?? [];
       const index = authorities.findIndex(item => item.id === entry.id);
       const name = this.renderRoot.querySelector<HTMLInputElement>(`#authority-name-${entry.id}`);
-      const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#authority-write-path-${entry.id}-mode`);
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#authority-write-path-${entry.id}-value`);
-      if (index < 0 || !name || !mode || !input ||
-          !['unchanged', 'replace', 'clear'].includes(mode.value)) return undefined;
+      if (index < 0 || !name || !input) return undefined;
       const normalizedName = name.value.trim();
       if (normalizedName.length === 0 || normalizedName.length > 128 ||
           /[\u0000-\u001f\u007f]/u.test(normalizedName)) {
@@ -6600,19 +6580,16 @@ export class SmithproxyApp extends LitElement {
         return undefined;
       }
       const replacement = input.value;
-      if (mode.value === 'replace' &&
-          (replacement.length === 0 || replacement.length > 1024 || !replacement.startsWith('/') ||
-           /[\u0000-\u001f\u007f]/u.test(replacement))) {
-        this.draftError = 'An absolute replacement CA path up to 1024 characters is required.';
+      const invalidPath = replacement.length > 1024 ||
+        (replacement.length > 0 && !replacement.startsWith('/')) ||
+        /[\u0000-\u001f\u007f]/u.test(replacement);
+      if (invalidPath) {
+        this.draftError = 'The CA path must be empty or an absolute path up to 1024 characters.';
         return undefined;
       }
       return [
         {path: `tls_ca.[${index}].name`, value: normalizedName},
-        ...(mode.value === 'replace'
-          ? [{path: `tls_ca.[${index}].path`, value: replacement}]
-          : mode.value === 'clear'
-            ? [{path: `tls_ca.[${index}].path`, value: ''}]
-            : []),
+        {path: `tls_ca.[${index}].path`, value: replacement},
       ];
     }
     if (entry.kind === 'policy') {
@@ -6912,7 +6889,6 @@ export class SmithproxyApp extends LitElement {
         );
         const clientAction = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-client-action-${entry.id}`);
         const alerts = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-alerts-${entry.id}`);
-        const bypassMode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-write-sni-${entry.id}-mode`);
         const bypassInput = this.renderRoot.querySelector<HTMLTextAreaElement>(`#tls-write-sni-${entry.id}-value`);
         const helloValue = helloTimeout?.valueAsNumber ?? Number.NaN;
         const handshakeValue = handshakeTimeout?.valueAsNumber ?? Number.NaN;
@@ -6920,7 +6896,7 @@ export class SmithproxyApp extends LitElement {
         const warningPortValues = (warningPorts?.value ?? '').split(',')
           .map(value => value.trim()).filter(Boolean).map(Number);
         if (!helloTimeout || !handshakeTimeout || !ocspMode || !staplingMode || !warningPorts ||
-            !overrideTimeout || !overrideTimeoutType || !clientAction || !alerts || !bypassMode || !bypassInput ||
+            !overrideTimeout || !overrideTimeoutType || !clientAction || !alerts || !bypassInput ||
             !Number.isInteger(helloValue) || helloValue < 1 || helloValue > 2147483647 ||
             !Number.isInteger(handshakeValue) || handshakeValue < 1 || handshakeValue > 2147483647 ||
             !['0', '1', '2'].includes(ocspMode.value) || !['0', '1', '2'].includes(staplingMode.value) ||
@@ -6929,28 +6905,24 @@ export class SmithproxyApp extends LitElement {
             !warningPortValues.every(value => Number.isInteger(value) && value >= 0 && value <= 65535) ||
             new Set(warningPortValues).size !== warningPortValues.length ||
             !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
-            !['all', 'unusual', 'mute'].includes(alerts.value) ||
-            !['unchanged', 'replace', 'clear'].includes(bypassMode.value)) {
+            !['all', 'unusual', 'mute'].includes(alerts.value)) {
           this.draftError = 'TLS timeouts and policy selections are invalid.';
           return undefined;
         }
-        let bypassReplacement: string[] | undefined;
-        if (bypassMode.value === 'replace') {
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(bypassInput.value);
-          } catch {
-            parsed = undefined;
-          }
-          if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 256 ||
-              !parsed.every(item => typeof item === 'string' && item.length > 0 &&
-                item.length <= 1024 && !item.includes('\0')) ||
-              new Set(parsed).size !== parsed.length) {
-            this.draftError = 'SNI bypass replacement must be a unique, non-empty JSON string array.';
-            return undefined;
-          }
-          bypassReplacement = parsed as string[];
+        let parsedBypass: unknown;
+        try {
+          parsedBypass = JSON.parse(bypassInput.value);
+        } catch {
+          parsedBypass = undefined;
         }
+        if (!Array.isArray(parsedBypass) || parsedBypass.length > 256 ||
+            !parsedBypass.every(item => typeof item === 'string' && item.length > 0 &&
+              item.length <= 1024 && !item.includes('\0')) ||
+            new Set(parsedBypass).size !== parsedBypass.length) {
+          this.draftError = 'SNI bypass must be a unique JSON string array with at most 256 entries.';
+          return undefined;
+        }
+        const bypass = parsedBypass as string[];
         return [
           {path: `tls_profiles.[${index}].name`, value: normalizedName},
           ...renameChanges,
@@ -6964,11 +6936,7 @@ export class SmithproxyApp extends LitElement {
           {path: `tls_profiles.[${index}].handshake_timeout`, value: handshakeValue},
           {path: `tls_profiles.[${index}].client_cert_action`, value: clientAction.value},
           {path: `tls_profiles.[${index}].alerts`, value: alerts.value},
-          ...(bypassMode.value === 'replace'
-            ? [{path: `tls_profiles.[${index}].sni_filter_bypass`, value: bypassReplacement!}]
-            : bypassMode.value === 'clear'
-              ? [{path: `tls_profiles.[${index}].sni_filter_bypass`, value: []}]
-              : []),
+          {path: `tls_profiles.[${index}].sni_filter_bypass`, value: bypass},
         ];
       }
       if (profile.content) {
@@ -6997,22 +6965,19 @@ export class SmithproxyApp extends LitElement {
         const serverLimit = this.renderRoot.querySelector<HTMLInputElement>(
           `#content-write-limit-server-${entry.id}`,
         );
-        const filterMode = this.renderRoot.querySelector<HTMLSelectElement>(`#content-write-filter-${entry.id}-mode`);
         const filterInput = this.renderRoot.querySelector<HTMLTextAreaElement>(`#content-write-filter-${entry.id}-value`);
         const parsedClientLimit = clientLimit ? Number(clientLimit.value) : Number.NaN;
         const parsedServerLimit = serverLimit ? Number(serverLimit.value) : Number.NaN;
         const validLimits = Number.isSafeInteger(parsedClientLimit) && parsedClientLimit >= 0 &&
           Number.isSafeInteger(parsedServerLimit) && parsedServerLimit >= 0;
-        if (!format || !filterMode || !filterInput || !validLimits ||
-            !['smcap', 'pcap', 'pcap_single'].includes(format.value) ||
-            !['unchanged', 'replace', 'clear'].includes(filterMode.value)) {
+        if (!format || !filterInput || !validLimits ||
+            !['smcap', 'pcap', 'pcap_single'].includes(format.value)) {
           this.draftError = 'Content capture format is invalid.';
           return undefined;
         }
         const filterReplacement = filterInput.value;
-        if (filterMode.value === 'replace' &&
-            (filterReplacement.length === 0 || filterReplacement.length > 65536 || filterReplacement.includes('\0'))) {
-          this.draftError = 'A session-filter replacement up to 65536 characters is required.';
+        if (filterReplacement.length > 65536 || filterReplacement.includes('\0')) {
+          this.draftError = 'The session filter must contain at most 65536 characters.';
           return undefined;
         }
         return [
@@ -7022,11 +6987,7 @@ export class SmithproxyApp extends LitElement {
           {path: `content_profiles.[${index}].write_format`, value: format.value},
           {path: `content_profiles.[${index}].write_limit_client`, value: parsedClientLimit},
           {path: `content_profiles.[${index}].write_limit_server`, value: parsedServerLimit},
-          ...(filterMode.value === 'replace'
-            ? [{path: `content_profiles.[${index}].rules_session_filter`, value: filterReplacement}]
-            : filterMode.value === 'clear'
-              ? [{path: `content_profiles.[${index}].rules_session_filter`, value: ''}]
-              : []),
+          {path: `content_profiles.[${index}].rules_session_filter`, value: filterReplacement},
         ];
       }
       if (profile.ssh) {
@@ -7034,18 +6995,14 @@ export class SmithproxyApp extends LitElement {
         const index = profiles.findIndex(item => item.id === entry.id);
         if (index < 0) return undefined;
         const policy = this.renderRoot.querySelector<HTMLSelectElement>(`#ssh-host-key-policy-${entry.id}`);
-        const hostKeyMode = this.renderRoot.querySelector<HTMLSelectElement>(`#ssh-write-host-key-${entry.id}-mode`);
         const hostKeyValue = this.renderRoot.querySelector<HTMLInputElement>(`#ssh-write-host-key-${entry.id}-value`);
-        if (!policy || !hostKeyMode || !hostKeyValue ||
-            !['insecure', 'accept-new', 'strict'].includes(policy.value) ||
-            !['unchanged', 'replace', 'clear'].includes(hostKeyMode.value)) {
+        if (!policy || !hostKeyValue || !['insecure', 'accept-new', 'strict'].includes(policy.value)) {
           this.draftError = 'SSH host-key policy is invalid.';
           return undefined;
         }
         const replacement = hostKeyValue.value.trim();
-        if (hostKeyMode.value === 'replace' &&
-            (replacement.length === 0 || replacement.length > 1024 || /[\u0000-\u001f\u007f]/u.test(replacement))) {
-          this.draftError = 'A replacement host-key path up to 1024 characters is required.';
+        if (replacement.length > 1024 || /[\u0000-\u001f\u007f]/u.test(replacement)) {
+          this.draftError = 'The host-key path must contain at most 1024 printable characters.';
           return undefined;
         }
         const actions = [
@@ -7070,29 +7027,22 @@ export class SmithproxyApp extends LitElement {
           ...renameChanges,
           {path: `ssh_profiles.[${index}].hostkey_policy`, value: policy.value},
           ...changes,
-          ...(hostKeyMode.value === 'replace'
-            ? [{path: `ssh_profiles.[${index}].host_key`, value: replacement}]
-            : hostKeyMode.value === 'clear'
-              ? [{path: `ssh_profiles.[${index}].host_key`, value: ''}]
-              : []),
+          {path: `ssh_profiles.[${index}].host_key`, value: replacement},
         ];
       }
       if (profile.script) {
         const profiles = this.snapshot.profiles.filter(item => item.script !== null);
         const index = profiles.findIndex(item => item.id === entry.id);
         const runtime = this.renderRoot.querySelector<HTMLSelectElement>(`#script-runtime-${entry.id}`);
-        const moduleMode = this.renderRoot.querySelector<HTMLSelectElement>(`#script-write-module-${entry.id}-mode`);
         const moduleValue = this.renderRoot.querySelector<HTMLInputElement>(`#script-write-module-${entry.id}-value`);
-        if (index < 0 || !runtime || !moduleMode || !moduleValue ||
-            !['python', 'go', 'unknown'].includes(runtime.value) ||
-            !['unchanged', 'replace', 'clear'].includes(moduleMode.value)) {
+        if (index < 0 || !runtime || !moduleValue ||
+            !['python', 'go', 'unknown'].includes(runtime.value)) {
           this.draftError = 'Script runtime is invalid.';
           return undefined;
         }
         const replacement = moduleValue.value.trim();
-        if (moduleMode.value === 'replace' &&
-            (replacement.length === 0 || replacement.length > 1024 || /[\u0000-\u001f\u007f]/u.test(replacement))) {
-          this.draftError = 'A replacement script module path up to 1024 characters is required.';
+        if (replacement.length > 1024 || /[\u0000-\u001f\u007f]/u.test(replacement)) {
+          this.draftError = 'The script module path must contain at most 1024 printable characters.';
           return undefined;
         }
         const configuredType = runtime.value === 'python' ? '0' : runtime.value === 'go' ? '1' : '-1';
@@ -7100,11 +7050,7 @@ export class SmithproxyApp extends LitElement {
           {path: `script_profiles.[${index}].name`, value: normalizedName},
           ...renameChanges,
           {path: `script_profiles.[${index}].type`, value: configuredType},
-          ...(moduleMode.value === 'replace'
-            ? [{path: `script_profiles.[${index}].script-file`, value: replacement}]
-            : moduleMode.value === 'clear'
-              ? [{path: `script_profiles.[${index}].script-file`, value: ''}]
-              : []),
+          {path: `script_profiles.[${index}].script-file`, value: replacement},
         ];
       }
       if (profile.authentication) {
@@ -13249,20 +13195,11 @@ export class SmithproxyApp extends LitElement {
             ?disabled=${fieldReadOnly('alerts')}>
             <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
           </select>
-          <label for="tls-write-sni-${entry.id}-mode">SNI bypass list</label>
-          <div class="write-only-control">
-            <select id="tls-write-sni-${entry.id}-mode" ?disabled=${mappedReadOnly}>
-              <option value="unchanged">Keep ${tls.sniBypass.length} configured entries</option>
-              <option value="replace">Replace</option><option value="clear">Clear</option>
-            </select>
-            <textarea id="tls-write-sni-${entry.id}-value" aria-label="SNI bypass list replacement"
-              placeholder="[]" autocomplete="off"
-              .value=${JSON.stringify(persistentStrings('sni_filter_bypass', tls.sniBypass))}
-              @input=${() => {
-                const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-write-sni-${entry.id}-mode`);
-                if (mode && !mappedReadOnly) mode.value = 'replace';
-              }} .readOnly=${mappedReadOnly}></textarea>
-          </div>
+          <label for="tls-write-sni-${entry.id}-value">SNI bypass list</label>
+          <textarea id="tls-write-sni-${entry.id}-value" aria-label="SNI bypass list"
+            placeholder="[]" autocomplete="off"
+            .value=${JSON.stringify(persistentStrings('sni_filter_bypass', tls.sniBypass))}
+            .readOnly=${mappedReadOnly}></textarea>
             </div>
           </fieldset>
         ` : detection ? html`
@@ -13342,20 +13279,11 @@ export class SmithproxyApp extends LitElement {
             <legend>Session scope and content rules</legend>
             <p>Limits this profile with a session expression and applies ordered content replacements.</p>
             <div class="form-grid">
-          <label for="content-write-filter-${entry.id}-mode">Session filter</label>
-          <div class="write-only-control">
-            <select id="content-write-filter-${entry.id}-mode" ?disabled=${mappedReadOnly}>
-              <option value="unchanged">${content.sessionFilterConfigured ? 'Keep configured filter' : 'Keep empty'}</option>
-              <option value="replace">Replace</option><option value="clear">Clear</option>
-            </select>
-            <textarea id="content-write-filter-${entry.id}-value" aria-label="Session filter replacement"
-              placeholder="Session expression" autocomplete="off"
-              .value=${persistent('rules_session_filter', content.sessionFilter)}
-              @input=${() => {
-                const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#content-write-filter-${entry.id}-mode`);
-                if (mode && !mappedReadOnly) mode.value = 'replace';
-              }} .readOnly=${mappedReadOnly}></textarea>
-          </div>
+          <label for="content-write-filter-${entry.id}-value">Session filter</label>
+          <textarea id="content-write-filter-${entry.id}-value" aria-label="Session filter"
+            placeholder="Session expression" autocomplete="off"
+            .value=${persistent('rules_session_filter', content.sessionFilter)}
+            .readOnly=${mappedReadOnly}></textarea>
           <label>Content rules</label>
           <div class="reference-stack" role="group" aria-label="Content rules">
             <button class="secondary" type="button" data-edit-control="true"
@@ -13412,19 +13340,10 @@ export class SmithproxyApp extends LitElement {
             <legend>Upstream host identity</legend>
             <p>Defines how Smithproxy verifies and stores the upstream SSH host key.</p>
             <div class="form-grid">
-          <label for="ssh-write-host-key-${entry.id}-mode">Host key</label>
-          <div class="write-only-control">
-            <select id="ssh-write-host-key-${entry.id}-mode" ?disabled=${mappedReadOnly}>
-              <option value="unchanged">${ssh.hostKeyConfigured ? 'Keep configured path' : 'Keep empty'}</option>
-              <option value="replace">Replace</option><option value="clear">Clear</option>
-            </select>
-            <input id="ssh-write-host-key-${entry.id}-value" aria-label="Host key replacement"
-              .value=${persistent('host_key', ssh.hostKey)} placeholder="Host-key path" autocomplete="off"
-              @input=${() => {
-                const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#ssh-write-host-key-${entry.id}-mode`);
-                if (mode && !mappedReadOnly) mode.value = 'replace';
-              }} .readOnly=${mappedReadOnly} />
-          </div>
+          <label for="ssh-write-host-key-${entry.id}-value">Host key</label>
+          <input id="ssh-write-host-key-${entry.id}-value" aria-label="Host key"
+            .value=${persistent('host_key', ssh.hostKey)} placeholder="Host-key path" autocomplete="off"
+            .readOnly=${mappedReadOnly} />
           <label for="ssh-host-key-policy-${entry.id}">Upstream host-key policy</label>
           <select id="ssh-host-key-policy-${entry.id}" .value=${persistent('hostkey_policy', ssh.hostKeyPolicy)}
             ?disabled=${fieldReadOnly('hostkey_policy')}>
@@ -13495,20 +13414,10 @@ export class SmithproxyApp extends LitElement {
             <option value="python">Python</option><option value="go">Go</option>
             <option value="unknown">Unspecified</option>
           </select>
-          <label for="script-write-module-${entry.id}-mode">Module path</label>
-          <code>${script.modulePath || 'Not configured'}</code>
-          <div class="write-only-control">
-            <select id="script-write-module-${entry.id}-mode" ?disabled=${mappedReadOnly}>
-              <option value="unchanged">${script.modulePathConfigured ? 'Keep configured path' : 'Keep empty'}</option>
-              <option value="replace">Replace</option><option value="clear">Clear</option>
-            </select>
-            <input id="script-write-module-${entry.id}-value" aria-label="Module path replacement"
-              .value=${persistent('script-file', script.modulePath)} placeholder="Module path" autocomplete="off"
-              @input=${() => {
-                const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#script-write-module-${entry.id}-mode`);
-                if (mode && !mappedReadOnly) mode.value = 'replace';
-              }} .readOnly=${mappedReadOnly} />
-          </div>
+          <label for="script-write-module-${entry.id}-value">Module path</label>
+          <input id="script-write-module-${entry.id}-value" aria-label="Module path"
+            .value=${persistent('script-file', script.modulePath)} placeholder="Module path" autocomplete="off"
+            .readOnly=${mappedReadOnly} />
             </div>
           </fieldset>
         ` : authentication ? html`
@@ -14064,22 +13973,10 @@ export class SmithproxyApp extends LitElement {
         <label for="authority-name-${entry.id}">Name</label>
         <input id="authority-name-${entry.id}" .value=${this.persistentValue(namePath, authority.name)}
           .readOnly=${this.originReadOnly(namePath, disabled)} />
-        <label for="authority-write-path-${entry.id}-mode">CA path</label>
-        <code>${authority.path || 'Not configured'}</code>
-        <div class="write-only-control">
-          <select id="authority-write-path-${entry.id}-mode" ?disabled=${disabled}>
-            <option value="unchanged">${authority.pathConfigured ? 'Keep current path' : 'Keep empty'}</option>
-            <option value="replace">Replace</option><option value="clear">Clear</option>
-          </select>
-          <input id="authority-write-path-${entry.id}-value" aria-label="CA path replacement"
-            .value=${authority.path} placeholder="Absolute path" autocomplete="off"
-            @input=${() => {
-              const mode = this.renderRoot.querySelector<HTMLSelectElement>(
-                `#authority-write-path-${entry.id}-mode`,
-              );
-              if (mode && !disabled) mode.value = 'replace';
-            }} .readOnly=${disabled} />
-        </div>
+        <label for="authority-write-path-${entry.id}-value">CA path</label>
+        <input id="authority-write-path-${entry.id}-value" aria-label="CA path"
+          .value=${authority.path} placeholder="Absolute path" autocomplete="off"
+          .readOnly=${disabled} />
       </div>
       ${this.renderNamedRenameNotice(namePath)}
     `;
@@ -14168,41 +14065,14 @@ export class SmithproxyApp extends LitElement {
           min="-2147483648" max="2147483647"
           .value=${String(this.persistentValue(path('replace_each_nth'), rule.replaceEachNth))}
           .readOnly=${this.originReadOnly(path('replace_each_nth'), disabled)} />
-        <label for="content-rule-write-match-${entry.id}-mode">Match expression</label>
-        <div class="write-only-control">
-          <select id="content-rule-write-match-${entry.id}-mode" ?disabled=${disabled}>
-            <option value="unchanged">${rule.matchConfigured ? 'Keep current match' : 'Keep empty'}</option>
-            <option value="replace">Replace</option>
-          </select>
-          <textarea id="content-rule-write-match-${entry.id}-value" maxlength="65536"
-            aria-label="Content match replacement" autocomplete="off"
-            placeholder="Match expression" .value=${rule.match}
-            @input=${() => {
-              const mode = this.renderRoot.querySelector<HTMLSelectElement>(
-                `#content-rule-write-match-${entry.id}-mode`,
-              );
-              if (mode && !disabled) mode.value = 'replace';
-            }} .readOnly=${disabled}></textarea>
-        </div>
-        <label for="content-rule-write-replacement-${entry.id}-mode">Replacement expression</label>
-        <div class="write-only-control">
-          <select id="content-rule-write-replacement-${entry.id}-mode" ?disabled=${disabled}>
-            <option value="unchanged">${rule.replacementConfigured
-              ? rule.replacementHasValue ? 'Keep current replacement' : 'Keep empty replacement'
-              : 'Keep absent replacement'}</option>
-            <option value="replace">Replace</option>
-            <option value="clear">Set empty replacement</option>
-          </select>
-          <textarea id="content-rule-write-replacement-${entry.id}-value" maxlength="65536"
-            aria-label="Content replacement replacement" autocomplete="off"
-            placeholder="Replacement expression" .value=${rule.replacement}
-            @input=${() => {
-              const mode = this.renderRoot.querySelector<HTMLSelectElement>(
-                `#content-rule-write-replacement-${entry.id}-mode`,
-              );
-              if (mode && !disabled) mode.value = 'replace';
-            }} .readOnly=${disabled}></textarea>
-        </div>
+        <label for="content-rule-write-match-${entry.id}-value">Match expression</label>
+        <textarea id="content-rule-write-match-${entry.id}-value" maxlength="65536"
+          aria-label="Match expression" autocomplete="off"
+          placeholder="Match expression" .value=${rule.match} .readOnly=${disabled}></textarea>
+        <label for="content-rule-write-replacement-${entry.id}-value">Replacement expression</label>
+        <textarea id="content-rule-write-replacement-${entry.id}-value" maxlength="65536"
+          aria-label="Replacement expression" autocomplete="off"
+          placeholder="Replacement expression" .value=${rule.replacement} .readOnly=${disabled}></textarea>
       </div>
     `;
   }
@@ -14446,23 +14316,10 @@ export class SmithproxyApp extends LitElement {
         <label for="signature-flow-maximum-${entry.id}">Byte window</label>
         <input id="signature-flow-maximum-${entry.id}" type="number" min="0"
           .value=${String(scalar('bytes_max', step.bytesMax))} .readOnly=${locked('bytes_max')} />
-        <label for="signature-flow-write-expression-${entry.id}-mode">Expression</label>
-        <pre><code>${step.expression || '(empty)'}</code></pre>
-        <div class="write-only-control">
-          <select id="signature-flow-write-expression-${entry.id}-mode" ?disabled=${disabled}>
-            <option value="unchanged">${step.expressionConfigured ? 'Keep current expression' : 'Keep empty'}</option>
-            <option value="replace">Replace</option>
-          </select>
-          <textarea id="signature-flow-write-expression-${entry.id}-value" maxlength="65536"
-            aria-label="Signature expression replacement" autocomplete="off"
-            placeholder="Matcher expression" .value=${step.expression}
-            @input=${() => {
-              const mode = this.renderRoot.querySelector<HTMLSelectElement>(
-                `#signature-flow-write-expression-${entry.id}-mode`,
-              );
-              if (mode && !disabled) mode.value = 'replace';
-            }} .readOnly=${disabled}></textarea>
-        </div>
+        <label for="signature-flow-write-expression-${entry.id}-value">Expression</label>
+        <textarea id="signature-flow-write-expression-${entry.id}-value" maxlength="65536"
+          aria-label="Expression" autocomplete="off"
+          placeholder="Matcher expression" .value=${step.expression} .readOnly=${disabled}></textarea>
       </div>
     `;
   }

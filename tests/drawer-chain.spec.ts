@@ -1422,8 +1422,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await tlsEditor.getByLabel('Override timeout', {exact: true}).fill('900');
   await tlsEditor.getByLabel('Override timeout behavior').selectOption('1');
   await tlsEditor.getByLabel('Alerts').selectOption('all');
-  await tlsEditor.getByLabel('SNI bypass list', {exact: true}).selectOption('replace');
-  await tlsEditor.getByLabel('SNI bypass list replacement').fill('["internal.example", "*.private.example"]');
+  await tlsEditor.getByLabel('SNI bypass list', {exact: true})
+    .fill('["internal.example", "*.private.example"]');
   await tlsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(tlsEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
@@ -1437,8 +1437,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await contentEditor.getByLabel('Capture format').selectOption('smcap');
   await contentEditor.getByLabel('Webhook traffic lock').selectOption('true');
   await contentEditor.getByLabel('JA4 HTTP').selectOption('true');
-  await contentEditor.getByLabel('Session filter', {exact: true}).selectOption('replace');
-  await contentEditor.getByLabel('Session filter replacement').fill('policy == "office-secret"');
+  await contentEditor.getByLabel('Session filter', {exact: true}).fill('policy == "office-secret"');
   await contentEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(contentEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
@@ -1447,9 +1446,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(sshEditor.getByRole('group', {name: 'Upstream host identity'})).toBeVisible();
   await expect(sshEditor.getByRole('group', {name: 'Session permissions'})).toBeVisible();
   await expect(sshEditor.getByRole('group', {name: 'Forwarding permissions'})).toBeVisible();
-  await expect(sshEditor.getByLabel('Host key', {exact: true})).toHaveValue('unchanged');
-  await sshEditor.getByLabel('Host key', {exact: true}).selectOption('replace');
-  await sshEditor.getByLabel('Host key replacement').fill('/etc/smithproxy/new-host-key');
+  await expect(sshEditor.getByLabel('Host key', {exact: true}))
+    .toHaveValue('/etc/ssh/ssh_host_ed25519_key');
+  await sshEditor.getByLabel('Host key', {exact: true}).fill('/etc/smithproxy/new-host-key');
   await sshEditor.getByLabel('Upstream host-key policy').selectOption('accept-new');
   await sshEditor.getByLabel('Exec').selectOption('pass');
   await sshEditor.getByLabel('Local forwarding').selectOption('pass');
@@ -1459,9 +1458,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await editor.getByRole('button', {name: 'audit', exact: true}).click();
   const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
   await expect(scriptEditor.getByRole('group', {name: 'Script execution'})).toBeVisible();
-  await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
-  await scriptEditor.getByLabel('Module path', {exact: true}).selectOption('replace');
-  await scriptEditor.getByLabel('Module path replacement').fill('/opt/smithproxy/new-audit.py');
+  await expect(scriptEditor.getByLabel('Module path', {exact: true}))
+    .toHaveValue('/etc/smithproxy/audit.py');
+  await scriptEditor.getByLabel('Module path', {exact: true}).fill('/opt/smithproxy/new-audit.py');
   await scriptEditor.getByLabel('Runtime').selectOption('go');
   await scriptEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(scriptEditor).not.toBeVisible();
@@ -1536,8 +1535,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   const trustPosture = await selectSecurityCategory(page, 'Trust');
   await trustPosture.getByRole('button', {name: /default Certificate authority/i}).click();
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
-  await authorityEditor.getByLabel('CA path', {exact: true}).selectOption('replace');
-  await authorityEditor.getByLabel('CA path replacement').fill('/etc/smithproxy/private/new-default-ca');
+  await authorityEditor.getByLabel('CA path', {exact: true}).fill('/etc/smithproxy/private/new-default-ca');
   await authorityEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(authorityEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
@@ -6912,12 +6910,12 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   const contentEditor = page.getByRole('dialog', {name: 'Edit capture'});
   await expect(contentEditor.getByRole('group', {name: 'Content rules'})
     .getByRole('button', {name: /Rule \d/i})).toHaveCount(2);
-  await expect(contentEditor.getByLabel('Session filter replacement')).toHaveValue('tcp.port == 443');
+  await expect(contentEditor.getByLabel('Session filter', {exact: true})).toHaveValue('tcp.port == 443');
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /^default-ssh ssh /i}).click();
   const sshEditor = page.getByRole('dialog', {name: 'Edit default-ssh'});
-  await expect(sshEditor.getByLabel('Host key', {exact: true})).toHaveValue('unchanged');
-  await expect(sshEditor.getByLabel('Host key replacement')).toHaveValue('/etc/ssh/ssh_host_ed25519_key');
+  await expect(sshEditor.getByLabel('Host key', {exact: true}))
+    .toHaveValue('/etc/ssh/ssh_host_ed25519_key');
   await expect(sshEditor.getByLabel('Upstream host-key policy')).toHaveValue('strict');
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /^resolver dns /i}).click();
@@ -6925,8 +6923,8 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.keyboard.press('Escape');
   await profiles.getByRole('button', {name: /^audit script /i}).click();
   const scriptEditor = page.getByRole('dialog', {name: 'Edit audit'});
-  await expect(scriptEditor.getByLabel('Module path', {exact: true})).toHaveValue('unchanged');
-  await expect(scriptEditor.getByLabel('Module path replacement')).toHaveValue('/etc/smithproxy/audit.py');
+  await expect(scriptEditor.getByLabel('Module path', {exact: true}))
+    .toHaveValue('/etc/smithproxy/audit.py');
   await expect(scriptEditor.getByLabel('Runtime')).toHaveValue('python');
   await page.keyboard.press('Escape');
   const trust = page.getByRole('group', {name: 'Trust and signatures'});
@@ -7087,8 +7085,8 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await page.getByRole('group', {name: 'Trust', exact: true})
     .getByRole('button', {name: /default Certificate authority/i}).click();
   const authorityEditor = page.getByRole('dialog', {name: 'Edit default'});
-  await expect(authorityEditor.getByLabel('CA path', {exact: true})).toHaveValue('unchanged');
-  await expect(authorityEditor.getByText('/etc/smithproxy/default-ca.pem', {exact: true})).toBeVisible();
+  await expect(authorityEditor.getByLabel('CA path', {exact: true}))
+    .toHaveValue('/etc/smithproxy/default-ca.pem');
 });
 
 test('organizes operational surfaces into focused administrator views', async ({page}) => {
@@ -7536,8 +7534,7 @@ test('edits nested signature flow metadata with complete expressions', async ({p
   await reopenedSignatureEditor.getByRole('button', {name: /1\. R · regex/i}).click();
   const flowEditor = page.getByRole('dialog', {name: 'Edit Flow R'});
   await flowEditor.getByLabel('Byte window').fill('512');
-  await flowEditor.getByLabel('Expression', {exact: true}).selectOption('replace');
-  await flowEditor.getByLabel('Signature expression replacement').fill('^PRIVATE[0-9]+$');
+  await flowEditor.getByLabel('Expression', {exact: true}).fill('^PRIVATE[0-9]+$');
   await flowEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(page.getByText('Draft: 4 changes')).toBeVisible();
   await expect(flowEditor).not.toBeVisible();
@@ -7568,9 +7565,8 @@ test('edits nested content rules with complete expressions', async ({page}) => {
   await expect(ruleEditor.getByLabel('Preserve matched length')).toHaveValue('true');
   await ruleEditor.getByLabel('Preserve matched length').selectOption('false');
   await ruleEditor.getByLabel('Replace every Nth match').fill('5');
-  await ruleEditor.getByLabel('Match expression').selectOption('replace');
-  await ruleEditor.getByLabel('Content match replacement').fill('PRIVATE-MATCH-[0-9]+');
-  await ruleEditor.getByLabel('Replacement expression').selectOption('clear');
+  await ruleEditor.getByLabel('Match expression').fill('PRIVATE-MATCH-[0-9]+');
+  await ruleEditor.getByLabel('Replacement expression').fill('');
   await ruleEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(page.getByText('Draft: 4 changes')).toBeVisible();
   await expect(ruleEditor).not.toBeVisible();
