@@ -152,8 +152,9 @@ strictly increasing non-negative priority to every layer. Layer identifiers use
 bounded schema-safe ASCII identifiers; mixed, duplicate, or descending priority
 metadata fails closed.
 Provenance paths use a pinned allowlist of non-secret fields already present in
-the browser snapshot. Unknown fields and every write-only credential, path,
-matcher, identity, or endpoint field reject the entire snapshot.
+the browser snapshot. Unknown fields and every credential or write-only replacement
+field reject the entire snapshot; readable operational paths and matchers remain
+outside provenance unless their schema path is explicitly reviewed.
 The GUI renders effective values but preserves the persistent value and layer
 ownership in the editor. Until Smithproxy exposes this data through its HTTP API,
 the live GUI core returns `augment_support: false` with an empty origin collection.

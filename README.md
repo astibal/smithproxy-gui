@@ -222,8 +222,9 @@ source in the effective draft order and receives a bounded unique name. Legacy
 action, NAT, and feature values remain visible and must be consciously migrated
 to the reviewed create schema before the copy can be saved.
 Policies, objects, system settings, profiles, certificate authorities,
-and protocol signatures have typed draft editors. Sensitive paths, credentials,
-filters, and matcher expressions use write-only controls. Pending structural
+and protocol signatures have typed draft editors. Current operational paths and
+matcher expressions are visible to administrators; replacement paths, credentials,
+filters, and pending replacement matcher expressions use redacted draft controls. Pending structural
 policy, object, profile, trust-asset, content-rule, and signature-flow creates
 appear in their primary contextual lists and reopen the same draft create drawer.
 The filtered Objects inventory can mark every visible unused address, port,
@@ -236,12 +237,13 @@ prefilled create drawers. Copies use persistent values plus pending draft edits,
 never temporary augment overlays, and do not mutate the draft until saved.
 Protocol copies require a new unique protocol number before saving.
 All typed routing and profile objects support the same explicit copy workflow.
-Write-only SNI filters, session filters, host-key and module paths,
-authentication identities, and nested content rules are intentionally excluded
-and called out in the prefilled create drawer before any draft mutation occurs.
+SNI filters, session filters, authentication identities, current path values,
+and nested content rules are intentionally excluded and called out in the
+prefilled create drawer before any draft mutation occurs.
 Certificate authorities and protocol signatures can also be copied safely.
-Authority paths and signature matcher expressions remain write-only; signature
-copies prefill the first flow step metadata and call out additional omitted steps.
+Current authority paths and signature matcher expressions remain visible, while
+their replacements stay redacted; copies omit those values, prefill the first
+flow step metadata, and call out additional omitted steps.
 Policy and routing reference fields preview the value being typed. Known objects
 open directly in the next nested editor. Objects and profiles created earlier in
 the same workspace draft are marked as pending and reopen their structural create
@@ -367,15 +369,14 @@ are not stable.
 Control-plane health and listener monitoring use the production C++ backend. A
 bounded five-minute runtime history visualizes active sessions and aggregate
 throughput. The authenticated session browser receives a bounded set of active and
-recently closed endpoint, transport, policy, rate, and byte metadata needed by an
-administrator; it does not retain payloads or credentials. TLS monitoring exposes cache size, capacity, and freshness only;
+recently closed endpoint, transport, policy, classification, rate, and byte metadata
+needed by an administrator; it does not retain payloads or credentials. TLS monitoring exposes cache size, capacity, and freshness only;
 certificate subjects and domain names remain behind the GUI core boundary. The
-Network neighborhood monitoring follows the same rule: only endpoint counts,
-activity windows, observations, and traffic totals reach the browser; hostnames,
-tags, labels, and individual timelines do not. The Network view also consumes
-the proposed bounded interface-summary API when Smithproxy advertises it. It
-shows synchronization health and aggregate interface/address counts while names,
-indexes, addresses, namespaces, routes, and raw kernel errors remain server-side.
+Network neighborhood view shows bounded hostnames, tags, labels, observation
+history, activity windows, and traffic totals. The Network view also consumes
+the bounded interface API when Smithproxy advertises it. It shows names, indexes,
+roles, link flags, assigned addresses, aggregate counts, and synchronization
+diagnostics. Raw netlink datagrams, namespaces, and routing tables remain server-side.
 Every aggregate surface combines collector state with interval-aware freshness;
 delayed values are marked stale
 and rendered as last-known data instead of appearing live. Monitoring and
