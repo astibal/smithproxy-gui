@@ -5,6 +5,9 @@ export default defineConfig({
   build: {
     sourcemap: false,
     target: 'es2022',
+    // Lit templates compress substantially; production-assets.mjs enforces the
+    // transfer-size budget while this limit still catches unexpected raw growth.
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name]-[hash].js',

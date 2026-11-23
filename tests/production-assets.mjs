@@ -1,4 +1,8 @@
 import {readdir, readFile} from 'node:fs/promises';
+import {gzipSync} from 'node:zlib';
+
+const maximumEntrypointGzipBytes = 200 * 1024;
+const maximumTotalJavascriptGzipBytes = 300 * 1024;
 
 const output = new URL('../dist/', import.meta.url);
 const files = await readdir(output, {recursive: true});
@@ -17,7 +21,8 @@ if (unfingerprinted.length > 0) {
 }
 
 const entrypoint = await readFile(new URL('index.html', output), 'utf8');
-const reachable = new Set(assets.filter(asset => entrypoint.includes(`./${asset}`)));
+const entryAssets = assets.filter(asset => entrypoint.includes(`./${asset}`));
+const reachable = new Set(entryAssets);
 let discovered = true;
 while (discovered) {
   discovered = false;
@@ -37,3 +42,30 @@ const orphaned = assets.filter(asset => !reachable.has(asset));
 if (orphaned.length > 0) {
   throw new Error(`Production assets are not reachable from the entry point: ${orphaned.join(', ')}`);
 }
+
+const javascriptAssets = assets.filter(asset => asset.endsWith('.js'));
+const compressedSizes = new Map(await Promise.all(javascriptAssets.map(async asset => [
+  asset,
+  gzipSync(await readFile(new URL(asset, output))).byteLength,
+])));
+const entryJavascriptGzipBytes = entryAssets
+  .filter(asset => asset.endsWith('.js'))
+  .reduce((total, asset) => total + (compressedSizes.get(asset) ?? 0), 0);
+const totalJavascriptGzipBytes = [...compressedSizes.values()]
+  .reduce((total, size) => total + size, 0);
+if (entryJavascriptGzipBytes > maximumEntrypointGzipBytes) {
+  throw new Error(
+    `Production entry JavaScript exceeds the ${maximumEntrypointGzipBytes}-byte gzip budget: ` +
+    `${entryJavascriptGzipBytes} bytes.`,
+  );
+}
+if (totalJavascriptGzipBytes > maximumTotalJavascriptGzipBytes) {
+  throw new Error(
+    `Production JavaScript exceeds the ${maximumTotalJavascriptGzipBytes}-byte gzip budget: ` +
+    `${totalJavascriptGzipBytes} bytes.`,
+  );
+}
+process.stdout.write(
+  `Verified ${assets.length} fingerprinted assets; entry JavaScript ${entryJavascriptGzipBytes} bytes gzip, ` +
+  `all JavaScript ${totalJavascriptGzipBytes} bytes gzip.\n`,
+);
