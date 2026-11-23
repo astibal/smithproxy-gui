@@ -7,7 +7,7 @@ describe('persistent configuration values', () => {
     const snapshot = await new ConfigFixtureClient().loadSnapshot();
     const values = persistentConfigurationValues(snapshot);
 
-    expect(values.size).toBe(302);
+    expect(values.size).toBe(311);
     expect(values.get('policy.[0].src')).toEqual(['office-net']);
     expect(values.get('address_objects.[0].value')).toBe('10.20.0.0/16');
     expect(values.get('port_objects.[0].start')).toBe(443);
@@ -37,8 +37,7 @@ describe('persistent configuration values', () => {
     expect(values.get('detection_signatures.[0].flow.[0].bytes_max')).toBe(200);
 
     for (const path of [
-      'captures.local.dir', 'tls_ca.[0].path',
-      'detection_signatures.[0].flow.[0].signature',
+      'auth_profiles.[0].identities',
     ]) {
       expect(values.has(path), path).toBe(false);
     }

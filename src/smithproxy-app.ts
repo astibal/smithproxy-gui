@@ -438,13 +438,14 @@ interface ProfileCreatePrefill extends PrimitiveCreatePrefill {
 }
 
 interface AuthorityCreatePrefill extends PrimitiveCreatePrefill {
-  pathConfigured: boolean;
+  path: string;
 }
 
 interface SignatureCreatePrefill {
   fields: DraftCreateOperation['fields'];
   flowFields: DraftCreateOperation['fields'];
   sourceName: string;
+  firstExpression: string;
   omittedFlowCount: number;
 }
 
@@ -4415,7 +4416,7 @@ export class SmithproxyApp extends LitElement {
     const fields = {name: this.uniqueAuthorityCopyName(sourceName)};
     const localId = `create-authority-${crypto.randomUUID()}`;
     this.authorityCreatePrefills.set(localId, {
-      fields, sourceName, pathConfigured: authority.pathConfigured,
+      fields, sourceName, path: authority.path,
     });
     this.openObjectDrawer({
       kind: 'authority-create', id: localId, title: String(fields.name),
@@ -4503,12 +4504,14 @@ export class SmithproxyApp extends LitElement {
       side: flowScalar('side', firstFlow.side), type: flowScalar('type', firstFlow.type),
       bytes_start: flowScalar('bytes_start', firstFlow.bytesStart),
       bytes_max: flowScalar('bytes_max', firstFlow.bytesMax),
+      signature: flowScalar('signature', firstFlow.expression),
     };
     const localId = `create-signature-${crypto.randomUUID()}`;
     this.signatureCreateKinds.set(localId, signature.kind);
     this.signatureCreateFlowIds.set(localId, `create-sigflow-${crypto.randomUUID()}`);
     this.signatureCreatePrefills.set(localId, {
-      fields, flowFields, sourceName, omittedFlowCount: Math.max(0, signature.flow.length - 1),
+      fields, flowFields, sourceName, firstExpression: firstFlow.expression,
+      omittedFlowCount: Math.max(0, signature.flow.length - 1),
     });
     this.openObjectDrawer({
       kind: 'signature-create', id: localId, title: String(fields['name']),
@@ -5393,6 +5396,11 @@ export class SmithproxyApp extends LitElement {
       this.drawerError = 'A matcher expression from 1 to 65536 characters is required.';
       return;
     }
+    const encodedPrefill = expression.dataset['originalExpression'];
+    const prefilledExpression = encodedPrefill ? decodeURIComponent(encodedPrefill) : undefined;
+    const normalizedPrefill = prefilledExpression?.replace(/\r\n?/gu, '\n');
+    const expressionValue = prefilledExpression !== undefined && expression.value === normalizedPrefill
+      ? prefilledExpression : expression.value;
     const parentClientId = parent?.clientId ?? entry.id;
     const flowLocalId = flow?.localId ?? this.signatureCreateFlowIds.get(entry.id) ??
       `create-sigflow-${crypto.randomUUID()}`;
@@ -5415,7 +5423,7 @@ export class SmithproxyApp extends LitElement {
         position: flow?.position ?? {kind: 'last', reference: null},
         fields: {
           side: side.value, type: type.value, bytes_start: bytesStart,
-          bytes_max: bytesMax, signature: expression.value,
+          bytes_max: bytesMax, signature: expressionValue,
         },
       }]);
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
@@ -13941,16 +13949,25 @@ export class SmithproxyApp extends LitElement {
     const booleanField = (id: string, value: boolean) => this.renderBooleanSelect(
       `captures-${id}`, scalar(booleanPaths.get(id)!, value), locked(booleanPaths.get(id)!),
     );
+    const currentValues: ReadonlyMap<string, string> = new Map([
+      ['local-directory', captures.local.directory], ['local-prefix', captures.local.filePrefix],
+      ['local-suffix', captures.local.fileSuffix], ['remote-destination', captures.remote.destination],
+      ['bind-interface', captures.remote.bindInterface],
+    ]);
     const writeOnlyField = (id: string, label: string, configured: boolean) => html`
       <label for="captures-write-${id}-mode">${label}</label>
       <div class="write-only-control">
         <select id="captures-write-${id}-mode" ?disabled=${disabled}>
-          <option value="unchanged">${configured ? 'Keep configured value' : 'Keep empty'}</option>
+          <option value="unchanged">${configured ? 'Keep current value' : 'Keep empty'}</option>
           <option value="replace">Replace</option>
           <option value="clear">Clear</option>
         </select>
         <input id="captures-write-${id}-value" aria-label="${label} replacement"
-          placeholder="New value (write-only)" autocomplete="off" .readOnly=${disabled} />
+          .value=${currentValues.get(id) ?? ''} placeholder="Empty" autocomplete="off"
+          @input=${() => {
+            const mode = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-write-${id}-mode`);
+            if (mode && !disabled) mode.value = 'replace';
+          }} .readOnly=${disabled} />
       </div>
     `;
     return html`
@@ -14040,11 +14057,17 @@ export class SmithproxyApp extends LitElement {
         <code>${authority.path || 'Not configured'}</code>
         <div class="write-only-control">
           <select id="authority-write-path-${entry.id}-mode" ?disabled=${disabled}>
-            <option value="unchanged">${authority.pathConfigured ? 'Keep configured path' : 'Keep empty'}</option>
+            <option value="unchanged">${authority.pathConfigured ? 'Keep current path' : 'Keep empty'}</option>
             <option value="replace">Replace</option><option value="clear">Clear</option>
           </select>
           <input id="authority-write-path-${entry.id}-value" aria-label="CA path replacement"
-            placeholder="New absolute path (write-only)" autocomplete="off" .readOnly=${disabled} />
+            .value=${authority.path} placeholder="Absolute path" autocomplete="off"
+            @input=${() => {
+              const mode = this.renderRoot.querySelector<HTMLSelectElement>(
+                `#authority-write-path-${entry.id}-mode`,
+              );
+              if (mode && !disabled) mode.value = 'replace';
+            }} .readOnly=${disabled} />
         </div>
       </div>
       ${this.renderNamedRenameNotice(namePath)}
@@ -14056,6 +14079,9 @@ export class SmithproxyApp extends LitElement {
     const operation = this.pendingAuthorityCreate(entry);
     const prefill = operation ? undefined : this.authorityCreatePrefills.get(entry.id);
     const readOnly = !this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca');
+    const pendingPath = operation?.fields['path'];
+    const visiblePath = typeof pendingPath === 'string' && !pendingPath.startsWith('[redacted:')
+      ? pendingPath : prefill?.path ?? '';
     return html`
       <div class="form-grid">
         <label for="authority-create-name-${entry.id}">Name</label>
@@ -14063,19 +14089,13 @@ export class SmithproxyApp extends LitElement {
           .value=${String(operation?.fields['name'] ?? prefill?.fields['name'] ?? '')} .readOnly=${readOnly} />
         <label for="authority-create-path-${entry.id}">CA path</label>
         <input id="authority-create-path-${entry.id}" maxlength="1024" required autocomplete="off"
-          aria-label="New CA path" placeholder=${operation ? 'Re-enter path (write-only)' : 'Absolute path (write-only)'}
+          aria-label="New CA path" placeholder="Absolute path" .value=${visiblePath}
           .readOnly=${readOnly} />
       </div>
       ${prefill ? html`<div class="scope-note section">
         Prefilled from ${prefill.sourceName}. Persistent and pending values are copied; temporary augment overlays are not.
-        ${prefill.pathConfigured
-          ? 'The write-only CA path is not copied and must be entered before saving.'
-          : 'Enter a CA path before saving.'}
+        The complete authority path is copied for administrator review.
       </div>` : nothing}
-      <div class="privacy-note section">
-        The path is accepted by the management service, redacted from draft responses, and cleared from this editor.
-        Reopening a pending authority requires explicit path re-entry before it can be updated.
-      </div>
     `;
   }
 
@@ -14141,29 +14161,38 @@ export class SmithproxyApp extends LitElement {
         <label for="content-rule-write-match-${entry.id}-mode">Match expression</label>
         <div class="write-only-control">
           <select id="content-rule-write-match-${entry.id}-mode" ?disabled=${disabled}>
-            <option value="unchanged">${rule.matchConfigured ? 'Keep configured match' : 'Keep empty'}</option>
+            <option value="unchanged">${rule.matchConfigured ? 'Keep current match' : 'Keep empty'}</option>
             <option value="replace">Replace</option>
           </select>
           <textarea id="content-rule-write-match-${entry.id}-value" maxlength="65536"
             aria-label="Content match replacement" autocomplete="off"
-            placeholder="New match expression (write-only)" .readOnly=${disabled}></textarea>
+            placeholder="Match expression" .value=${rule.match}
+            @input=${() => {
+              const mode = this.renderRoot.querySelector<HTMLSelectElement>(
+                `#content-rule-write-match-${entry.id}-mode`,
+              );
+              if (mode && !disabled) mode.value = 'replace';
+            }} .readOnly=${disabled}></textarea>
         </div>
         <label for="content-rule-write-replacement-${entry.id}-mode">Replacement expression</label>
         <div class="write-only-control">
           <select id="content-rule-write-replacement-${entry.id}-mode" ?disabled=${disabled}>
             <option value="unchanged">${rule.replacementConfigured
-              ? rule.replacementHasValue ? 'Keep configured replacement' : 'Keep empty replacement'
+              ? rule.replacementHasValue ? 'Keep current replacement' : 'Keep empty replacement'
               : 'Keep absent replacement'}</option>
             <option value="replace">Replace</option>
             <option value="clear">Set empty replacement</option>
           </select>
           <textarea id="content-rule-write-replacement-${entry.id}-value" maxlength="65536"
             aria-label="Content replacement replacement" autocomplete="off"
-            placeholder="New replacement expression (write-only)" .readOnly=${disabled}></textarea>
+            placeholder="Replacement expression" .value=${rule.replacement}
+            @input=${() => {
+              const mode = this.renderRoot.querySelector<HTMLSelectElement>(
+                `#content-rule-write-replacement-${entry.id}-mode`,
+              );
+              if (mode && !disabled) mode.value = 'replace';
+            }} .readOnly=${disabled}></textarea>
         </div>
-      </div>
-      <div class="privacy-note section">
-        Current content expressions stay inside the management service. Draft review exposes only replacement intent.
       </div>
     `;
   }
@@ -14409,15 +14438,20 @@ export class SmithproxyApp extends LitElement {
         <pre><code>${step.expression || '(empty)'}</code></pre>
         <div class="write-only-control">
           <select id="signature-flow-write-expression-${entry.id}-mode" ?disabled=${disabled}>
-            <option value="unchanged">${step.expressionConfigured ? 'Keep configured expression' : 'Keep empty'}</option>
+            <option value="unchanged">${step.expressionConfigured ? 'Keep current expression' : 'Keep empty'}</option>
             <option value="replace">Replace</option>
           </select>
           <textarea id="signature-flow-write-expression-${entry.id}-value" maxlength="65536"
             aria-label="Signature expression replacement" autocomplete="off"
-            placeholder="New expression (write-only)" .readOnly=${disabled}></textarea>
+            placeholder="Matcher expression" .value=${step.expression}
+            @input=${() => {
+              const mode = this.renderRoot.querySelector<HTMLSelectElement>(
+                `#signature-flow-write-expression-${entry.id}-mode`,
+              );
+              if (mode && !disabled) mode.value = 'replace';
+            }} .readOnly=${disabled}></textarea>
         </div>
       </div>
-      <div class="scope-note section">Replacement values remain redacted only in draft review.</div>
     `;
   }
 
@@ -14443,6 +14477,9 @@ export class SmithproxyApp extends LitElement {
     const flowType = flowField('type');
     const start = flowField('bytes_start');
     const maximum = flowField('bytes_max');
+    const pendingExpression = flowField('signature');
+    const visibleExpression = typeof pendingExpression === 'string' &&
+      !pendingExpression.startsWith('[redacted:') ? pendingExpression : prefill?.firstExpression ?? '';
     return html`
       <div class="privacy-note">
         The signature and its required first flow step are kept together in the workspace draft.
@@ -14495,17 +14532,14 @@ export class SmithproxyApp extends LitElement {
           <label for="signature-create-flow-expression-${entry.id}">Expression</label>
           <textarea id="signature-create-flow-expression-${entry.id}" maxlength="65536" required
             aria-label="New signature first flow expression" autocomplete="off"
-            placeholder=${flow ? 'Re-enter matcher expression (write-only)' : 'Matcher expression (write-only)'}
+            placeholder="Matcher expression" .value=${visibleExpression}
+            data-original-expression=${encodeURIComponent(visibleExpression)}
             .readOnly=${readOnly}></textarea>
         </div>
       </div>
-      <div class="privacy-note section">
-        The matcher expression stays inside the management service and is redacted in draft review.
-        Reopening this pending signature requires re-entering it before another update.
-      </div>
       ${prefill ? html`<div class="scope-note section">
         Prefilled from ${prefill.sourceName}. Persistent and pending metadata for the signature and its first flow step
-        are copied; temporary augment overlays are not. The write-only first matcher expression is not copied.
+        are copied, including the first matcher expression; temporary augment overlays are not.
         ${prefill.omittedFlowCount > 0
           ? `${prefill.omittedFlowCount} additional flow step${prefill.omittedFlowCount === 1 ? ' is' : 's are'} not copied.`
           : nothing}

@@ -262,9 +262,14 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
   if (snapshot.captures) {
     const capture = snapshot.captures;
     set('captures.local.enabled', capture.local.enabled);
+    set('captures.local.dir', capture.local.directory);
+    set('captures.local.file_prefix', capture.local.filePrefix);
+    set('captures.local.file_suffix', capture.local.fileSuffix);
     set('captures.local.pcap_quota', capture.local.quotaMiB);
     set('captures.local.format', capture.local.format);
     set('captures.remote.enabled', capture.remote.enabled);
+    set('captures.remote.tun_dst', capture.remote.destination);
+    set('captures.remote.bind_interface', capture.remote.bindInterface);
     set('captures.remote.tun_type', capture.remote.tunnelType);
     set('captures.remote.gre_format', capture.remote.greFormat);
     set('captures.remote.tun_ttl', capture.remote.ttl);
@@ -275,8 +280,10 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     set('captures.options.protocol_events', capture.protocolEvents);
   }
   if (snapshot.securityAssets) {
-    snapshot.securityAssets.certificateAuthorities.forEach((item, index) =>
-      set(`tls_ca.[${index}].name`, item.name));
+    snapshot.securityAssets.certificateAuthorities.forEach((item, index) => {
+      set(`tls_ca.[${index}].name`, item.name);
+      set(`tls_ca.[${index}].path`, item.path);
+    });
     for (const kind of ['starttls', 'detection'] as const) {
       snapshot.securityAssets.signatures.filter(item => item.kind === kind).forEach((item, index) => {
         const base = `${kind}_signatures.[${index}]`;
@@ -293,6 +300,7 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
           set(`${flowBase}.type`, flow.type);
           set(`${flowBase}.bytes_start`, flow.bytesStart);
           set(`${flowBase}.bytes_max`, flow.bytesMax);
+          set(`${flowBase}.signature`, flow.expression);
         });
       });
     }

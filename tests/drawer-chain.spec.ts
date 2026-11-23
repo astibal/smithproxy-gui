@@ -3331,7 +3331,7 @@ test('creates and deletes certificate authorities without exposing filesystem pa
   await expectNoWcagViolations(page);
 });
 
-test('duplicates a certificate authority without exposing or copying its private path', async ({page}) => {
+test('duplicates a certificate authority with its complete administrator-visible path', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
     structuralMutationRequests: [],
@@ -3347,29 +3347,28 @@ test('duplicates a certificate authority without exposing or copying its private
   await liveEditor.getByRole('button', {name: 'Duplicate authority'}).click();
   const createEditor = page.getByRole('dialog', {name: 'Create certificate authority'});
   await expect(createEditor.getByLabel('Name')).toHaveValue('default-revised-copy');
-  await expect(createEditor.getByLabel('New CA path')).toHaveValue('');
+  await expect(createEditor.getByLabel('New CA path')).toHaveValue('/etc/smithproxy/default-ca.pem');
   await expect(createEditor.locator('.scope-note')).toContainText(
     'Persistent and pending values are copied; temporary augment overlays are not.',
   );
   await expect(createEditor.locator('.scope-note')).toContainText(
-    'The write-only CA path is not copied',
+    'The complete authority path is copied for administrator review.',
   );
   expect(state.structuralMutationRequests).toEqual([]);
 
-  await createEditor.getByLabel('New CA path').fill('/private/pki/default-copy.pem');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(createEditor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(1);
   expect(state.structuralMutationRequests![0]).toMatchObject({
     expectedVersion: 1, csrf: '1', operation: {
       op: 'create', collection: 'tls_ca',
-      fields: {name: 'default-revised-copy', path: '/private/pki/default-copy.pem'},
+      fields: {name: 'default-revised-copy', path: '/etc/smithproxy/default-ca.pem'},
     },
   });
-  await expect(page.getByText('/private/pki/default-copy.pem')).toHaveCount(0);
+  await expect(page.getByText('/etc/smithproxy/default-ca.pem').first()).toBeVisible();
 });
 
-test('duplicates signature metadata but requires a new private matcher expression', async ({page}) => {
+test('duplicates signature metadata with its complete first matcher expression', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, structuralDraftsReady: true,
     structuralBatchMutationRequests: [],
@@ -3400,16 +3399,17 @@ test('duplicates signature metadata but requires a new private matcher expressio
   await expect(createEditor.getByLabel('Severity')).toHaveValue('2');
   await expect(createEditor.getByLabel('Matcher')).toHaveValue('simple');
   await expect(createEditor.getByLabel('Byte window')).toHaveValue('64');
-  await expect(createEditor.getByLabel('New signature first flow expression')).toHaveValue('');
+  await expect(createEditor.getByLabel('New signature first flow expression'))
+    .toHaveValue('^STARTTLS\n?\n(?:250[ -].*\n)*$');
   await expect(createEditor.locator('.scope-note')).toContainText(
     'temporary augment overlays are not',
   );
   await expect(createEditor.locator('.scope-note')).toContainText(
-    'The write-only first matcher expression is not copied. 1 additional flow step is not copied.',
+    'including the first matcher expression; temporary augment overlays are not.',
   );
+  await expect(createEditor.locator('.scope-note')).toContainText('1 additional flow step is not copied.');
   expect(state.structuralBatchMutationRequests).toEqual([]);
 
-  await createEditor.getByLabel('New signature first flow expression').fill('PRIVATE-COPY-MATCHER');
   await createEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(createEditor).not.toBeVisible();
   expect(state.structuralBatchMutationRequests).toHaveLength(1);
@@ -3423,11 +3423,13 @@ test('duplicates signature metadata but requires a new private matcher expressio
       },
     }, {
       op: 'create', collection: 'starttls_signatures.flow',
-      fields: {side: 'r', type: 'simple', bytes_start: 0, bytes_max: 64, signature: 'PRIVATE-COPY-MATCHER'},
+      fields: {
+        side: 'r', type: 'simple', bytes_start: 0, bytes_max: 64,
+        signature: '^STARTTLS\r?\n(?:250[ -].*\n)*$',
+      },
     }],
     csrf: '1',
   });
-  await expect(page.getByText('PRIVATE-COPY-MATCHER')).toHaveCount(0);
 });
 
 test('blocks signature duplication while its ordered flow has pending structural work', async ({page}) => {
