@@ -49,6 +49,7 @@ export interface SystemCapabilities {
     policyStructuralDrafts: boolean;
     contentRuleStructuralDrafts: boolean;
     signatureStructuralDrafts: boolean;
+    structuralCollections: ReadonlyArray<string>;
     drafts: boolean;
     draftPreflight: boolean;
     jobs: boolean;
@@ -508,6 +509,27 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const policyStructuralDrafts = features.policy_structural_drafts ?? false;
   const contentRuleStructuralDrafts = features.content_rule_structural_drafts ?? false;
   const signatureStructuralDrafts = features.signature_structural_drafts ?? false;
+  const legacyCollections = [
+    ...(primitiveStructuralDrafts ? ['address_objects', 'port_objects', 'proto_objects'] : []),
+    ...(namedStructuralDrafts ? [
+      'routing', 'tls_profiles', 'content_profiles', 'ssh_profiles', 'script_profiles',
+      'detection_profiles', 'alg_dns_profiles', 'auth_profiles', 'tls_ca',
+    ] : []),
+    ...(policyStructuralDrafts ? ['policy'] : []),
+    ...(contentRuleStructuralDrafts ? ['content_profiles.content_rules'] : []),
+    ...(signatureStructuralDrafts ? [
+      'starttls_signatures', 'detection_signatures',
+      'starttls_signatures.flow', 'detection_signatures.flow',
+    ] : []),
+  ];
+  const structuralCollectionsValue = features.structural_collections ?? legacyCollections;
+  if (!Array.isArray(structuralCollectionsValue) ||
+      !structuralCollectionsValue.every(item => typeof item === 'string' &&
+        /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$/u.test(item)) ||
+      new Set(structuralCollectionsValue).size !== structuralCollectionsValue.length) {
+    throw new Error('Invalid structural collection capabilities.');
+  }
+  const structuralCollections = structuralCollectionsValue as string[];
   const consoleAvailable = features.console ?? false;
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof configSave !== 'boolean' ||
@@ -543,6 +565,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       (policyStructuralDrafts && (!namedStructuralDrafts || !features.config_write || !features.drafts)) ||
       (contentRuleStructuralDrafts && (!policyStructuralDrafts || !features.config_write || !features.drafts)) ||
       (signatureStructuralDrafts && (!contentRuleStructuralDrafts || !features.config_write || !features.drafts)) ||
+      (structuralCollections.length > 0 && (!features.config_write || !features.drafts)) ||
       (features.draft_preflight && !features.drafts)) {
     throw new Error('Inconsistent privileged capabilities.');
   }
@@ -566,6 +589,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       policyStructuralDrafts,
       contentRuleStructuralDrafts,
       signatureStructuralDrafts,
+      structuralCollections,
       drafts: features.drafts,
       draftPreflight: features.draft_preflight,
       jobs: features.jobs,

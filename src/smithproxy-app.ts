@@ -530,6 +530,7 @@ export class SmithproxyApp extends LitElement {
   @state() private policyStructuralDraftsAvailable = false;
   @state() private contentRuleStructuralDraftsAvailable = false;
   @state() private signatureStructuralDraftsAvailable = false;
+  @state() private structuralCollections = new Set<string>();
   @state() private draftAvailable = false;
   @state() private draftPreflightAvailable = false;
   @state() private jobsAvailable = false;
@@ -1880,6 +1881,7 @@ export class SmithproxyApp extends LitElement {
       const policyStructuralDraftsWereAvailable = this.policyStructuralDraftsAvailable;
       const contentRuleStructuralDraftsWereAvailable = this.contentRuleStructuralDraftsAvailable;
       const signatureStructuralDraftsWereAvailable = this.signatureStructuralDraftsAvailable;
+      const structuralCollectionsWereAvailable = this.structuralCollections;
       const draftPreflightWasAvailable = this.draftPreflightAvailable;
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
@@ -1891,6 +1893,7 @@ export class SmithproxyApp extends LitElement {
       const nextPolicyStructuralDraftsAvailable = capabilities.features.policyStructuralDrafts;
       const nextContentRuleStructuralDraftsAvailable = capabilities.features.contentRuleStructuralDrafts;
       const nextSignatureStructuralDraftsAvailable = capabilities.features.signatureStructuralDrafts;
+      const nextStructuralCollections = new Set(capabilities.features.structuralCollections);
       const nextDraftAvailable = capabilities.features.drafts;
       const nextDraftPreflightAvailable = capabilities.features.draftPreflight;
       const configurationCapabilitiesChanged =
@@ -1904,6 +1907,8 @@ export class SmithproxyApp extends LitElement {
         nextPolicyStructuralDraftsAvailable !== policyStructuralDraftsWereAvailable ||
         nextContentRuleStructuralDraftsAvailable !== contentRuleStructuralDraftsWereAvailable ||
         nextSignatureStructuralDraftsAvailable !== signatureStructuralDraftsWereAvailable ||
+        nextStructuralCollections.size !== structuralCollectionsWereAvailable.size ||
+        [...nextStructuralCollections].some(collection => !structuralCollectionsWereAvailable.has(collection)) ||
         nextDraftAvailable !== draftWasAvailable ||
         nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
@@ -1921,6 +1926,7 @@ export class SmithproxyApp extends LitElement {
       this.policyStructuralDraftsAvailable = nextPolicyStructuralDraftsAvailable;
       this.contentRuleStructuralDraftsAvailable = nextContentRuleStructuralDraftsAvailable;
       this.signatureStructuralDraftsAvailable = nextSignatureStructuralDraftsAvailable;
+      this.structuralCollections = nextStructuralCollections;
       this.draftAvailable = nextDraftAvailable;
       this.draftPreflightAvailable = nextDraftPreflightAvailable;
       this.consoleAvailable = capabilities.features.console;
@@ -1969,6 +1975,7 @@ export class SmithproxyApp extends LitElement {
       this.policyStructuralDraftsAvailable = false;
       this.contentRuleStructuralDraftsAvailable = false;
       this.signatureStructuralDraftsAvailable = false;
+      this.structuralCollections = new Set();
       this.draftAvailable = false;
       this.draftPreflightAvailable = false;
       this.consoleAvailable = false;
@@ -3837,29 +3844,43 @@ export class SmithproxyApp extends LitElement {
   }
 
   private structuralTransactionsAvailable(entry: DrawerEntry): boolean {
-    return this.structuralDraftsAvailable ||
-      (this.policyStructuralDraftsAvailable &&
-        (entry.kind === 'policy' || entry.kind === 'policy-create')) ||
-      (this.contentRuleStructuralDraftsAvailable &&
-        (entry.kind === 'content-rule' || entry.kind === 'content-rule-create')) ||
-      (this.signatureStructuralDraftsAvailable &&
-        (entry.kind === 'signature' || entry.kind === 'signature-create' ||
-         entry.kind === 'signature-flow' || entry.kind === 'signature-flow-create')) ||
-      (this.namedStructuralDraftsAvailable &&
-        (entry.kind === 'profile' || entry.kind === 'profile-create' ||
-         entry.kind === 'authority' || entry.kind === 'authority-create')) ||
-      (this.primitiveStructuralDraftsAvailable &&
-        (entry.kind === 'address' || entry.kind === 'port' || entry.kind === 'protocol' ||
-         entry.kind === 'address-create' || entry.kind === 'port-create' ||
-         entry.kind === 'protocol-create'));
+    const target = this.structuralDeleteTarget(entry);
+    if (target) return this.collectionTransactionsAvailable(target.collection);
+    if (entry.kind === 'policy-create') return this.collectionTransactionsAvailable('policy');
+    if (entry.kind === 'address-create') return this.collectionTransactionsAvailable('address_objects');
+    if (entry.kind === 'port-create') return this.collectionTransactionsAvailable('port_objects');
+    if (entry.kind === 'protocol-create') return this.collectionTransactionsAvailable('proto_objects');
+    if (entry.kind === 'content-rule-create') {
+      return this.collectionTransactionsAvailable('content_profiles.content_rules');
+    }
+    if (entry.kind === 'signature-create') {
+      return this.collectionTransactionsAvailable('starttls_signatures') ||
+        this.collectionTransactionsAvailable('detection_signatures');
+    }
+    if (entry.kind === 'signature-flow-create') {
+      return this.collectionTransactionsAvailable('starttls_signatures.flow') ||
+        this.collectionTransactionsAvailable('detection_signatures.flow');
+    }
+    if (entry.kind === 'authority-create') return this.collectionTransactionsAvailable('tls_ca');
+    if (entry.kind === 'profile-create') {
+      return this.availableProfileCreateTypes().some(
+        type => this.collectionTransactionsAvailable(profileCreateCollections[type]),
+      );
+    }
+    if (entry.kind === 'auth-identities-create') {
+      return this.collectionTransactionsAvailable('auth_profiles');
+    }
+    return false;
+  }
+
+  private collectionTransactionsAvailable(collection: string): boolean {
+    return this.structuralCollections.has(collection);
   }
 
   private primitiveTransactionsAvailable(): boolean {
-    return this.structuralDraftsAvailable || this.primitiveStructuralDraftsAvailable;
-  }
-
-  private namedTransactionsAvailable(): boolean {
-    return this.structuralDraftsAvailable || this.namedStructuralDraftsAvailable;
+    return ['address_objects', 'port_objects', 'proto_objects'].every(
+      collection => this.collectionTransactionsAvailable(collection),
+    );
   }
 
   private collectionPresent(collection: string): boolean {
@@ -3880,7 +3901,9 @@ export class SmithproxyApp extends LitElement {
   }
 
   private profileCreateTypeAvailable(type: ProfileCreateType): boolean {
-    return visibleProfileCreateTypes.has(type) && this.collectionPresent(profileCreateCollections[type]);
+    const collection = profileCreateCollections[type];
+    return visibleProfileCreateTypes.has(type) && this.collectionPresent(collection) &&
+      this.collectionTransactionsAvailable(collection);
   }
 
   private availableProfileCreateTypes(): ReadonlyArray<ProfileCreateType> {
@@ -3888,35 +3911,22 @@ export class SmithproxyApp extends LitElement {
   }
 
   private policyTransactionsAvailable(): boolean {
-    return this.structuralDraftsAvailable || this.policyStructuralDraftsAvailable;
+    return this.collectionTransactionsAvailable('policy');
   }
 
   private contentRuleTransactionsAvailable(): boolean {
-    return this.structuralDraftsAvailable || this.contentRuleStructuralDraftsAvailable;
+    return this.collectionTransactionsAvailable('content_profiles.content_rules');
   }
 
   private signatureTransactionsAvailable(): boolean {
-    return this.structuralDraftsAvailable || this.signatureStructuralDraftsAvailable;
+    return ['starttls_signatures', 'detection_signatures',
+      'starttls_signatures.flow', 'detection_signatures.flow'].every(
+      collection => this.collectionTransactionsAvailable(collection),
+    );
   }
 
   private structuralOperationTransactionsAvailable(operation: DraftStructuralOperation): boolean {
-    if (['address_objects', 'port_objects', 'proto_objects'].includes(operation.collection)) {
-      return this.primitiveTransactionsAvailable();
-    }
-    if ([...Object.values(profileCreateCollections), 'tls_ca'].includes(operation.collection)) {
-      return this.namedTransactionsAvailable();
-    }
-    if (operation.collection === 'policy') return this.policyTransactionsAvailable();
-    if (operation.collection === 'content_profiles.content_rules') {
-      return this.contentRuleTransactionsAvailable();
-    }
-    if (operation.collection === 'starttls_signatures' ||
-        operation.collection === 'detection_signatures' ||
-        operation.collection === 'starttls_signatures.flow' ||
-        operation.collection === 'detection_signatures.flow') {
-      return this.signatureTransactionsAvailable();
-    }
-    return this.structuralDraftsAvailable;
+    return this.collectionTransactionsAvailable(operation.collection);
   }
 
   private configSafeCopyStem(sourceName: string, fallback: string): string {
@@ -4006,7 +4016,7 @@ export class SmithproxyApp extends LitElement {
 
   private openNewProfile(origin?: HTMLElement): void {
     const type = this.availableProfileCreateTypes()[0];
-    if (!this.namedTransactionsAvailable() || !type) return;
+    if (!type) return;
     const localId = `create-profile-${crypto.randomUUID()}`;
     this.profileCreateTypes.set(localId, type);
     this.openObjectDrawer({kind: 'profile-create', id: localId, title: 'New profile'}, origin);
@@ -4021,7 +4031,7 @@ export class SmithproxyApp extends LitElement {
   private profileCloneBlocker(profile: ProfileObject): string | undefined {
     const type = this.profileType(profile);
     const prefix = this.profileOriginPrefixes().get(profile.id);
-    if (!this.namedTransactionsAvailable() || !this.workspaceDraft || !type ||
+    if (!this.workspaceDraft || !type || !this.collectionTransactionsAvailable(profileCreateCollections[type]) ||
         !visibleProfileCreateTypes.has(type) || !prefix) {
       return 'Profile duplication is unavailable with the connected Smithproxy version.';
     }
@@ -4295,7 +4305,8 @@ export class SmithproxyApp extends LitElement {
 
   private openAuthIdentityCreate(entry: DrawerEntry, origin?: HTMLElement): void {
     const operation = this.pendingProfileCreate(entry);
-    if (operation?.collection !== 'auth_profiles' || !this.structuralDraftsAvailable) return;
+    if (operation?.collection !== 'auth_profiles' ||
+        !this.collectionTransactionsAvailable('auth_profiles')) return;
     if (!this.authIdentityEditors.has(entry.id)) {
       this.authIdentityEditors = new Map(this.authIdentityEditors).set(entry.id, {
         mode: 'replace', rows: [{name: ''}],
@@ -4339,7 +4350,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openNewAuthority(origin?: HTMLElement): void {
-    if (!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca')) return;
+    if (!this.collectionTransactionsAvailable('tls_ca') || !this.collectionPresent('tls_ca')) return;
     const localId = `create-authority-${crypto.randomUUID()}`;
     this.openObjectDrawer({
       kind: 'authority-create', id: localId, title: 'New certificate authority',
@@ -4347,7 +4358,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private authorityCloneBlocker(authority: CertificateAuthoritySummary): string | undefined {
-    if (!this.namedTransactionsAvailable() || !this.workspaceDraft ||
+    if (!this.collectionTransactionsAvailable('tls_ca') || !this.workspaceDraft ||
         !this.originPrefix({kind: 'authority', id: authority.id, title: authority.name})) {
       return 'Certificate-authority duplication is unavailable with the connected Smithproxy version.';
     }
@@ -5684,7 +5695,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveProfileCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.namedTransactionsAvailable() || !this.draftClient || this.draftCommitting) return;
+    if (!this.draftClient || this.draftCommitting) return;
     const operation = this.pendingProfileCreate(entry);
     const element = <T extends HTMLInputElement | HTMLSelectElement>(field: string) =>
       this.renderRoot.querySelector<T>(`#profile-create-${field}-${entry.id}`);
@@ -5978,7 +5989,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async saveAuthorityCreate(entry: DrawerEntry): Promise<void> {
-    if (!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca') ||
+    if (!this.collectionTransactionsAvailable('tls_ca') || !this.collectionPresent('tls_ca') ||
         !this.draftClient || this.draftCommitting) return;
     const nameInput = this.renderRoot.querySelector<HTMLInputElement>(`#authority-create-name-${entry.id}`);
     const pathInput = this.renderRoot.querySelector<HTMLInputElement>(`#authority-create-path-${entry.id}`);
@@ -9279,7 +9290,7 @@ export class SmithproxyApp extends LitElement {
     const bulkDeleteFingerprint = bulkDeleteEntries.map(entry => this.drawerKey(entry)).sort().join('\n');
     const bulkDeleteArmed = bulkDeleteEntries.length > 0 &&
       this.objectBulkDeleteConfirmation === bulkDeleteFingerprint;
-    const bulkDeleteBlocker = !this.primitiveTransactionsAvailable() && !this.structuralDraftsAvailable
+    const bulkDeleteBlocker = this.structuralCollections.size === 0
       ? 'Object deletion is unavailable with the connected Smithproxy version.'
       : bulkDeleteEntries.length > 256
         ? 'At most 256 objects can be deleted at once.'
@@ -9354,12 +9365,10 @@ export class SmithproxyApp extends LitElement {
               @click=${(event: MouseEvent) => this.openNewProtocol(event.currentTarget as HTMLElement)}>+</button>
           ` : this.objectKindFilter === 'profile' ? html`
             <button class="primary object-create-button" type="button" aria-label="New profile"
-              title=${!this.namedTransactionsAvailable()
-                ? 'Profile creation is unavailable with the connected Smithproxy version.'
-                : this.availableProfileCreateTypes().length === 0
+              title=${this.availableProfileCreateTypes().length === 0
                   ? 'No supported profile type is present in the running configuration.'
                   : 'Create a new profile'}
-              ?disabled=${!this.namedTransactionsAvailable() || this.availableProfileCreateTypes().length === 0}
+              ?disabled=${this.availableProfileCreateTypes().length === 0}
               @click=${(event: MouseEvent) => this.openNewProfile(event.currentTarget as HTMLElement)}>+</button>
           ` : nothing}
           <label class="list-filter"><span>Search:</span>
@@ -9553,7 +9562,7 @@ export class SmithproxyApp extends LitElement {
               signatureRows.length + pendingSignatureRows.length}</small></summary>
           <div class="object-section-actions">
               ${securityTypeMatches('trust') ? html`<button class="secondary" type="button"
-                ?disabled=${!this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca')}
+                ?disabled=${!this.collectionTransactionsAvailable('tls_ca') || !this.collectionPresent('tls_ca')}
                 title=${!this.collectionPresent('tls_ca')
                   ? 'The tls_ca collection is absent from the running configuration.' : nothing}
                 @click=${(event: MouseEvent) => this.openNewAuthority(event.currentTarget as HTMLElement)}>
@@ -12505,7 +12514,7 @@ export class SmithproxyApp extends LitElement {
       if (typeof value === 'string') return value;
       return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : '';
     };
-    const readOnly = !this.namedTransactionsAvailable();
+    const readOnly = !type || !this.collectionTransactionsAvailable(profileCreateCollections[type]);
     const booleanSelect = (id: string, label: string, value: boolean) => html`
       <label for="profile-create-${id}-${entry.id}">${label}</label>
       <select id="profile-create-${id}-${entry.id}" .value=${String(value)} ?disabled=${readOnly}>
@@ -14079,7 +14088,7 @@ export class SmithproxyApp extends LitElement {
   private renderCertificateAuthorityCreateEditor(entry: DrawerEntry) {
     const operation = this.pendingAuthorityCreate(entry);
     const prefill = operation ? undefined : this.authorityCreatePrefills.get(entry.id);
-    const readOnly = !this.namedTransactionsAvailable() || !this.collectionPresent('tls_ca');
+    const readOnly = !this.collectionTransactionsAvailable('tls_ca') || !this.collectionPresent('tls_ca');
     const pendingPath = operation?.fields['path'];
     const visiblePath = typeof pendingPath === 'string' && !pendingPath.startsWith('[redacted:')
       ? pendingPath : prefill?.path ?? '';

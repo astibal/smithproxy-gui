@@ -276,6 +276,15 @@ def main() -> int:
             assert capabilities["features"]["policy_structural_drafts"] is True
             assert capabilities["features"]["content_rule_structural_drafts"] is True
             assert capabilities["features"]["signature_structural_drafts"] is True
+            structural_collections = capabilities["features"]["structural_collections"]
+            assert structural_collections == [
+                "address_objects", "port_objects", "proto_objects", "routing",
+                "tls_profiles", "content_profiles", "ssh_profiles", "script_profiles",
+                "detection_profiles", "alg_dns_profiles", "tls_ca", "policy",
+                "content_profiles.content_rules", "starttls_signatures",
+                "detection_signatures", "starttls_signatures.flow",
+                "detection_signatures.flow",
+            ]
 
             status, _, body = request(port, "/api/v1/config/snapshot", headers=gateway_headers)
             live_config = json.loads(body)

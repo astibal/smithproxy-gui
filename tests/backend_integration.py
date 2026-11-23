@@ -525,6 +525,7 @@ def main() -> int:
         assert capabilities["features"]["config_read"] is False
         assert capabilities["features"]["config_write"] is False
         assert capabilities["features"]["structural_drafts"] is False
+        assert capabilities["features"]["structural_collections"] == []
         assert capabilities["features"]["drafts"] is False
         assert capabilities["features"]["draft_preflight"] is False
         assert capabilities["features"]["jobs"] is True
@@ -1091,6 +1092,7 @@ def main() -> int:
                 "features"]["metrics"] is False
             unauthenticated_features = json.loads(request(
                 configured_port, "/api/v1/capabilities")[2])["features"]
+            assert unauthenticated_features["structural_collections"] == []
             for feature in ("jobs", "events", "alerts", "metrics", "session_activity",
                             "tls_monitoring", "neighbor_monitoring", "interface_monitoring"):
                 assert unauthenticated_features[feature] is False
@@ -1111,6 +1113,9 @@ def main() -> int:
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["structural_drafts"] is False
+            assert json.loads(request(
+                configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
+                "features"]["structural_collections"] == []
             assert json.loads(request(
                 configured_port, "/api/v1/capabilities", headers=gateway_headers)[2])[
                 "features"]["metrics"] is True

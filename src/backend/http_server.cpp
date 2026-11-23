@@ -1485,6 +1485,14 @@ private:
             has_ordered_collection("detection_signatures", false) &&
             has_ordered_collection("starttls_signatures.flow", true) &&
             has_ordered_collection("detection_signatures.flow", true);
+        std::string structural_collections{"["};
+        if (config_write) {
+            for (std::size_t index = 0U; index < status.transaction_capabilities.collections.size(); ++index) {
+                if (index != 0U) structural_collections += ',';
+                structural_collections += json_string(status.transaction_capabilities.collections[index].id);
+            }
+        }
+        structural_collections += ']';
         return {200, "application/json; charset=utf-8",
                 "{\"service\":\"smithproxy-gui\",\"api_version\":\"v1\",\"base_path\":" +
                     json_string(config_.base_path) + ",\"smithproxy_state\":" + json_string(status.state) +
@@ -1505,6 +1513,7 @@ private:
                     (content_rule_structural_drafts ? "true" : "false") +
                     ",\"signature_structural_drafts\":" +
                     (signature_structural_drafts ? "true" : "false") +
+                    ",\"structural_collections\":" + structural_collections +
                     ",\"drafts\":" + (config_read ? "true" : "false") +
                     ",\"draft_preflight\":" + (config_read ? "true" : "false") +
                     ",\"jobs\":" + (monitoring ? "true" : "false") +

@@ -130,6 +130,16 @@ describe('SystemClient', () => {
       },
     });
     await expect(client(capabilities({features: {
+      ...capabilities().features,
+      structural_collections: ['auth_profiles', 'tls_ca'],
+    }})).capabilities()).resolves.toMatchObject({features: {
+      structuralCollections: ['auth_profiles', 'tls_ca'],
+    }});
+    await expect(client(capabilities({features: {
+      ...capabilities().features,
+      structural_collections: ['auth_profiles', 'auth_profiles'],
+    }})).capabilities()).rejects.toThrow('Invalid structural collection capabilities');
+    await expect(client(capabilities({features: {
       ...capabilities().features, draft_preflight: false,
     }})).capabilities()).rejects.toThrow('Inconsistent privileged capabilities');
     await expect(client(capabilities({features: {

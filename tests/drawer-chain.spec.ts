@@ -169,6 +169,7 @@ type MockState = {
   policyStructuralDraftsReady?: boolean;
   contentRuleStructuralDraftsReady?: boolean;
   signatureStructuralDraftsReady?: boolean;
+  structuralCollections?: string[];
   secondPolicy?: boolean;
   unusedPrimitives?: boolean;
   unusedProfile?: boolean;
@@ -290,6 +291,7 @@ async function mockSystemApi(
       neighbor_monitoring: monitoringFeature('neighbor_monitoring'),
       interface_monitoring: monitoringFeature('interface_monitoring'),
       console: management && Boolean(state.consoleReady),
+      ...(state.structuralCollections ? {structural_collections: state.structuralCollections} : {}),
     };
     if (state.inconsistentPrivilegedCapabilities) {
       featureFlags.config_write = true;
@@ -4874,6 +4876,23 @@ test('does not offer a first script profile when its config collection is absent
   const editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Profile type').getByRole('option', {name: 'Script'})).toHaveCount(0);
   await expect(editor.getByLabel('Profile type').getByRole('option')).toHaveCount(7);
+});
+
+test('offers profile editors only for exactly advertised structural collections', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', validationReady: true, commitReady: true,
+    namedStructuralDraftsReady: true,
+    structuralCollections: ['auth_profiles'],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Objects', exact: true}).click();
+  await selectObjectCategory(page, 'Profiles and routing');
+  await page.getByRole('button', {name: 'New profile'}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Create profile'});
+  await expect(editor.getByLabel('Profile type').getByRole('option', {name: 'Authentication'})).toHaveCount(1);
+  await expect(editor.getByLabel('Profile type').getByRole('option')).toHaveCount(1);
+  await expect(editor.getByLabel('Name')).toBeEditable();
 });
 
 test('does not offer first trust or signature entries when their collections are absent', async ({page}) => {
