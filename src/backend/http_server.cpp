@@ -1464,6 +1464,7 @@ private:
         const auto& value = *parsed.config;
         nlohmann::json document{
             {"state", "ready"},
+            {"schema_version", value.schema_version},
             {"restart_required", true},
             {"backend", {
                 {"bind_address", value.bind_address},

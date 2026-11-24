@@ -2180,7 +2180,7 @@ export class SmithproxyApp extends LitElement {
         'gui.cfg', serializeGuiConfiguration(draft), revision, archiveHash, false,
       );
       this.guiConfiguration = {
-        state: 'ready', restartRequired: true, backend: {...draft.backend},
+        state: 'ready', restartRequired: true, schemaVersion: 1, backend: {...draft.backend},
         ...(draft.smithproxy ? {smithproxy: {...draft.smithproxy}} : {}),
         ...(draft.gateway ? {gateway: {...draft.gateway}} : {}),
       };

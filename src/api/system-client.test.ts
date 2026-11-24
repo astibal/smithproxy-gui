@@ -1023,7 +1023,7 @@ describe('SystemClient', () => {
 
   it('loads and serializes typed GUI bootstrap configuration without credential values', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
-      state: 'ready', restart_required: true,
+      state: 'ready', schema_version: 1, restart_required: true,
       backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       smithproxy: {
         api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
@@ -1040,6 +1040,7 @@ describe('SystemClient', () => {
     const serialized = new TextDecoder().decode(serializeGuiConfiguration({
       backend: value.backend!, smithproxy: value.smithproxy, gateway: value.gateway,
     }));
+    expect(serialized).toContain('schema_version = 1;');
     expect(serialized).toContain('api_token_file = "/run/credentials/gui.api-token";');
     expect(serialized).not.toContain('api-token-value');
     expect(fetcher).toHaveBeenCalledWith('/api/v1/config/gui', expect.any(Object));
@@ -1052,11 +1053,15 @@ describe('SystemClient', () => {
       state: 'absent', restartRequired: true,
     });
     const malformed = new SystemClient('/api/v1', '/', async () => jsonResponse({
-      state: 'ready', restart_required: true,
+      state: 'ready', schema_version: 1, restart_required: true,
       backend: {bind_address: '127.0.0.1', port: 0, base_path: '/'},
       smithproxy: null, gateway: null,
     }));
     await expect(malformed.guiConfiguration()).rejects.toThrow('backend configuration');
+    const future = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', schema_version: 2, restart_required: true,
+    }));
+    await expect(future.guiConfiguration()).rejects.toThrow('Unsupported GUI configuration schema');
   });
 
   it('rejects malformed responses and unsafe endpoint configuration', async () => {

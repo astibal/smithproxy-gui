@@ -19,6 +19,8 @@ the new boot settings take effect only after a controlled service restart.
 
 ```libconfig
 gui = {
+  schema_version = 1;
+
   backend = {
     bind_address = "127.0.0.1";
     port = 18082;
@@ -39,6 +41,11 @@ gui = {
   };
 };
 ```
+
+Unknown settings and unsupported schema versions are rejected. This prevents
+an older GUI from publishing a replacement that silently drops fields owned by
+a newer GUI schema. A legacy file without `schema_version` is read as version 1;
+the next typed publication writes the version explicitly.
 
 The referenced credential files are boot-time material, must be owned by the
 GUI service account, and must have mode `0600`. A trailing newline is accepted.

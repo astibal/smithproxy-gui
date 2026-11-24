@@ -24,6 +24,7 @@ struct SmithproxyCliConfig {
 // Persistent, non-secret values stored in gui.cfg. Credential paths are
 // visible configuration; the credential contents remain boot-scoped files.
 struct GuiBootstrapConfig {
+    std::uint16_t schema_version{1};
     std::string bind_address{"127.0.0.1"};
     std::uint16_t port{18082};
     std::string base_path{"/"};

@@ -6990,7 +6990,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     resources: [{path: 'gui.cfg', size: 512, executable: false}],
   }}));
   await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
-    state: 'ready', restart_required: true,
+    state: 'ready', schema_version: 1, restart_required: true,
     backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
     smithproxy: {
       api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
@@ -7020,6 +7020,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await gui.getByRole('button', {name: 'Publish GUI startup settings'}).click();
   await gui.getByRole('button', {name: 'Confirm publish & restart later'}).click();
   await expect.poll(() => published).toContain('port = 19082;');
+  expect(published).toContain('schema_version = 1;');
   expect(published).toContain('api_token_file = "/run/credentials/gui.api-token";');
   expect(published).not.toContain('boot-token-value');
   await expect(gui).toContainText('Controlled service restart required');

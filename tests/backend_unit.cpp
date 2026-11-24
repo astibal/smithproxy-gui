@@ -2445,6 +2445,11 @@ int main() {
     assert(archive_bootstrap.config);
     assert(archive_bootstrap.config->base_path == "/gui");
     assert(archive_bootstrap.config->api_token_file == "/run/gui/token");
+    assert(archive_bootstrap.config->schema_version == 1U);
+    assert(!parse_gui_bootstrap("gui = { schema_version = 2; };\n").config);
+    assert(!parse_gui_bootstrap("gui = { future_setting = true; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { backend = { port = 18082; future_setting = true; }; };\n").config);
     assert(!parse_gui_bootstrap("gui = { backend = { port = 0; }; };\n").config);
     assert(!parse_gui_bootstrap("gui = { smithproxy = { api_url = \"http://remote:1\"; }; };\n").config);
     std::filesystem::permissions(

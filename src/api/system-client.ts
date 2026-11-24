@@ -108,6 +108,7 @@ export interface ArchiveResourceWrite {
 export interface GuiConfiguration {
   state: 'ready' | 'absent';
   restartRequired: true;
+  schemaVersion?: 1;
   backend?: {
     bindAddress: string;
     port: number;
@@ -1375,6 +1376,9 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     throw new Error('Invalid GUI configuration response.');
   }
   if (value.state === 'absent') return {state: 'absent', restartRequired: true};
+  if (value.schema_version !== 1) {
+    throw new Error('Unsupported GUI configuration schema.');
+  }
   if (!isObject(value.backend) || typeof value.backend.bind_address !== 'string' ||
       !Number.isSafeInteger(value.backend.port) || (value.backend.port as number) < 1 ||
       (value.backend.port as number) > 65535 || typeof value.backend.base_path !== 'string') {
@@ -1394,6 +1398,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
   return {
     state: 'ready',
     restartRequired: true,
+    schemaVersion: 1,
     backend: {
       bindAddress: value.backend.bind_address,
       port: value.backend.port as number,
@@ -1423,6 +1428,8 @@ export function serializeGuiConfiguration(value: {
 }): ArrayBuffer {
   const lines = [
     'gui = {',
+    '  schema_version = 1;',
+    '',
     '  backend = {',
     `    bind_address = ${libconfigString(value.backend.bindAddress)};`,
     `    port = ${value.backend.port};`,

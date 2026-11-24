@@ -11,6 +11,7 @@
 #include <charconv>
 #include <cstdlib>
 #include <fstream>
+#include <initializer_list>
 #include <string_view>
 #include <utility>
 
@@ -38,6 +39,26 @@ struct ProtectedFileResult {
 };
 
 bool valid_header_value(std::string_view value);
+
+// Rejects fields that this binary cannot preserve. An older GUI must fail
+// closed instead of silently erasing configuration introduced by a newer one.
+std::optional<std::string> unknown_member(
+    const libconfig::Setting& group,
+    const std::initializer_list<std::string_view> allowed) {
+    for (int index = 0; index < group.getLength(); ++index) {
+        const auto* name = group[index].getName();
+        if (name == nullptr) return "unnamed value";
+        bool known = false;
+        for (const auto candidate : allowed) {
+            if (candidate == name) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) return std::string(name);
+    }
+    return std::nullopt;
+}
 
 // Opens a runtime credential without following links and rejects permissions
 // that would let another local account replace or read the secret.
@@ -355,6 +376,9 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
         return bootstrap_failure("invalid gui.cfg at line " + std::to_string(error.getLine()));
     }
     const auto& root = document.getRoot();
+    if (const auto member = unknown_member(root, {"gui"})) {
+        return bootstrap_failure("gui.cfg contains unsupported root setting: " + *member);
+    }
     if (!root.exists("gui") || root["gui"].getType() != libconfig::Setting::TypeGroup) {
         return bootstrap_failure("gui.cfg must contain a gui group");
     }
@@ -362,8 +386,24 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
     const auto& gui = root["gui"];
     GuiBootstrapConfig config;
     try {
+        if (const auto member = unknown_member(
+                gui, {"schema_version", "backend", "smithproxy", "gateway"})) {
+            return bootstrap_failure("gui.cfg contains unsupported gui setting: " + *member);
+        }
+        int schema_version = config.schema_version;
+        gui.lookupValue("schema_version", schema_version);
+        if (schema_version != 1) {
+            return bootstrap_failure("gui.schema_version is unsupported");
+        }
         if (gui.exists("backend")) {
             const auto& backend = gui["backend"];
+            if (backend.getType() != libconfig::Setting::TypeGroup) {
+                return bootstrap_failure("gui.backend must be a group");
+            }
+            if (const auto member = unknown_member(
+                    backend, {"bind_address", "port", "base_path"})) {
+                return bootstrap_failure("gui.backend contains unsupported setting: " + *member);
+            }
             backend.lookupValue("bind_address", config.bind_address);
             int port = config.port;
             backend.lookupValue("port", port);
@@ -378,6 +418,14 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
         }
         if (gui.exists("smithproxy")) {
             const auto& upstream = gui["smithproxy"];
+            if (upstream.getType() != libconfig::Setting::TypeGroup) {
+                return bootstrap_failure("gui.smithproxy must be a group");
+            }
+            if (const auto member = unknown_member(
+                    upstream, {"api_url", "ca_cert", "api_token_file", "cli_endpoint"})) {
+                return bootstrap_failure(
+                    "gui.smithproxy contains unsupported setting: " + *member);
+            }
             std::string api_url;
             std::string ca_cert;
             std::string api_token_file;
@@ -405,6 +453,13 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
         }
         if (gui.exists("gateway")) {
             const auto& gateway = gui["gateway"];
+            if (gateway.getType() != libconfig::Setting::TypeGroup) {
+                return bootstrap_failure("gui.gateway must be a group");
+            }
+            if (const auto member = unknown_member(
+                    gateway, {"secret_file", "previous_secret_file"})) {
+                return bootstrap_failure("gui.gateway contains unsupported setting: " + *member);
+            }
             std::string secret_file;
             if (!gateway.lookupValue("secret_file", secret_file)) {
                 return bootstrap_failure("gui.gateway requires secret_file");
