@@ -89,6 +89,16 @@ async function setReferenceList(
   }
 }
 
+async function setTlsWarningPorts(editor: Locator, values: ReadonlyArray<string>): Promise<void> {
+  const group = editor.getByRole('group', {name: 'Certificate warning ports', exact: true});
+  const removeButtons = group.locator('.reference-list-remove');
+  while (await removeButtons.count() > 0) await removeButtons.first().click();
+  for (const [index, value] of values.entries()) {
+    await group.getByRole('button', {name: 'Add warning port'}).click();
+    await group.getByLabel(`Certificate warning port ${index + 1}`, {exact: true}).fill(value);
+  }
+}
+
 type MockState = {
   smithproxy: 'ready' | 'unreachable';
   gatewayMode?: 'gateway' | 'standalone';
@@ -1438,7 +1448,7 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await tlsEditor.getByLabel('Downstream PFS').selectOption('false');
   await tlsEditor.getByLabel('OCSP certificate checks').selectOption('2');
   await tlsEditor.getByLabel('OCSP stapling policy').selectOption('2');
-  await tlsEditor.getByLabel('Certificate warning ports').fill('443, 8443');
+  await setTlsWarningPorts(tlsEditor, ['443', '8443']);
   await tlsEditor.getByLabel('Certificate failure override').selectOption('true');
   await tlsEditor.getByLabel('Override timeout', {exact: true}).fill('900');
   await tlsEditor.getByLabel('Override timeout behavior').selectOption('1');
@@ -3332,7 +3342,7 @@ test('creates and reopens a complete fail-closed TLS profile', async ({page}) =>
   await expect(editor.getByRole('group', {name: 'Timing and diagnostics'}))
     .toContainText('Handshake deadlines');
   await editor.getByLabel('OCSP certificate checks').selectOption('2');
-  await editor.getByLabel('Certificate warning ports').fill('443, 8443');
+  await setTlsWarningPorts(editor, ['443', '8443']);
   await editor.getByLabel('Override timeout', {exact: true}).fill('900');
   await editor.getByRole('button', {name: 'Add bypass name'}).click();
   await editor.getByLabel('SNI bypass name 1', {exact: true}).fill('private.example');
@@ -3371,7 +3381,10 @@ test('creates and reopens a complete fail-closed TLS profile', async ({page}) =>
   editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Profile type')).toHaveValue('tls');
   await expect(editor.getByLabel('OCSP certificate checks')).toHaveValue('2');
-  await expect(editor.getByLabel('Certificate warning ports')).toHaveValue('443, 8443');
+  const warningPorts = editor.getByRole('group', {name: 'Certificate warning ports', exact: true});
+  await expect(warningPorts.getByRole('textbox')).toHaveCount(2);
+  await expect(warningPorts.getByRole('textbox').nth(0)).toHaveValue('443');
+  await expect(warningPorts.getByRole('textbox').nth(1)).toHaveValue('8443');
   await expect(editor.getByLabel('SNI bypass name 1', {exact: true})).toHaveValue('private.example');
   await editor.getByRole('button', {name: 'Remove SNI bypass name 1'}).click();
   await expect(editor.getByText('No bypass names configured.')).toBeVisible();
@@ -3910,7 +3923,10 @@ test('prefills every remaining typed profile with complete administrator values'
   await closePair(createEditor);
 
   createEditor = await duplicate(/inspect tls/i, 'inspect');
-  await expect(createEditor.getByLabel('Certificate warning ports')).toHaveValue('443, 44443');
+  const warningPorts = createEditor.getByRole('group', {name: 'Certificate warning ports', exact: true});
+  await expect(warningPorts.getByRole('textbox')).toHaveCount(2);
+  await expect(warningPorts.getByRole('textbox').nth(0)).toHaveValue('443');
+  await expect(warningPorts.getByRole('textbox').nth(1)).toHaveValue('44443');
   await expect(createEditor.getByLabel('SNI bypass name 1', {exact: true})).toHaveValue('private.example');
   await expect(createEditor.getByLabel('SNI bypass name 2', {exact: true})).toHaveValue('*.internal.example');
   await closePair(createEditor);
@@ -5349,8 +5365,12 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   await verify(/^inspect tls /u, 'inspect', 'Allow invalid certificates', 'true');
   await profiles.getByRole('button', {name: /^inspect tls /u}).click();
   const tls = page.getByRole('dialog', {name: 'Edit inspect'});
-  await expect(tls.getByLabel('Certificate warning ports')).toHaveValue('8443, 44443');
-  await expect(tls.getByLabel('Certificate warning ports')).toHaveAttribute('readonly', '');
+  const warningPorts = tls.getByRole('group', {name: 'Certificate warning ports', exact: true});
+  await expect(warningPorts.getByRole('textbox')).toHaveCount(2);
+  await expect(warningPorts.getByRole('textbox').nth(0)).toHaveValue('8443');
+  await expect(warningPorts.getByRole('textbox').nth(1)).toHaveValue('44443');
+  await expect(warningPorts.getByRole('textbox').nth(0)).toHaveAttribute('readonly', '');
+  await expect(warningPorts.getByRole('textbox').nth(1)).toHaveAttribute('readonly', '');
   await page.keyboard.press('Escape');
   await verify(/^detect detection /u, 'detect', 'Detection phase', '2');
   await verify(/^capture content /u, 'capture', 'Capture format', 'pcap');

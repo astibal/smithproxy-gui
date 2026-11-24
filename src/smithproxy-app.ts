@@ -591,6 +591,7 @@ export class SmithproxyApp extends LitElement {
   private readonly settingsResolutionDrafts = new Map<SettingsResolutionList, string[]>();
   private readonly networkingListDrafts = new Map<NetworkingList, string[]>();
   private readonly tlsSniBypassDrafts = new Map<string, string[]>();
+  private readonly tlsWarningPortDrafts = new Map<string, string[]>();
   @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
@@ -1824,6 +1825,7 @@ export class SmithproxyApp extends LitElement {
     this.settingsResolutionDrafts.clear();
     this.networkingListDrafts.clear();
     this.tlsSniBypassDrafts.clear();
+    this.tlsWarningPortDrafts.clear();
     this.pendingCloseIndex = undefined;
     this.pendingReturnFocus = undefined;
     this.drawerHistoryDepth = 0;
@@ -4875,6 +4877,9 @@ export class SmithproxyApp extends LitElement {
         this.tlsSniBypassDrafts.set(key, [...this.persistentListValue(
           `${this.originPrefix(entry) ?? ''}sni_filter_bypass`, profile.sniBypass, 'string',
         )]);
+        this.tlsWarningPortDrafts.set(key, this.persistentListValue(
+          `${this.originPrefix(entry) ?? ''}redirect_warning_ports`, profile.redirectWarningPorts, 'number',
+        ).map(String));
       }
     }
     this.editingDrawerKeys = new Set(this.editingDrawerKeys).add(key);
@@ -5072,6 +5077,7 @@ export class SmithproxyApp extends LitElement {
     }
     for (const entry of closingEntries) {
       this.tlsSniBypassDrafts.delete(this.drawerKey(entry));
+      this.tlsWarningPortDrafts.delete(this.drawerKey(entry));
       remainingDirty.delete(this.drawerKey(entry));
       remainingEditors.delete(this.drawerKey(entry));
       this.drawerInitialChanges.delete(this.drawerKey(entry));
@@ -6063,7 +6069,6 @@ export class SmithproxyApp extends LitElement {
       }
       const ocspMode = element<HTMLSelectElement>('tls-ocsp-mode');
       const staplingMode = element<HTMLSelectElement>('tls-stapling-mode');
-      const warningPorts = element<HTMLInputElement>('tls-warning-ports');
       const overrideTimeout = element<HTMLInputElement>('tls-override-timeout');
       const overrideTimeoutType = element<HTMLSelectElement>('tls-override-timeout-type');
       const helloTimeout = element<HTMLInputElement>('tls-hello-timeout');
@@ -6071,8 +6076,8 @@ export class SmithproxyApp extends LitElement {
       const clientAction = element<HTMLSelectElement>('tls-client-action');
       const alerts = element<HTMLSelectElement>('tls-alerts');
       const parsedBypass = this.tlsSniBypassDrafts.get(this.drawerKey(entry));
-      const ports = (warningPorts?.value ?? '').split(',').map(value => value.trim())
-        .filter(Boolean).map(Number);
+      const warningPorts = this.tlsWarningPortDrafts.get(this.drawerKey(entry));
+      const ports = warningPorts?.map(value => Number(value.trim())) ?? [];
       const validPositiveInteger = (input: HTMLInputElement | null): input is HTMLInputElement =>
         input !== null && Number.isInteger(input.valueAsNumber) && input.valueAsNumber >= 1 &&
         input.valueAsNumber <= 2147483647;
@@ -6084,6 +6089,7 @@ export class SmithproxyApp extends LitElement {
           !['0', '1', '2'].includes(staplingMode.value) || !['0', '1'].includes(overrideTimeoutType.value) ||
           !validPositiveInteger(overrideTimeout) || !validPositiveInteger(helloTimeout) ||
           !validPositiveInteger(handshakeTimeout) || ports.length > 256 ||
+          warningPorts.some(value => value.trim().length === 0) ||
           !ports.every(port => Number.isInteger(port) && port >= 0 && port <= 65535) ||
           new Set(ports).size !== ports.length ||
           !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
@@ -7132,7 +7138,6 @@ export class SmithproxyApp extends LitElement {
         const handshakeTimeout = this.renderRoot.querySelector<HTMLInputElement>(`#tls-handshake-timeout-${entry.id}`);
         const ocspMode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-ocsp-mode-${entry.id}`);
         const staplingMode = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-ocsp-stapling-mode-${entry.id}`);
-        const warningPorts = this.renderRoot.querySelector<HTMLInputElement>(`#tls-warning-ports-${entry.id}`);
         const overrideTimeout = this.renderRoot.querySelector<HTMLInputElement>(`#tls-failed-override-timeout-${entry.id}`);
         const overrideTimeoutType = this.renderRoot.querySelector<HTMLSelectElement>(
           `#tls-failed-override-timeout-type-${entry.id}`,
@@ -7140,11 +7145,11 @@ export class SmithproxyApp extends LitElement {
         const clientAction = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-client-action-${entry.id}`);
         const alerts = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-alerts-${entry.id}`);
         const bypass = this.tlsSniBypassDrafts.get(this.drawerKey(entry));
+        const warningPorts = this.tlsWarningPortDrafts.get(this.drawerKey(entry));
         const helloValue = helloTimeout?.valueAsNumber ?? Number.NaN;
         const handshakeValue = handshakeTimeout?.valueAsNumber ?? Number.NaN;
         const overrideTimeoutValue = overrideTimeout?.valueAsNumber ?? Number.NaN;
-        const warningPortValues = (warningPorts?.value ?? '').split(',')
-          .map(value => value.trim()).filter(Boolean).map(Number);
+        const warningPortValues = warningPorts?.map(value => Number(value.trim())) ?? [];
         if (!helloTimeout || !handshakeTimeout || !ocspMode || !staplingMode || !warningPorts ||
             !overrideTimeout || !overrideTimeoutType || !clientAction || !alerts || !bypass ||
             !Number.isInteger(helloValue) || helloValue < 1 || helloValue > 2147483647 ||
@@ -7152,6 +7157,7 @@ export class SmithproxyApp extends LitElement {
             !['0', '1', '2'].includes(ocspMode.value) || !['0', '1', '2'].includes(staplingMode.value) ||
             !Number.isInteger(overrideTimeoutValue) || overrideTimeoutValue < 1 || overrideTimeoutValue > 2147483647 ||
             !['0', '1'].includes(overrideTimeoutType.value) || warningPortValues.length > 256 ||
+            warningPorts.some(value => value.trim().length === 0) ||
             !warningPortValues.every(value => Number.isInteger(value) && value >= 0 && value <= 65535) ||
             new Set(warningPortValues).size !== warningPortValues.length ||
             !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
@@ -7934,6 +7940,70 @@ export class SmithproxyApp extends LitElement {
           @click=${() => this.addTlsSniBypass(entry)}>Add bypass name</button>
       </div>
     `;
+  }
+
+  /** Returns warning-port rows while preserving edits across drawer rerenders. */
+  private tlsWarningPortValues(entry: DrawerEntry, initial: ReadonlyArray<number>): string[] {
+    const key = this.drawerKey(entry);
+    const existing = this.tlsWarningPortDrafts.get(key);
+    if (existing) return existing;
+    const values = initial.map(String);
+    this.tlsWarningPortDrafts.set(key, values);
+    return values;
+  }
+
+  /** Preserves one edited TLS warning port in the temporary drawer state. */
+  private updateTlsWarningPort(entry: DrawerEntry, index: number, value: string): void {
+    const values = this.tlsWarningPortDrafts.get(this.drawerKey(entry));
+    if (!values || index < 0 || index >= values.length) return;
+    values[index] = value;
+  }
+
+  /** Adds and focuses an empty certificate-warning port row. */
+  private addTlsWarningPort(entry: DrawerEntry): void {
+    const key = this.drawerKey(entry);
+    const values = this.tlsWarningPortDrafts.get(key);
+    if (!values || values.length >= 256) return;
+    this.tlsWarningPortDrafts.set(key, [...values, '']);
+    this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLInputElement>(`#tls-warning-port-${entry.id}-${values.length}`)?.focus();
+    });
+  }
+
+  /** Removes one certificate-warning port from the temporary profile. */
+  private removeTlsWarningPort(entry: DrawerEntry, index: number): void {
+    const key = this.drawerKey(entry);
+    const values = this.tlsWarningPortDrafts.get(key);
+    if (!values || index < 0 || index >= values.length) return;
+    this.tlsWarningPortDrafts.set(key, values.filter((_, candidate) => candidate !== index));
+    this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
+    this.requestUpdate();
+  }
+
+  /** Renders certificate-warning ports as bounded individual values. */
+  private renderTlsWarningPortEditor(
+      entry: DrawerEntry, initial: ReadonlyArray<number>, readOnly: boolean) {
+    const values = this.tlsWarningPortValues(entry, initial);
+    return html`<div class="reference-list-editor" role="group" aria-label="Certificate warning ports">
+      <div class="reference-list-values">
+        ${values.length === 0 ? html`<span class="reference-list-empty">No warning ports configured.</span>` :
+          values.map((value, index) => html`<div class="reference-list-row">
+            <input id="tls-warning-port-${entry.id}-${index}" maxlength="5" inputmode="numeric"
+              autocomplete="off" aria-label="Certificate warning port ${index + 1}"
+              .value=${value} .readOnly=${readOnly}
+              @input=${(event: InputEvent) => this.updateTlsWarningPort(
+                entry, index, (event.currentTarget as HTMLInputElement).value,
+              )} />
+            <button class="reference-list-remove" type="button"
+              aria-label="Remove certificate warning port ${index + 1}" ?disabled=${readOnly}
+              @click=${() => this.removeTlsWarningPort(entry, index)}>×</button>
+          </div>`)}
+      </div>
+      <button class="secondary" type="button" ?disabled=${readOnly || values.length >= 256}
+        @click=${() => this.addTlsWarningPort(entry)}>Add warning port</button>
+    </div>`;
   }
 
   private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
@@ -14038,10 +14108,10 @@ export class SmithproxyApp extends LitElement {
             booleanField('sni_filter_use_dns_cache', true))}
           ${booleanSelect('tls-dns-tree', 'SNI filter DNS tree',
             booleanField('sni_filter_use_dns_domain_tree', true))}
-          <label for="profile-create-tls-warning-ports-${entry.id}">Certificate warning ports</label>
-          <input id="profile-create-tls-warning-ports-${entry.id}"
-            .value=${operation || prefill ? numberList('redirect_warning_ports').join(', ') : '443'}
-            placeholder="443, 44443" .readOnly=${readOnly} />
+          <span class="form-label">Certificate warning ports</span>
+          ${this.renderTlsWarningPortEditor(
+            entry, operation || prefill ? numberList('redirect_warning_ports') : [443], readOnly,
+          )}
             </div>
           </fieldset>
           <fieldset class="editor-group">
@@ -14569,10 +14639,11 @@ export class SmithproxyApp extends LitElement {
           ${booleanSelect(`tls-sni-dns-cache-${entry.id}`, 'sni_filter_use_dns_cache', tls.sniFilterUsesDnsCache)}
           <label for="tls-sni-dns-tree-${entry.id}">SNI filter DNS tree</label>
           ${booleanSelect(`tls-sni-dns-tree-${entry.id}`, 'sni_filter_use_dns_domain_tree', tls.sniFilterUsesDnsDomainTree)}
-          <label for="tls-warning-ports-${entry.id}">Certificate warning ports</label>
-          <input id="tls-warning-ports-${entry.id}"
-            .value=${persistentNumbers('redirect_warning_ports', tls.redirectWarningPorts).join(', ')}
-            .readOnly=${fieldReadOnly('redirect_warning_ports')} placeholder="443, 44443" />
+          <span class="form-label">Certificate warning ports</span>
+          ${this.renderTlsWarningPortEditor(
+            entry, persistentNumbers('redirect_warning_ports', tls.redirectWarningPorts),
+            fieldReadOnly('redirect_warning_ports'),
+          )}
             </div>
           </fieldset>
           <fieldset class="editor-group">

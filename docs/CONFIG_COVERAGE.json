@@ -176,7 +176,7 @@
         "sni_filter_bypass", "sni_filter_use_dns_cache", "sni_filter_use_dns_domain_tree",
         "redirect_warning_ports", "sslkeylog", "alerts"
       ],
-      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed, visible, editable, structurally creatable, and duplicable from persistent and pending values. SNI bypass names use a repeatable value editor instead of administrator-authored JSON and reopen from drafts without re-entry."
+      "notes": "All active fields saved by the current Smithproxy TLS profile schema are typed, visible, editable, structurally creatable, and duplicable from persistent and pending values. SNI bypass names and certificate-warning ports use repeatable value editors instead of administrator-authored JSON or comma-separated text and reopen from drafts without re-entry."
     },
     {
       "name": "ssh_profiles",
