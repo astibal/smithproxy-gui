@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import {
-  SystemClient, serializeGuiConfiguration, validateGuiBootstrapConfiguration,
+  SystemClient, guiBootstrapConfigurationIssue, serializeGuiConfiguration,
+  validateGuiBootstrapConfiguration,
 } from './system-client';
 
 function jsonResponse(value: unknown, status = 200): Response {
@@ -1195,7 +1196,13 @@ describe('SystemClient', () => {
     })).toContain('IPv4');
     expect(validateGuiBootstrapConfiguration({
       ...valid, smithproxy: {...valid.smithproxy, apiTokenFile: 'relative-token'},
-    })).toContain('absolute safe paths');
+    })).toContain('absolute safe path');
+    expect(guiBootstrapConfigurationIssue({
+      ...valid, smithproxy: {...valid.smithproxy, apiTokenFile: 'relative-token'},
+    })).toEqual({
+      field: 'smithproxy.apiTokenFile',
+      message: 'Smithproxy API token file must use an absolute safe path.',
+    });
     expect(validateGuiBootstrapConfiguration({
       ...valid, backend: {...valid.backend, bindAddress: '0.0.0.0'}, gateway: undefined,
     })).toContain('gateway credential');

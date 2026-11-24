@@ -152,6 +152,17 @@ export type GuiBootstrapConfiguration = {
   gateway: GuiConfiguration['gateway'];
 };
 
+export type GuiBootstrapConfigurationField =
+  'backend.bindAddress' | 'backend.port' | 'backend.basePath' |
+  'frontend.assetRoot' | 'smithproxy.apiUrl' | 'smithproxy.caCert' |
+  'smithproxy.apiTokenFile' | 'smithproxy.cliEndpoint' |
+  'gateway.enabled' | 'gateway.secretFile' | 'gateway.previousSecretFile';
+
+export interface GuiBootstrapConfigurationIssue {
+  field: GuiBootstrapConfigurationField;
+  message: string;
+}
+
 export interface ProbeSample {
   state: SmithproxyState;
   checkedAtUnixMs: number;
@@ -1540,46 +1551,68 @@ function validCliEndpoint(value: string): boolean {
   return match !== null && Number(match[2]) >= 1 && Number(match[2]) <= 65535;
 }
 
-export function validateGuiBootstrapConfiguration(value: GuiBootstrapConfiguration): string | undefined {
-  if (!validIpv4Address(value.backend.bindAddress)) return 'Bind address must be a valid IPv4 literal.';
-  if (!Number.isSafeInteger(value.backend.port) || value.backend.port < 1 || value.backend.port > 65535) {
-    return 'Backend port must use 1 through 65535.';
+export function guiBootstrapConfigurationIssue(
+  value: GuiBootstrapConfiguration,
+): GuiBootstrapConfigurationIssue | undefined {
+  const issue = (field: GuiBootstrapConfigurationField, message: string) => ({field, message});
+  if (!validIpv4Address(value.backend.bindAddress)) {
+    return issue('backend.bindAddress', 'Bind address must be a valid IPv4 literal.');
   }
-  if (!validBasePath(value.backend.basePath)) return 'Public base path is invalid.';
+  if (!Number.isSafeInteger(value.backend.port) || value.backend.port < 1 || value.backend.port > 65535) {
+    return issue('backend.port', 'Backend port must use 1 through 65535.');
+  }
+  if (!validBasePath(value.backend.basePath)) {
+    return issue('backend.basePath', 'Public base path is invalid.');
+  }
   if (value.frontend && !validAbsolutePath(value.frontend.assetRoot)) {
-    return 'Frontend asset root must use an absolute safe path.';
+    return issue('frontend.assetRoot', 'Frontend asset root must use an absolute safe path.');
   }
   if (value.smithproxy) {
     if (!validApiUrl(value.smithproxy.apiUrl)) {
-      return 'Smithproxy API must use HTTPS, or HTTP on a loopback address.';
+      return issue('smithproxy.apiUrl', 'Smithproxy API must use HTTPS, or HTTP on a loopback address.');
     }
-    if (!validAbsolutePath(value.smithproxy.caCert) ||
-        !validAbsolutePath(value.smithproxy.apiTokenFile)) {
-      return 'Smithproxy credential files must use absolute safe paths.';
+    if (!validAbsolutePath(value.smithproxy.caCert)) {
+      return issue('smithproxy.caCert', 'Smithproxy API CA certificate must use an absolute safe path.');
     }
-    if (!validCliEndpoint(value.smithproxy.cliEndpoint)) return 'CLI broker endpoint is invalid.';
+    if (!validAbsolutePath(value.smithproxy.apiTokenFile)) {
+      return issue('smithproxy.apiTokenFile', 'Smithproxy API token file must use an absolute safe path.');
+    }
+    if (!validCliEndpoint(value.smithproxy.cliEndpoint)) {
+      return issue('smithproxy.cliEndpoint', 'CLI broker endpoint is invalid.');
+    }
   }
   if (value.gateway) {
     if (!validAbsolutePath(value.gateway.secretFile)) {
-      return 'Gateway credential file must use an absolute safe path.';
+      return issue('gateway.secretFile', 'Gateway credential file must use an absolute safe path.');
     }
     if (value.gateway.previousSecretFile &&
         !validAbsolutePath(value.gateway.previousSecretFile)) {
-      return 'Previous gateway credential file must use an absolute safe path.';
+      return issue(
+        'gateway.previousSecretFile', 'Previous gateway credential file must use an absolute safe path.',
+      );
     }
     if (value.gateway.previousSecretFile === value.gateway.secretFile) {
-      return 'Current and previous gateway credential files must differ.';
+      return issue(
+        'gateway.previousSecretFile', 'Current and previous gateway credential files must differ.',
+      );
     }
-    if (value.smithproxy &&
-        (value.smithproxy.apiTokenFile === value.gateway.secretFile ||
-         value.smithproxy.apiTokenFile === value.gateway.previousSecretFile)) {
-      return 'Smithproxy API and gateway credentials must use separate files.';
+    if (value.smithproxy && value.smithproxy.apiTokenFile === value.gateway.secretFile) {
+      return issue('gateway.secretFile', 'Smithproxy API and gateway credentials must use separate files.');
+    }
+    if (value.smithproxy && value.smithproxy.apiTokenFile === value.gateway.previousSecretFile) {
+      return issue(
+        'gateway.previousSecretFile', 'Smithproxy API and gateway credentials must use separate files.',
+      );
     }
   }
   if (!value.backend.bindAddress.startsWith('127.') && !value.gateway) {
-    return 'A non-loopback bind requires a gateway credential.';
+    return issue('gateway.enabled', 'A non-loopback bind requires a gateway credential.');
   }
   return undefined;
+}
+
+export function validateGuiBootstrapConfiguration(value: GuiBootstrapConfiguration): string | undefined {
+  return guiBootstrapConfigurationIssue(value)?.message;
 }
 
 export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): ArrayBuffer {

@@ -38,7 +38,7 @@ import type {
 } from './api/models';
 import {
   SystemClient,
-  validateGuiBootstrapConfiguration,
+  guiBootstrapConfigurationIssue,
   type ArchiveInventory,
   type ArchiveRestore,
   type ArchiveValidation,
@@ -49,6 +49,7 @@ import {
   type EventSnapshot,
   type GatewaySession,
   type GuiConfiguration,
+  type GuiBootstrapConfigurationField,
   type InterfaceSnapshot,
   type JobSnapshot,
   type LiveSessionSnapshot,
@@ -12332,15 +12333,19 @@ export class SmithproxyApp extends LitElement {
        activeBackend.port !== savedBackend.port || activeBackend.basePath !== savedBackend.basePath);
     const backendEndpoint = (backend: NonNullable<GuiConfiguration['backend']>) =>
       `${backend.bindAddress}:${backend.port}${backend.basePath}`;
-    const validationError = draft ? validateGuiBootstrapConfiguration(draft) : undefined;
+    const validationIssue = draft ? guiBootstrapConfigurationIssue(draft) : undefined;
+    const validationError = validationIssue?.message;
     const valid = draft !== undefined && validationError === undefined;
     const validEnrollmentToken = /^[0-9a-f]{64}$/u.test(this.enrollmentToken.trim());
     const validEnrollmentPassword = this.enrollmentPassword.length >= 14 &&
       this.enrollmentPassword.length <= 1024 &&
       this.enrollmentPassword === this.enrollmentPasswordConfirmation;
     const textField = (
+      field: GuiBootstrapConfigurationField,
       label: string, current: string, update: (next: string) => void, placeholder = '',
     ) => html`<label><span>${label}</span><input type="text" maxlength="4096"
+      aria-invalid=${validationIssue?.field === field ? 'true' : 'false'}
+      aria-describedby=${validationIssue?.field === field ? 'gui-configuration-error' : nothing}
       .value=${current} placeholder=${placeholder}
       @input=${(event: Event) => {
         const input = event.currentTarget;
@@ -12359,10 +12364,12 @@ export class SmithproxyApp extends LitElement {
         <div class="archive-resource-editor gui-config-editor">
           <fieldset class="gui-config-section"><legend>GUI listener and frontend</legend>
             <div class="gui-config-fields">
-              ${textField('Bind address', draft.backend.bindAddress, next => {
+              ${textField('backend.bindAddress', 'Bind address', draft.backend.bindAddress, next => {
                 this.guiConfigurationDraft = {...draft, backend: {...draft.backend, bindAddress: next}};
               })}
               <label><span>Backend port</span><input type="number" min="1" max="65535"
+                aria-invalid=${validationIssue?.field === 'backend.port' ? 'true' : 'false'}
+                aria-describedby=${validationIssue?.field === 'backend.port' ? 'gui-configuration-error' : nothing}
                 .value=${String(draft.backend.port)} @input=${(event: Event) => {
                   const input = event.currentTarget;
                   if (input instanceof HTMLInputElement) {
@@ -12371,7 +12378,7 @@ export class SmithproxyApp extends LitElement {
                     };
                   }
                 }}></label>
-              ${textField('Public frontend base path', draft.backend.basePath, next => {
+              ${textField('backend.basePath', 'Public frontend base path', draft.backend.basePath, next => {
                 this.guiConfigurationDraft = {...draft, backend: {...draft.backend, basePath: next}};
               }, '/smithproxy-gui')}
             </div>
@@ -12387,7 +12394,7 @@ export class SmithproxyApp extends LitElement {
                     assetRoot: '/usr/share/smithproxy-gui',
                   } : undefined};
                 }}><span>Override the packaged frontend asset directory</span></label>
-              ${draft.frontend ? html`${textField('Frontend asset root', draft.frontend.assetRoot, next => {
+              ${draft.frontend ? html`${textField('frontend.assetRoot', 'Frontend asset root', draft.frontend.assetRoot, next => {
                 this.guiConfigurationDraft = {...draft, frontend: {assetRoot: next}};
               }, '/usr/share/smithproxy-gui')}` : html`
                 <p>The executable's packaged frontend assets are used.</p>`}
@@ -12408,16 +12415,16 @@ export class SmithproxyApp extends LitElement {
                   } : undefined};
                 }}><span>Enable authenticated Smithproxy management and configuration access</span></label>
               ${draft.smithproxy ? html`
-                ${textField('Smithproxy API URL', draft.smithproxy.apiUrl, next => {
+                ${textField('smithproxy.apiUrl', 'Smithproxy API URL', draft.smithproxy.apiUrl, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiUrl: next}};
                 }, 'https://127.0.0.1:55555')}
-                ${textField('Smithproxy API CA certificate', draft.smithproxy.caCert, next => {
+                ${textField('smithproxy.caCert', 'Smithproxy API CA certificate', draft.smithproxy.caCert, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, caCert: next}};
                 }, '/run/smithproxy-gui/api-ca.pem')}
-                ${textField('Boot-time API token file', draft.smithproxy.apiTokenFile, next => {
+                ${textField('smithproxy.apiTokenFile', 'Boot-time API token file', draft.smithproxy.apiTokenFile, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiTokenFile: next}};
                 }, '/run/credentials/smithproxy-gui.api-token')}
-                ${textField('CLI broker endpoint', draft.smithproxy.cliEndpoint, next => {
+                ${textField('smithproxy.cliEndpoint', 'CLI broker endpoint', draft.smithproxy.cliEndpoint, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, cliEndpoint: next}};
                 }, '127.0.0.1:50000')}
               ` : html`<p>After restart this GUI will not connect to Smithproxy core.</p>`}
@@ -12426,6 +12433,8 @@ export class SmithproxyApp extends LitElement {
           <fieldset class="gui-config-section"><legend>Browser gateway</legend>
             <div class="gui-config-fields">
               <label class="gui-config-toggle"><input type="checkbox"
+                aria-invalid=${validationIssue?.field === 'gateway.enabled' ? 'true' : 'false'}
+                aria-describedby=${validationIssue?.field === 'gateway.enabled' ? 'gui-configuration-error' : nothing}
                 .checked=${draft.gateway !== undefined}
                 @change=${(event: Event) => {
                   const input = event.currentTarget;
@@ -12436,10 +12445,10 @@ export class SmithproxyApp extends LitElement {
                   } : undefined};
                 }}><span>Require a trusted frontend gateway for browser access</span></label>
               ${draft.gateway ? html`
-                ${textField('Gateway credential file', draft.gateway.secretFile, next => {
+                ${textField('gateway.secretFile', 'Gateway credential file', draft.gateway.secretFile, next => {
                   this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, secretFile: next}};
                 }, '/run/credentials/smithproxy-gui.gateway')}
-                ${textField('Previous gateway credential file', draft.gateway.previousSecretFile, next => {
+                ${textField('gateway.previousSecretFile', 'Previous gateway credential file', draft.gateway.previousSecretFile, next => {
                   this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, previousSecretFile: next}};
                 }, 'Optional during rotation')}
               ` : html`<p>Direct standalone browser authentication is used on a loopback listener.</p>`}
@@ -12450,7 +12459,7 @@ export class SmithproxyApp extends LitElement {
           Paths are persistent configuration. The referenced credentials are provisioned for the running boot;
           their values are never stored in CFtar or returned to the browser.
         </div>
-        ${validationError ? html`<div class="metrics-message danger" role="alert">
+        ${validationError ? html`<div id="gui-configuration-error" class="metrics-message danger" role="alert">
           ${validationError}
         </div>` : nothing}
         <div class="archive-actions">

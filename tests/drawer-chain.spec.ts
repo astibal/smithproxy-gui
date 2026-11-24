@@ -7151,8 +7151,13 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     .fill('/run/credentials/gui.gateway.current');
   await gui.getByLabel('Bind address').fill('999.1.1.1');
   await expect(gui.getByRole('alert')).toContainText('valid IPv4 literal');
+  await expect(gui.getByLabel('Bind address')).toHaveAttribute('aria-invalid', 'true');
+  await expect(gui.getByLabel('Bind address')).toHaveAttribute(
+    'aria-describedby', 'gui-configuration-error',
+  );
   await expect(gui.getByRole('button', {name: 'Publish GUI startup settings'})).toBeDisabled();
   await gui.getByLabel('Bind address').fill('0.0.0.0');
+  await expect(gui.getByLabel('Bind address')).toHaveAttribute('aria-invalid', 'false');
   await gui.getByLabel('Backend port').fill('19082');
   await gui.getByLabel('Public frontend base path').fill('/security');
   await gui.getByLabel('Smithproxy API URL').fill('https://127.0.0.1:56555');
