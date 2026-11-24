@@ -1191,6 +1191,9 @@ describe('SystemClient', () => {
       ...valid, backend: {...valid.backend, bindAddress: '999.1.1.1'},
     })).toContain('IPv4');
     expect(validateGuiBootstrapConfiguration({
+      ...valid, backend: {...valid.backend, bindAddress: '127.00.0.1'},
+    })).toContain('IPv4');
+    expect(validateGuiBootstrapConfiguration({
       ...valid, smithproxy: {...valid.smithproxy, apiTokenFile: 'relative-token'},
     })).toContain('absolute safe paths');
     expect(validateGuiBootstrapConfiguration({

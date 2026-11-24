@@ -1507,7 +1507,8 @@ function libconfigString(value: string): string {
 
 function validIpv4Address(value: string): boolean {
   const parts = value.split('.');
-  return parts.length === 4 && parts.every(part => /^\d{1,3}$/u.test(part) && Number(part) <= 255);
+  return parts.length === 4 && parts.every(part =>
+    /^\d{1,3}$/u.test(part) && Number(part) <= 255 && String(Number(part)) === part);
 }
 
 function validBasePath(value: string): boolean {
