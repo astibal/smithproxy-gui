@@ -7706,6 +7706,11 @@ test('edits live-safe Networkd policy while protecting restart-only identity', a
 
   const summary = page.getByRole('region', {name: 'Network interception'});
   await expect(summary).toContainText('smithproxy_networkd');
+  await expect(summary.getByRole('row', {name: /Plain TCP ports/u})).toContainText('All');
+  await expect(summary.getByRole('row', {name: /^TLS ports/u})).toContainText('443');
+  await expect(summary.getByRole('row', {name: /Tenant ranges/u})).toContainText('10.0.0.0/8');
+  await expect(summary.getByRole('table', {name: 'Effective interception bypass rules'}))
+    .toContainText('10.0.0.0/8');
   await expect(summary.getByRole('row', {name: /Current interface match/u})).toContainText('lan0');
   await expect(summary.getByRole('row', {name: /Current interface match/u})).not.toContainText('wan0');
   await summary.getByRole('button', {name: 'Edit interception'}).click();
@@ -7765,6 +7770,13 @@ test('edits live-safe Networkd policy while protecting restart-only identity', a
     expect.objectContaining({path: 'networking.tenant_index'}),
     expect.objectContaining({path: 'networking.tenant_ranges'}),
   ]));
+  await expect(summary.getByRole('row', {name: /Firewall table/u})).toContainText(
+    'after existing rules',
+  );
+  await expect(summary.getByRole('row', {name: /Interface scope/u})).toContainText('lan0, wan0');
+  await expect(summary.getByRole('row', {name: /Plain TCP ports/u})).toContainText('All');
+  await expect(summary.getByRole('table', {name: 'Effective interception bypass rules'}))
+    .toContainText('8443');
 });
 
 test('materializes absent nested settings groups through editable defaults', async ({page}) => {

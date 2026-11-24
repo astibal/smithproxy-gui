@@ -11185,10 +11185,36 @@ export class SmithproxyApp extends LitElement {
           <code>networking</code> section. The host may still use an external or legacy network setup.</div>
       </section>`;
     }
-    const enabledProtocols = [networking.tcpAll ? 'All TCP' : `${networking.tcpPorts.length} TCP ports`,
-      networking.udpAll ? 'All UDP' : `${networking.udpPorts.length} UDP ports`,
-      networking.ipv6Udp ? 'IPv6 UDP' : 'IPv4 UDP only'];
-    const resolvedInterfaces = this.resolveNetworkingInterfaces(networking.interfaces);
+    const scalar = <T extends ConfigScalar>(path: string, fallback: T): T =>
+      this.presentedValue(`networking.${path}`, fallback);
+    const list = <T extends string | number>(
+      path: string, fallback: ReadonlyArray<T>, type: 'string' | 'number',
+    ): ReadonlyArray<T> => this.presentedListValue(`networking.${path}`, fallback, type) as T[];
+    const displayList = (values: ReadonlyArray<string | number>) =>
+      values.length > 0 ? values.join(', ') : 'None';
+    const interfaces = list('interfaces', networking.interfaces, 'string') as ReadonlyArray<string>;
+    const tcpPorts = list('tcp_ports', networking.tcpPorts, 'number') as ReadonlyArray<number>;
+    const tlsPorts = list('tls_ports', networking.tlsPorts, 'number') as ReadonlyArray<number>;
+    const udpPorts = list('udp_ports', networking.udpPorts, 'number') as ReadonlyArray<number>;
+    const dtlsPorts = list('dtls_ports', networking.dtlsPorts, 'number') as ReadonlyArray<number>;
+    const dropUdpPorts = list(
+      'drop_udp_ports', networking.dropUdpPorts, 'number',
+    ) as ReadonlyArray<number>;
+    const exemptUids = list(
+      'redirect_exempt_uids', networking.redirectExemptUids, 'number',
+    ) as ReadonlyArray<number>;
+    const tenantRanges = list(
+      'tenant_ranges', networking.tenantRanges, 'string',
+    ) as ReadonlyArray<string>;
+    const tcpAll = scalar('tcp_all', networking.tcpAll);
+    const udpAll = scalar('udp_all', networking.udpAll);
+    const enabledProtocols = [tcpAll ? 'All TCP' : `${tcpPorts.length} TCP ports`,
+      udpAll ? 'All UDP' : `${udpPorts.length} UDP ports`,
+      scalar('ipv6_udp', networking.ipv6Udp) ? 'IPv6 UDP' : 'IPv4 UDP only'];
+    const resolvedInterfaces = this.resolveNetworkingInterfaces(interfaces);
+    const manageRouting = scalar('manage_routing', networking.manageRouting);
+    const manageSysctls = scalar('manage_sysctls', networking.manageSysctls);
+    const bypassRows = this.networkingBypassRows();
     return html`<section class="monitor-panel" aria-label="Network interception">
       <div class="runtime-heading">
         <div><h3>Network interception</h3><p>Effective native firewall and routing ownership</p></div>
@@ -11200,19 +11226,77 @@ export class SmithproxyApp extends LitElement {
       </div>
       <div class="table network-config-table" tabindex="0"><table class="listener-table">
         <tbody>
-          <tr><th>Firewall table</th><td><code>${networking.table}</code> · ${networking.placement} existing rules</td></tr>
-          <tr><th>Interface scope</th><td>${networking.interfaces.join(', ') || 'None'}</td></tr>
+          <tr><th>Firewall table</th><td><code>${networking.table}</code> · ${scalar('placement', networking.placement)} existing rules</td></tr>
+          <tr><th>Interface scope</th><td>${displayList(interfaces)}</td></tr>
           <tr><th>Current interface match</th><td>${resolvedInterfaces.length > 0
             ? resolvedInterfaces.join(', ') : this.interfaces.state === 'ready'
               ? 'No current interface matches' : 'Topology unavailable'}</td></tr>
           <tr><th>Interception</th><td>${enabledProtocols.join(' · ')}</td></tr>
-          <tr><th>Redirect ports</th><td>TCP ${networking.redirectTcpPort} · TLS ${networking.redirectTlsPort} · DNS ${networking.redirectDnsPort}</td></tr>
-          <tr><th>Routing ownership</th><td>${networking.manageRouting ? `Table ${networking.routingTable}, priority ${networking.routingPriority}` : 'External routing'}</td></tr>
-          <tr><th>System tuning</th><td>${networking.manageSysctls ? 'Managed by smithproxy-networkd' : 'External sysctl ownership'}</td></tr>
-          <tr><th>Packet mark</th><td><code>${networking.mark.toString(16)} / ${networking.mask.toString(16)}</code></td></tr>
-          <tr><th>Bypass rules</th><td>${networking.bypass.length.toLocaleString()}</td></tr>
+          <tr><th>Redirect ports</th><td>TCP ${scalar('redirect_tcp_port', networking.redirectTcpPort)} ·
+            TLS ${scalar('redirect_tls_port', networking.redirectTlsPort)} ·
+            DNS ${scalar('redirect_dns_port', networking.redirectDnsPort)}</td></tr>
+          <tr><th>Routing ownership</th><td>${manageRouting
+            ? `Table ${scalar('routing_table', networking.routingTable)}, priority ${
+              scalar('routing_priority', networking.routingPriority)}` : 'External routing'}</td></tr>
+          <tr><th>System tuning</th><td>${manageSysctls
+            ? 'Managed by smithproxy-networkd' : 'External sysctl ownership'}</td></tr>
+          <tr><th>Packet mark</th><td><code>${scalar('mark', networking.mark).toString(16)} /
+            ${scalar('mask', networking.mask).toString(16)}</code></td></tr>
+          <tr><th>Bypass rules</th><td>${bypassRows.length.toLocaleString()}</td></tr>
         </tbody>
       </table></div>
+      <details class="management-diagnostics" open>
+        <summary>Interception ports and exemptions</summary>
+        <div class="table network-config-table" tabindex="0"><table class="listener-table">
+          <tbody>
+            <tr><th>Plain TCP ports</th><td>${tcpAll ? 'All' : displayList(tcpPorts)}</td></tr>
+            <tr><th>TLS ports</th><td>${displayList(tlsPorts)}</td></tr>
+            <tr><th>UDP ports</th><td>${udpAll ? 'All' : displayList(udpPorts)}</td></tr>
+            <tr><th>DTLS ports</th><td>${displayList(dtlsPorts)}</td></tr>
+            <tr><th>Dropped UDP ports</th><td>${displayList(dropUdpPorts)}</td></tr>
+            <tr><th>Exempt user IDs</th><td>${displayList(exemptUids)}</td></tr>
+            <tr><th>Local-network exemption</th><td>${scalar(
+              'redirect_exempt_lan', networking.redirectExemptLan,
+            ) ? 'Enabled' : 'Disabled'}</td></tr>
+          </tbody>
+        </table></div>
+      </details>
+      <details class="management-diagnostics" open>
+        <summary>Service identity and host controls</summary>
+        <div class="table network-config-table" tabindex="0"><table class="listener-table">
+          <tbody>
+            <tr><th>Control socket</th><td><code>${networking.controlSocket || 'Packaged default'}</code></td></tr>
+            <tr><th>Tenant index</th><td>${networking.tenantIndex.toLocaleString()}</td></tr>
+            <tr><th>Tenant ranges</th><td>${displayList(tenantRanges)}</td></tr>
+            <tr><th>IP forwarding</th><td>${scalar('forwarding', networking.forwarding) ? 'Enabled' : 'Disabled'}</td></tr>
+            <tr><th>Non-local bind</th><td>${scalar('nonlocal_bind', networking.nonlocalBind) ? 'Enabled' : 'Disabled'}</td></tr>
+            <tr><th>TCP low latency</th><td>${scalar('tcp_low_latency', networking.tcpLowLatency) ? 'Enabled' : 'Disabled'}</td></tr>
+            <tr><th>TCP SYN retries</th><td>${scalar('tcp_syn_retries', networking.tcpSynRetries)}</td></tr>
+            <tr><th>Blackhole maximum TTL</th><td>${scalar(
+              'blackhole_max_ttl_ms', networking.blackholeMaxTtlMs,
+            ).toLocaleString()} ms</td></tr>
+          </tbody>
+        </table></div>
+      </details>
+      <details class="management-diagnostics" ?open=${bypassRows.length > 0}>
+        <summary>Bypass rules · ${bypassRows.length.toLocaleString()}</summary>
+        ${bypassRows.length > 0 ? html`<div class="table network-config-table" tabindex="0">
+          <table class="listener-table" aria-label="Effective interception bypass rules">
+            <thead><tr><th>Source</th><th>Destination</th><th>Port</th></tr></thead>
+            <tbody>${bypassRows.map(row => {
+              const liveIndex = row.kind === 'live'
+                ? networking.bypass.findIndex(rule => rule.id === row.item.id) : -1;
+              const source = row.kind === 'create' ? String(row.operation.fields['source'] ?? '')
+                : scalar(`bypass.[${liveIndex}].source`, row.item.source);
+              const destination = row.kind === 'create'
+                ? String(row.operation.fields['destination'] ?? '')
+                : scalar(`bypass.[${liveIndex}].destination`, row.item.destination);
+              const port = row.kind === 'create' ? Number(row.operation.fields['port'] ?? 0)
+                : scalar(`bypass.[${liveIndex}].port`, row.item.port);
+              return html`<tr><td>${source}</td><td>${destination}</td><td>${port}</td></tr>`;
+            })}</tbody>
+          </table></div>` : html`<div class="metrics-message">No bypass rules are configured.</div>`}
+      </details>
     </section>`;
   }
 
