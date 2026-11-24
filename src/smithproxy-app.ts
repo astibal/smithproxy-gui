@@ -17236,10 +17236,11 @@ export class SmithproxyApp extends LitElement {
           <section class="enrollment-card" role="alert">
             <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
             <h1>Administrator enrollment is not ready</h1>
-            <p>The GUI core cannot currently read a valid <code>gui.cfg</code>, archive inventory,
-              and running configuration revision from Smithproxy.</p>
-            <p>Make the GUI bootstrap resource and authenticated core connection available, then
-              retry. Do not issue a one-time enrollment token yet.</p>
+            <p>The GUI core cannot currently read the administrator inventory and its
+              <code>admin.cfg</code> revision boundary from Smithproxy.</p>
+            <p>Restore the authenticated Core connection and administrator configuration access,
+              then retry. Do not issue a one-time enrollment token yet; readiness is checked before
+              Smithproxy consumes it.</p>
             <button class="primary" type="button" @click=${() => { void this.loadCapabilities(); }}>
               Retry readiness
             </button>

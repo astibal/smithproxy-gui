@@ -112,9 +112,11 @@ the current standalone administrator name, whether any administrator is active,
 and whether every prerequisite for initial enrollment is currently available.
 The readiness bit contains no resource path, revision, hash, or credential.
 Enrollment consumes a ten-minute CLI token in Smithproxy only after this
-preflight succeeds and publishes only a salted scrypt verifier to `gui.cfg`.
-The verifier becomes active immediately; every older session for that identity
-is revoked, while initial enrollment and self-rotation issue one eight-hour HttpOnly replacement session. Login verifies the active verifier
+preflight succeeds. Smithproxy Core publishes only a salted, memory-hard verifier
+to `admin.cfg`; the GUI never serializes administrator credentials. The verifier
+becomes active immediately and every older session for that identity is revoked.
+Initial enrollment issues one eight-hour HttpOnly GUI session backed by the
+new Core session. Login verifies the active verifier
 under a global derivation rate limit; logout revokes the session immediately.
 The snapshot endpoint requires either this session or the
 trusted gateway handoff described in `SECURITY.md`; missing or invalid

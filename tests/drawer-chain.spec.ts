@@ -7201,7 +7201,9 @@ test('blocks initial enrollment until the core publication preflight is ready', 
   await expect(page.getByRole('heading', {name: 'Administrator enrollment is not ready'}))
     .toBeVisible();
   await expect(page.getByLabel('Enrollment token')).toHaveCount(0);
-  await expect(page.getByText('Do not issue a one-time enrollment token yet.')).toBeVisible();
+  await expect(page.getByText('admin.cfg', {exact: true})).toBeVisible();
+  await expect(page.getByText(/administrator inventory and its/)).toBeVisible();
+  await expect(page.getByText(/Do not issue a one-time enrollment token yet/)).toBeVisible();
 
   state.initialEnrollmentReady = true;
   await page.getByRole('button', {name: 'Retry readiness'}).click();
