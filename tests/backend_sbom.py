@@ -12,10 +12,10 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    require(len(sys.argv) == 9, "expected SBOM path, six versions, and source path")
+    require(len(sys.argv) == 10, "expected SBOM path, seven versions, and source path")
     sbom_path = Path(sys.argv[1])
-    project_version, lmhpp_revision, curl_version, microhttpd_version, json_version, openssl_version = sys.argv[2:8]
-    source_path = sys.argv[8]
+    project_version, lmhpp_revision, curl_version, microhttpd_version, libconfig_version, json_version, openssl_version = sys.argv[2:9]
+    source_path = sys.argv[9]
 
     raw = sbom_path.read_text(encoding="utf-8")
     payload = json.loads(raw)
@@ -36,6 +36,8 @@ def main() -> None:
         "libcurl": (curl_version, "curl", "pkg:generic/libcurl"),
         "libmicrohttpd": (microhttpd_version, "LGPL-2.1-or-later",
                            "pkg:generic/libmicrohttpd"),
+        "libconfig++": (libconfig_version, "LGPL-2.1-or-later",
+                         "pkg:generic/libconfig%2B%2B"),
         "nlohmann-json": (json_version, "MIT", "pkg:generic/nlohmann-json"),
         "openssl": (openssl_version, "Apache-2.0", "pkg:generic/openssl"),
     }

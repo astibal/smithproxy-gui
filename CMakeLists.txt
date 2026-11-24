@@ -11,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MICROHTTPD REQUIRED IMPORTED_TARGET libmicrohttpd)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET "libcurl>=7.85")
+pkg_check_modules(LIBCONFIG REQUIRED IMPORTED_TARGET libconfig++)
 find_package(nlohmann_json 3.11 REQUIRED CONFIG)
 find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
 
@@ -120,6 +121,7 @@ add_library(smithproxy_gui_core
 target_include_directories(smithproxy_gui_core PUBLIC src/backend)
 target_link_libraries(smithproxy_gui_core PUBLIC
     PkgConfig::CURL
+    PkgConfig::LIBCONFIG
     nlohmann_json::nlohmann_json
     OpenSSL::Crypto
 )
@@ -207,6 +209,7 @@ if(BUILD_TESTING)
                 "${SMITHPROXY_GUI_LMHPP_REVISION}"
                 "${CURL_VERSION}"
                 "${MICROHTTPD_VERSION}"
+                "${LIBCONFIG_VERSION}"
                 "${nlohmann_json_VERSION}"
                 "${OPENSSL_VERSION}"
                 "${CMAKE_CURRENT_SOURCE_DIR}")

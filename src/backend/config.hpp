@@ -29,6 +29,7 @@ struct AppConfig {
     std::optional<SmithproxyCliConfig> smithproxy_cli;
     std::optional<std::string> gateway_secret;
     std::optional<std::string> previous_gateway_secret;
+    std::optional<std::filesystem::path> gui_config_path;
 };
 
 struct ParseResult {
@@ -38,6 +39,10 @@ struct ParseResult {
 };
 
 ParseResult parse_config(int argc, char** argv, const std::filesystem::path& default_asset_root);
+// Loads the GUI-owned libconfig section exposed from the active CFtar. Secret
+// values remain in protected runtime files referenced by this configuration.
+ParseResult parse_gui_config_file(
+    const std::filesystem::path& path, const std::filesystem::path& default_asset_root);
 std::filesystem::path resolve_default_asset_root(
     const std::filesystem::path& executable,
     const std::filesystem::path& build_asset_root,

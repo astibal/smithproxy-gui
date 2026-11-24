@@ -2398,6 +2398,68 @@ int main() {
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
 
+    const auto gui_config_root =
+        std::filesystem::temp_directory_path() / "smithproxy-gui-bootstrap-config-test";
+    std::filesystem::remove_all(gui_config_root);
+    std::filesystem::create_directories(gui_config_root);
+    const auto api_token_path = gui_config_root / "api.token";
+    const auto gateway_secret_path = gui_config_root / "gateway.secret";
+    const auto ca_path = gui_config_root / "ca.pem";
+    const auto gui_config_path = gui_config_root / "gui.cfg";
+    {
+        std::ofstream token(api_token_path);
+        token << "boot-api-token-0123456789abcdef";
+        std::ofstream gateway(gateway_secret_path);
+        gateway << "gateway-secret-0123456789abcdef0123456789";
+        std::ofstream ca(ca_path);
+        ca << "test-ca";
+        std::ofstream gui(gui_config_path);
+        gui << "gui = {\n"
+               "  backend = { bind_address = \"0.0.0.0\"; port = 18443; base_path = \"/admin\"; };\n"
+               "  smithproxy = { api_url = \"https://127.0.0.1:55555/\"; ca_cert = \""
+            << ca_path.string() << "\"; api_token_file = \"" << api_token_path.string()
+            << "\"; cli_endpoint = \"127.0.0.1:50000\"; };\n"
+               "  gateway = { secret_file = \"" << gateway_secret_path.string() << "\"; };\n"
+               "};\n";
+    }
+    const auto owner_only = std::filesystem::perms::owner_read | std::filesystem::perms::owner_write;
+    std::filesystem::permissions(api_token_path, owner_only, std::filesystem::perm_options::replace);
+    std::filesystem::permissions(gateway_secret_path, owner_only, std::filesystem::perm_options::replace);
+    std::filesystem::permissions(gui_config_path, owner_only, std::filesystem::perm_options::replace);
+    const auto gui_bootstrap = parse_gui_config_file(gui_config_path, "/srv/gui");
+    assert(gui_bootstrap.config);
+    assert(gui_bootstrap.config->bind_address == "0.0.0.0");
+    assert(gui_bootstrap.config->port == 18443U);
+    assert(gui_bootstrap.config->base_path == "/admin");
+    assert(gui_bootstrap.config->smithproxy);
+    assert(gui_bootstrap.config->smithproxy->api_url == "https://127.0.0.1:55555");
+    assert(gui_bootstrap.config->smithproxy->api_key == "boot-api-token-0123456789abcdef");
+    assert(gui_bootstrap.config->smithproxy_cli);
+    assert(gui_bootstrap.config->gateway_secret);
+    std::filesystem::permissions(
+        api_token_path, owner_only | std::filesystem::perms::group_read,
+        std::filesystem::perm_options::replace);
+    assert(!parse_gui_config_file(gui_config_path, "/srv/gui").config);
+    std::filesystem::permissions(api_token_path, owner_only, std::filesystem::perm_options::replace);
+    std::vector<std::string> file_arguments{
+        "smithproxy-gui", "--config", gui_config_path.string(), "--port", "19443",
+    };
+    std::vector<char*> file_argv;
+    for (auto& argument : file_arguments) file_argv.push_back(argument.data());
+    const auto configured_from_file = parse_config(
+        static_cast<int>(file_argv.size()), file_argv.data(), "/srv/gui");
+    assert(configured_from_file.config);
+    assert(configured_from_file.config->port == 19443U);
+    std::vector<std::string> duplicate_file_arguments{
+        "smithproxy-gui", "--config", gui_config_path.string(),
+        "--config", gui_config_path.string(),
+    };
+    std::vector<char*> duplicate_file_argv;
+    for (auto& argument : duplicate_file_arguments) duplicate_file_argv.push_back(argument.data());
+    assert(!parse_config(
+        static_cast<int>(duplicate_file_argv.size()), duplicate_file_argv.data(), "/srv/gui").config);
+    std::filesystem::remove_all(gui_config_root);
+
     std::vector<std::string> remote_arguments{"smithproxy-gui", "--bind", "0.0.0.0"};
     std::vector<char*> remote_argv;
     for (auto& argument : remote_arguments) remote_argv.push_back(argument.data());

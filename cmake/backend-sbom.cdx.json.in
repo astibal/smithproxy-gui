@@ -37,6 +37,14 @@
     },
     {
       "type": "library",
+      "bom-ref": "libconfig++:@LIBCONFIG_VERSION@",
+      "name": "libconfig++",
+      "version": "@LIBCONFIG_VERSION@",
+      "licenses": [{ "license": { "id": "LGPL-2.1-or-later" } }],
+      "purl": "pkg:generic/libconfig%2B%2B@@LIBCONFIG_VERSION@"
+    },
+    {
+      "type": "library",
       "bom-ref": "nlohmann-json:@nlohmann_json_VERSION@",
       "name": "nlohmann-json",
       "version": "@nlohmann_json_VERSION@",

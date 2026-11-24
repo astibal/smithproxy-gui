@@ -68,7 +68,7 @@ jobs:
         run: >-
           sudo apt-get update && sudo apt-get install --yes
           cmake ninja-build pkg-config libcurl4-openssl-dev
-          libmicrohttpd-dev nlohmann-json3-dev
+          libmicrohttpd-dev libconfig++-dev nlohmann-json3-dev
       - name: Configure
         run: >-
           cmake -S . -B build-ci -G Ninja

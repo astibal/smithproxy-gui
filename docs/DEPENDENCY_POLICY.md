@@ -24,7 +24,7 @@ content-derived serial number, so identical installed dependency inputs produce
 identical output.
 
 The CMake configure step also emits `backend-sbom.cdx.json`. It records the full
-lmhpp Git revision plus the libcurl, libmicrohttpd, and nlohmann-json versions
+lmhpp Git revision plus the libcurl, libmicrohttpd, libconfig++, OpenSSL, and nlohmann-json versions
 detected for that exact build, with their reviewed SPDX licenses. CI validates
 the inventory and publishes it as the separate `backend-sbom` artifact. System
 packages remain controlled by the build environment rather than the pnpm

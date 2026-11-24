@@ -36,6 +36,21 @@ An HTTP 401 or 403 invalidates only the rejected in-memory session and triggers
 one bounded reauthorization attempt. Neither bootstrap nor session credentials
 cross the browser boundary or enter logs, diagnostics, or audit records.
 
+### GUI bootstrap resource
+
+The persistent `gui.cfg` resource is configuration, not a credential store. The
+GUI backend may read an exposed copy at startup, but never writes that file or
+the CFtar archive. Changes are submitted through the authenticated Smithproxy
+CFG transaction API so Smithproxy remains the sole writer.
+
+`api_token_file`, `secret_file`, and `previous_secret_file` point to boot-scoped
+runtime credentials. The backend opens them without following symbolic links,
+requires an owned regular file with mode `0600`, bounds its size, and keeps the
+content only in process memory. The token itself must not appear in `gui.cfg`,
+service arguments, environment variables, logs, diagnostics, or archive backups.
+The exposed `gui.cfg` may be owned by root or the service account, but must not
+be writable by its group or by other users.
+
 ## Trusted gateway handoff
 
 Sensitive browser-facing APIs are disabled unless

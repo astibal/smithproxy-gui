@@ -2,8 +2,9 @@
 
 Moderní administrační a monitorovací rozhraní pro Smithproxy.
 
-GUI komunikuje se Smithproxy výhradně přes verzované API; konfigurační soubory
-ani runtime data nečte napřímo.
+Prohlížeč komunikuje pouze s backendem GUI stejného originu. Backend může při
+startu načíst GUI vlastní `gui.cfg` vystavený z aktivního CFtaru; všechny zápisy
+konfigurace i runtime data nadále procházejí verzovaným API Smithproxy.
 
 ## Schválené principy
 

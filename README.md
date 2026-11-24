@@ -2,8 +2,10 @@
 
 Modern administration and monitoring interface for Smithproxy.
 
-The GUI communicates with Smithproxy exclusively through a versioned API. It
-does not read configuration files or runtime data directly.
+The browser communicates exclusively with the same-origin GUI backend. The
+backend may bootstrap from the GUI-owned `gui.cfg` resource exposed from the
+active CFtar, while all configuration writes and runtime data continue to flow
+through Smithproxy's versioned API.
 
 [Czech version](README_CZ.md)
 
@@ -61,8 +63,8 @@ After installing all Playwright browsers, run the same matrix as CI with:
 PLAYWRIGHT_ALL_BROWSERS=1 pnpm test:e2e
 ```
 
-The backend requires C++23, CMake, pkg-config, libcurl, libmicrohttpd, and
-nlohmann-json 3.11 or newer. Initialize the repository and build the production
+The backend requires C++23, CMake, pkg-config, libcurl, libmicrohttpd,
+libconfig++ 1.7, and nlohmann-json 3.11 or newer. Initialize the repository and build the production
 frontend and backend with:
 
 ```sh
