@@ -154,6 +154,31 @@ std::vector<std::string> unmapped_fixed_schema_paths(const Json& config) {
         inspect_group("options", {"calculate_checksums", "metadata", "statistics", "transport", "protocol_events"});
     }
 
+    // Named objects and ordered policies use dynamic entry names or indexes,
+    // so report one schema path per unknown field instead of leaking entry names.
+    const auto inspect_collection = [&](const char* section,
+                                        const std::initializer_list<std::string_view> allowed) {
+        const auto collection = config.find(section);
+        if (collection == config.end()) return;
+        if (collection->is_object()) {
+            for (const auto& entry : collection->items()) {
+                append_unmapped_fields(entry.value(), std::string{section} + "[]", allowed, paths);
+            }
+        } else if (collection->is_array()) {
+            for (const auto& entry : *collection) {
+                append_unmapped_fields(entry, std::string{section} + "[]", allowed, paths);
+            }
+        }
+    };
+    inspect_collection("address_objects", {"type", "value", "cidr", "fqdn"});
+    inspect_collection("port_objects", {"start", "end"});
+    inspect_collection("proto_objects", {"id"});
+    inspect_collection("policy", {
+        "name", "disabled", "proto", "src", "sport", "dst", "dport", "features", "action",
+        "nat", "routing", "tls_profile", "ssh_profile", "detection_profile", "content_profile",
+        "auth_profile", "alg_dns_profile", "script_profile", "ingress_role", "egress_role",
+    });
+
     std::sort(paths.begin(), paths.end());
     paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
     return paths;
