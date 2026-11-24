@@ -42,6 +42,7 @@ export interface SystemCapabilities {
     configRead: boolean;
     configWrite: boolean;
     configSave: boolean;
+    optionalGroupMaterialization: boolean;
     structuralDrafts: boolean;
     primitiveStructuralDrafts: boolean;
     namedStructuralDrafts: boolean;
@@ -550,6 +551,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   const features = value.features;
   const configSave = features.config_save ?? false;
   const primitiveStructuralDrafts = features.primitive_structural_drafts ?? false;
+  const optionalGroupMaterialization = features.optional_group_materialization ?? false;
   const namedStructuralDrafts = features.named_structural_drafts ?? false;
   const namedRenames = features.named_renames ?? false;
   const policyStructuralDrafts = features.policy_structural_drafts ?? false;
@@ -580,6 +582,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
   if (typeof features.config_read !== 'boolean' || typeof features.config_write !== 'boolean' ||
       typeof configSave !== 'boolean' ||
       typeof features.structural_drafts !== 'boolean' ||
+      typeof optionalGroupMaterialization !== 'boolean' ||
       typeof primitiveStructuralDrafts !== 'boolean' ||
       typeof namedStructuralDrafts !== 'boolean' ||
       typeof namedRenames !== 'boolean' ||
@@ -604,6 +607,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
        (features.config_write || configSave || features.drafts || features.draft_preflight)) ||
       (features.config_write && (!features.drafts || !features.draft_preflight ||
         transactionState !== 'ready')) ||
+      (optionalGroupMaterialization && (!features.config_write || !features.drafts)) ||
       (features.structural_drafts && (!features.config_write || !features.drafts)) ||
       (primitiveStructuralDrafts && (!features.config_write || !features.drafts)) ||
       (namedStructuralDrafts && (!primitiveStructuralDrafts || !features.config_write || !features.drafts)) ||
@@ -628,6 +632,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
       configRead: features.config_read,
       configWrite: features.config_write,
       configSave,
+      optionalGroupMaterialization,
       structuralDrafts: features.structural_drafts,
       primitiveStructuralDrafts,
       namedStructuralDrafts,

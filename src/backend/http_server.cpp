@@ -1647,6 +1647,8 @@ private:
             ? status.transaction_capabilities.state
             : std::string{"unavailable"};
         const bool config_write = config_read && transaction_state == "ready";
+        const bool optional_group_materialization = config_write &&
+            status.transaction_capabilities.wire_version == 2U;
         const bool named_renames = config_write &&
             status.transaction_capabilities.wire_version == 1U;
         const auto draft = draft_.snapshot();
@@ -1712,6 +1714,8 @@ private:
                     ",\"config_transaction_state\":" + json_string(transaction_state) +
                     ",\"features\":{\"config_read\":" + (config_read ? "true" : "false") +
                     ",\"config_write\":" + (config_write ? "true" : "false") +
+                    ",\"optional_group_materialization\":" +
+                    (optional_group_materialization ? "true" : "false") +
                     ",\"config_save\":" +
                     (config_read && status.transaction_capabilities.explicit_save ? "true" : "false") +
                     ",\"structural_drafts\":" + (structural_drafts ? "true" : "false") +

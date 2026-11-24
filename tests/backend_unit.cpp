@@ -1202,6 +1202,34 @@ int main() {
     assert(build_transaction_v2_operations(v2_draft, transaction_snapshot).error_code ==
            "transaction.invalid_draft");
 
+    transaction_snapshot.captures = ConfigCaptureSettings{};
+    transaction_snapshot.captures->present_groups = {"local"};
+    v2_draft.changes = {
+        {"captures.local.enabled", true},
+        {"captures.remote.enabled", false},
+        {"captures.options.metadata", true},
+    };
+    const auto capture_materialization =
+        build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(capture_materialization.body);
+    assert(nlohmann::json::parse(*capture_materialization.body) == nlohmann::json::array({
+        {{"op", "add"}, {"path", "captures"}, {"name", "remote"}},
+        {{"op", "add"}, {"path", "captures"}, {"name", "options"}},
+        {
+            {"op", "set"}, {"path", "captures.local.enabled"},
+            {"value", {{"type", "bool"}, {"data", true}}},
+        },
+        {
+            {"op", "set"}, {"path", "captures.remote.enabled"},
+            {"value", {{"type", "bool"}, {"data", false}}},
+        },
+        {
+            {"op", "set"}, {"path", "captures.options.metadata"},
+            {"value", {{"type", "bool"}, {"data", true}}},
+        },
+    }));
+    transaction_snapshot.captures.reset();
+
     v2_draft.changes.clear();
     v2_draft.structural_operations = {
         DraftCreateOperation{
@@ -2313,6 +2341,8 @@ int main() {
         R"({"success":{"captures":{"local":{"enabled":"true","dir":"/private/captures","format":"pcap_single","pcap_quota":"512"},"remote":{"enabled":"false","tun_type":"gre","gre_format":"traffic","tun_dst":"192.0.2.10","tun_ttl":"1","bind_interface":"private0"},"options":{"calculate_checksums":"true","metadata":"true","statistics":"false","transport":"true","protocol_events":"false"}}}})");
     assert(captures.captures);
     assert(captures.captures->editable);
+    assert(captures.captures->present_groups ==
+           std::vector<std::string>({"local", "remote", "options"}));
     assert(captures.captures->local_enabled);
     assert(!captures.captures->local_file_prefix_configured);
     assert(!captures.captures->local_file_suffix_configured);
@@ -2322,6 +2352,8 @@ int main() {
         R"({"success":{"captures":{"local":{"enabled":"false"}}}})");
     assert(partial_captures.captures);
     assert(!partial_captures.captures->editable);
+    assert(partial_captures.captures->present_groups ==
+           std::vector<std::string>({"local"}));
     assert(!partial_captures.captures->local_enabled);
     assert(partial_captures.captures->local_directory_configured);
     assert(partial_captures.captures->local_format == "pcap_single");

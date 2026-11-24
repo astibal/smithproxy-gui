@@ -75,6 +75,7 @@ describe('SystemClient', () => {
     await expect(client.capabilities()).resolves.toMatchObject({
       apiVersion: 'v1', smithproxyState: 'unconfigured', transactionState: 'not-advertised',
       features: {configWrite: false, configSave: false, structuralDrafts: false, primitiveStructuralDrafts: false,
+        optionalGroupMaterialization: false,
         namedStructuralDrafts: false,
         namedRenames: false,
         policyStructuralDrafts: false,
@@ -105,6 +106,7 @@ describe('SystemClient', () => {
       config_transaction_state: 'ready',
       features: {
         config_read: true, config_write: true, structural_drafts: true,
+        optional_group_materialization: true,
         primitive_structural_drafts: true,
         named_structural_drafts: true,
         named_renames: true,
@@ -123,7 +125,8 @@ describe('SystemClient', () => {
 
     await expect(client(capabilities()).capabilities()).resolves.toMatchObject({
       transactionState: 'ready', features: {
-        configWrite: true, structuralDrafts: true, primitiveStructuralDrafts: true,
+        configWrite: true, optionalGroupMaterialization: true,
+        structuralDrafts: true, primitiveStructuralDrafts: true,
         namedStructuralDrafts: true,
         namedRenames: true,
         policyStructuralDrafts: true,

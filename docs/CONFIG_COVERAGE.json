@@ -140,7 +140,7 @@
         "remote.bind_interface", "options.calculate_checksums", "options.metadata",
         "options.statistics", "options.transport", "options.protocol_events"
       ],
-      "notes": "All active capture fields are administrator-visible, typed, and editable. Numeric quotas accept the full lossless JSON integer range supported by the GUI transport. Paths, filename components, destination addresses, and interface names reopen from drafts without re-entry."
+      "notes": "All active capture fields are administrator-visible, typed, and editable. Numeric quotas accept the full lossless JSON integer range supported by the GUI transport. Paths, filename components, destination addresses, and interface names reopen from drafts without re-entry. When a legacy or minimal configuration omits local, remote, or options, the v2 transaction creates only the missing parent groups and their complete typed values atomically; older transaction contracts remain read-only for that partial tree."
     },
     {
       "name": "content_profiles",

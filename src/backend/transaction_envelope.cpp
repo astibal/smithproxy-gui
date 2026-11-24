@@ -238,6 +238,23 @@ std::optional<std::string_view> optional_settings_group(const std::string_view p
     return *found;
 }
 
+// Capture defaults are readable even when an older configuration omitted one
+// of the three parent groups. A v2 transaction can create that parent and its
+// typed leaves atomically, so the administrator never observes a partial tree.
+std::optional<std::string_view> optional_capture_group(const std::string_view path) {
+    constexpr std::array groups{
+        std::string_view{"local"}, std::string_view{"remote"}, std::string_view{"options"},
+    };
+    constexpr std::string_view prefix{"captures."};
+    if (!path.starts_with(prefix)) return std::nullopt;
+    const auto relative = path.substr(prefix.size());
+    const auto separator = relative.find('.');
+    const auto group = relative.substr(0U, separator);
+    const auto found = std::find(groups.begin(), groups.end(), group);
+    if (found == groups.end()) return std::nullopt;
+    return *found;
+}
+
 bool append_named_create(
     nlohmann::json& operations, const DraftCreateOperation& create) {
     if (!named_collection(create.collection) || create.parent_id ||
@@ -832,6 +849,23 @@ TransactionEnvelope build_transaction_v2_operations(
         }
         operations.push_back({
             {"op", "add"}, {"path", "settings"}, {"name", std::string(*group)},
+        });
+    }
+
+    std::set<std::string, std::less<>> present_capture_groups;
+    if (snapshot.captures) {
+        present_capture_groups.insert(
+            snapshot.captures->present_groups.begin(), snapshot.captures->present_groups.end());
+    }
+    std::set<std::string, std::less<>> added_capture_groups;
+    for (const auto& change : draft.changes) {
+        const auto group = optional_capture_group(change.path);
+        if (!group || present_capture_groups.contains(*group) ||
+            !added_capture_groups.emplace(*group).second) {
+            continue;
+        }
+        operations.push_back({
+            {"op", "add"}, {"path", "captures"}, {"name", std::string(*group)},
         });
     }
 

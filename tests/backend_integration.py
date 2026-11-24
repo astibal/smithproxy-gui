@@ -600,6 +600,7 @@ def main() -> int:
         assert capabilities["config_transaction_state"] == "unavailable"
         assert capabilities["features"]["config_read"] is False
         assert capabilities["features"]["config_write"] is False
+        assert capabilities["features"]["optional_group_materialization"] is False
         assert capabilities["features"]["structural_drafts"] is False
         assert capabilities["features"]["structural_collections"] == []
         assert capabilities["features"]["drafts"] is False

@@ -480,6 +480,7 @@ export class SmithproxyApp extends LitElement {
   @state() private capabilityLastSuccessAtUnixMs: number | null = null;
   @state() private capabilityError: string | undefined;
   @state() private transactionCapabilityState: TransactionCapabilityState = 'unknown';
+  @state() private optionalGroupMaterializationAvailable = false;
   @state() private gatewaySession: GatewaySession | undefined;
   @state() private gatewaySessionError: string | undefined;
   @state() private enrollmentToken = '';
@@ -1948,6 +1949,8 @@ export class SmithproxyApp extends LitElement {
       const configReadWasAvailable = this.configReadAvailable;
       const configWriteWasAvailable = this.configWriteAvailable;
       const configSaveWasAvailable = this.configSaveAvailable;
+      const optionalGroupMaterializationWasAvailable =
+        this.optionalGroupMaterializationAvailable;
       const structuralDraftsWereAvailable = this.structuralDraftsAvailable;
       const primitiveStructuralDraftsWereAvailable = this.primitiveStructuralDraftsAvailable;
       const namedStructuralDraftsWereAvailable = this.namedStructuralDraftsAvailable;
@@ -1960,6 +1963,8 @@ export class SmithproxyApp extends LitElement {
       const nextConfigReadAvailable = capabilities.features.configRead;
       const nextConfigWriteAvailable = capabilities.features.configWrite;
       const nextConfigSaveAvailable = capabilities.features.configSave;
+      const nextOptionalGroupMaterializationAvailable =
+        capabilities.features.optionalGroupMaterialization;
       const nextStructuralDraftsAvailable = capabilities.features.structuralDrafts;
       const nextPrimitiveStructuralDraftsAvailable = capabilities.features.primitiveStructuralDrafts;
       const nextNamedStructuralDraftsAvailable = capabilities.features.namedStructuralDrafts;
@@ -1974,6 +1979,7 @@ export class SmithproxyApp extends LitElement {
         nextConfigReadAvailable !== configReadWasAvailable ||
         nextConfigWriteAvailable !== configWriteWasAvailable ||
         nextConfigSaveAvailable !== configSaveWasAvailable ||
+        nextOptionalGroupMaterializationAvailable !== optionalGroupMaterializationWasAvailable ||
         nextStructuralDraftsAvailable !== structuralDraftsWereAvailable ||
         nextPrimitiveStructuralDraftsAvailable !== primitiveStructuralDraftsWereAvailable ||
         nextNamedStructuralDraftsAvailable !== namedStructuralDraftsWereAvailable ||
@@ -1987,6 +1993,7 @@ export class SmithproxyApp extends LitElement {
         nextDraftPreflightAvailable !== draftPreflightWasAvailable;
       this.apiVersion = capabilities.apiVersion;
       this.transactionCapabilityState = capabilities.transactionState;
+      this.optionalGroupMaterializationAvailable = nextOptionalGroupMaterializationAvailable;
       this.configReadAvailable = nextConfigReadAvailable;
       this.configWriteAvailable = nextConfigWriteAvailable;
       this.configSaveAvailable = nextConfigSaveAvailable;
@@ -2040,6 +2047,7 @@ export class SmithproxyApp extends LitElement {
       }
       this.configRefreshDeferred = false;
       this.configWriteAvailable = false;
+      this.optionalGroupMaterializationAvailable = false;
       this.configSaveAvailable = false;
       this.configSaveError = undefined;
       this.structuralDraftsAvailable = false;
@@ -4126,6 +4134,14 @@ export class SmithproxyApp extends LitElement {
     // editable on minimal and legacy configurations instead of becoming a
     // read-only representation that an administrator cannot materialize.
     return !optionalGroups.has(group) || this.draftAvailable;
+  }
+
+  /** Allows complete captures directly and legacy partial trees only when the
+   * connected v2 API can create their missing parents in the same candidate. */
+  private captureSettingsEditable(): boolean {
+    const captures = this.snapshot?.captures;
+    return Boolean(captures) &&
+      (captures?.editable === true || this.optionalGroupMaterializationAvailable);
   }
 
   private profileCreateTypeAvailable(type: ProfileCreateType): boolean {
@@ -8033,7 +8049,7 @@ export class SmithproxyApp extends LitElement {
   }
 
   private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
-    if (!this.snapshot?.captures?.editable) return undefined;
+    if (!this.captureSettingsEditable()) return undefined;
     const changes: DraftChange[] = [];
     for (const [path, id] of captureBooleanFields) {
       const select = this.renderRoot.querySelector<HTMLSelectElement>(`#captures-${id}`);
@@ -12966,9 +12982,9 @@ export class SmithproxyApp extends LitElement {
             <article class="domain-card" data-system-section="captures">
               <header><div><h3>Capture posture</h3><p>Local storage and remote export destinations</p></div>
                 <div class="preflight-actions">${this.renderPendingBadge('captures', 'captures')}
-                  <button class="secondary" type="button" ?disabled=${!captures.editable}
-                    title=${captures.editable
-                      ? 'Edit capture settings' : 'Capture parent groups are incomplete in the running configuration.'}
+                  <button class="secondary" type="button" ?disabled=${!this.captureSettingsEditable()}
+                    title=${this.captureSettingsEditable()
+                      ? 'Edit capture settings' : 'The connected Smithproxy cannot atomically create missing capture groups.'}
                     @click=${(event: Event) => this.openSystemDrawer('captures', event.currentTarget as HTMLElement)}>Edit</button>
                 </div>
               </header>
@@ -15651,7 +15667,8 @@ export class SmithproxyApp extends LitElement {
   private renderCaptureSettingsEditor() {
     const captures = this.snapshot?.captures;
     if (!captures) return nothing;
-    const disabled = !this.draftAvailable || !captures.editable;
+    const editable = this.captureSettingsEditable();
+    const disabled = !this.draftAvailable || !editable;
     const booleanPaths: ReadonlyMap<string, string> = new Map(
       captureBooleanFields.map(([path, id]) => [id, `captures.${path}`]),
     );
@@ -15678,8 +15695,8 @@ export class SmithproxyApp extends LitElement {
     `;
     return html`
       ${captures.editable ? nothing : html`<div class="privacy-note section">
-        Capture values use Smithproxy defaults. Editing requires local, remote, and options parent groups
-        in the running configuration.
+        Capture values currently use Smithproxy defaults. Saving creates the missing local, remote, and
+        options groups atomically with these typed values.
       </div>`}
       <div class="form-grid wide-form-grid">
         <fieldset class="editor-group">
@@ -16551,7 +16568,7 @@ export class SmithproxyApp extends LitElement {
       ? this.structuralTransactionsAvailable(entry)
       : this.draftAvailable && (draftableKinds.includes(entry.kind) || mappedProfile);
     const readOnly = !draftable ||
-      (entry.kind === 'captures' && this.snapshot?.captures?.editable !== true);
+      (entry.kind === 'captures' && !this.captureSettingsEditable());
     const protectedView = !readOnly && !editing;
     const dirty = this.dirtyDrawerKeys.has(this.drawerKey(entry));
     const cliCommands = this.cliCommandsForDrawer(entry);

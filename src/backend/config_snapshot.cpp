@@ -1340,6 +1340,10 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
         !bind_interface || !checksums || !metadata || !statistics || !transport || !protocol_events) {
         return {std::nullopt, "Smithproxy returned invalid capture setting fields"};
     }
+    std::vector<std::string> present_groups;
+    if (local_value != value->end()) present_groups.emplace_back("local");
+    if (remote_value != value->end()) present_groups.emplace_back("remote");
+    if (options_value != value->end()) present_groups.emplace_back("options");
     return {ConfigCaptureSettings{
                 *local_enabled, local.find("dir") == local.end() || !local_dir->empty(), !local_prefix->empty(),
                 !local_suffix->empty(), *local_format, *local_quota,
@@ -1349,6 +1353,7 @@ ConfigCapturesParseResult parse_config_captures(const std::string_view payload) 
                 local_value != value->end() && remote_value != value->end() &&
                     options_value != value->end(),
                 *local_dir, *local_prefix, *local_suffix, *destination, *bind_interface,
+                std::move(present_groups),
             }, {}};
 }
 

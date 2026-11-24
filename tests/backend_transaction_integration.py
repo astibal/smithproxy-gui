@@ -268,6 +268,7 @@ def main() -> int:
             gateway_headers = {"X-Smithproxy-GUI-Gateway": gateway_secret}
             capabilities = wait_for_ready_capability(port, gateway_headers)
             assert capabilities["features"]["config_write"] is True
+            assert capabilities["features"]["optional_group_materialization"] is True
             assert capabilities["features"]["config_save"] is True
             assert capabilities["features"]["structural_drafts"] is False
             assert capabilities["features"]["primitive_structural_drafts"] is True

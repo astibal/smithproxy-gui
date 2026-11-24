@@ -263,6 +263,8 @@ async function mockSystemApi(
     const featureFlags = {
       config_read: configuration,
       config_write: Boolean(state.commitReady) && configurationFeature('config_write'),
+      optional_group_materialization: Boolean(state.commitReady) &&
+        configurationFeature('config_write'),
       config_save: Boolean(state.configSaveReady) && configuration,
       structural_drafts: Boolean(state.structuralDraftsReady && state.commitReady) &&
         configurationFeature('config_write'),
@@ -5104,17 +5106,25 @@ test('keeps missing ordinary collections empty without offering impossible first
   await expect(types.getByRole('option', {name: 'Detection'})).toHaveCount(1);
 });
 
-test('shows partial capture defaults without offering an invalid nested write', async ({page}) => {
-  await mockSystemApi(page, {
+test('materializes partial capture defaults through the atomic transaction API', async ({page}) => {
+  const state: MockState = {
     smithproxy: 'ready', validationReady: true, commitReady: true, captureEditable: false,
-  }, true);
+    draftMutationBatches: [],
+  };
+  await mockSystemApi(page, state, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('group', {name: 'System categories'})
     .getByRole('button', {name: 'Captures'}).click();
 
   const captureHeader = page.getByRole('heading', {name: 'Capture posture'}).locator('..').locator('..');
-  await expect(captureHeader.getByRole('button', {name: 'Edit'})).toBeDisabled();
+  await captureHeader.getByRole('button', {name: 'Edit'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit Capture settings'});
+  await expect(editor).toContainText('creates the missing local, remote, and options groups atomically');
+  await editor.getByLabel('Local capture').selectOption('true');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
+  expect(state.draftMutationBatches?.[0]).toContainEqual({path: 'captures.local.enabled', value: true});
   await expect(page.getByText(/pcap_single/)).toBeVisible();
 });
 

@@ -426,6 +426,7 @@ struct ConfigCaptureSettings {
     std::string local_file_suffix;
     std::string remote_destination;
     std::string remote_bind_interface;
+    std::vector<std::string> present_groups;
 };
 
 struct ConfigCertificateAuthority {
