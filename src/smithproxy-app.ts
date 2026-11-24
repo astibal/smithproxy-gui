@@ -40,6 +40,7 @@ import {
   SystemClient,
   guiBootstrapConfigurationIssue,
   type ArchiveInventory,
+  type AdministratorInventory,
   type ArchiveRestore,
   type ArchiveValidation,
   type AlertSnapshot,
@@ -466,6 +467,13 @@ interface SignatureCreatePrefill {
   omittedFlowCount: number;
 }
 
+interface AdministratorEditor {
+  mode: 'create' | 'password';
+  name: string;
+  password: string;
+  confirmation: string;
+}
+
 @customElement('smithproxy-gui')
 export class SmithproxyApp extends LitElement {
   @property({reflect: true}) mode: 'standalone' | 'embedded' = 'standalone';
@@ -488,11 +496,13 @@ export class SmithproxyApp extends LitElement {
   @state() private enrollmentPassword = '';
   @state() private enrollmentPasswordConfirmation = '';
   @state() private enrollmentError: string | undefined;
-  @state() private enrollmentSuccess: string | undefined;
   @state() private enrollmentBusy = false;
-  @state() private administratorEnrollmentOpen = false;
-  @state() private administratorRemovalArmed: string | undefined;
-  @state() private administratorRemovalBusy = false;
+  @state() private administratorInventory: AdministratorInventory | undefined;
+  @state() private administratorInventoryBusy = false;
+  @state() private administratorError: string | undefined;
+  @state() private administratorSuccess: string | undefined;
+  @state() private administratorEditor: AdministratorEditor | undefined;
+  @state() private administratorActionArmed: string | undefined;
   @state() private loginAdministratorName = '';
   @state() private loginPassword = '';
   @state() private loginError: string | undefined;
@@ -1063,7 +1073,7 @@ export class SmithproxyApp extends LitElement {
     .gui-config-toggle input { width: auto; margin-top: 2px; }
     .administrator-list { display: grid; gap: 6px; text-align: left !important; }
     .administrator-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
-    .administrator-row code { overflow-wrap: anywhere; }
+    .administrator-row code { overflow-wrap: anywhere; margin-right: auto; }
     .administrator-row small { color: var(--app-muted); }
     .administrator-row button { min-height: 28px; padding: 3px 8px; }
     .job-list { display: grid; gap: 8px; margin-top: 16px; }
@@ -2194,10 +2204,6 @@ export class SmithproxyApp extends LitElement {
     try {
       const loaded = await this.systemClient.guiConfiguration();
       this.guiConfiguration = loaded;
-      if (this.administratorRemovalArmed &&
-          !loaded.administrators.includes(this.administratorRemovalArmed)) {
-        this.administratorRemovalArmed = undefined;
-      }
     } catch (error) {
       this.guiConfiguration = undefined;
       this.guiConfigurationError = error instanceof Error
@@ -2205,6 +2211,127 @@ export class SmithproxyApp extends LitElement {
     } finally {
       this.guiConfigurationBusy = false;
     }
+  }
+
+  private async loadAdministratorInventory(): Promise<void> {
+    if (!this.systemClient || this.administratorInventoryBusy) return;
+    this.administratorInventoryBusy = true;
+    this.administratorError = undefined;
+    try {
+      const inventory = await this.systemClient.administratorInventory();
+      this.administratorInventory = inventory;
+      if (this.administratorActionArmed) {
+        const armedName = this.administratorActionArmed.split(':', 2)[1];
+        if (!inventory.administrators.some(item => item.name === armedName)) {
+          this.administratorActionArmed = undefined;
+        }
+      }
+    } catch (error) {
+      this.administratorInventory = undefined;
+      this.administratorError = error instanceof Error
+        ? error.message : 'Administrator inventory is unavailable.';
+    } finally {
+      this.administratorInventoryBusy = false;
+    }
+  }
+
+  private beginAdministratorEditor(mode: AdministratorEditor['mode'], name = ''): void {
+    this.administratorEditor = {mode, name, password: '', confirmation: ''};
+    this.administratorError = undefined;
+    this.administratorSuccess = undefined;
+    this.administratorActionArmed = undefined;
+  }
+
+  private async saveAdministratorEditor(): Promise<void> {
+    const editor = this.administratorEditor;
+    const inventory = this.administratorInventory;
+    if (!this.systemClient || !editor || !inventory || this.administratorInventoryBusy) return;
+    if (editor.password !== editor.confirmation) {
+      this.administratorError = 'Administrator password confirmation does not match.';
+      return;
+    }
+    this.administratorInventoryBusy = true;
+    this.administratorError = undefined;
+    this.administratorSuccess = undefined;
+    let reload = false;
+    try {
+      const result = editor.mode === 'create'
+        ? await this.systemClient.createAdministrator(
+          editor.name.trim(), editor.password, inventory.revision, inventory.contentHash)
+        : await this.systemClient.changeAdministratorPassword(
+          editor.name, editor.password, inventory.revision, inventory.contentHash);
+      this.administratorEditor = undefined;
+      this.administratorSuccess = editor.mode === 'create'
+        ? `${result.administrator} is available immediately.`
+        : `${result.administrator} password changed; previous sessions were revoked.`;
+      reload = true;
+    } catch (error) {
+      this.administratorError = error instanceof Error
+        ? error.message : 'Administrator change failed.';
+    } finally {
+      this.administratorInventoryBusy = false;
+    }
+    if (reload) await this.loadAdministratorInventory();
+  }
+
+  private async setCoreAdministratorEnabled(name: string, enabled: boolean): Promise<void> {
+    const inventory = this.administratorInventory;
+    if (!this.systemClient || !inventory || this.administratorInventoryBusy) return;
+    const actionKey = `${enabled ? 'enable' : 'disable'}:${name}`;
+    if (!enabled && this.administratorActionArmed !== actionKey) {
+      this.administratorActionArmed = actionKey;
+      this.administratorError = undefined;
+      this.administratorSuccess = undefined;
+      return;
+    }
+    this.administratorInventoryBusy = true;
+    this.administratorError = undefined;
+    this.administratorSuccess = undefined;
+    let reload = false;
+    try {
+      const result = await this.systemClient.setAdministratorEnabled(
+        name, enabled, inventory.revision, inventory.contentHash);
+      this.administratorActionArmed = undefined;
+      this.administratorSuccess = result.changed
+        ? `${name} was ${enabled ? 'enabled' : 'disabled'}; previous sessions were revoked.`
+        : `${name} was already ${enabled ? 'enabled' : 'disabled'}.`;
+      reload = true;
+    } catch (error) {
+      this.administratorError = error instanceof Error
+        ? error.message : 'Administrator state change failed.';
+    } finally {
+      this.administratorInventoryBusy = false;
+    }
+    if (reload) await this.loadAdministratorInventory();
+  }
+
+  private async removeCoreAdministrator(name: string): Promise<void> {
+    const inventory = this.administratorInventory;
+    if (!this.systemClient || !inventory || this.administratorInventoryBusy) return;
+    const actionKey = `remove:${name}`;
+    if (this.administratorActionArmed !== actionKey) {
+      this.administratorActionArmed = actionKey;
+      this.administratorError = undefined;
+      this.administratorSuccess = undefined;
+      return;
+    }
+    this.administratorInventoryBusy = true;
+    this.administratorError = undefined;
+    this.administratorSuccess = undefined;
+    let reload = false;
+    try {
+      await this.systemClient.removeAdministrator(
+        name, inventory.revision, inventory.contentHash);
+      this.administratorActionArmed = undefined;
+      this.administratorSuccess = `${name} was removed; previous sessions were revoked.`;
+      reload = true;
+    } catch (error) {
+      this.administratorError = error instanceof Error
+        ? error.message : 'Administrator removal failed.';
+    } finally {
+      this.administratorInventoryBusy = false;
+    }
+    if (reload) await this.loadAdministratorInventory();
   }
 
   private editGuiConfiguration(): void {
@@ -2441,48 +2568,20 @@ export class SmithproxyApp extends LitElement {
   /** Exchanges a short-lived CLI token for an HttpOnly standalone administrator session. */
   private async enrollAdministrator(): Promise<void> {
     if (!this.systemClient || this.enrollmentBusy) return;
-    const extendingConfiguration = this.gatewaySession?.authenticated === true;
     this.enrollmentBusy = true;
     this.enrollmentError = undefined;
-    this.enrollmentSuccess = undefined;
     try {
-      const enrolled = await this.systemClient.enrollAdministrator(
+      await this.systemClient.enrollAdministrator(
         this.enrollmentToken.trim(), this.enrollmentPassword,
       );
       this.enrollmentToken = '';
       this.enrollmentPassword = '';
       this.enrollmentPasswordConfirmation = '';
-      if (extendingConfiguration) {
-        this.administratorEnrollmentOpen = false;
-        this.enrollmentSuccess = enrolled.operation === 'rotated'
-          ? `${enrolled.administrator} password was rotated in gui.cfg. Previous sessions were revoked and the new verifier is active now.`
-          : `${enrolled.administrator} was added to gui.cfg and is available now.`;
-        await this.loadGuiConfiguration();
-      } else {
-        await this.refreshCapabilities();
-      }
+      await this.refreshCapabilities();
     } catch (error) {
       this.enrollmentError = error instanceof Error ? error.message : 'Administrator enrollment failed.';
     } finally {
       this.enrollmentBusy = false;
-    }
-  }
-
-  /** Removes a peer from persistent gui.cfg without revoking the active admin. */
-  private async removeGuiAdministrator(administrator: string): Promise<void> {
-    if (!this.systemClient || this.administratorRemovalBusy) return;
-    this.administratorRemovalBusy = true;
-    this.enrollmentError = undefined;
-    this.enrollmentSuccess = undefined;
-    try {
-      const removed = await this.systemClient.removeGuiAdministrator(administrator);
-      this.administratorRemovalArmed = undefined;
-      this.enrollmentSuccess = `${removed.administrator} was removed from gui.cfg. Existing sessions were revoked; restart the GUI service to finalize startup configuration.`;
-      await this.loadGuiConfiguration();
-    } catch (error) {
-      this.enrollmentError = error instanceof Error ? error.message : 'Administrator removal failed.';
-    } finally {
-      this.administratorRemovalBusy = false;
     }
   }
 
@@ -12432,10 +12531,6 @@ export class SmithproxyApp extends LitElement {
     const validationIssue = draft ? guiBootstrapConfigurationIssue(draft) : undefined;
     const validationError = validationIssue?.message;
     const valid = draft !== undefined && validationError === undefined;
-    const validEnrollmentToken = /^[0-9a-f]{64}$/u.test(this.enrollmentToken.trim());
-    const validEnrollmentPassword = this.enrollmentPassword.length >= 14 &&
-      this.enrollmentPassword.length <= 1024 &&
-      this.enrollmentPassword === this.enrollmentPasswordConfirmation;
     const textField = (
       field: GuiBootstrapConfigurationField,
       label: string, current: string, update: (next: string) => void, placeholder = '',
@@ -12596,83 +12691,8 @@ export class SmithproxyApp extends LitElement {
           <dt>Previous gateway credential</dt><dd>${activeRuntime
             ? activeRuntime.previousBrowserGatewayCredentialLoaded ? 'Loaded for rotation overlap' : 'Disabled'
             : 'Not reported'}</dd>
-          <dt>Administrators</dt><dd class="administrator-list">${value?.administrators.length
-            ? value.administrators.map(administrator => {
-              const current = administrator === this.gatewaySession?.administrator;
-              const removable = this.gatewaySession?.mode === 'standalone' && !current &&
-                value.administrators.length > 1;
-              const armed = this.administratorRemovalArmed === administrator;
-              return html`<span class="administrator-row">
-                <code>${administrator}</code>${current ? html`<small>current</small>` : nothing}
-                ${removable ? html`<button class=${armed ? 'danger' : 'secondary'} type="button"
-                  ?disabled=${this.administratorRemovalBusy}
-                  @click=${() => {
-                    if (armed) void this.removeGuiAdministrator(administrator);
-                    else {
-                      this.administratorRemovalArmed = administrator;
-                      this.enrollmentError = undefined;
-                      this.enrollmentSuccess = undefined;
-                    }
-                  }}>${armed ? `Confirm remove ${administrator}` : `Remove ${administrator}`}</button>` : nothing}
-              </span>`;
-            }) : 'None configured'}</dd>
-          <dt>Activation</dt><dd>Service settings activate after a controlled restart; administrator changes activate immediately.</dd>
+          <dt>Activation</dt><dd>Service settings activate after a controlled restart.</dd>
         </dl>
-        ${this.gatewaySession?.mode === 'standalone' ? html`
-          ${this.administratorEnrollmentOpen ? html`
-            <form class="archive-resource-editor gui-config-editor"
-              @submit=${(event: SubmitEvent) => {
-                event.preventDefault();
-                void this.enrollAdministrator();
-              }}>
-              <label><span>Single-use CLI enrollment token</span>
-                <input type="password" autocomplete="off" spellcheck="false" maxlength="64"
-                  .value=${this.enrollmentToken}
-                  @input=${(event: Event) => {
-                    const input = event.currentTarget;
-                    if (input instanceof HTMLInputElement) this.enrollmentToken = input.value;
-                  }}>
-              </label>
-              <label><span>New administrator password</span>
-                <input type="password" autocomplete="new-password" maxlength="1024"
-                  .value=${this.enrollmentPassword}
-                  @input=${(event: Event) => {
-                    const input = event.currentTarget;
-                    if (input instanceof HTMLInputElement) this.enrollmentPassword = input.value;
-                  }}>
-              </label>
-              <label><span>Confirm password</span>
-                <input type="password" autocomplete="new-password" maxlength="1024"
-                  .value=${this.enrollmentPasswordConfirmation}
-                  @input=${(event: Event) => {
-                    const input = event.currentTarget;
-                    if (input instanceof HTMLInputElement) {
-                      this.enrollmentPasswordConfirmation = input.value;
-                    }
-                  }}>
-              </label>
-              <div class="archive-actions">
-                <button class="primary" type="submit"
-                  ?disabled=${this.enrollmentBusy || !validEnrollmentToken || !validEnrollmentPassword}>
-                  ${this.enrollmentBusy ? 'Publishing…' : 'Add or rotate administrator'}
-                </button>
-                <button class="secondary" type="button" ?disabled=${this.enrollmentBusy}
-                  @click=${() => {
-                    this.administratorEnrollmentOpen = false;
-                    this.enrollmentToken = '';
-                    this.enrollmentPassword = '';
-                    this.enrollmentPasswordConfirmation = '';
-                    this.enrollmentError = undefined;
-                  }}>Cancel</button>
-              </div>
-            </form>
-            <div class="privacy-note">
-              Generate the token in a privilege-15 Smithproxy CLI session. The token selects the administrator name,
-              expires after ten minutes, and is consumed once. A new name adds an administrator; an existing name
-              rotates its password. Only a salted verifier is published to CFtar.
-            </div>
-          ` : nothing}
-        ` : nothing}
         <div class="archive-actions">
           <button class="primary" type="button"
             ?disabled=${this.guiConfigurationBusy || !this.configSaveAvailable || !this.archiveInventory}
@@ -12681,27 +12701,127 @@ export class SmithproxyApp extends LitElement {
           </button>
           <button class="secondary" type="button" ?disabled=${this.guiConfigurationBusy}
             @click=${() => { void this.loadGuiConfiguration(); }}>Refresh</button>
-          ${this.gatewaySession?.mode === 'standalone' ? html`
-            <button class="secondary" type="button"
-              title=${value?.state === 'ready'
-                ? 'Use a single-use privilege-15 CLI token to add or rotate an administrator.'
-                : 'Create GUI startup settings before enrolling the first administrator.'}
-              ?disabled=${this.guiConfigurationBusy || this.administratorEnrollmentOpen ||
-                value?.state !== 'ready'}
-              @click=${() => {
-                this.administratorEnrollmentOpen = true;
-                this.enrollmentError = undefined;
-                this.enrollmentSuccess = undefined;
-              }}>Add or rotate administrator</button>
-          ` : nothing}
         </div>
       `}
-      ${this.enrollmentError ? html`
-        <div class="metrics-message danger" role="alert">${this.enrollmentError}</div>` : nothing}
-      ${this.enrollmentSuccess ? html`
-        <div class="metrics-message success" role="status">${this.enrollmentSuccess}</div>` : nothing}
       ${this.guiConfigurationError ? html`
         <div class="metrics-message danger" role="alert">${this.guiConfigurationError}</div>` : nothing}
+    </article>`;
+  }
+
+  private renderAdministratorCard() {
+    const inventory = this.administratorInventory;
+    const editor = this.administratorEditor;
+    const enabledCount = inventory?.administrators.filter(item => item.enabled).length ?? 0;
+    const editorNameValid = editor !== undefined &&
+      /^[A-Za-z0-9._@-]{1,64}$/u.test(editor.name.trim());
+    const editorPasswordValid = editor !== undefined && editor.password.length >= 14 &&
+      editor.password.length <= 1024 && editor.password === editor.confirmation;
+    return html`<article class="domain-card job-card" data-system-section="backend">
+      <header>
+        <div><h3>Administrators</h3>
+          <p>Core-owned management identities from <code>admin.cfg</code></p></div>
+        <span class="runtime-state ${inventory && enabledCount > 0 ? 'success' : 'warning'}">
+          ● ${this.administratorInventoryBusy ? 'Loading' : inventory
+            ? `${enabledCount} enabled` : 'Unavailable'}
+        </span>
+      </header>
+      ${editor ? html`
+        <form class="archive-resource-editor gui-config-editor"
+          @submit=${(event: SubmitEvent) => {
+            event.preventDefault();
+            void this.saveAdministratorEditor();
+          }}>
+          <label><span>Administrator name</span>
+            <input type="text" autocomplete="username" maxlength="64"
+              ?readonly=${editor.mode === 'password'} .value=${editor.name}
+              @input=${(event: Event) => {
+                const input = event.currentTarget;
+                if (input instanceof HTMLInputElement) {
+                  this.administratorEditor = {...editor, name: input.value};
+                }
+              }}>
+          </label>
+          <label><span>${editor.mode === 'create' ? 'Password' : 'New password'}</span>
+            <input type="password" autocomplete="new-password" maxlength="1024"
+              .value=${editor.password}
+              @input=${(event: Event) => {
+                const input = event.currentTarget;
+                if (input instanceof HTMLInputElement) {
+                  this.administratorEditor = {...editor, password: input.value};
+                }
+              }}>
+          </label>
+          <label><span>Confirm password</span>
+            <input type="password" autocomplete="new-password" maxlength="1024"
+              .value=${editor.confirmation}
+              @input=${(event: Event) => {
+                const input = event.currentTarget;
+                if (input instanceof HTMLInputElement) {
+                  this.administratorEditor = {...editor, confirmation: input.value};
+                }
+              }}>
+          </label>
+          <p class="metric-note">Passwords require at least 14 characters. Smithproxy Core hashes and
+            publishes the verifier; the GUI never writes <code>admin.cfg</code>.</p>
+          <div class="archive-actions">
+            <button class="primary" type="submit"
+              ?disabled=${this.administratorInventoryBusy || !editorNameValid ||
+                !editorPasswordValid}>
+              ${editor.mode === 'create' ? 'Create administrator' : 'Change password'}
+            </button>
+            <button class="secondary" type="button"
+              ?disabled=${this.administratorInventoryBusy}
+              @click=${() => { this.administratorEditor = undefined; }}>Cancel</button>
+          </div>
+        </form>
+      ` : html`
+        <div class="administrator-list" role="list" aria-label="Configured administrators">
+          ${inventory?.administrators.map(administrator => {
+            const current = administrator.name === this.gatewaySession?.administrator;
+            const disableKey = `disable:${administrator.name}`;
+            const removeKey = `remove:${administrator.name}`;
+            return html`<span class="administrator-row" role="listitem">
+              <code>${administrator.name}</code>
+              <span class="runtime-state ${administrator.enabled ? 'success' : 'warning'}">
+                ● ${administrator.enabled ? 'Enabled' : 'Disabled'}
+              </span>
+              ${current ? html`<small>current session</small>` : nothing}
+              <button class="secondary" type="button"
+                ?disabled=${this.administratorInventoryBusy}
+                @click=${() => this.beginAdministratorEditor('password', administrator.name)}>
+                Change password
+              </button>
+              <button class=${this.administratorActionArmed === disableKey ? 'danger' : 'secondary'}
+                type="button" ?disabled=${this.administratorInventoryBusy}
+                @click=${() => {
+                  void this.setCoreAdministratorEnabled(administrator.name, !administrator.enabled);
+                }}>${administrator.enabled
+                  ? this.administratorActionArmed === disableKey ? 'Confirm disable' : 'Disable'
+                  : 'Enable'}</button>
+              <button class=${this.administratorActionArmed === removeKey ? 'danger' : 'secondary'}
+                type="button" ?disabled=${this.administratorInventoryBusy}
+                @click=${() => { void this.removeCoreAdministrator(administrator.name); }}>
+                ${this.administratorActionArmed === removeKey ? 'Confirm remove' : 'Remove'}
+              </button>
+            </span>`;
+          })}
+          ${inventory && inventory.administrators.length === 0 ? html`
+            <p>No persistent administrators are configured. Issue a single-use enrollment token
+              from a privilege-15 Smithproxy CLI session.</p>` : nothing}
+          ${!inventory ? html`<p>Administrator inventory has not been loaded.</p>` : nothing}
+        </div>
+        <div class="archive-actions">
+          <button class="primary" type="button"
+            ?disabled=${this.administratorInventoryBusy || !inventory}
+            @click=${() => this.beginAdministratorEditor('create')}>Create administrator</button>
+          <button class="secondary" type="button" ?disabled=${this.administratorInventoryBusy}
+            @click=${() => { void this.loadAdministratorInventory(); }}>Refresh</button>
+        </div>
+      `}
+      ${this.administratorError ? html`
+        <div class="metrics-message danger" role="alert">${this.administratorError}</div>` : nothing}
+      ${this.administratorSuccess ? html`
+        <div class="metrics-message success" role="status">${this.administratorSuccess}</div>` : nothing}
     </article>`;
   }
 
@@ -12935,6 +13055,7 @@ export class SmithproxyApp extends LitElement {
             ` : nothing}
           </article>
           ${this.renderGuiConfigurationCard()}
+          ${this.renderAdministratorCard()}
           <article class="domain-card" data-system-section="backend">
             <header><div><h3>Smithproxy connection</h3><p>Authenticated management link</p></div></header>
             <dl>
@@ -17415,6 +17536,10 @@ export class SmithproxyApp extends LitElement {
                         if (category.kind === 'backend' && this.configSaveAvailable &&
                             !this.guiConfiguration && !this.guiConfigurationBusy) {
                           void this.loadGuiConfiguration();
+                        }
+                        if (category.kind === 'backend' && !this.administratorInventory &&
+                            !this.administratorInventoryBusy) {
+                          void this.loadAdministratorInventory();
                         }
                       }}><span class="nav-icon" aria-hidden="true">${category.icon}</span>
                       <span class="nav-label">${category.label}</span></button>`)}

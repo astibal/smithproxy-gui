@@ -1929,18 +1929,6 @@ export class SystemClient {
     }
   }
 
-  async removeGuiAdministrator(administrator: string): Promise<{administrator: string}> {
-    if (!/^[A-Za-z0-9._@-]{1,64}$/u.test(administrator)) {
-      throw new Error('Invalid administrator name.');
-    }
-    const value = await this.#jsonMutation(
-      '/config/gui/administrators/remove', {administrator}, 'Administrator removal');
-    if (!isObject(value) || value.administrator !== administrator || value.operation !== 'removed') {
-      throw new Error('Invalid administrator removal response.');
-    }
-    return {administrator};
-  }
-
   archiveDownloadUrl(version: 'current' | 'previous'): string {
     return `${joinedPath(this.#apiBase, '/config/archive/download')}?version=${version}`;
   }
