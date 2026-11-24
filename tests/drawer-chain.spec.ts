@@ -1350,9 +1350,12 @@ test('opens each system status card at its protected configuration group', async
     await expect(editor.getByRole('group', {name: groupName})).toBeInViewport();
     const field = editor.getByLabel(fieldName, {exact: true});
     await expect(field).toBeVisible();
-    expect(await field.evaluate(element =>
-      (element as HTMLInputElement).readOnly || (element as HTMLInputElement).disabled,
-    )).toBe(true);
+    expect(await field.evaluate(element => {
+      const controls = element.matches('input, select, textarea, button')
+        ? [element] : [...element.querySelectorAll('input, select, textarea, button')];
+      return controls.length > 0 && controls.every(control =>
+        (control as HTMLInputElement).readOnly || (control as HTMLInputElement).disabled);
+    })).toBe(true);
     await editor.getByRole('button', {name: 'Close System settings'}).click();
   }
 });
@@ -1850,7 +1853,7 @@ test('renames referenced configuration entities atomically across pending refere
   const profiles = page.getByRole('group', {name: 'Profiles and routing'});
   await profiles.getByRole('button').filter({hasText: 'inspect'}).click();
   const profileEditor = page.getByRole('dialog', {name: 'Edit inspect'});
-  await profileEditor.getByLabel('Name').fill('strict-inspection');
+  await profileEditor.getByLabel('Name', {exact: true}).fill('strict-inspection');
   await profileEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect.poll(() => state.draftMutationBatches?.[3]).toEqual([
     {path: 'tls_profiles.[0].name', value: 'strict-inspection'},
@@ -5606,7 +5609,7 @@ test('shows live Smithproxy status transitions', async ({page}) => {
   await expect(page.getByText('Smithproxy: Ready')).toBeVisible();
   const statusbar = page.getByRole('contentinfo', {name: 'System status'});
   await expect(statusbar).toContainText('Alerts: Clear');
-  await expect(statusbar).toContainText('Configuration access: Restricted');
+  await expect(statusbar).toContainText('Config: Unavailable');
   await expect(statusbar).toContainText('Freshness: Fresh');
   await expect(statusbar).toContainText('Events: Live');
   await expect(statusbar).not.toContainText('API:');

@@ -1,8 +1,8 @@
 # GUI bootstrap configuration
 
-`gui.cfg` is a GUI-owned resource in the active Smithproxy CFtar. Smithproxy (or
-its service launcher) exposes a read-only copy for the GUI backend and starts it
-with:
+`gui.cfg` uses the GUI bootstrap schema but remains a Smithproxy-core-owned
+resource in the active CFtar. Smithproxy (or its service launcher) exposes a
+read-only copy for the GUI backend and starts it with:
 
 ```text
 smithproxy-gui --config /run/smithproxy-gui/gui.cfg
