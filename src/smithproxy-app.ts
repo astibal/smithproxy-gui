@@ -15566,8 +15566,11 @@ export class SmithproxyApp extends LitElement {
     if (!networking) return html`<div class="metrics-message">Network interception is not configured.</div>`;
     const scalar = <T extends ConfigScalar>(path: string, fallback: T): T =>
       this.persistentValue(`networking.${path}`, fallback);
-    const list = <T extends string | number>(path: string, fallback: ReadonlyArray<T>): ReadonlyArray<T> =>
-      this.persistentListValue(`networking.${path}`, fallback, typeof fallback[0] === 'number' ? 'number' : 'string') as T[];
+    const list = <T extends string | number>(
+      path: string, fallback: ReadonlyArray<T>, itemType: 'string' | 'number',
+    ): ReadonlyArray<T> => this.persistentListValue(
+      `networking.${path}`, fallback, itemType,
+    );
     const booleanField = (path: string, id: string, label: string, fallback: boolean) => html`
       <label for="networking-${id}">${label}</label><select id="networking-${id}">
         <option value="true" ?selected=${scalar(path, fallback)}>Enabled</option>
@@ -15599,7 +15602,7 @@ export class SmithproxyApp extends LitElement {
           <input id="networking-tenant-index" type="number" .value=${String(networking.tenantIndex)} readonly />
           <span class="form-label">Tenant ranges</span>
           <div>${this.renderNetworkingList('tenant-ranges', 'Tenant ranges',
-            list('tenant_ranges', networking.tenantRanges), true)}
+            list('tenant_ranges', networking.tenantRanges, 'string'), true)}
             <small class="muted">Tenant registry scope; change it through controlled deployment orchestration.</small>
           </div>
           <label for="networking-placement">Rule placement</label><select id="networking-placement">
@@ -15608,7 +15611,7 @@ export class SmithproxyApp extends LitElement {
           </select>
           <span class="form-label">Interface selectors</span>
           <div>${this.renderNetworkingList('interfaces', 'Interface selectors',
-            list('interfaces', networking.interfaces))}
+            list('interfaces', networking.interfaces, 'string'))}
             <span class="inline-actions section">
               <button class="secondary" type="button" data-edit-control="true"
                 @click=${() => chooseInterfaceSelector('-')}>Internal routes (−)</button>
@@ -15628,16 +15631,20 @@ export class SmithproxyApp extends LitElement {
           ${booleanField('udp_all', 'udp-all', 'Intercept all UDP', networking.udpAll)}
           ${booleanField('ipv6_udp', 'ipv6-udp', 'Intercept IPv6 UDP', networking.ipv6Udp)}
           <span class="form-label">Plain TCP ports</span>
-          ${this.renderNetworkingList('tcp-ports', 'Plain TCP ports', list('tcp_ports', networking.tcpPorts))}
+          ${this.renderNetworkingList('tcp-ports', 'Plain TCP ports',
+            list('tcp_ports', networking.tcpPorts, 'number'))}
           <span class="form-label">TLS ports</span>
-          ${this.renderNetworkingList('tls-ports', 'TLS ports', list('tls_ports', networking.tlsPorts))}
+          ${this.renderNetworkingList('tls-ports', 'TLS ports',
+            list('tls_ports', networking.tlsPorts, 'number'))}
           <span class="form-label">UDP ports</span>
-          ${this.renderNetworkingList('udp-ports', 'UDP ports', list('udp_ports', networking.udpPorts))}
+          ${this.renderNetworkingList('udp-ports', 'UDP ports',
+            list('udp_ports', networking.udpPorts, 'number'))}
           <span class="form-label">DTLS ports</span>
-          ${this.renderNetworkingList('dtls-ports', 'DTLS ports', list('dtls_ports', networking.dtlsPorts))}
+          ${this.renderNetworkingList('dtls-ports', 'DTLS ports',
+            list('dtls_ports', networking.dtlsPorts, 'number'))}
           <span class="form-label">Dropped UDP ports</span>
           ${this.renderNetworkingList('drop-udp-ports', 'Dropped UDP ports',
-            list('drop_udp_ports', networking.dropUdpPorts))}
+            list('drop_udp_ports', networking.dropUdpPorts, 'number'))}
         </div>
       </fieldset>
       <fieldset class="editor-group"><legend>Redirect targets and exemptions</legend><div class="form-grid">
@@ -15646,7 +15653,7 @@ export class SmithproxyApp extends LitElement {
         ${numberField('redirect_dns_port', 'redirect-dns-port', 'DNS proxy port', networking.redirectDnsPort, 1, 65535)}
         <span class="form-label">Exempt user IDs</span>
         ${this.renderNetworkingList('redirect-exempt-uids', 'Exempt user IDs',
-          list('redirect_exempt_uids', networking.redirectExemptUids))}
+          list('redirect_exempt_uids', networking.redirectExemptUids, 'number'))}
         ${booleanField('redirect_exempt_lan', 'redirect-exempt-lan', 'Exempt local networks', networking.redirectExemptLan)}
       </div></fieldset>
       <fieldset class="editor-group"><legend>Routing and host tuning</legend>

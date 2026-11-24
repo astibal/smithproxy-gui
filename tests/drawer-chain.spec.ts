@@ -136,6 +136,7 @@ type MockState = {
   scriptProfilesPresent?: boolean;
   absentCollections?: ReadonlyArray<string>;
   absentSettingsGroups?: ReadonlyArray<string>;
+  emptyNetworkingPortLists?: boolean;
   contentRulesPresent?: boolean;
   captureEditable?: boolean;
   unsavedConfig?: boolean;
@@ -1118,8 +1119,12 @@ async function mockSystemApi(
         placement: 'before', interfaces: ['-'],
         tenant_index: 3, tenant_ranges: ['10.0.0.0/8'],
         tcp_all: true, udp_all: false, ipv6_udp: true,
-        tcp_ports: [80], tls_ports: [443], udp_ports: [53], dtls_ports: [4433],
-        drop_udp_ports: [443], redirect_tcp_port: 51080, redirect_tls_port: 51443,
+        tcp_ports: state.emptyNetworkingPortLists ? [] : [80],
+        tls_ports: state.emptyNetworkingPortLists ? [] : [443],
+        udp_ports: state.emptyNetworkingPortLists ? [] : [53],
+        dtls_ports: state.emptyNetworkingPortLists ? [] : [4433],
+        drop_udp_ports: state.emptyNetworkingPortLists ? [] : [443],
+        redirect_tcp_port: 51080, redirect_tls_port: 51443,
         redirect_dns_port: 51053, redirect_exempt_uids: [0], redirect_exempt_lan: false,
         bypass: [{id: 'network-bypass-0', source: '10.0.0.0/8',
           destination: '192.0.2.10', port: 443}],
@@ -7835,6 +7840,27 @@ test('edits live-safe Networkd policy while protecting restart-only identity', a
   await expect(summary.getByRole('row', {name: /Plain TCP ports/u})).toContainText('All');
   await expect(summary.getByRole('table', {name: 'Effective interception bypass rules'}))
     .toContainText('8443');
+});
+
+test('shows pending numeric Networkd lists when the persistent lists are empty', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready',
+    emptyNetworkingPortLists: true,
+    initialDraftChanges: [{path: 'networking.dtls_ports', value: [4444]}],
+  }, true, false);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('button', {name: 'Interception', exact: true}).click();
+
+  const summary = page.getByRole('region', {name: 'Network interception'});
+  await expect(summary.getByRole('row', {name: /^DTLS ports/u})).toContainText('4444');
+  await summary.getByRole('button', {name: 'Edit interception'}).click();
+
+  const editor = page.getByRole('dialog', {name: 'Edit Network interception'});
+  const dtlsPorts = editor.getByRole('group', {name: 'DTLS ports'});
+  await expect(dtlsPorts.getByRole('textbox')).toHaveValue('4444');
+  await expect(dtlsPorts.getByRole('textbox')).toHaveAttribute('readonly', '');
+  await expect(dtlsPorts.getByText('None configured')).toHaveCount(0);
 });
 
 test('materializes absent nested settings groups through editable defaults', async ({page}) => {
