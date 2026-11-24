@@ -601,6 +601,7 @@ export class SmithproxyApp extends LitElement {
   @state() private editingDrawerKeys = new Set<string>();
   private settingsApiKeyDraft: string[] | undefined;
   private settingsApiAllowedIpDraft: string[] | undefined;
+  private readonly touchedSettingsWorkers = new Set<string>();
   private readonly settingsResolutionDrafts = new Map<SettingsResolutionList, string[]>();
   private readonly networkingListDrafts = new Map<NetworkingList, string[]>();
   private readonly tlsSniBypassDrafts = new Map<string, string[]>();
@@ -1895,6 +1896,12 @@ export class SmithproxyApp extends LitElement {
     this.configError = undefined;
     this.configSaving = false;
     this.configSaveError = undefined;
+    this.administratorInventory = undefined;
+    this.administratorInventoryBusy = false;
+    this.administratorEditor = undefined;
+    this.administratorActionArmed = undefined;
+    this.administratorError = undefined;
+    this.administratorSuccess = undefined;
     this.searchQuery = '';
     if (this.activeSection === 'Search') this.activeSection = 'Dashboard';
   }
@@ -2215,11 +2222,13 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async loadAdministratorInventory(): Promise<void> {
-    if (!this.systemClient || this.administratorInventoryBusy) return;
+    if (!this.systemClient || !this.configReadAvailable || this.administratorInventoryBusy) return;
     this.administratorInventoryBusy = true;
     this.administratorError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     try {
       const inventory = await this.systemClient.administratorInventory();
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.administratorInventory = inventory;
       if (this.administratorActionArmed) {
         const armedName = this.administratorActionArmed.split(':', 2)[1];
@@ -2228,11 +2237,12 @@ export class SmithproxyApp extends LitElement {
         }
       }
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.administratorInventory = undefined;
       this.administratorError = error instanceof Error
         ? error.message : 'Administrator inventory is unavailable.';
     } finally {
-      this.administratorInventoryBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
     }
   }
 
@@ -5194,6 +5204,7 @@ export class SmithproxyApp extends LitElement {
     if (closingEntries.some(entry => entry.kind === 'settings')) {
       this.settingsApiKeyDraft = undefined;
       this.settingsApiAllowedIpDraft = undefined;
+      this.touchedSettingsWorkers.clear();
       this.settingsResolutionDrafts.clear();
     }
     if (closingEntries.some(entry => entry.kind === 'networking')) this.networkingListDrafts.clear();
@@ -7604,10 +7615,13 @@ export class SmithproxyApp extends LitElement {
       const value = input?.valueAsNumber ?? Number.NaN;
       const current = this.persistentValue(`settings.${path}`, liveWorkerValues.get(id)!);
       const canonical = Number.isInteger(value) && value >= minimum && value <= maximum;
-      if (!input || (!canonical && value !== current)) {
-        return this.rejectConfigurationInput(
-          input, path, `must be a whole number from ${minimum} through ${maximum}`,
-        );
+      const explicitlyEdited = this.touchedSettingsWorkers.has(id);
+      if (!input || (!canonical && (value !== current || explicitlyEdited))) {
+        this.draftError = id === 'quic'
+          ? 'QUIC accepts -1, 0, or 1.'
+          : 'Worker counts must use 0 or more and stay within the supported limit.';
+        input?.focus();
+        return undefined;
       }
       changes.push({path: `settings.${path}`, value});
     }
@@ -12829,8 +12843,9 @@ export class SmithproxyApp extends LitElement {
           </div>
         </form>
       ` : html`
-        <div class="administrator-list" role="list" aria-label="Configured administrators">
-          ${inventory?.administrators.map(administrator => {
+        ${inventory && inventory.administrators.length > 0 ? html`
+          <div class="administrator-list" role="list" aria-label="Configured administrators">
+          ${inventory.administrators.map(administrator => {
             const current = administrator.name === this.gatewaySession?.administrator;
             const disableKey = `disable:${administrator.name}`;
             const removeKey = `remove:${administrator.name}`;
@@ -12874,20 +12889,21 @@ export class SmithproxyApp extends LitElement {
               </button>
             </span>`;
           })}
-          ${inventory && inventory.administrators.length === 0 ? html`
-            <p>No persistent administrators are configured. Bootstrap the first identity with a
-              single-use token from a privilege-15 Smithproxy CLI session.</p>` : nothing}
-          ${!inventory ? html`<p>Administrator inventory has not been loaded.</p>` : nothing}
-        </div>
+          </div>
+        ` : inventory ? html`
+          <p>No persistent administrators are configured. Bootstrap the first identity with a
+            single-use token from a privilege-15 Smithproxy CLI session.</p>
+        ` : html`<p>Administrator inventory is unavailable until configuration access is verified.</p>`}
         ${inventory && inventory.administrators.length > 0 ? html`
           <p class="metric-note"><strong>Adding an administrator</strong> is authorized by your current
             signed-in session. CLI enrollment is reserved for the initial bootstrap when no
             persistent administrator exists.</p>` : nothing}
         <div class="archive-actions">
           <button class="primary" type="button"
-            ?disabled=${this.administratorInventoryBusy || !inventory}
+            ?disabled=${this.administratorInventoryBusy || !inventory || !this.configReadAvailable}
             @click=${() => this.beginAdministratorEditor('create')}>Add administrator</button>
-          <button class="secondary" type="button" ?disabled=${this.administratorInventoryBusy}
+          <button class="secondary" type="button"
+            ?disabled=${this.administratorInventoryBusy || !this.configReadAvailable}
             @click=${() => { void this.loadAdministratorInventory(); }}>Refresh</button>
         </div>
       `}
@@ -15723,7 +15739,8 @@ export class SmithproxyApp extends LitElement {
       const [minimum, maximum] = workerLimits.get(id)!;
       return html`<label for="settings-worker-${id}">${label}</label>
         <input id="settings-worker-${id}" type="number" min=${String(minimum)} max=${String(maximum)}
-          .value=${String(scalar(workerPaths.get(id)!, value))} .readOnly=${locked(workerPaths.get(id)!)} />`;
+          .value=${String(scalar(workerPaths.get(id)!, value))} .readOnly=${locked(workerPaths.get(id)!)}
+          @input=${() => this.touchedSettingsWorkers.add(id)} />`;
     };
     const numericField = (
       id: string, label: string, value: number, minimum: number, maximum: number,
@@ -17619,7 +17636,8 @@ export class SmithproxyApp extends LitElement {
                             !this.guiConfiguration && !this.guiConfigurationBusy) {
                           void this.loadGuiConfiguration();
                         }
-                        if (category.kind === 'backend' && !this.administratorInventory &&
+                        if (category.kind === 'backend' && this.configReadAvailable &&
+                            !this.administratorInventory &&
                             !this.administratorInventoryBusy) {
                           void this.loadAdministratorInventory();
                         }
