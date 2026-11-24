@@ -245,6 +245,10 @@ def main() -> int:
         "policy-value-must-not-cross-the-GUI-boundary")
     FakeSmithproxy.config_sections["address_objects"]["office"]["future_label"] = (
         "object-value-must-not-cross-the-GUI-boundary")
+    FakeSmithproxy.config_sections["content_profiles"]["safe-content"]["future_inspection"] = (
+        "profile-value-must-not-cross-the-GUI-boundary")
+    FakeSmithproxy.config_sections["starttls_signatures"][0]["flow"][0]["future_engine_hint"] = (
+        "signature-value-must-not-cross-the-GUI-boundary")
 
     fake_port = free_port()
     fake = http.server.ThreadingHTTPServer(("127.0.0.1", fake_port), TransactionSmithproxy)
@@ -321,13 +325,16 @@ def main() -> int:
             assert live_config["unmapped_sections"] == ["future_access_policy"]
             assert live_config["unmapped_paths"] == [
                 "address_objects[].future_label", "captures.local.future_sink",
-                "policy[].future_rule", "settings.future_control",
+                "content_profiles[].future_inspection", "policy[].future_rule",
+                "settings.future_control", "starttls_signatures[].flow[].future_engine_hint",
             ]
             assert b"must-not-cross-the-GUI-boundary" not in body
             assert b"nested-value-must-not-cross-the-GUI-boundary" not in body
             assert b"capture-value-must-not-cross-the-GUI-boundary" not in body
             assert b"policy-value-must-not-cross-the-GUI-boundary" not in body
             assert b"object-value-must-not-cross-the-GUI-boundary" not in body
+            assert b"profile-value-must-not-cross-the-GUI-boundary" not in body
+            assert b"signature-value-must-not-cross-the-GUI-boundary" not in body
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
@@ -624,6 +631,8 @@ def main() -> int:
     FakeSmithproxy.config_sections["settings"].pop("future_control")
     FakeSmithproxy.config_sections["policy"][0].pop("future_rule")
     FakeSmithproxy.config_sections["address_objects"]["office"].pop("future_label")
+    FakeSmithproxy.config_sections["content_profiles"]["safe-content"].pop("future_inspection")
+    FakeSmithproxy.config_sections["starttls_signatures"][0]["flow"][0].pop("future_engine_hint")
     fake.shutdown()
     fake.server_close()
     fake_thread.join(timeout=2)

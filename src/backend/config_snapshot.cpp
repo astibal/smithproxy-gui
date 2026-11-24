@@ -178,6 +178,83 @@ std::vector<std::string> unmapped_fixed_schema_paths(const Json& config) {
         "nat", "routing", "tls_profile", "ssh_profile", "detection_profile", "content_profile",
         "auth_profile", "alg_dns_profile", "script_profile", "ingress_role", "egress_role",
     });
+    inspect_collection("routing", {
+        "dnat_address", "dnat_port", "dnat_lb_method", "rewrite_sni", "rewrite_sni_to",
+    });
+    inspect_collection("tls_profiles", {
+        "inspect", "use_pfs", "left_use_pfs", "right_use_pfs", "left_disable_reuse",
+        "right_disable_reuse", "allow_untrusted_issuers", "allow_invalid_certs", "allow_self_signed",
+        "ct_enable", "ocsp_mode", "ocsp_stapling", "ocsp_stapling_mode", "alpn_block",
+        "sni_based_cert", "ip_based_cert", "only_custom_certs", "no_fallback_bypass",
+        "sni_filter_use_dns_cache", "sni_filter_use_dns_domain_tree", "redirect_warning_ports",
+        "failed_certcheck_replacement", "failed_certcheck_override", "failed_certcheck_override_timeout",
+        "failed_certcheck_override_timeout_type", "sslkeylog", "client_hello_timeout", "handshake_timeout",
+        "sni_filter_bypass", "client_cert_action", "alerts",
+    });
+    inspect_collection("detection_profiles", {"mode", "engines_enabled", "kb_enabled"});
+    inspect_collection("content_profiles", {
+        "write_payload", "write_format", "write_limit_client", "write_limit_server", "webhook_enable",
+        "webhook_lock_traffic", "ja4_tls_ch", "ja4_tls_ch_ignore_sni", "ja4_tls_sh", "ja4_http",
+        "rules_session_filter", "content_rules",
+    });
+    inspect_collection("ssh_profiles", {
+        "host_key", "hostkey_policy", "shell", "exec", "subsystem", "pty", "environment",
+        "local_forward", "remote_forward", "x11", "agent",
+    });
+    inspect_collection("alg_dns_profiles", {"match_request_id", "randomize_id", "cached_responses"});
+    inspect_collection("script_profiles", {"type", "script-file"});
+    inspect_collection("auth_profiles", {"authenticate", "resolve", "identities"});
+    inspect_collection("tls_ca", {"path"});
+    inspect_collection("starttls_signatures", {
+        "cat", "name", "side", "severity", "group", "enables", "engine", "flow",
+    });
+    inspect_collection("detection_signatures", {
+        "cat", "name", "side", "severity", "group", "enables", "engine", "flow",
+    });
+
+    const auto inspect_named_nested_collection = [&](const char* section, const char* nested,
+                                                       const std::string_view prefix,
+                                                       const std::initializer_list<std::string_view> allowed) {
+        const auto collection = config.find(section);
+        if (collection == config.end() || !collection->is_object()) return;
+        for (const auto& entry : collection->items()) {
+            if (!entry.value().is_object()) continue;
+            const auto nested_collection = entry.value().find(nested);
+            if (nested_collection == entry.value().end()) continue;
+            if (nested_collection->is_object()) {
+                for (const auto& nested_entry : nested_collection->items()) {
+                    append_unmapped_fields(nested_entry.value(), prefix, allowed, paths);
+                }
+            } else if (nested_collection->is_array()) {
+                for (const auto& nested_entry : *nested_collection) {
+                    append_unmapped_fields(nested_entry, prefix, allowed, paths);
+                }
+            }
+        }
+    };
+    inspect_named_nested_collection(
+        "content_profiles", "content_rules", "content_profiles[].content_rules[]",
+        {"match", "replace", "fill_length", "replace_each_nth"});
+    inspect_named_nested_collection(
+        "auth_profiles", "identities", "auth_profiles[].identities[]",
+        {"detection_profile", "content_profile", "tls_profile", "alg_dns_profile"});
+
+    const auto inspect_signature_flow = [&](const char* section) {
+        const auto signatures = config.find(section);
+        if (signatures == config.end() || !signatures->is_array()) return;
+        for (const auto& signature : *signatures) {
+            if (!signature.is_object()) continue;
+            const auto flow = signature.find("flow");
+            if (flow == signature.end() || !flow->is_array()) continue;
+            for (const auto& step : *flow) {
+                append_unmapped_fields(
+                    step, std::string{section} + "[].flow[]",
+                    {"side", "type", "signature", "bytes_start", "bytes_max"}, paths);
+            }
+        }
+    };
+    inspect_signature_flow("starttls_signatures");
+    inspect_signature_flow("detection_signatures");
 
     std::sort(paths.begin(), paths.end());
     paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
