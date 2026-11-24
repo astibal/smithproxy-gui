@@ -118,6 +118,8 @@ public:
         std::string_view revision, std::string_view archive_hash) const;
     [[nodiscard]] AdministratorLoginResponse login_administrator(
         std::string_view administrator, std::string_view password) const;
+    [[nodiscard]] bool logout_administrator(
+        std::string_view auth_token, std::string_view csrf_token) const;
     [[nodiscard]] bool administrator_session_current(
         std::string_view administrator,
         std::string_view auth_token,

@@ -74,6 +74,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     administrator_sessions = {}
     administrator_session_sequence = 0
     administrator_login_requests = 0
+    administrator_logout_requests = 0
     administrator_inventory_status = 200
     revision_requests = 0
     state_requests = 0
@@ -474,6 +475,23 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         }).encode())
 
     def do_POST(self):
+        if self.path == "/api/logout":
+            FakeSmithproxy.administrator_logout_requests += 1
+            cookie = self.headers.get("Cookie", "")
+            auth_match = re.search(r"(?:^|; )__sx_api=([0-9a-f]{32})(?:;|$)", cookie)
+            token = auth_match.group(1) if auth_match else ""
+            expected_csrf = f"{int(token, 16) + 4096:032x}" if token else ""
+            valid_session = token in FakeSmithproxy.administrator_sessions
+            valid_csrf = self.headers.get("csrf_token") == expected_csrf
+            if not valid_session or not valid_csrf:
+                self.send_error(401)
+                return
+            FakeSmithproxy.administrator_sessions.pop(token, None)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"state": "logged_out"}).encode())
+            return
         if self.path == "/api/login":
             FakeSmithproxy.administrator_login_requests += 1
             document = json.loads(
@@ -833,6 +851,7 @@ def main() -> int:
         FakeSmithproxy.administrators = {}
         FakeSmithproxy.administrator_sessions = {}
         FakeSmithproxy.administrator_login_requests = 0
+        FakeSmithproxy.administrator_logout_requests = 0
         FakeSmithproxy.administrator_inventory_status = 200
         enrollment_state_requests = FakeSmithproxy.state_requests
         enrollment = subprocess.Popen(
@@ -917,6 +936,37 @@ def main() -> int:
                 "initial_enrollment_ready": False,
                 "administrator": "security-admin",
             }
+
+            # Logging out revokes both the process-local browser handle and
+            # its upstream Core session before a later login creates a new pair.
+            status, logout_headers, body = request(
+                enrollment_port, "/api/v1/auth/logout", "POST",
+                {**mutation_headers, "Cookie": enrollment_cookie}, "{}")
+            assert status == 200, body
+            assert "Max-Age=0" in logout_headers["Set-Cookie"]
+            assert FakeSmithproxy.administrator_logout_requests == 1
+            assert FakeSmithproxy.administrator_sessions == {}
+            status, _, body = request(
+                enrollment_port, "/api/v1/auth/session",
+                headers={"Cookie": enrollment_cookie})
+            assert status == 200
+            assert json.loads(body)["authenticated"] is False
+
+            status, login_headers, body = request(
+                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
+                json.dumps({
+                    "administrator": "security-admin",
+                    "password": enrollment_password,
+                }))
+            assert status == 200, body
+            assert json.loads(body) == {"administrator": "security-admin"}
+            assert FakeSmithproxy.administrator_login_requests == 2
+            enrollment_cookie = login_headers["Set-Cookie"].split(";", 1)[0]
+            status, _, body = request(
+                enrollment_port, "/api/v1/auth/session",
+                headers={"Cookie": enrollment_cookie})
+            assert status == 200
+            assert json.loads(body)["authenticated"] is True
 
             assert FakeSmithproxy.administrators == {
                 "security-admin": {"password": enrollment_password, "enabled": True}}

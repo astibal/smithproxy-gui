@@ -792,6 +792,40 @@ AdministratorLoginResponse SmithproxyMonitor::login_administrator(
     };
 }
 
+bool SmithproxyMonitor::logout_administrator(
+    const std::string_view auth_token,
+    const std::string_view csrf_token) const {
+    if(!config_ || !config_enabled_ || !valid_session_token(auth_token) ||
+       !valid_session_token(csrf_token)) {
+        return false;
+    }
+    auto* raw_headers = append_session_headers(nullptr, auth_token, csrf_token);
+    if(!raw_headers) return false;
+    auto* updated_headers = curl_slist_append(raw_headers, "Content-Type: application/json");
+    if(!updated_headers) {
+        curl_slist_free_all(raw_headers);
+        return false;
+    }
+    std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if(!curl) return false;
+    constexpr std::string_view request{"{}"};
+    ResponseBuffer response{.limit = 4096U, .body = {}, .exceeded = false};
+    configure_request(curl.get(), *config_, config_->api_url + "/api/logout", headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                     static_cast<curl_off_t>(request.size()));
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto performed = curl_easy_perform(curl.get());
+    const bool transport_ok = performed == CURLE_OK && !response.exceeded;
+    if(!transport_ok) return false;
+    long status{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+    return status == 200L;
+}
+
 bool SmithproxyMonitor::administrator_session_current(
     const std::string_view administrator,
     const std::string_view auth_token,

@@ -2083,6 +2083,11 @@ private:
     Response logout(MHD_Connection* connection) {
         if(const auto* supplied = MHD_lookup_connection_value(
                connection, MHD_COOKIE_KIND, admin_session_cookie.data())) {
+            const auto session = admin_sessions_.authenticate(supplied);
+            if(session) {
+                (void)monitor_.logout_administrator(
+                    session->upstream_auth_token, session->upstream_csrf_token);
+            }
             admin_sessions_.revoke(supplied);
         }
         const auto cookie = std::string(admin_session_cookie) +
