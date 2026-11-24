@@ -1,5 +1,6 @@
 #include "http_server.hpp"
 
+#include "admin_session.hpp"
 #include "audit_store.hpp"
 #include "commit_coordinator.hpp"
 #include "cli_console.hpp"
@@ -65,6 +66,7 @@ struct Response {
 
 constexpr std::size_t maximum_request_body = 128U * 1024U;
 constexpr std::size_t maximum_archive_body = 272U * 1024U * 1024U;
+constexpr std::string_view admin_session_cookie{"__Host-smithproxy_gui_session"};
 
 std::optional<std::size_t> indexed_draft_path(
     const std::string_view path, const std::string_view collection, const std::string_view field) {
@@ -685,8 +687,8 @@ private:
         }
         const auto outcome = response.status >= 200U && response.status < 300U ? "succeeded" :
                              response.status == 409U ? "conflict" : "rejected";
-        const auto authentication = !config_.gateway_secret ? "disabled" :
-                                    gateway_authenticated(connection) ? "gateway" : "none";
+        const auto authentication = gateway_authenticated(connection) ? "gateway" :
+                                    session_administrator(connection) ? "session" : "none";
         audit_.record(request_id, std::move(metadata.operation), outcome, authentication,
                       metadata.target_count, std::move(metadata.targets), metadata.targets_truncated);
     }
@@ -742,6 +744,7 @@ private:
         if (relative->starts_with("/api/") && !request_host_allowed(connection)) {
             return {421, "application/json; charset=utf-8", "{\"error\":\"invalid request host\"}"};
         }
+        if(*relative == "/api/v1/auth/enroll") return enroll(connection, body);
         if (relative->starts_with("/api/") && !management_authenticated(connection)) {
             return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
         }
@@ -762,7 +765,7 @@ private:
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
                 : Response{405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
         }
-        if (!gateway_authenticated(connection)) {
+        if (!management_authenticated(connection)) {
             return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
         }
         const bool archive_upload =
@@ -1321,7 +1324,7 @@ private:
         if (*relative == "/api/v1/capabilities") return capabilities(connection);
         if (*relative == "/api/v1/auth/session") return auth_session(connection);
         if (*relative == "/api/v1/tools/dns/resolve") {
-            if (!gateway_authenticated(connection)) {
+            if (!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             const auto* requested = MHD_lookup_connection_value(
@@ -1344,31 +1347,31 @@ private:
             }.dump()};
         }
         if (*relative == "/api/v1/config/draft") {
-            if (!gateway_authenticated(connection)) {
+            if (!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             return draft_snapshot();
         }
         if (*relative == "/api/v1/config/draft/preflight") {
-            if (!gateway_authenticated(connection)) {
+            if (!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             return draft_preflight();
         }
         if (*relative == "/api/v1/config/snapshot") {
-            if (!gateway_authenticated(connection)) {
+            if (!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             return config_snapshot();
         }
         if (*relative == "/api/v1/config/gui") {
-            if (!gateway_authenticated(connection)) {
+            if (!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             return gui_configuration();
         }
         if (*relative == "/api/v1/config/archive") {
-            if (!gateway_authenticated(connection)) {
+            if (!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             const auto upstream = monitor_.archive_api(
@@ -1381,7 +1384,7 @@ private:
                     "application/json; charset=utf-8", upstream.body};
         }
         if (*relative == "/api/v1/config/archive/download") {
-            if (!gateway_authenticated(connection)) {
+            if (!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             const auto* version = MHD_lookup_connection_value(
@@ -1406,7 +1409,7 @@ private:
                         (previous ? "smithproxy.previous.cftar\"" : "smithproxy.cftar\"")}}};
         }
         if(*relative == "/api/v1/config/archive/resource") {
-            if(!gateway_authenticated(connection)) {
+            if(!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
             }
             const auto resource_path = archive_resource_query(MHD_lookup_connection_value(
@@ -1485,7 +1488,7 @@ private:
     }
 
     Response capabilities(MHD_Connection* connection) {
-        const bool config_read = monitor_.config_enabled() && gateway_authenticated(connection);
+        const bool config_read = monitor_.config_enabled() && management_authenticated(connection);
         if (config_read) bind_empty_draft_revision();
         const auto status = monitor_.status();
         const bool monitoring = management_authenticated(connection);
@@ -1599,8 +1602,15 @@ private:
         return current || previous;
     }
 
+    std::optional<std::string> session_administrator(MHD_Connection* connection) const {
+        const auto* supplied = MHD_lookup_connection_value(
+            connection, MHD_COOKIE_KIND, admin_session_cookie.data());
+        if(!supplied) return std::nullopt;
+        return admin_sessions_.authenticate(supplied);
+    }
+
     bool management_authenticated(MHD_Connection* connection) const {
-        return !config_.gateway_secret || gateway_authenticated(connection);
+        return gateway_authenticated(connection) || session_administrator(connection).has_value();
     }
 
     bool request_host_allowed(MHD_Connection* connection) const {
@@ -1611,11 +1621,51 @@ private:
     }
 
     Response auth_session(MHD_Connection* connection) const {
-        const bool enabled = config_.gateway_secret.has_value();
-        const bool authenticated = enabled && gateway_authenticated(connection);
+        const bool gateway = config_.gateway_secret.has_value();
+        const bool gateway_request = gateway_authenticated(connection);
+        const auto administrator = gateway_request
+            ? std::optional<std::string>{}
+            : session_administrator(connection);
+        const bool authenticated = gateway_request || administrator.has_value();
         return {200, "application/json; charset=utf-8",
-                "{\"mode\":" + json_string(enabled ? "gateway" : "disabled") +
-                    ",\"authenticated\":" + (authenticated ? "true" : "false") + "}"};
+                "{\"mode\":" + json_string(gateway ? "gateway" : "standalone") +
+                    ",\"authenticated\":" + (authenticated ? "true" : "false") +
+                    ",\"administrator\":" +
+                    (administrator ? json_string(*administrator) : "null") + "}"};
+    }
+
+    Response enroll(MHD_Connection* connection, const std::string_view body) {
+        if(!same_origin_mutation(connection)) {
+            return {403, "application/json; charset=utf-8",
+                    "{\"error\":\"same-origin CSRF check failed\"}"};
+        }
+        const auto request = nlohmann::json::parse(body, nullptr, false);
+        if(request.is_discarded() || !request.is_object() || request.size() != 1U ||
+           !request.contains("token") || !request["token"].is_string()) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid enrollment request\"}"};
+        }
+        const auto enrollment = monitor_.consume_gui_enrollment(
+            request["token"].get<std::string>());
+        if(!enrollment.administrator) {
+            const unsigned status = enrollment.error == "rejected" ||
+                                    enrollment.error == "invalid-token" ? 403U : 502U;
+            return {status, "application/json; charset=utf-8",
+                    status == 403U
+                        ? "{\"error\":\"invalid or expired enrollment token\"}"
+                        : "{\"error\":\"Smithproxy enrollment service unavailable\"}"};
+        }
+        auto session = admin_sessions_.issue(*enrollment.administrator);
+        if(!session) {
+            return {503, "application/json; charset=utf-8",
+                    "{\"error\":\"administrator session unavailable\"}"};
+        }
+        const auto cookie = std::string(admin_session_cookie) + "=" + session->token +
+            "; Max-Age=" + std::to_string(AdminSessionStore::ttl_seconds) +
+            "; Path=/; Secure; HttpOnly; SameSite=Strict";
+        return {200, "application/json; charset=utf-8",
+                nlohmann::json{{"administrator", *enrollment.administrator}}.dump(), "no-store",
+                {{"Set-Cookie", cookie}}};
     }
 
     void bind_empty_draft_revision() {
@@ -2853,6 +2903,7 @@ private:
     JobStore jobs_;
     OperationalEventStore operational_events_;
     AuditStore audit_;
+    mutable AdminSessionStore admin_sessions_;
 };
 
 } // namespace

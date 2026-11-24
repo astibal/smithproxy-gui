@@ -60,6 +60,11 @@ struct ArchiveApiResponse {
     bool transport_ok{};
 };
 
+struct GuiEnrollmentResponse {
+    std::optional<std::string> administrator;
+    std::string error;
+};
+
 class SmithproxyMonitor {
 public:
     explicit SmithproxyMonitor(
@@ -87,6 +92,8 @@ public:
         std::string_view method, std::string_view path,
         std::string_view body = {},
         const std::vector<std::string>& extra_headers = {}) const;
+    [[nodiscard]] GuiEnrollmentResponse consume_gui_enrollment(
+        std::string_view token) const;
     [[nodiscard]] bool configured() const noexcept { return config_.has_value(); }
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 

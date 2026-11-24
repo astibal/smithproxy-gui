@@ -479,6 +479,9 @@ export class SmithproxyApp extends LitElement {
   @state() private transactionCapabilityState: TransactionCapabilityState = 'unknown';
   @state() private gatewaySession: GatewaySession | undefined;
   @state() private gatewaySessionError: string | undefined;
+  @state() private enrollmentToken = '';
+  @state() private enrollmentError: string | undefined;
+  @state() private enrollmentBusy = false;
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
   @state() private liveSessions: LiveSessionSnapshot = initialLiveSessions;
@@ -758,6 +761,13 @@ export class SmithproxyApp extends LitElement {
     .config-refresh { min-width: 28px; padding: 4px; border: 0; background: transparent; font-size: 19px; }
     .config-refresh:hover { background: transparent; color: var(--app-text); }
     .config-refresh.drift { color: var(--app-warning); animation: config-attention 2.4s ease-in-out infinite; }
+    .enrollment-shell { display: grid; min-height: 100dvh; place-items: center; padding: 24px; background: var(--app-canvas); }
+    .enrollment-card { display: grid; width: min(520px, 100%); gap: 18px; padding: 28px; border: 1px solid var(--app-border); border-radius: 5px; background: var(--app-surface); }
+    .enrollment-card h1, .enrollment-card p { margin: 0; }
+    .enrollment-card label { display: grid; gap: 7px; color: var(--app-muted); }
+    .enrollment-card input { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .enrollment-card code { color: var(--app-text); }
+    .enrollment-card .error { color: var(--app-danger); }
     @keyframes config-attention { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
     .config-toast { position: fixed; z-index: 20; top: 16px; left: 50%; width: min(440px, calc(100vw - 32px)); overflow: hidden; translate: -50% 0; border: 1px solid var(--app-warning); border-radius: 4px; background: var(--app-surface); box-shadow: 0 10px 32px #0008; }
     .config-toast-content { display: flex; gap: 14px; align-items: center; padding: 11px 13px; }
@@ -1886,9 +1896,8 @@ export class SmithproxyApp extends LitElement {
         capabilities.features.configWrite || capabilities.features.configSave || capabilities.features.drafts ||
         capabilities.features.draftPreflight;
       if (privilegedConfiguration &&
-          (sessionResult.status !== 'fulfilled' || sessionResult.value.mode !== 'gateway' ||
-           !sessionResult.value.authenticated)) {
-        throw new Error('Privileged capabilities require a verified trusted gateway session.');
+          (sessionResult.status !== 'fulfilled' || !sessionResult.value.authenticated)) {
+        throw new Error('Privileged capabilities require an authenticated management session.');
       }
       const managementCapabilities = capabilities.features.jobs || capabilities.features.events ||
         capabilities.features.alerts || capabilities.features.audit || capabilities.features.metrics ||
@@ -1896,8 +1905,8 @@ export class SmithproxyApp extends LitElement {
         capabilities.features.neighborMonitoring || capabilities.features.interfaceMonitoring ||
         capabilities.features.console;
       if (managementCapabilities && sessionResult.status === 'fulfilled' &&
-          sessionResult.value.mode === 'gateway' && !sessionResult.value.authenticated) {
-        throw new Error('Management capabilities require a verified trusted gateway session.');
+          !sessionResult.value.authenticated) {
+        throw new Error('Management capabilities require an authenticated management session.');
       }
       const draftWasAvailable = this.draftAvailable;
       const configReadWasAvailable = this.configReadAvailable;
@@ -2328,11 +2337,11 @@ export class SmithproxyApp extends LitElement {
     if (!this.gatewaySession) {
       return {label: 'Discovering', tone: 'warning', detail: 'Checking trusted gateway handoff.'};
     }
-    if (this.gatewaySession.mode === 'disabled') {
+    if (this.gatewaySession.mode === 'standalone' && !this.gatewaySession.authenticated) {
       return {
-        label: 'Disabled',
+        label: 'Enrollment required',
         tone: 'warning',
-        detail: 'The GUI core has no trusted gateway secret; configuration APIs remain fail-closed.',
+        detail: 'Issue a one-time administrator enrollment token in the Smithproxy CLI.',
       };
     }
     if (!this.gatewaySession.authenticated) {
@@ -2342,6 +2351,11 @@ export class SmithproxyApp extends LitElement {
         detail: 'This request did not receive a valid trusted gateway handoff.',
       };
     }
+    if (this.gatewaySession.mode === 'standalone') return {
+      label: 'Verified',
+      tone: 'success',
+      detail: `Authenticated standalone administrator ${this.gatewaySession.administrator ?? ''}.`,
+    };
     return {
       label: 'Verified',
       tone: 'success',
@@ -2355,7 +2369,7 @@ export class SmithproxyApp extends LitElement {
       return 'Configuration access is unavailable. Open access diagnostics for details.';
     }
     if (gateway.label === 'Discovering') return 'Checking whether configuration access is available.';
-    if (gateway.label === 'Disabled') {
+    if (gateway.label === 'Enrollment required') {
       return 'Configuration changes are unavailable until trusted management access is configured.';
     }
     if (gateway.label === 'Rejected') {
@@ -2377,11 +2391,26 @@ export class SmithproxyApp extends LitElement {
     });
   }
 
+  /** Exchanges a short-lived CLI token for an HttpOnly standalone administrator session. */
+  private async enrollAdministrator(): Promise<void> {
+    if (!this.systemClient || this.enrollmentBusy) return;
+    this.enrollmentBusy = true;
+    this.enrollmentError = undefined;
+    try {
+      await this.systemClient.enrollAdministrator(this.enrollmentToken.trim());
+      this.enrollmentToken = '';
+      await this.refreshCapabilities();
+    } catch (error) {
+      this.enrollmentError = error instanceof Error ? error.message : 'Administrator enrollment failed.';
+    } finally {
+      this.enrollmentBusy = false;
+    }
+  }
+
   private downloadDiagnostics(): void {
     let gatewayState: GatewayDiagnosticState = 'verified';
     if (this.gatewaySessionError) gatewayState = 'unavailable';
     else if (!this.gatewaySession) gatewayState = 'discovering';
-    else if (this.gatewaySession.mode === 'disabled') gatewayState = 'disabled';
     else if (!this.gatewaySession.authenticated) gatewayState = 'rejected';
     const report = buildDiagnosticsReport({
       generatedAtUnixMs: Date.now(),
@@ -11988,7 +12017,7 @@ export class SmithproxyApp extends LitElement {
                 </header>
                 <dl>
                   <dt>Core mode</dt><dd>${this.gatewaySession?.mode === 'gateway' ? 'Gateway configured' :
-                    this.gatewaySession?.mode === 'disabled' ? 'Fail-closed disabled' : 'Unknown'}</dd>
+                    this.gatewaySession?.mode === 'standalone' ? 'Standalone administrator' : 'Unknown'}</dd>
                   <dt>Current request</dt><dd>${this.gatewaySession?.authenticated ? 'Verified' : 'Not verified'}</dd>
                   <dt>Configuration read</dt><dd>${this.configReadAvailable ? 'Available' : 'Blocked'}</dd>
                   <dt>Shared draft</dt><dd>${this.draftAvailable ? 'Available' : 'Blocked'}</dd>
@@ -15919,6 +15948,33 @@ export class SmithproxyApp extends LitElement {
 
   protected render() {
     if (this.loadingError) return html`<div class="error" role="alert">${this.loadingError}</div>`;
+    if (this.gatewaySession?.mode === 'standalone' && !this.gatewaySession.authenticated) {
+      const validToken = /^[0-9a-f]{64}$/u.test(this.enrollmentToken.trim());
+      return html`<main class="enrollment-shell">
+        <form class="enrollment-card" @submit=${(event: SubmitEvent) => {
+          event.preventDefault();
+          void this.enrollAdministrator();
+        }}>
+          <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
+          <h1>Administrator enrollment</h1>
+          <p>Issue a single-use token from a privileged Smithproxy CLI session:</p>
+          <p><code>execute gui enrollment issue &lt;administrator&gt;</code></p>
+          <label>Enrollment token
+            <input type="password" autocomplete="one-time-code" spellcheck="false" maxlength="64"
+              .value=${this.enrollmentToken}
+              @input=${(event: Event) => {
+                const input = event.currentTarget;
+                if (input instanceof HTMLInputElement) this.enrollmentToken = input.value;
+              }}>
+          </label>
+          ${this.enrollmentError ? html`<p class="error" role="alert">${this.enrollmentError}</p>` : nothing}
+          <button class="primary" type="submit" ?disabled=${this.enrollmentBusy || !validToken}>
+            ${this.enrollmentBusy ? 'Enrolling…' : 'Enroll securely'}
+          </button>
+          <p>The token expires after ten minutes and can be used once. Smithproxy validates it directly; the browser receives only an HttpOnly runtime session.</p>
+        </form>
+      </main>`;
+    }
     const controlFreshness = classifyFreshness(this.systemStatus.lastSuccessAtUnixMs, 5_000);
     const activeAlertCount = this.operationalAlerts.alerts.length;
     const hasCriticalAlert = this.operationalAlerts.alerts.some(alert => alert.severity === 'critical');

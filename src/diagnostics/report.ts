@@ -24,7 +24,7 @@ export interface DiagnosticsReportInput {
     availabilitySamples: number;
     availabilitySuccessful: number;
   };
-  gateway: {mode: 'gateway' | 'disabled' | 'unknown'; authenticated: boolean | null; state: GatewayDiagnosticState};
+  gateway: {mode: 'gateway' | 'standalone' | 'unknown'; authenticated: boolean | null; state: GatewayDiagnosticState};
   capabilities: {
     bootstrapState: CapabilityBootstrapDiagnosticState;
     checkedAtUnixMs: number | null;

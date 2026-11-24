@@ -176,10 +176,14 @@ describe('SystemClient', () => {
   });
 
   it('loads and validates the trusted gateway session', async () => {
-    const fetcher = vi.fn(async () => jsonResponse({mode: 'gateway', authenticated: true}));
+    const fetcher = vi.fn(async () => jsonResponse({
+      mode: 'gateway', authenticated: true, administrator: null,
+    }));
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
 
-    await expect(client.authSession()).resolves.toEqual({mode: 'gateway', authenticated: true});
+    await expect(client.authSession()).resolves.toEqual({
+      mode: 'gateway', authenticated: true, administrator: null,
+    });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/auth/session', expect.objectContaining({redirect: 'error'}),
     );
@@ -187,12 +191,25 @@ describe('SystemClient', () => {
 
   it('rejects contradictory or malformed gateway sessions', async () => {
     const client = new SystemClient('/api/v1', '/', async () =>
-      jsonResponse({mode: 'disabled', authenticated: true}));
+      jsonResponse({mode: 'standalone', authenticated: true, administrator: null}));
     await expect(client.authSession()).rejects.toThrow('Invalid gateway session response');
 
     const malformed = new SystemClient('/api/v1', '/', async () =>
       jsonResponse({mode: 'proxy', authenticated: false}));
     await expect(malformed.authSession()).rejects.toThrow('Invalid gateway session response');
+  });
+
+  it('exchanges a bounded enrollment token for a standalone administrator session', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({administrator: 'security-admin'}));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+    const token = 'a'.repeat(64);
+
+    await expect(client.enrollAdministrator(token)).resolves.toEqual({administrator: 'security-admin'});
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/auth/enroll', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({token}), credentials: 'same-origin',
+      headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+    }));
+    await expect(client.enrollAdministrator('short')).rejects.toThrow('Invalid enrollment token');
   });
 
   it('loads and validates the monitoring snapshot', async () => {

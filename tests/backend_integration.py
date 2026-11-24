@@ -508,7 +508,7 @@ def main() -> int:
 
         for host in (f"localhost:{port}", f"LOCALHOST.:{port}", f"127.0.0.2:{port}", f"[::1]:{port}"):
             assert request(
-                port, "/ws001/smithproxy-gui/api/v1/status", headers={"Host": host})[0] == 200
+                port, "/ws001/smithproxy-gui/api/v1/status", headers={"Host": host})[0] == 401
         for host in (
             "rebind.attacker.invalid", "localhost.attacker.invalid", "127.0.0.1.attacker.invalid",
             "localhost:0", "localhost:65536", "[::1]suffix",
@@ -528,83 +528,34 @@ def main() -> int:
         assert capabilities["features"]["structural_collections"] == []
         assert capabilities["features"]["drafts"] is False
         assert capabilities["features"]["draft_preflight"] is False
-        assert capabilities["features"]["jobs"] is True
-        assert capabilities["features"]["events"] is True
-        assert capabilities["features"]["alerts"] is True
-        assert capabilities["features"]["audit"] is True
+        assert capabilities["features"]["jobs"] is False
+        assert capabilities["features"]["events"] is False
+        assert capabilities["features"]["alerts"] is False
+        assert capabilities["features"]["audit"] is False
         assert capabilities["features"]["smithproxy_events"] is False
-        assert capabilities["features"]["metrics"] is True
-        assert capabilities["features"]["session_activity"] is True
-        assert capabilities["features"]["tls_monitoring"] is True
-        assert capabilities["features"]["neighbor_monitoring"] is True
-        assert capabilities["features"]["interface_monitoring"] is True
+        assert capabilities["features"]["metrics"] is False
+        assert capabilities["features"]["session_activity"] is False
+        assert capabilities["features"]["tls_monitoring"] is False
+        assert capabilities["features"]["neighbor_monitoring"] is False
+        assert capabilities["features"]["interface_monitoring"] is False
 
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/status")
-        snapshot = json.loads(body)
-        assert status == 200
-        assert snapshot["smithproxy"]["configured"] is False
-        assert snapshot["smithproxy"]["total_probes"] == 0
-        assert snapshot["smithproxy"]["history"] == []
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/metrics/summary")
-        metrics = json.loads(body)
-        assert status == 200
-        assert metrics["state"] == "unconfigured"
-        assert metrics["listeners"] == []
-        assert metrics["history"] == []
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/sessions/activity")
-        activity = json.loads(body)
-        assert status == 200
-        assert activity["state"] == "unconfigured"
-        assert activity["protocols"] == []
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/tls/cache/summary")
-        tls_cache = json.loads(body)
-        assert status == 200
-        assert tls_cache["state"] == "unconfigured"
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/network/neighbors/summary")
-        neighbors = json.loads(body)
-        assert status == 200
-        assert neighbors["state"] == "unconfigured"
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/network/interfaces/summary")
-        interfaces = json.loads(body)
-        assert status == 200
-        assert interfaces["state"] == "unconfigured"
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/events/recent")
-        assert status == 200
-        assert json.loads(body) == {
-            "source": "gui-core", "smithproxy_events_available": False, "events": []}
-        status, headers, body = request(port, "/ws001/smithproxy-gui/api/v1/events")
-        assert status == 200
-        assert headers["Content-Type"] == "text/event-stream; charset=utf-8"
-        assert headers["Cache-Control"] == "no-store"
-        assert headers["X-Accel-Buffering"] == "no"
-        assert b"retry: 2500\n" in body
-        assert b"event: snapshot\n" in body
-        assert b'"events":[]' in body
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/alerts")
-        assert status == 200
-        alerts = json.loads(body)
-        assert alerts["source"] == "gui-core"
-        assert alerts["alerts"][0]["id"] == "control-plane-unconfigured"
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/audit/recent")
-        assert status == 200
-        assert json.loads(body) == {
-            "source": "gui-core", "actor_available": False, "entries": []}
+        for protected_path in (
+            "/api/v1/status", "/api/v1/metrics/summary", "/api/v1/sessions/activity",
+            "/api/v1/tls/cache/summary", "/api/v1/network/neighbors/summary",
+            "/api/v1/network/interfaces/summary", "/api/v1/events/recent", "/api/v1/events",
+            "/api/v1/alerts", "/api/v1/audit/recent", "/api/v1/jobs",
+        ):
+            assert request(port, "/ws001/smithproxy-gui" + protected_path)[0] == 401
         assert_error_response(request(
             port, "/ws001/smithproxy-gui/api/v1/config/draft/clear", "POST",
             headers={"Host": "rebind.attacker.invalid", "Content-Type": "application/json"},
             body=json.dumps({"expected_version": 0})), 421, "request.invalid_host")
-        status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/jobs")
-        assert status == 200
-        jobs = json.loads(body)
-        assert jobs["source"] == "gui-core"
-        assert jobs["owner_available"] is False
-        assert jobs["jobs"] == []
-        assert isinstance(jobs["generated_at_unix_ms"], int)
-        assert request(port, "/ws001/smithproxy-gui/api/v1/jobs/not-a-job")[0] == 404
+        assert request(port, "/ws001/smithproxy-gui/api/v1/jobs/not-a-job")[0] == 401
 
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/auth/session")
         assert status == 200
-        assert json.loads(body) == {"mode": "disabled", "authenticated": False}
+        assert json.loads(body) == {
+            "mode": "standalone", "authenticated": False, "administrator": None}
         assert request(port, "/ws001/smithproxy-gui/api/v1/config/snapshot")[0] == 401
 
         status, headers, body = request(port, "/ws001/smithproxy-gui/")
@@ -1068,11 +1019,13 @@ def main() -> int:
 
             status, _, body = request(configured_port, "/api/v1/auth/session")
             assert status == 200
-            assert json.loads(body) == {"mode": "gateway", "authenticated": False}
+            assert json.loads(body) == {
+                "mode": "gateway", "authenticated": False, "administrator": None}
             status, _, body = request(
                 configured_port, "/api/v1/auth/session", headers=gateway_headers)
             assert status == 200
-            assert json.loads(body) == {"mode": "gateway", "authenticated": True}
+            assert json.loads(body) == {
+                "mode": "gateway", "authenticated": True, "administrator": None}
             assert request(configured_port, "/api/v1/tools/dns/resolve?name=localhost")[0] == 401
             status, _, body = request(
                 configured_port, "/api/v1/tools/dns/resolve?name=localhost",

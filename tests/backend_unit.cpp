@@ -1,4 +1,5 @@
 #include "audit_store.hpp"
+#include "admin_session.hpp"
 #include "commit_coordinator.hpp"
 #include "config.hpp"
 #include "config_snapshot.hpp"
@@ -46,6 +47,20 @@ int main() {
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
     unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
     unsetenv("SMITHPROXY_CLI");
+
+    AdminSessionStore admin_sessions;
+    const auto admin_session = admin_sessions.issue("security-admin", 1000);
+    assert(admin_session);
+    assert(admin_session->token.size() == 64U);
+    assert(admin_sessions.authenticate(admin_session->token, 1001) == "security-admin");
+    assert(!admin_sessions.authenticate(std::string(64U, 'f'), 1001));
+    assert(!admin_sessions.authenticate(admin_session->token,
+                                        1000 + AdminSessionStore::ttl_seconds));
+    assert(admin_sessions.size(1000 + AdminSessionStore::ttl_seconds) == 0U);
+    const auto revoked_session = admin_sessions.issue("operator", 2000);
+    assert(revoked_session);
+    admin_sessions.revoke(revoked_session->token);
+    assert(!admin_sessions.authenticate(revoked_session->token, 2001));
 
     assert(websocket_accept("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
     assert(websocket_accept("not-a-websocket-key") == "");

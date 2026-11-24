@@ -83,7 +83,9 @@ def main() -> None:
         require(isinstance(endpoint["csrf"], bool), f"invalid CSRF marker for {path}")
         require(endpoint["csrf"] == (methods == ["POST"]),
                 f"mutation CSRF policy drifted for {path}")
-        if methods == ["POST"]:
+        # Enrollment is intentionally the only unauthenticated mutation. Its
+        # one-time capability is validated atomically by Smithproxy core.
+        if methods == ["POST"] and path != "/api/v1/auth/enroll":
             require(endpoint["authentication"] == "gateway",
                     f"mutation authentication weakened for {path}")
         require(endpoint["feature"] is None or
@@ -102,7 +104,9 @@ def main() -> None:
         path for path, endpoint in ((item["path"], item) for item in endpoints)
         if endpoint["authentication"] == "public"
     }
-    require(public_paths == {"/healthz", "/api/v1/capabilities", "/api/v1/auth/session"},
+    require(public_paths == {
+        "/healthz", "/api/v1/capabilities", "/api/v1/auth/session", "/api/v1/auth/enroll",
+    },
             "public endpoint boundary drifted")
     gateway_paths = {
         item["path"] for item in endpoints if item["authentication"] == "gateway"
@@ -139,6 +143,7 @@ def main() -> None:
         "/healthz": None,
         "/api/v1/capabilities": None,
         "/api/v1/auth/session": None,
+        "/api/v1/auth/enroll": None,
         "/api/v1/console": "console",
         "/api/v1/status": None,
         "/api/v1/metrics/summary": "metrics",

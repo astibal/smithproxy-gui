@@ -472,7 +472,8 @@ ArchiveApiResponse SmithproxyMonitor::archive_api(
                              path == "/api/config/archive/resources" ||
                              path.starts_with("/api/config/archive/resource?path="))) ||
         (method == "POST" && (path == "/api/config/archive/validate" ||
-                              path == "/api/config/archive/restore")) ||
+                              path == "/api/config/archive/restore" ||
+                              path == "/api/gui/enrollment/consume")) ||
         ((method == "PUT" || method == "DELETE") &&
          path.starts_with("/api/config/archive/resource?path="));
     if(!allowed || path.find_first_of("\r\n") != std::string_view::npos) return {};
@@ -496,9 +497,10 @@ ArchiveApiResponse SmithproxyMonitor::archive_api(
         }
         if(!raw_headers) return {};
 
+        const bool json_request = path == "/api/gui/enrollment/consume";
         const std::vector<std::string> values{
             "Accept: application/json, application/vnd.smithproxy.cftar, application/octet-stream",
-            "Content-Type: application/octet-stream",
+            json_request ? "Content-Type: application/json" : "Content-Type: application/octet-stream",
             "Expect:",
         };
         for(const auto& value : values) {
@@ -552,6 +554,34 @@ ArchiveApiResponse SmithproxyMonitor::archive_api(
         return {.status = status, .body = std::move(response.body), .transport_ok = true};
     }
     return {.status = 401L, .body = {}, .transport_ok = false};
+}
+
+GuiEnrollmentResponse SmithproxyMonitor::consume_gui_enrollment(
+    const std::string_view token) const {
+    const bool valid_token = token.size() == 64U &&
+        std::all_of(token.begin(), token.end(), [](const unsigned char value) {
+            return std::isdigit(value) || (value >= 'a' && value <= 'f');
+        });
+    if(!valid_token) return {.administrator = std::nullopt, .error = "invalid-token"};
+    const auto request = nlohmann::json{{"enrollment_token", token}}.dump();
+    const auto response = archive_api("POST", "/api/gui/enrollment/consume", request);
+    if(!response.transport_ok) return {.administrator = std::nullopt, .error = "unavailable"};
+    if(response.status == 403L) return {.administrator = std::nullopt, .error = "rejected"};
+    if(response.status != 200L) return {.administrator = std::nullopt, .error = "invalid-response"};
+    const auto document = nlohmann::json::parse(response.body, nullptr, false);
+    if(document.is_discarded() || !document.is_object() || document.size() != 1U ||
+       !document.contains("administrator") || !document["administrator"].is_string()) {
+        return {.administrator = std::nullopt, .error = "invalid-response"};
+    }
+    auto administrator = document["administrator"].get<std::string>();
+    const bool valid_administrator = !administrator.empty() && administrator.size() <= 64U &&
+        std::all_of(administrator.begin(), administrator.end(), [](const unsigned char value) {
+            return std::isalnum(value) || value == '.' || value == '_' ||
+                   value == '-' || value == '@';
+        });
+    if(!valid_administrator)
+        return {.administrator = std::nullopt, .error = "invalid-response"};
+    return {.administrator = std::move(administrator), .error = {}};
 }
 
 TransactionResponse SmithproxyMonitor::execute_transaction(

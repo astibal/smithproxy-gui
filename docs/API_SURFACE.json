@@ -27,6 +27,14 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/auth/enroll",
+      "methods": ["POST"],
+      "authentication": "public",
+      "csrf": true,
+      "feature": null,
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/console",
       "methods": ["GET"],
       "authentication": "management",

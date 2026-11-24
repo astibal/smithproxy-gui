@@ -67,8 +67,9 @@ export interface SystemCapabilities {
 }
 
 export interface GatewaySession {
-  mode: 'gateway' | 'disabled';
+  mode: 'gateway' | 'standalone';
   authenticated: boolean;
+  administrator: string | null;
 }
 
 export interface ArchiveEntry {
@@ -635,12 +636,16 @@ function parseCapabilities(value: unknown): SystemCapabilities {
 }
 
 function parseGatewaySession(value: unknown): GatewaySession {
-  if (!isObject(value) || (value.mode !== 'gateway' && value.mode !== 'disabled') ||
+  if (!isObject(value) || (value.mode !== 'gateway' && value.mode !== 'standalone') ||
       typeof value.authenticated !== 'boolean' ||
-      (value.mode === 'disabled' && value.authenticated)) {
+      (value.administrator !== null &&
+       (typeof value.administrator !== 'string' || value.administrator.length === 0 ||
+        value.administrator.length > 64)) ||
+      (value.mode === 'gateway' && value.administrator !== null) ||
+      (value.mode === 'standalone' && value.authenticated !== (value.administrator !== null))) {
     throw new Error('Invalid gateway session response.');
   }
-  return {mode: value.mode, authenticated: value.authenticated};
+  return {mode: value.mode, authenticated: value.authenticated, administrator: value.administrator};
 }
 
 function parseStatus(value: unknown): SystemSnapshot {
@@ -1573,6 +1578,38 @@ export class SystemClient {
 
   async authSession(): Promise<GatewaySession> {
     return parseGatewaySession(await this.#request(joinedPath(this.#apiBase, '/auth/session')));
+  }
+
+  async enrollAdministrator(token: string): Promise<{administrator: string}> {
+    if (!/^[0-9a-f]{64}$/u.test(token)) throw new Error('Invalid enrollment token.');
+    const controller = new AbortController();
+    this.#pendingRequests.add(controller);
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
+    try {
+      const response = await this.#fetch(joinedPath(this.#apiBase, '/auth/enroll'), {
+        method: 'POST',
+        body: JSON.stringify({token}),
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Smithproxy-GUI-CSRF': '1',
+        },
+        redirect: 'error',
+        signal: controller.signal,
+      });
+      if (!response.ok) throw httpStatusError(response, 'Administrator enrollment');
+      const value = await boundedJson(response, MAX_SYSTEM_RESPONSE_BYTES, 'Administrator enrollment');
+      if (!isObject(value) || typeof value.administrator !== 'string' ||
+          value.administrator.length === 0 || value.administrator.length > 64) {
+        throw new Error('Invalid administrator enrollment response.');
+      }
+      return {administrator: value.administrator};
+    } finally {
+      globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
+    }
   }
 
   async archiveInventory(): Promise<ArchiveInventory> {
