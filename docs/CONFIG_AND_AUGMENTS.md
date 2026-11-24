@@ -32,7 +32,8 @@ Podporuje seřazený řetěz více vrstev, hodnotu každé vrstvy, priority, exp
 aktivního vlastníka, persistentní i efektivní hodnotu a příznak editovatelnosti.
 Pokud stejná cesta existuje ve workspace draftu, řetěz ji ukáže jako samostatný
 poslední krok `Workspace draft · Not active`; nikdy ji nezamění za effective
-hodnotu. Write-only návrh zobrazuje pouze redigovaný změnový záměr.
+hodnotu. Citlivý návrh se zobrazuje pouze v autentizovaném editoru; provenance,
+audit a diagnostika jeho hodnotu nepřebírají.
 Seznamy policy a objektů označují počet efektivně přepsaných polí ještě před
 otevřením editoru. Prioritizovaný řetěz musí mít úplnou a striktně rostoucí
 prioritu; řetěz bez priorit používá pouze autoritativní pořadí pole. Smíšené nebo
@@ -99,7 +100,8 @@ pokud je některá dotčená reference vlastněná aktivním augmentem, nevznikn
 Frontend udržuje přesný registr čitelných persistentních hodnot všech typed
 editorů. Pokud operátor vrátí scalar, seznam nebo celý rename řetěz na live
 hodnotu, reconcile změnu z draftu odstraní i v instalaci bez augment provenance.
-Write-only a redigované hodnoty v registru záměrně nejsou.
+Registr obsahuje i citlivé persistentní hodnoty, aby návrat na live stav odstranil
+odpovídající draft změnu; tento registr neopouští browserovou aplikační paměť.
 
 Base revision se získává dvěma ohraničujícími čteními kanonické SHA-256 revize
 před a po načtení všech config sekcí. Draft se na ni naváže pouze při shodě obou
@@ -107,7 +109,7 @@ před a po načtení všech config sekcí. Draft se na ni naváže pouze při sh
 automaticky nerebasuje.
 
 Aktuální foundation draft poskytuje serverový preflight bez hodnot: ověřenou
-verzi draftu, počet změn, počet write-only změn a počty podle config sekcí.
+verzi draftu, počet změn, počet citlivých změn a počty podle config sekcí.
 Lokální schema validace je zobrazena odděleně od Smithproxy doménové validace.
 Po zpřístupnění schváleného transaction API a kanonické base revision nabídne
 GUI explicitní Smithproxy validaci. Výsledek platí jen pro přesnou verzi draftu,
@@ -131,8 +133,9 @@ Validace má vrstvy:
 Neúspěšný apply nesmí být prezentován jako úspěšně dokončená změna. API musí
 rozlišit persistentní commit, runtime apply a případný rollback/recovery stav.
 
-## Tajné hodnoty
+## Citlivé hodnoty
 
-Secrets jsou write-only nebo redigované. API nikdy nevrací původní secret jako
-běžnou hodnotu. Draft nese pouze informaci `unchanged`, `replace` nebo `remove`,
-pokud je odstranění daným schema uzlem dovoleno.
+Autentizovaný administrátor dostává kompletní konfigurační hodnotu, protože ji
+musí umět zkontrolovat, zachovat i změnit. Heslová pole jsou výchozím stavem
+maskovaná. Audit, preflight, diagnostický export, chyby a provozní události
+zůstávají value-free a nesmí citlivou hodnotu kopírovat.

@@ -7648,8 +7648,16 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(settingsEditor.getByLabel('Require HTTP CONNECT authentication')).toHaveValue('false');
   await expect(settingsEditor.getByLabel('Certificate password'))
     .toHaveValue('private-ca-password');
+  await expect(settingsEditor.getByLabel('Certificate password')).toHaveAttribute('type', 'password');
   await expect(settingsEditor.getByLabel('HTTP API keys'))
     .toHaveValue('["backend-secret-value"]');
+  await settingsEditor.getByLabel('Certificate password').fill('unsaved-private-password');
+  await settingsEditor.getByRole('button', {name: 'Show sensitive values'}).click();
+  await expect(settingsEditor.getByLabel('Certificate password')).toHaveAttribute('type', 'text');
+  await expect(settingsEditor.getByLabel('Certificate password')).toHaveValue('unsaved-private-password');
+  await settingsEditor.getByRole('button', {name: 'Hide sensitive values'}).click();
+  await expect(settingsEditor.getByLabel('Certificate password')).toHaveAttribute('type', 'password');
+  await expect(settingsEditor.getByLabel('Certificate password')).toHaveValue('unsaved-private-password');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('1023');
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor.getByText(/numeric values must be integers within their documented ranges/i))

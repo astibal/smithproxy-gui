@@ -161,16 +161,13 @@ move position references its transaction-scoped client ID. Linked signature and
 flow removal checks every client ID removed by the cascade, so a direct API call
 cannot leave a dangling ordered reference.
 
-Draft responses preserve the write-only browser boundary as well as draft
-requests. The browser accepts sensitive scalar and structural fields only as
-bounded GUI-core redaction sentinels; a raw value or an invalid list-count
-sentinel rejects the complete snapshot before it reaches application state.
-Global search indexes pending structural creates through an explicit safe-field
-allowlist and never indexes redaction sentinels.
+Draft responses preserve complete bounded values for the authenticated
+administrator so shared configuration can be reopened without re-entry. Global
+search indexes only reviewed operational fields; credentials are not indexed.
 
-Authentication identity mappings use complete write-only replacement rather
-than read-modify-write. The browser sees only the configured identity count and
-cannot recover a pending replacement after it has been accepted by the core.
+Authentication identity mappings use complete replacement rather than unsafe
+partial mutation. The browser receives the complete current and pending mapping
+inside the authenticated management boundary.
 The core validates identity syntax, uniqueness, bounded profile bindings, and
 cross-section references before retaining a replacement. Draft responses,
 diagnostics, search, audit details, errors, logs, and operational events contain
@@ -321,9 +318,10 @@ Saslik authority because the trusted proxy secret authenticates that boundary.
 
 ## Config a secrets
 
-- secrets jsou write-only/redigované;
-- write-only náhrady zůstávají pouze v serverovém draftu a draft API vrací jen
-  redigovaný záměr `clear`/`replace`, případně bezpečný počet položek;
+- autentizovaný administrátor vidí kompletní konfigurační hodnoty včetně klíčů,
+  hesel, cest, výrazů a identit a může je znovu otevřít ze sdíleného draftu;
+- heslová pole jsou v editoru výchozím stavem maskovaná a mají explicitní lokální
+  ovladač pro zobrazení; zobrazení hodnoty nemění draft ani ji znovu nenačítá;
 - audit nesmí obsahovat secrets, tokeny ani citlivé payloady;
 - export diagnostiky používá explicitní allowlist;
 - validace cest a identifikátorů neumožní filesystem traversal;
@@ -344,9 +342,8 @@ counter, and fixed states. Stream error text and event payloads are excluded.
 Augment provenance accepts only bounded scalar or homogeneous string/integer
 list values. List length, item length, control characters, numeric safety, layer
 type agreement, and deep equality of the active and effective values are checked
-before any provenance reaches an editor. Secret-bearing values remain
-write-only and are never valid provenance payloads. A pinned non-secret path
-allowlist also rejects unknown future fields until they receive explicit review.
+before any provenance reaches an editor. A pinned reviewed-path allowlist rejects
+unknown future fields until they receive explicit review.
 
 Interface monitoring follows a stricter topology boundary. Only synchronization
 state, bounded counters, generation, address-family totals, and a validated
@@ -368,7 +365,7 @@ request body, credentials ani secrets a po restartu core se ztratí. Endpoint
 vyžaduje stejné gateway ověření jako ostatní management monitoring.
 
 Tělo každého HTTP requestu je omezené na 128 KiB. Hranice ponechává prostor pro
-největší povolený 65 536znakový write-only matcher v atomické strukturální JSON
+největší povolený 65 536znakový matcher v atomické strukturální JSON
 obálce; první byte za hranicí vede k HTTP 413 ještě před parsováním dokumentu.
 
 Současný Saslik handoff neposkytuje prověřenou identitu uživatele. Core proto

@@ -7623,6 +7623,18 @@ export class SmithproxyApp extends LitElement {
     return changes;
   }
 
+  /** Reveals or masks sensitive values without rerendering and losing unsaved input. */
+  private toggleSensitiveConfiguration(button: HTMLButtonElement): void {
+    const reveal = button.getAttribute('aria-pressed') !== 'true';
+    button.setAttribute('aria-pressed', String(reveal));
+    button.textContent = reveal ? 'Hide sensitive values' : 'Show sensitive values';
+    for (const input of this.renderRoot.querySelectorAll<HTMLInputElement>(
+      'input[data-sensitive-configuration="true"]',
+    )) {
+      input.type = reveal ? 'text' : 'password';
+    }
+  }
+
   private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
     if (!this.snapshot?.captures?.editable) return undefined;
     const changes: DraftChange[] = [];
@@ -14721,11 +14733,12 @@ export class SmithproxyApp extends LitElement {
       <input id="settings-tuning-${id}" type="number" min=${String(minimum)} max=${String(maximum)}
         .value=${String(scalar(tuningPaths.get(id)!, value))} .readOnly=${locked(tuningPaths.get(id)!)} />
     `;
-    const writeOnlyField = (id: string, label: string, _configured: boolean, secret = false) => {
+    const administratorValueField = (id: string, label: string, _configured: boolean, sensitive = false) => {
       const fieldLocked = locked(writeOnlyPaths.get(id)!);
       return html`
       <label for="settings-write-${id}-value">${label}</label>
-        <input id="settings-write-${id}-value" type=${secret ? 'password' : 'text'}
+        <input id="settings-write-${id}-value" type=${sensitive ? 'password' : 'text'}
+          data-sensitive-configuration=${sensitive ? 'true' : 'false'}
           aria-label=${label}
           .value=${scalar(writeOnlyPaths.get(id)!, currentTextValues.get(id) ?? '')}
           placeholder="Empty" autocomplete="off" .readOnly=${fieldLocked} />
@@ -14737,6 +14750,13 @@ export class SmithproxyApp extends LitElement {
     const interfaceRoleRows = this.interfaceRoleRows();
     const interfaceRoleStructural = this.collectionTransactionsAvailable('settings.interfaces');
     return html`
+      <div class="scope-note section">
+        <span>All running configuration values are available to the authenticated administrator.</span>
+        <button class="secondary" type="button" aria-pressed="false"
+          @click=${(event: Event) => this.toggleSensitiveConfiguration(event.currentTarget as HTMLButtonElement)}>
+          Show sensitive values
+        </button>
+      </div>
       ${missingGroups.length > 0 ? html`<div class="privacy-note section">
         Defaults are shown for absent settings groups. Saving any of their fields creates the group
         atomically with the change: ${missingGroups.join(', ')}.
@@ -14868,12 +14888,12 @@ export class SmithproxyApp extends LitElement {
           ?disabled=${locked('settings.syslog_family')}>
           <option value="4">IPv4</option><option value="6">IPv6</option>
         </select>
-        ${writeOnlyField('payload-directory', 'Payload directory', settings.logging.payloadDirectoryConfigured)}
-        ${writeOnlyField('log-file', 'Log file', settings.logging.fileConfigured)}
-        ${writeOnlyField('tls-key-log-file', 'TLS key log file', settings.logging.sslKeyFileConfigured)}
-        ${writeOnlyField('syslog-server', 'Syslog server', settings.logging.syslogServerConfigured)}
-        ${writeOnlyField('payload-prefix', 'Payload filename prefix', settings.auxiliary.payloadFilePrefixConfigured)}
-        ${writeOnlyField('payload-suffix', 'Payload filename suffix', settings.auxiliary.payloadFileSuffixConfigured)}
+        ${administratorValueField('payload-directory', 'Payload directory', settings.logging.payloadDirectoryConfigured)}
+        ${administratorValueField('log-file', 'Log file', settings.logging.fileConfigured)}
+        ${administratorValueField('tls-key-log-file', 'TLS key log file', settings.logging.sslKeyFileConfigured)}
+        ${administratorValueField('syslog-server', 'Syslog server', settings.logging.syslogServerConfigured)}
+        ${administratorValueField('payload-prefix', 'Payload filename prefix', settings.auxiliary.payloadFilePrefixConfigured)}
+        ${administratorValueField('payload-suffix', 'Payload filename suffix', settings.auxiliary.payloadFileSuffixConfigured)}
           </div>
         </fieldset>
         <fieldset class="editor-group" data-settings-group="administration">
@@ -14881,8 +14901,8 @@ export class SmithproxyApp extends LitElement {
           <p>Configures command-line access and the local administrator identity.</p>
           <div class="form-grid">
         ${numericField('aux-cli-port', 'CLI port', settings.auxiliary.cliPort, 1024, 65535)}
-        ${writeOnlyField('cli-password', 'CLI password', settings.auxiliary.cliPasswordConfigured, true)}
-        ${writeOnlyField('admin-group', 'Administration group', settings.auxiliary.adminGroupConfigured)}
+        ${administratorValueField('cli-password', 'CLI password', settings.auxiliary.cliPasswordConfigured, true)}
+        ${administratorValueField('admin-group', 'Administration group', settings.auxiliary.adminGroupConfigured)}
           </div>
         </fieldset>
         <fieldset class="editor-group" data-settings-group="resolution">
@@ -14906,23 +14926,23 @@ export class SmithproxyApp extends LitElement {
           <legend>Certificate resources</legend>
           <p>Locates certificate stores, trust bundles, and certificate-transparency data.</p>
           <div class="form-grid">
-        ${writeOnlyField('certificates-path', 'Certificates path', settings.auxiliary.certificatesPathConfigured)}
-        ${writeOnlyField('certificate-password', 'Certificate password', settings.auxiliary.certificatePasswordConfigured, true)}
-        ${writeOnlyField('certificate-transparency-log', 'Certificate transparency log file', settings.auxiliary.certificateTransparencyLogConfigured)}
-        ${writeOnlyField(
+        ${administratorValueField('certificates-path', 'Certificates path', settings.auxiliary.certificatesPathConfigured)}
+        ${administratorValueField('certificate-password', 'Certificate password', settings.auxiliary.certificatePasswordConfigured, true)}
+        ${administratorValueField('certificate-transparency-log', 'Certificate transparency log file', settings.auxiliary.certificateTransparencyLogConfigured)}
+        ${administratorValueField(
           'custom-certificate-fallback-directory', 'Custom certificate fallback directory',
           settings.auxiliary.customCertificateFallbackDirectoryConfigured,
         )}
-        ${writeOnlyField('ca-bundle-path', 'CA bundle path', settings.auxiliary.caBundlePathConfigured)}
-        ${writeOnlyField('ca-bundle-file', 'CA bundle file', settings.auxiliary.caBundleFileConfigured)}
+        ${administratorValueField('ca-bundle-path', 'CA bundle path', settings.auxiliary.caBundlePathConfigured)}
+        ${administratorValueField('ca-bundle-file', 'CA bundle file', settings.auxiliary.caBundleFileConfigured)}
           </div>
         </fieldset>
         <fieldset class="editor-group" data-settings-group="assets">
           <legend>Supporting resources</legend>
           <p>Configures optional message templates and external reputation data.</p>
           <div class="form-grid">
-        ${writeOnlyField('messages-directory', 'Message assets', settings.auxiliary.messagesDirectoryConfigured)}
-        ${writeOnlyField('web-rating-key', 'Web rating key', settings.auxiliary.webRatingKeyConfigured, true)}
+        ${administratorValueField('messages-directory', 'Message assets', settings.auxiliary.messagesDirectoryConfigured)}
+        ${administratorValueField('web-rating-key', 'Web rating key', settings.auxiliary.webRatingKeyConfigured, true)}
           </div>
         </fieldset>
         <fieldset class="editor-group" data-settings-group="tuning">
@@ -14958,8 +14978,8 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('api-loopback', 'API loopback only', settings.httpApi.loopbackOnly)}
         ${booleanField('api-pam', 'API PAM login', settings.httpApi.pamLogin)}
         ${booleanField('api-header', 'API header access', settings.httpApi.allowApiHeader)}
-        ${writeOnlyField('api-bind-address', 'API bind address', settings.httpApi.bindAddressConfigured)}
-        ${writeOnlyField('api-bind-interface', 'API bind interface', settings.httpApi.bindInterfaceConfigured)}
+        ${administratorValueField('api-bind-address', 'API bind address', settings.httpApi.bindAddressConfigured)}
+        ${administratorValueField('api-bind-interface', 'API bind interface', settings.httpApi.bindInterfaceConfigured)}
         <label for="settings-api-keys-value">HTTP API keys</label>
           <input id="settings-api-keys-value" type="text" autocomplete="off"
             aria-label="HTTP API keys" placeholder='["api-key", "overlap-key"]'
@@ -14998,12 +15018,12 @@ export class SmithproxyApp extends LitElement {
         ${numericField('webhook-neighbor-tag-refresh-age', 'Neighbor tag refresh age (seconds)', settings.webhook.neighborTagRefreshAge, 0, 2147483647)}
         ${booleanField('webhook-task-debug', 'Webhook task diagnostics', settings.webhook.taskDebug)}
         ${booleanField('webhook-task-debug-dump', 'Webhook task dump diagnostics', settings.webhook.taskDebugDump)}
-        ${writeOnlyField('webhook-url', 'Webhook URL', settings.webhook.urlConfigured)}
-        ${writeOnlyField('webhook-sift-url', 'Sift URL', settings.webhook.siftUrlConfigured)}
-        ${writeOnlyField('webhook-sift-tenant', 'Sift tenant ID', settings.webhook.siftTenantConfigured)}
-        ${writeOnlyField('webhook-sift-instance', 'Sift instance ID', settings.webhook.siftInstanceConfigured)}
-        ${writeOnlyField('webhook-host-id', 'Webhook host ID', settings.webhook.hostIdConfigured)}
-        ${writeOnlyField('webhook-bind-interface', 'Webhook bind interface', settings.webhook.bindInterfaceConfigured)}
+        ${administratorValueField('webhook-url', 'Webhook URL', settings.webhook.urlConfigured)}
+        ${administratorValueField('webhook-sift-url', 'Sift URL', settings.webhook.siftUrlConfigured)}
+        ${administratorValueField('webhook-sift-tenant', 'Sift tenant ID', settings.webhook.siftTenantConfigured)}
+        ${administratorValueField('webhook-sift-instance', 'Sift instance ID', settings.webhook.siftInstanceConfigured)}
+        ${administratorValueField('webhook-host-id', 'Webhook host ID', settings.webhook.hostIdConfigured)}
+        ${administratorValueField('webhook-bind-interface', 'Webhook bind interface', settings.webhook.bindInterfaceConfigured)}
           </div>
         </fieldset>
         ${this.snapshot?.debug ? html`

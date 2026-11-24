@@ -24,7 +24,8 @@ Konkrétní položky se mohou během coverage mapování změnit.
 Globální hledání pokrývá všechny čitelné konfigurační entity včetně policy,
 objektů, profilů, content rules, certifikačních autorit, signatur, System a
 Captures. Používá pending hodnoty ze sdíleného draftu a výsledek otevře přímo
-ve správné kartě řetězce. Write-only hodnoty se neindexují ani nezobrazují.
+ve správné kartě řetězce. Citlivé hodnoty se neindexují, ale autentizovaný
+administrátor je může zobrazit v příslušném editoru.
 
 Provozní položky ve stavové liště používají stejné severity barvy jako monitoring
 a slouží jako zkratky do detailu. Na úzkém viewportu zůstávají kritické stavy GUI
@@ -62,7 +63,7 @@ breadcrumbů, aby se aktivní editor nezmenšoval.
 - interní scroll vzniká až při skutečně delším obsahu;
 - focus mode může editor roztáhnout přes celou pracovní plochu;
 - znovu otevřený editor načte běžné pending hodnoty ze sdíleného draftu;
-- write-only hodnoty zůstávají redigované a editor je nikdy nerehydratuje;
+- kompletní pending hodnoty se znovu otevřou ze sdíleného draftu bez re-entry;
 - každý známý řádek review otevře přímo odpovídající editor nebo vnořený editor;
 - referenční pole průběžně rozlišují známé otevíratelné objekty od literálů nebo
   nerozpoznaných názvů; upozornění neblokuje legitimní Smithproxy výraz;

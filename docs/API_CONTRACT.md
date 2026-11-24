@@ -43,7 +43,7 @@ slower monitoring, configuration, or draft requests. Every such request is
 bound to the browser's current access epoch; a response from an earlier epoch is
 discarded, and pending fetches are actively aborted. Revoking configuration
 access clears the live snapshot, shared draft metadata, validation and commit
-state, dirty editor chain, and any entered write-only values. A narrower draft
+state, dirty editor chain, and any entered sensitive values. A narrower draft
 capability loss clears the same mutation state without discarding the still
 authorized live configuration snapshot.
 
@@ -117,21 +117,22 @@ under a global derivation rate limit; logout revokes the session immediately.
 The snapshot endpoint requires either this session or the
 trusted gateway handoff described in `SECURITY.md`; missing or invalid
 credentials return HTTP 401. The response contains a bounded and validated
-runtime view of policies and address, port, and protocol objects. It does not
-contain Smithproxy API credentials, gateway secrets, or filesystem data.
+runtime view of policies and address, port, and protocol objects. It never
+contains the GUI core's own Smithproxy API credential or browser-gateway secret.
 
 The snapshot also includes typed, bounded views of detection, content, TLS,
-SSH, DNS, script, legacy authentication, and routing profiles. Filesystem paths,
+SSH, DNS, script, legacy authentication, and routing profiles. The authenticated
+administrator receives complete configurable values, including filesystem paths,
 SNI bypass entries, content-rule expressions, session filters, and identity
-mappings are reduced to explicit configured flags or counts before crossing the
-browser boundary. Stable IDs and derived reverse references support nested drawers.
+mappings. Stable IDs and derived reverse references support nested drawers.
 
 The system-settings posture covers listener admission and ports, fail-open
 behavior, worker pools, certificate-status cache TTLs, TLS autodetection, kernel
 TLS, payload retention, logging, syslog posture, HTTP API access, and webhooks.
-API keys, webhook URLs, filesystem paths, syslog targets,
-certificate and CLI passwords, web-rating keys, and identity values are never
-serialized; only bounded counts and configured flags are exposed.
+API keys, webhook URLs, filesystem paths, syslog targets, certificate and CLI
+passwords, web-rating keys, and identity values are serialized only across this
+authenticated management boundary so the administrator can inspect and edit the
+complete configuration. They remain excluded from logs, audit and diagnostics.
 
 Debug posture includes the five global diagnostic logging flags and a bounded,
 typed list of current per-module overrides. Boolean, 32-bit integer, and bounded
@@ -139,15 +140,13 @@ string values are editable; module identifiers must be safe configuration-path
 segments.
 
 Capture posture includes local format and quota, remote tunnel mode and TTL,
-and checksum behavior. Capture directories, filename components, tunnel
-destinations, and bind interfaces are visible in the administrator snapshot and
-edited through replace/clear controls whose pending values stay redacted.
+checksum behavior, directories, filename components, tunnel destinations, and
+bind interfaces. Current and pending values remain visible in the editor.
 
 Trust and signature posture covers configured TLS certificate-authority entries,
 STARTTLS signatures, detection signatures, and their ordered flow steps.
-Signature names, categories, sides, groups, engines, matcher types, and byte
-windows are typed. Current certificate paths and matcher expressions are visible
-to the administrator; replacement values use explicit redacted draft controls.
+Signature names, categories, sides, groups, engines, matcher types, byte windows,
+certificate paths, and matcher expressions are typed and visible to the administrator.
 
 The snapshot carries `augment_support` and a bounded `value_origins` collection.
 Each origin identifies a stable schema path, persistent and effective typed
@@ -160,9 +159,9 @@ either omits every priority and relies on its explicit array order, or assigns a
 strictly increasing non-negative priority to every layer. Layer identifiers use
 bounded schema-safe ASCII identifiers; mixed, duplicate, or descending priority
 metadata fails closed.
-Provenance paths use a pinned allowlist of non-secret fields already present in
-the browser snapshot. Unknown fields and every credential or write-only replacement
-field reject the entire snapshot; readable operational paths and matchers remain
+Provenance paths use a pinned allowlist of reviewed fields already present in
+the browser snapshot. Unknown fields reject the entire snapshot; operational
+paths, credentials, and matchers remain
 outside provenance unless their schema path is explicitly reviewed.
 The GUI renders effective values but preserves the persistent value and layer
 ownership in the editor. Until Smithproxy exposes this data through its HTTP API,
@@ -214,9 +213,9 @@ the current configuration snapshot carries opaque stable entity IDs bound to
 the draft base revision. IDs synthesized by the legacy multi-section reader are
 never accepted for structural operations. A capability loss blocks new
 structural writes but never blocks removing or discarding an already retained
-operation. Draft snapshots
-return structural operations with the same write-only redaction rules as scalar
-changes, and preflight counts each structural operation exactly once.
+operation. Draft snapshots return complete structural operations to the
+authenticated administrator, and preflight counts each structural operation
+exactly once.
 Capability discovery exposes this complete conjunction as
 `features.structural_drafts`; the browser never infers structural readiness from
 `config_write` alone.
@@ -244,11 +243,9 @@ Requests are limited to 64 KiB, the accumulated draft payload is limited to
 1 MiB, paths and values are bounded, and an expected draft version is mandatory;
 stale writers receive HTTP 409. The browser also rejects draft responses above
 8 MiB before JSON parsing, leaving room for worst-case JSON escaping of the
-bounded raw draft. Sensitive change paths and structural fields must contain a
-bounded `[redacted:clear]`, `[redacted:replace]`, or
-`[redacted:replace:N]` sentinel in every draft response. The browser rejects the
-entire response if raw sensitive material or an invalid sentinel is present.
-For redacted authentication identity replacements, the same response carries a
+bounded raw draft. Sensitive change paths and structural fields retain their
+bounded typed values so the administrator can reopen and continue a shared
+draft without re-entry. For authentication identity replacements, the response carries a
 bounded `private_profile_references` array containing only opaque live profile
 IDs and effective aggregate source counts. It never carries identity names or
 binding values. `private_profile_references_complete` is true only when the
@@ -335,7 +332,7 @@ of its otherwise valid members.
 
 `GET /api/v1/config/draft/preflight` returns a value-free impact summary for the
 current workspace draft. It includes the matching draft version, total and
-write-only change counts, and bounded per-section counts. It reports the local
+sensitive change counts, and bounded per-section counts. It reports the local
 schema result independently from upstream Smithproxy validation and commit
 availability. `validation_available` becomes true only when the reviewed
 transaction capability and canonical base revision are both present;
@@ -358,11 +355,9 @@ validation inside the upstream atomic transaction. Its response contains only
 the previous and committed canonical revisions, committed operation count,
 warning count, restart enum, and finalized draft version.
 
-Write-only paths accept explicit `unchanged`, `replace`, or `clear` intent in
-the frontend. The core retains a replacement only inside the server draft.
-Every draft response substitutes an intent-only redaction marker that preserves
-clear or replace intent and a bounded collection count; the review UI never
-renders the submitted path, credential, endpoint, or key value.
+Sensitive paths use the same typed draft model as other configuration. The
+authenticated editor can reopen them, while preflight, audit, diagnostics,
+errors and operational events remain value-free.
 
 The policy editor atomically persists the name, enabled state, protocol, source
 and destination address and port collections, the pinned Smithproxy feature
@@ -378,36 +373,33 @@ batches cover their names and all currently exposed typed mode/boolean fields.
 TLS profile batches cover all fields saved by the current Smithproxy runtime:
 directional PFS and session reuse, trust validation, OCSP, certificate lookup,
 failure replacement and override policy, SNI/DNS matching, bounded warning ports,
-timeouts, client certificates, alerts, and diagnostics. Redacted SNI bypass
-collections support write-only replacement and clearing. Content profile
-batches cover capture, webhook, JA4 controls, write-only session-filter
-replacement, and nested content-rule fill-length/interval actions plus
-write-only match/replacement rotation. SSH profile batches cover the host-key
-policy and channel, forwarding, X11, agent actions, and write-only private
-host-key path rotation.
-Script profile batches cover the runtime and write-only module-path rotation.
-Certificate-authority batches cover names and write-only path rotation.
-Deprecated authentication profile batches cover authentication
-and identity resolution while redacted identity mappings remain unchanged.
+timeouts, client certificates, alerts, diagnostics, and complete SNI bypass
+collections. Content profile batches cover capture, webhook, JA4 controls,
+session filters, and nested content-rule expressions and actions. SSH profile
+batches cover host-key paths, policy, channels, forwarding, X11, and agent actions.
+Script profile batches cover runtime and module path. Certificate-authority
+batches cover names and paths.
+Deprecated authentication profile batches cover authentication, identity
+resolution, and complete identity mappings.
 System-setting batches cover listener admission, all listener ports, fail-open
 behavior, worker pools, TLS detection, SOCKS IP-version behavior, thread-pool
 task logging, HTTP API token lifetime/refresh, listener port, access
-posture, and webhook switches. HTTP API bind address/interface values remain
-write-only. Webhook and Sift endpoints, identities, and bound interfaces are
-also write-only; payload limits, control-plane intervals, and task diagnostics
-are typed. Capture batches cover enablement, formats, quota, tunnel TTL, and
+posture, and webhook switches. HTTP API bind address/interface values, webhook
+and Sift endpoints, identities, and bound interfaces are visible and typed.
+Payload limits, control-plane intervals, and task diagnostics are typed.
+Capture batches cover enablement, formats, quota, tunnel TTL, and
 checksum behavior. Nameservers, webhook URLs, capture paths, remote destinations,
 and bound interfaces are visible and use explicit replacement or clearing.
-API credentials remain secret. Allowed addresses and other non-secret lists use bounded typed
-editors. The active settings set emitted by the current Smithproxy saver is
-covered in full, including performance tuning, certificate transparency and CA
-bundle files, and the write-only administration group. Deprecated ignored
+API credentials and allowed addresses use bounded typed editors. The active
+settings set emitted by the current Smithproxy saver is covered in full,
+including performance tuning, certificate transparency, CA bundle files, and
+the administration group. Deprecated ignored
 tuning keys are deliberately omitted from the editor.
 The current detection, capture, SSH, routing, and script schemas are also
 covered in full. Their coverage manifest entries are pinned to exact active
 field inventories so a schema drift cannot silently retain a `full` claim.
-Signature reads cover severity as well as category, side, engine selection, ordered
-matcher flows, and current expression bodies. Pending replacement bodies remain redacted.
+Signature reads cover severity as well as category, side, engine selection,
+ordered matcher flows, and current and pending expression bodies.
 The frontend keeps the server draft version, reports conflicts instead of
 silently overwriting, and refreshes the shared draft after a failed write.
 Other live fields remain read-only until they have an explicit typed path mapping.
