@@ -904,6 +904,12 @@ export class SmithproxyApp extends LitElement {
     .dashboard > .section-head { margin-bottom: 0; }
     .dashboard-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .dashboard-shortcuts button { width: auto; min-height: 38px; }
+    .dashboard-shortcut-count {
+      display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem;
+      margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+      background: var(--app-raised); color: var(--app-muted); font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
     .operational-health > summary { cursor: pointer; list-style: none; }
     .operational-health > summary::-webkit-details-marker { display: none; }
     .operational-health > summary::before { content: '›'; color: var(--app-muted); font-size: 20px; line-height: 1; }
@@ -12257,6 +12263,15 @@ export class SmithproxyApp extends LitElement {
     const draftState = this.draftChangeCount > 0
       ? `${this.draftChangeCount.toLocaleString()} draft change${this.draftChangeCount === 1 ? '' : 's'}`
       : 'No draft changes';
+    const objectCount = snapshot.addresses.length + snapshot.ports.length + snapshot.protocols.length;
+    const authorityCount = snapshot.securityAssets?.certificateAuthorityCount ?? 0;
+    const signatureCount = snapshot.securityAssets
+      ? snapshot.securityAssets.starttlsSignatureCount + snapshot.securityAssets.detectionSignatureCount
+      : 0;
+    const shortcut = (label: string, count: number) => html`
+      <span>${label}</span><span class="dashboard-shortcut-count">
+        ${count.toLocaleString()}
+      </span>`;
     return html`
       <section class="monitor-panel" aria-label="Configuration workspace">
         <div class="runtime-heading">
@@ -12267,16 +12282,15 @@ export class SmithproxyApp extends LitElement {
         </div>
         <div class="dashboard-shortcuts" role="group" aria-label="Configuration shortcuts">
           <button class="secondary" type="button" title="Ordered traffic decisions"
-            @click=${() => open('Policy')}>Policies</button>
-          <button class="secondary" type="button" aria-label="Open objects"
-            title="Addresses, ports, and protocols"
-            @click=${() => open('Objects')}>Objects</button>
+            @click=${() => open('Policy')}>${shortcut('Policies', snapshot.policies.length)}</button>
+          <button class="secondary" type="button" title="Addresses, ports, and protocols"
+            @click=${() => open('Objects')}>${shortcut('Objects', objectCount)}</button>
           <button class="secondary" type="button" title="Inspection, content, and routing behavior"
-            @click=${() => open('Objects', 'profile')}>Profiles</button>
+            @click=${() => open('Objects', 'profile')}>${shortcut('Profiles', snapshot.profiles.length)}</button>
           <button class="secondary" type="button" title="Certificate authorities and trust roots"
-            @click=${() => open('Objects', 'security', 'trust')}>Trust</button>
+            @click=${() => open('Objects', 'security', 'trust')}>${shortcut('Trust', authorityCount)}</button>
           <button class="secondary" type="button" title="STARTTLS and traffic detection rules"
-            @click=${() => open('Objects', 'security', 'signatures')}>Signatures</button>
+            @click=${() => open('Objects', 'security', 'signatures')}>${shortcut('Signatures', signatureCount)}</button>
         </div>
       </section>`;
   }

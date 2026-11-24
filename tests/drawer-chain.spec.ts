@@ -6048,25 +6048,30 @@ test('offers compact configuration shortcuts on the operational dashboard', asyn
   await expect(inventory).toContainText('Running config saved · No draft changes');
   const shortcuts = inventory.getByRole('group', {name: 'Configuration shortcuts'});
   await expect(shortcuts.getByRole('button')).toHaveCount(5);
+  await expect(shortcuts.getByRole('button', {name: /Policies/u})).toContainText('1');
+  await expect(shortcuts.getByRole('button', {name: /Objects/u})).toContainText('4');
+  await expect(shortcuts.getByRole('button', {name: /Profiles/u})).toContainText('8');
+  await expect(shortcuts.getByRole('button', {name: /Trust/u})).toContainText('1');
+  await expect(shortcuts.getByRole('button', {name: /Signatures/u})).toContainText('2');
   await expect(inventory.getByText('Total', {exact: true})).toHaveCount(0);
   await expectNoWcagViolations(page);
 
-  await shortcuts.getByRole('button', {name: 'Open objects'}).click();
+  await shortcuts.getByRole('button', {name: /Objects/u}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'All objects'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Address objects'})).toContainText('office');
 
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
-  await shortcuts.getByRole('button', {name: 'Profiles', exact: true}).click();
+  await shortcuts.getByRole('button', {name: /Profiles/u}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'Profiles and routing'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Profiles and routing'})).toContainText('inspect');
   await expect(page.getByRole('group', {name: 'Address objects'})).toHaveCount(0);
 
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
-  await shortcuts.getByRole('button', {name: 'Trust', exact: true}).click();
+  await shortcuts.getByRole('button', {name: /Trust/u}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'Trust'})).toBeVisible();
   await expect(page.getByRole('group', {name: 'Trust', exact: true})).toBeVisible();
   await page.getByRole('button', {name: 'Dashboard', exact: true}).click();
-  await shortcuts.getByRole('button', {name: 'Signatures', exact: true}).click();
+  await shortcuts.getByRole('button', {name: /Signatures/u}).click();
   await expect(page.getByRole('heading', {level: 1, name: 'All signatures'})).toBeVisible();
 });
 
