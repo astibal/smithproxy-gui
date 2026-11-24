@@ -487,6 +487,22 @@ Result validate_networking(const std::string_view field, const DraftScalar& valu
         std::string_view{"tcp_low_latency"},
     };
     if (one_of(field, booleans)) return valid(boolean(value));
+    if (field == "table") {
+        const auto* item = text(value);
+        return valid(item != nullptr && !item->empty() && item->size() <= 40U &&
+            std::all_of(item->begin(), item->end(), [](const unsigned char character) {
+                return std::isalnum(character) || character == '_';
+            }));
+    }
+    if (field == "control_socket") {
+        const auto* item = text(value);
+        const bool absent_override = item != nullptr && item->empty();
+        const bool absolute_override = item != nullptr && !item->empty() && item->front() == '/' &&
+            printable(*item, 4096U);
+        return valid(absent_override || absolute_override);
+    }
+    if (field == "tenant_index") return valid(bounded_integer(value, 0, 65534));
+    if (field == "tenant_ranges") return valid(string_list(value, 128U));
     if (field == "placement") return valid(enumerated(value, {"before", "after"}));
     if (field == "interfaces") {
         if (!string_list(value, 15U, false)) return Result::InvalidValue;

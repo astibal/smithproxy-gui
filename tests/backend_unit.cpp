@@ -707,6 +707,23 @@ int main() {
            DraftSchemaResult::Valid);
     assert(validate_draft_schema({"settings.http_api.port", std::int64_t{65535}}) ==
            DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"networking.table", std::string("edge_proxy")}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"networking.table", std::string("edge-proxy")}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
+        "networking.control_socket", std::string("/run/smithproxy-networkd/control.sock"),
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "networking.control_socket", std::string("relative.sock"),
+    }) == DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({"networking.tenant_index", std::int64_t{65534}}) ==
+           DraftSchemaResult::Valid);
+    assert(validate_draft_schema({"networking.tenant_index", std::int64_t{65535}}) ==
+           DraftSchemaResult::InvalidValue);
+    assert(validate_draft_schema({
+        "networking.tenant_ranges", std::vector<std::string>{"10.0.0.0/8", "2001:db8::/32"},
+    }) == DraftSchemaResult::Valid);
     assert(validate_draft_schema({
         "settings.write_pcap_single_quota", std::int64_t{9007199254740991LL},
     }) == DraftSchemaResult::Valid);
@@ -1518,6 +1535,10 @@ int main() {
         {.id = "network-bypass-0", .source = "10.0.0.0/8", .destination = "192.0.2.1", .port = 443U},
     };
     v2_draft.changes = {
+        {"networking.table", std::string("edge_proxy")},
+        {"networking.control_socket", std::string("/run/smithproxy-networkd/edge/control.sock")},
+        {"networking.tenant_index", std::int64_t{7}},
+        {"networking.tenant_ranges", std::vector<std::string>{"10.0.0.0/8", "2001:db8::/32"}},
         {"networking.bypass.[0].port", std::int64_t{8443}},
     };
     v2_draft.structural_operations = {
@@ -1538,8 +1559,16 @@ int main() {
         build_transaction_v2_operations(v2_draft, transaction_snapshot);
     assert(network_bypass_envelope.body);
     const auto network_bypass_operations = nlohmann::json::parse(*network_bypass_envelope.body);
-    assert(network_bypass_operations[0]["path"] == "networking.bypass.[0].port");
-    assert(network_bypass_operations[1] == nlohmann::json({
+    assert(network_bypass_operations[0]["path"] == "networking.table");
+    assert(network_bypass_operations[0]["value"]["data"] == "edge_proxy");
+    assert(network_bypass_operations[1]["path"] == "networking.control_socket");
+    assert(network_bypass_operations[2]["path"] == "networking.tenant_index");
+    assert(network_bypass_operations[2]["value"]["data"] == 7);
+    assert(network_bypass_operations[3]["path"] == "networking.tenant_ranges");
+    assert(network_bypass_operations[3]["value"]["data"] ==
+           nlohmann::json::array({"10.0.0.0/8", "2001:db8::/32"}));
+    assert(network_bypass_operations[4]["path"] == "networking.bypass.[0].port");
+    assert(network_bypass_operations[5] == nlohmann::json({
         {"op", "add"}, {"path", "networking.bypass"}, {"name", ""},
     }));
     assert(network_bypass_operations.back() == nlohmann::json({

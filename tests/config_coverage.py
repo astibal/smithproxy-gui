@@ -37,6 +37,15 @@ SENSITIVITIES = {
 }
 
 FULL_TYPED_FIELDS = {
+    "networking": {
+        "table", "control_socket", "placement", "interfaces", "tenant_index", "tenant_ranges",
+        "tcp_all", "udp_all", "ipv6_udp", "tcp_ports", "tls_ports", "udp_ports",
+        "dtls_ports", "drop_udp_ports", "redirect_tcp_port", "redirect_tls_port",
+        "redirect_dns_port", "redirect_exempt_uids", "redirect_exempt_lan", "bypass",
+        "manage_routing", "manage_sysctls", "routing_table", "routing_priority",
+        "forwarding", "nonlocal_bind", "tcp_low_latency", "tcp_syn_retries",
+        "mark", "mask", "blackhole_max_ttl_ms",
+    },
     "settings": {
         "accept_tproxy", "accept_redirect", "accept_socks", "accept_http_connect",
         "accept_api", "extended_local_destination_protection", "policy_fail_open",
@@ -123,28 +132,9 @@ FULL_TYPED_FIELDS = {
     },
 }
 
-FULL_READ_FIELDS = {
-    "networking": {
-        "table", "control_socket", "placement", "interfaces", "tenant_index", "tenant_ranges",
-        "tcp_all", "udp_all", "ipv6_udp", "tcp_ports", "tls_ports", "udp_ports",
-        "dtls_ports", "drop_udp_ports", "redirect_tcp_port", "redirect_tls_port",
-        "redirect_dns_port", "redirect_exempt_uids", "redirect_exempt_lan", "bypass",
-        "manage_routing", "manage_sysctls", "routing_table", "routing_priority",
-        "forwarding", "nonlocal_bind", "tcp_low_latency", "tcp_syn_retries",
-        "mark", "mask", "blackhole_max_ttl_ms",
-    },
-}
+FULL_READ_FIELDS = {}
 
-PARTIAL_EDIT_FIELDS = {
-    "networking": {
-        "placement", "interfaces", "tcp_all", "udp_all", "ipv6_udp", "tcp_ports",
-        "tls_ports", "udp_ports", "dtls_ports", "drop_udp_ports", "redirect_tcp_port",
-        "redirect_tls_port", "redirect_dns_port", "redirect_exempt_uids",
-        "redirect_exempt_lan", "bypass", "manage_routing", "manage_sysctls",
-        "routing_table", "routing_priority", "forwarding", "nonlocal_bind",
-        "tcp_low_latency", "tcp_syn_retries", "mark", "mask", "blackhole_max_ttl_ms",
-    },
-}
+PARTIAL_EDIT_FIELDS = {}
 
 PARTIAL_FIELDS = {}
 

@@ -62,7 +62,7 @@ import {
 } from './api/system-client';
 import {readRuntimeConfig, type RuntimeConfig} from './config/runtime-config';
 import {persistentConfigurationValues} from './config/persistent-values';
-import {describeCidr, normalizeCidr} from './config/cidr';
+import {describeCidr, normalizeCidr, parseCidr} from './config/cidr';
 import {isConfigGroupName} from './config/config-name';
 import {describeFqdn, parseFqdn} from './config/fqdn';
 import {referenceNameSummary} from './config/reference-summary';
@@ -128,7 +128,7 @@ type SettingsGroup = 'interfaces' | 'traffic' | 'workers' | 'listeners' | 'loggi
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type SettingsResolutionList = 'nameservers' | 'udp-quick-ports';
 type NetworkingList = 'interfaces' | 'tcp-ports' | 'tls-ports' | 'udp-ports' |
-  'dtls-ports' | 'drop-udp-ports' | 'redirect-exempt-uids';
+  'dtls-ports' | 'drop-udp-ports' | 'redirect-exempt-uids' | 'tenant-ranges';
 type StatusTone = 'success' | 'warning' | 'danger';
 type EditableGuiConfiguration = {
   backend: NonNullable<GuiConfiguration['backend']>;
@@ -4852,6 +4852,9 @@ export class SmithproxyApp extends LitElement {
       const networking = this.snapshot.networking;
       const values: ReadonlyArray<readonly [NetworkingList, ReadonlyArray<string | number>]> = [
         ['interfaces', this.persistentListValue('networking.interfaces', networking.interfaces, 'string')],
+        ['tenant-ranges', this.persistentListValue(
+          'networking.tenant_ranges', networking.tenantRanges, 'string',
+        )],
         ['tcp-ports', this.persistentListValue('networking.tcp_ports', networking.tcpPorts, 'number')],
         ['tls-ports', this.persistentListValue('networking.tls_ports', networking.tlsPorts, 'number')],
         ['udp-ports', this.persistentListValue('networking.udp_ports', networking.udpPorts, 'number')],
@@ -7595,7 +7598,11 @@ export class SmithproxyApp extends LitElement {
       changes.push({path: `networking.${path}`, value: input.value === 'true'});
     }
     const placement = select('placement');
+    const table = text('table');
+    const controlSocket = text('control-socket');
+    const tenantIndex = integer('tenant-index', 0, 65534);
     const interfaces = strings('interfaces');
+    const tenantRanges = strings('tenant-ranges');
     const tcpPorts = ports('tcp-ports');
     const tlsPorts = ports('tls-ports');
     const udpPorts = ports('udp-ports');
@@ -7607,10 +7614,26 @@ export class SmithproxyApp extends LitElement {
       /^[A-Za-z0-9:._-]{1,15}$/u.test(value));
     const validInterfaceSelection = validInterfaces &&
       (topologySelectors.length === 0 || (interfaces?.length === 1 && topologySelectors.length === 1));
-    if (!placement || !['before', 'after'].includes(placement.value) || !interfaces ||
+    const validTable = table !== null && /^[A-Za-z0-9_]{1,40}$/u.test(table.value);
+    const validControlSocket = controlSocket !== null &&
+      (controlSocket.value.length === 0 ||
+       (controlSocket.value.startsWith('/') && controlSocket.value.length <= 4096 &&
+        !/[\u0000-\u001f\u007f]/u.test(controlSocket.value)));
+    const currentControlSocket = this.persistentValue(
+      'networking.control_socket', networking.controlSocket,
+    );
+    const removedControlSocketOverride = currentControlSocket.length > 0 && controlSocket?.value.length === 0;
+    const validTenantRanges = tenantRanges !== undefined &&
+      tenantRanges.every(value => parseCidr(value) !== undefined) &&
+      (tenantIndex === 0 || tenantRanges.length > 0);
+    if (!placement || !['before', 'after'].includes(placement.value) || !validTable ||
+        !validControlSocket || removedControlSocketOverride || tenantIndex === undefined ||
+        !validTenantRanges || !interfaces ||
         !validInterfaceSelection || !tcpPorts || !tlsPorts || !udpPorts || !dtlsPorts || !dropUdpPorts ||
         !exemptUids || !exemptUids.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 2147483647)) {
-      this.draftError = 'Network interception lists, interface selectors, or ports are invalid.';
+      this.draftError = removedControlSocketOverride
+        ? 'Removing an explicit control socket requires Smithproxy unset support; enter an absolute replacement path.'
+        : 'Network identity, tenant ranges, interface selectors, or interception ports are invalid.';
       return undefined;
     }
     const numericFields = [
@@ -7646,8 +7669,12 @@ export class SmithproxyApp extends LitElement {
       return undefined;
     }
     changes.push(
+      {path: 'networking.table', value: table.value},
+      {path: 'networking.control_socket', value: controlSocket.value},
       {path: 'networking.placement', value: placement.value},
       {path: 'networking.interfaces', value: interfaces},
+      {path: 'networking.tenant_index', value: tenantIndex},
+      {path: 'networking.tenant_ranges', value: tenantRanges},
       {path: 'networking.tcp_ports', value: tcpPorts},
       {path: 'networking.tls_ports', value: tlsPorts},
       {path: 'networking.udp_ports', value: udpPorts},
@@ -7849,13 +7876,16 @@ export class SmithproxyApp extends LitElement {
     const values = this.networkingListDrafts.get(list) ?? fallback.map(String);
     if (!this.networkingListDrafts.has(list)) this.networkingListDrafts.set(list, values);
     const interfaces = list === 'interfaces';
-    const singular = interfaces ? 'interface selector' : list === 'redirect-exempt-uids' ? 'user ID' : 'port';
+    const tenantRanges = list === 'tenant-ranges';
+    const singular = interfaces ? 'interface selector' : tenantRanges ? 'tenant range' :
+      list === 'redirect-exempt-uids' ? 'user ID' : 'port';
     return html`<div class="reference-list-editor" role="group" aria-label=${label}>
       <div class="reference-list-values">
         ${values.length === 0 ? html`<span class="reference-list-empty">None configured</span>` : values.map(
           (value, index) => html`<div class="reference-list-row">
             <input id=${`networking-${list}-${index}`} maxlength="128" autocomplete="off"
-              inputmode=${interfaces ? nothing : 'numeric'} aria-label=${`${label} value ${index + 1}`}
+              inputmode=${interfaces || tenantRanges ? nothing : 'numeric'}
+              aria-label=${`${label} value ${index + 1}`}
               .value=${value}
               @input=${(event: Event) => {
                 const input = event.currentTarget;
@@ -14985,15 +15015,22 @@ export class SmithproxyApp extends LitElement {
     };
     return html`<div class="editor-stack">
       <fieldset class="editor-group"><legend>Firewall ownership</legend>
-        <p>Chooses where Networkd hooks sit relative to existing host rules. Service identity is shown
-          for review, but changes only through a separately validated restart operation.</p>
+        <p>Chooses the Networkd service identity and where its hooks sit relative to existing host rules.
+          Identity changes are published atomically but activate only after a controlled restart.</p>
         <div class="form-grid">
-          <label>Table name</label><span><code>${networking.table}</code> <span class="muted">Restart identity</span></span>
-          <label>Control socket</label><span><code>${networking.controlSocket || 'Packaged tenant default'}</code>
-            <span class="muted">Restart identity</span></span>
-          <label>Tenant index</label><span><code>${networking.tenantIndex}</code> <span class="muted">Restart identity</span></span>
-          <label>Tenant ranges</label><span>${networking.tenantRanges.join(', ') || 'None'}
-            <span class="muted">Registry-owned</span></span>
+          <label for="networking-table">Table name</label><input id="networking-table" maxlength="40"
+            .value=${scalar('table', networking.table)} />
+          <label for="networking-control-socket">Control socket override</label>
+          <span><input id="networking-control-socket" maxlength="4096"
+              placeholder="Packaged tenant default"
+              .value=${scalar('control_socket', networking.controlSocket)} />
+            <small class="muted">Use an absolute path. A configured override requires an explicit replacement.</small></span>
+          ${numberField('tenant_index', 'tenant-index', 'Tenant index', networking.tenantIndex, 0, 65534)}
+          <span class="form-label">Tenant ranges</span>
+          <div>${this.renderNetworkingList('tenant-ranges', 'Tenant ranges',
+            list('tenant_ranges', networking.tenantRanges))}
+            <small class="muted">Non-default tenants require at least one IPv4 or IPv6 CIDR.</small>
+          </div>
           <label for="networking-placement">Rule placement</label><select id="networking-placement">
             <option value="before" ?selected=${scalar('placement', networking.placement) === 'before'}>Before existing rules</option>
             <option value="after" ?selected=${scalar('placement', networking.placement) === 'after'}>After existing rules</option>

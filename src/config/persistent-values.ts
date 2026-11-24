@@ -257,7 +257,8 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
   const networking = snapshot.networking;
   if (networking) {
     const fields: ReadonlyArray<readonly [string, ConfigValue]> = [
-      ['table', networking.table], ['placement', networking.placement],
+      ['table', networking.table], ['control_socket', networking.controlSocket],
+      ['placement', networking.placement],
       ['interfaces', networking.interfaces], ['tenant_index', networking.tenantIndex],
       ['tenant_ranges', networking.tenantRanges], ['tcp_all', networking.tcpAll],
       ['udp_all', networking.udpAll], ['ipv6_udp', networking.ipv6Udp],

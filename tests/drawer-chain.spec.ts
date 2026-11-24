@@ -7580,7 +7580,7 @@ test('projects pending listener settings into Network and opens their real edito
   await expect(editor.getByLabel('Require SOCKS authentication')).toHaveValue('true');
 });
 
-test('edits Networkd policy without pretending restart identity is live-editable', async ({page}) => {
+test('edits the complete Networkd policy while identifying restart-scoped fields', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, draftMutationBatches: [],
   };
@@ -7595,11 +7595,14 @@ test('edits Networkd policy without pretending restart identity is live-editable
   await expect(summary.getByRole('row', {name: /Current interface match/u})).not.toContainText('wan0');
   await summary.getByRole('button', {name: 'Edit interception'}).click();
   const editor = page.getByRole('dialog', {name: 'Edit Network interception'});
-  await expect(editor.getByText('Restart identity', {exact: true})).toHaveCount(3);
-  await expect(editor.locator('#networking-table')).toHaveCount(0);
-  await expect(editor.getByText('/run/networkd/control.sock', {exact: true})).toBeVisible();
-  await expect(editor.locator('#networking-tenant-index')).toHaveCount(0);
-  await expect(editor.locator('#networking-tenant-ranges')).toHaveCount(0);
+  await expect(editor.getByText(/activate only after a controlled restart/i)).toBeVisible();
+  await editor.getByLabel('Table name').fill('smithproxy_lab3');
+  await editor.getByLabel('Control socket override').fill('/run/networkd/lab3.sock');
+  await editor.getByLabel('Tenant index').fill('4');
+  const tenantRanges = editor.getByRole('group', {name: 'Tenant ranges'});
+  await tenantRanges.getByRole('textbox').fill('10.4.0.0/16');
+  await tenantRanges.getByRole('button', {name: 'Add tenant range'}).click();
+  await tenantRanges.getByRole('textbox').nth(1).fill('2001:db8:4::/48');
   await editor.getByRole('button', {name: 'Default routes (+)', exact: true}).click();
   const interfaces = editor.getByRole('group', {name: 'Interface selectors'});
   await expect(interfaces.getByRole('textbox')).toHaveValue('+');
@@ -7616,14 +7619,15 @@ test('edits Networkd policy without pretending restart identity is live-editable
 
   await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
   expect(state.draftMutationBatches![0]).toEqual(expect.arrayContaining([
+    {path: 'networking.table', value: 'smithproxy_lab3'},
+    {path: 'networking.control_socket', value: '/run/networkd/lab3.sock'},
     {path: 'networking.placement', value: 'after'},
     {path: 'networking.interfaces', value: ['lan0', 'wan0']},
+    {path: 'networking.tenant_index', value: 4},
+    {path: 'networking.tenant_ranges', value: ['10.4.0.0/16', '2001:db8:4::/48']},
     {path: 'networking.tcp_ports', value: [80, 8080]},
     {path: 'networking.routing_table', value: 1000},
   ]));
-  expect(state.draftMutationBatches![0].some(change => [
-    'networking.table', 'networking.tenant_index', 'networking.tenant_ranges',
-  ].includes(change.path))).toBe(false);
 });
 
 test('materializes absent nested settings groups through editable defaults', async ({page}) => {
