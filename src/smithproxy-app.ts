@@ -2525,7 +2525,12 @@ export class SmithproxyApp extends LitElement {
       smithproxy: current ? (current.smithproxy ? {...current.smithproxy} : undefined) : {
         apiUrl: 'https://127.0.0.1:55555',
         caCert: '/run/smithproxy-gui/api-ca.pem',
-        apiTokenFile: '/run/credentials/smithproxy-gui.api-token',
+        apiTokenFile: '/run/smithproxy/gui-api.key',
+        previousApiTokenFile: '/run/smithproxy/gui-api.previous.key',
+        credentialEnabled: true,
+        bootstrapFreshnessSeconds: 300,
+        rotationSeconds: 86400,
+        overlapSeconds: 3600,
         cliEndpoint: '127.0.0.1:50000',
       },
       gateway: current?.gateway ? {...current.gateway} : undefined,
@@ -12837,6 +12842,13 @@ export class SmithproxyApp extends LitElement {
           update(input.value);
         }
       }}></label>`;
+    const secondsField = (
+      label: string, current: number, update: (next: number) => void,
+    ) => html`<label><span>${label}</span><input type="number" min="1" max="31536000"
+      .value=${String(current)} @input=${(event: Event) => {
+        const input = event.currentTarget;
+        if (input instanceof HTMLInputElement) update(Number(input.value));
+      }}></label>`;
     return html`<article class="domain-card job-card" data-system-section="gui-service">
       <header>
         <div><h3>GUI service</h3><p>Boot settings published with the Smithproxy configuration archive</p></div>
@@ -12896,11 +12908,24 @@ export class SmithproxyApp extends LitElement {
                   this.guiConfigurationDraft = {...draft, smithproxy: input.checked ? {
                     apiUrl: 'https://127.0.0.1:55555',
                     caCert: '/run/smithproxy-gui/api-ca.pem',
-                    apiTokenFile: '/run/credentials/smithproxy-gui.api-token',
+                    apiTokenFile: '/run/smithproxy/gui-api.key',
+                    previousApiTokenFile: '/run/smithproxy/gui-api.previous.key',
+                    credentialEnabled: true,
+                    bootstrapFreshnessSeconds: 300,
+                    rotationSeconds: 86400,
+                    overlapSeconds: 3600,
                     cliEndpoint: '127.0.0.1:50000',
                   } : undefined};
                 }}><span>Enable authenticated Smithproxy management and configuration access</span></label>
               ${draft.smithproxy ? html`
+                <label class="gui-config-toggle"><input type="checkbox"
+                  .checked=${draft.smithproxy.credentialEnabled}
+                  @change=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.guiConfigurationDraft = {
+                      ...draft, smithproxy: {...draft.smithproxy!, credentialEnabled: input.checked},
+                    };
+                  }}><span>Expose the rotating GUI management credential</span></label>
                 ${textField('smithproxy.apiUrl', 'Smithproxy API URL', draft.smithproxy.apiUrl, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiUrl: next}};
                 }, 'https://127.0.0.1:55555')}
@@ -12909,7 +12934,19 @@ export class SmithproxyApp extends LitElement {
                 }, '/run/smithproxy-gui/api-ca.pem')}
                 ${textField('smithproxy.apiTokenFile', 'Boot-time API token file', draft.smithproxy.apiTokenFile, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiTokenFile: next}};
-                }, '/run/credentials/smithproxy-gui.api-token')}
+                }, '/run/smithproxy/gui-api.key')}
+                ${textField('smithproxy.previousApiTokenFile', 'Previous API token file', draft.smithproxy.previousApiTokenFile, next => {
+                  this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, previousApiTokenFile: next}};
+                }, '/run/smithproxy/gui-api.previous.key')}
+                ${secondsField('Launcher seed freshness (seconds)', draft.smithproxy.bootstrapFreshnessSeconds, next => {
+                  this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, bootstrapFreshnessSeconds: next}};
+                })}
+                ${secondsField('Credential rotation interval (seconds)', draft.smithproxy.rotationSeconds, next => {
+                  this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, rotationSeconds: next}};
+                })}
+                ${secondsField('Previous credential overlap (seconds)', draft.smithproxy.overlapSeconds, next => {
+                  this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, overlapSeconds: next}};
+                })}
                 ${textField('smithproxy.cliEndpoint', 'CLI broker endpoint', draft.smithproxy.cliEndpoint, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, cliEndpoint: next}};
                 }, '127.0.0.1:50000')}
@@ -12926,17 +12963,38 @@ export class SmithproxyApp extends LitElement {
                   const input = event.currentTarget;
                   if (!(input instanceof HTMLInputElement)) return;
                   this.guiConfigurationDraft = {...draft, gateway: input.checked ? {
-                    secretFile: '/run/credentials/smithproxy-gui.gateway',
-                    previousSecretFile: '',
+                    secretFile: '/run/smithproxy/gui-gateway.key',
+                    previousSecretFile: '/run/smithproxy/gui-gateway.previous.key',
+                    credentialEnabled: true,
+                    bootstrapFreshnessSeconds: 300,
+                    rotationSeconds: 86400,
+                    overlapSeconds: 3600,
                   } : undefined};
                 }}><span>Require a trusted frontend gateway for browser access</span></label>
               ${draft.gateway ? html`
+                <label class="gui-config-toggle"><input type="checkbox"
+                  .checked=${draft.gateway.credentialEnabled}
+                  @change=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.guiConfigurationDraft = {
+                      ...draft, gateway: {...draft.gateway!, credentialEnabled: input.checked},
+                    };
+                  }}><span>Expose the rotating browser gateway credential</span></label>
                 ${textField('gateway.secretFile', 'Gateway credential file', draft.gateway.secretFile, next => {
                   this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, secretFile: next}};
-                }, '/run/credentials/smithproxy-gui.gateway')}
+                }, '/run/smithproxy/gui-gateway.key')}
                 ${textField('gateway.previousSecretFile', 'Previous gateway credential file', draft.gateway.previousSecretFile, next => {
                   this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, previousSecretFile: next}};
-                }, 'Optional during rotation')}
+                }, '/run/smithproxy/gui-gateway.previous.key')}
+                ${secondsField('Launcher seed freshness (seconds)', draft.gateway.bootstrapFreshnessSeconds, next => {
+                  this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, bootstrapFreshnessSeconds: next}};
+                })}
+                ${secondsField('Credential rotation interval (seconds)', draft.gateway.rotationSeconds, next => {
+                  this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, rotationSeconds: next}};
+                })}
+                ${secondsField('Previous credential overlap (seconds)', draft.gateway.overlapSeconds, next => {
+                  this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, overlapSeconds: next}};
+                })}
               ` : html`<p>Direct standalone browser authentication is used on a loopback listener.</p>`}
             </div>
           </fieldset>

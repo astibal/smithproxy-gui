@@ -123,7 +123,7 @@ export interface GuiConfiguration {
     previousBrowserGatewayCredentialLoaded: boolean;
     cliBrokerConfigured: boolean;
   };
-  schemaVersion?: 1 | 2 | 3;
+  schemaVersion?: 1 | 2 | 3 | 4;
   backend?: {
     bindAddress: string;
     port: number;
@@ -136,11 +136,20 @@ export interface GuiConfiguration {
     apiUrl: string;
     caCert: string;
     apiTokenFile: string;
+    previousApiTokenFile: string;
+    credentialEnabled: boolean;
+    bootstrapFreshnessSeconds: number;
+    rotationSeconds: number;
+    overlapSeconds: number;
     cliEndpoint: string;
   };
   gateway?: {
     secretFile: string;
     previousSecretFile: string;
+    credentialEnabled: boolean;
+    bootstrapFreshnessSeconds: number;
+    rotationSeconds: number;
+    overlapSeconds: number;
   };
 }
 
@@ -175,8 +184,12 @@ export type GuiBootstrapConfiguration = {
 export type GuiBootstrapConfigurationField =
   'backend.bindAddress' | 'backend.port' | 'backend.basePath' |
   'frontend.assetRoot' | 'smithproxy.apiUrl' | 'smithproxy.caCert' |
-  'smithproxy.apiTokenFile' | 'smithproxy.cliEndpoint' |
-  'gateway.enabled' | 'gateway.secretFile' | 'gateway.previousSecretFile';
+  'smithproxy.apiTokenFile' | 'smithproxy.previousApiTokenFile' |
+  'smithproxy.credentialEnabled' | 'smithproxy.bootstrapFreshnessSeconds' |
+  'smithproxy.rotationSeconds' | 'smithproxy.overlapSeconds' | 'smithproxy.cliEndpoint' |
+  'gateway.enabled' | 'gateway.secretFile' | 'gateway.previousSecretFile' |
+  'gateway.credentialEnabled' | 'gateway.bootstrapFreshnessSeconds' |
+  'gateway.rotationSeconds' | 'gateway.overlapSeconds';
 
 export interface GuiBootstrapConfigurationIssue {
   field: GuiBootstrapConfigurationField;
@@ -1539,7 +1552,8 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     ...(activeBackend ? {activeBackend} : {}),
     ...(activeRuntime ? {activeRuntime} : {}),
   };
-  if (value.schema_version !== 1 && value.schema_version !== 2 && value.schema_version !== 3) {
+  if (value.schema_version !== 1 && value.schema_version !== 2 &&
+      value.schema_version !== 3 && value.schema_version !== 4) {
     throw new Error('Unsupported GUI configuration schema.');
   }
   const backend = parseBackend(value.backend, 'backend');
@@ -1551,10 +1565,36 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     }
     return group as Record<string, string>;
   };
-  const smithproxy = optionalGroup(
-    value.smithproxy, ['api_url', 'ca_cert', 'api_token_file', 'cli_endpoint']);
-  const gateway = optionalGroup(value.gateway, ['secret_file', 'previous_secret_file']);
+  const smithproxy = value.smithproxy;
+  const gateway = value.gateway;
   const frontend = optionalGroup(value.frontend, ['asset_root']);
+  const stringMember = (
+    group: Record<string, unknown>, key: string, fallback?: string,
+  ): string => {
+    const member = group[key];
+    if (member === undefined && fallback !== undefined) return fallback;
+    if (typeof member !== 'string' || member.length > 4096 ||
+        /[\u0000-\u001f\u007f]/u.test(member)) {
+      throw new Error('Invalid GUI bootstrap configuration.');
+    }
+    return member;
+  };
+  const booleanMember = (
+    group: Record<string, unknown>, key: string, fallback: boolean,
+  ): boolean => {
+    const member = group[key];
+    if (member === undefined) return fallback;
+    if (typeof member !== 'boolean') throw new Error('Invalid GUI bootstrap configuration.');
+    return member;
+  };
+  const integerMember = (
+    group: Record<string, unknown>, key: string, fallback: number,
+  ): number => {
+    const member = group[key];
+    if (member === undefined) return fallback;
+    if (!Number.isSafeInteger(member)) throw new Error('Invalid GUI bootstrap configuration.');
+    return member as number;
+  };
   const parsed: GuiConfiguration = {
     state: 'ready',
     restartRequired: value.restart_required,
@@ -1563,15 +1603,28 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     schemaVersion: value.schema_version,
     backend,
     ...(frontend ? {frontend: {assetRoot: frontend.asset_root!}} : {}),
-    ...(smithproxy ? {smithproxy: {
-      apiUrl: smithproxy.api_url!,
-      caCert: smithproxy.ca_cert!,
-      apiTokenFile: smithproxy.api_token_file!,
-      cliEndpoint: smithproxy.cli_endpoint!,
+    ...(isObject(smithproxy) ? {smithproxy: {
+      apiUrl: stringMember(smithproxy, 'api_url'),
+      caCert: stringMember(smithproxy, 'ca_cert'),
+      apiTokenFile: stringMember(smithproxy, 'api_token_file'),
+      previousApiTokenFile: stringMember(
+        smithproxy, 'previous_api_token_file', '/run/smithproxy/gui-api.previous.key'),
+      credentialEnabled: booleanMember(smithproxy, 'credential_enabled', true),
+      bootstrapFreshnessSeconds: integerMember(
+        smithproxy, 'credential_bootstrap_freshness_seconds', 300),
+      rotationSeconds: integerMember(smithproxy, 'credential_rotation_seconds', 86400),
+      overlapSeconds: integerMember(smithproxy, 'credential_overlap_seconds', 3600),
+      cliEndpoint: stringMember(smithproxy, 'cli_endpoint'),
     }} : {}),
-    ...(gateway ? {gateway: {
-      secretFile: gateway.secret_file!,
-      previousSecretFile: gateway.previous_secret_file!,
+    ...(isObject(gateway) ? {gateway: {
+      secretFile: stringMember(gateway, 'secret_file'),
+      previousSecretFile: stringMember(
+        gateway, 'previous_secret_file', '/run/smithproxy/gui-gateway.previous.key'),
+      credentialEnabled: booleanMember(gateway, 'credential_enabled', true),
+      bootstrapFreshnessSeconds: integerMember(
+        gateway, 'credential_bootstrap_freshness_seconds', 300),
+      rotationSeconds: integerMember(gateway, 'credential_rotation_seconds', 86400),
+      overlapSeconds: integerMember(gateway, 'credential_overlap_seconds', 3600),
     }} : {}),
   };
   const validationError = validateGuiBootstrapConfiguration({
@@ -1647,11 +1700,38 @@ export function guiBootstrapConfigurationIssue(
     if (!validAbsolutePath(value.smithproxy.apiTokenFile)) {
       return issue('smithproxy.apiTokenFile', 'Smithproxy API token file must use an absolute safe path.');
     }
+    if (!validAbsolutePath(value.smithproxy.previousApiTokenFile)) {
+      return issue(
+        'smithproxy.previousApiTokenFile',
+        'Previous Smithproxy API token file must use an absolute safe path.',
+      );
+    }
+    if (value.smithproxy.previousApiTokenFile === value.smithproxy.apiTokenFile) {
+      return issue(
+        'smithproxy.previousApiTokenFile',
+        'Current and previous Smithproxy API token files must differ.',
+      );
+    }
+    for (const [field, timing] of [
+      ['smithproxy.bootstrapFreshnessSeconds', value.smithproxy.bootstrapFreshnessSeconds],
+      ['smithproxy.rotationSeconds', value.smithproxy.rotationSeconds],
+      ['smithproxy.overlapSeconds', value.smithproxy.overlapSeconds],
+    ] as const) {
+      if (!Number.isSafeInteger(timing) || timing < 1 || timing > 31536000) {
+        return issue(field, 'Credential timing must use 1 through 31536000 seconds.');
+      }
+    }
     if (!validCliEndpoint(value.smithproxy.cliEndpoint)) {
       return issue('smithproxy.cliEndpoint', 'CLI broker endpoint is invalid.');
     }
   }
   if (value.gateway) {
+    for (const timing of [value.gateway.bootstrapFreshnessSeconds,
+      value.gateway.rotationSeconds, value.gateway.overlapSeconds]) {
+      if (!Number.isSafeInteger(timing) || timing < 1 || timing > 31536000) {
+        return issue('gateway.secretFile', 'Credential timing must use 1 through 31536000 seconds.');
+      }
+    }
     if (!validAbsolutePath(value.gateway.secretFile)) {
       return issue('gateway.secretFile', 'Gateway credential file must use an absolute safe path.');
     }
@@ -1674,8 +1754,14 @@ export function guiBootstrapConfigurationIssue(
         'gateway.previousSecretFile', 'Smithproxy API and gateway credentials must use separate files.',
       );
     }
+    if (value.smithproxy &&
+        (value.smithproxy.previousApiTokenFile === value.gateway.secretFile ||
+         value.smithproxy.previousApiTokenFile === value.gateway.previousSecretFile)) {
+      return issue('gateway.secretFile', 'Smithproxy API and gateway credentials must use separate files.');
+    }
   }
-  if (!value.backend.bindAddress.startsWith('127.') && !value.gateway) {
+  if (!value.backend.bindAddress.startsWith('127.') &&
+      (!value.gateway || !value.gateway.credentialEnabled)) {
     return issue('gateway.enabled', 'A non-loopback bind requires a gateway credential.');
   }
   return undefined;
@@ -1690,7 +1776,7 @@ export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): Arr
   if (validationError) throw new Error(validationError);
   const lines = [
     'gui = {',
-    `  schema_version = ${value.frontend ? 3 : 1};`,
+    '  schema_version = 4;',
     '',
     '  backend = {',
     `    bind_address = ${libconfigString(value.backend.bindAddress)};`,
@@ -1707,7 +1793,12 @@ export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): Arr
     lines.push('', '  smithproxy = {',
       `    api_url = ${libconfigString(value.smithproxy.apiUrl)};`,
       `    ca_cert = ${libconfigString(value.smithproxy.caCert)};`,
-      `    api_token_file = ${libconfigString(value.smithproxy.apiTokenFile)};`);
+      `    credential_enabled = ${value.smithproxy.credentialEnabled ? 'true' : 'false'};`,
+      `    api_token_file = ${libconfigString(value.smithproxy.apiTokenFile)};`,
+      `    previous_api_token_file = ${libconfigString(value.smithproxy.previousApiTokenFile)};`,
+      `    credential_bootstrap_freshness_seconds = ${value.smithproxy.bootstrapFreshnessSeconds}L;`,
+      `    credential_rotation_seconds = ${value.smithproxy.rotationSeconds}L;`,
+      `    credential_overlap_seconds = ${value.smithproxy.overlapSeconds}L;`);
     if (value.smithproxy.cliEndpoint) {
       lines.push(`    cli_endpoint = ${libconfigString(value.smithproxy.cliEndpoint)};`);
     }
@@ -1715,11 +1806,16 @@ export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): Arr
   }
   if (value.gateway) {
     lines.push('', '  gateway = {',
+      `    credential_enabled = ${value.gateway.credentialEnabled ? 'true' : 'false'};`,
       `    secret_file = ${libconfigString(value.gateway.secretFile)};`);
     if (value.gateway.previousSecretFile) {
       lines.push(`    previous_secret_file = ${libconfigString(value.gateway.previousSecretFile)};`);
     }
-    lines.push('  };');
+    lines.push(
+      `    credential_bootstrap_freshness_seconds = ${value.gateway.bootstrapFreshnessSeconds}L;`,
+      `    credential_rotation_seconds = ${value.gateway.rotationSeconds}L;`,
+      `    credential_overlap_seconds = ${value.gateway.overlapSeconds}L;`,
+      '  };');
   }
   lines.push('};', '');
   return new TextEncoder().encode(lines.join('\n')).buffer as ArrayBuffer;
@@ -1892,11 +1988,20 @@ export class SystemClient {
         api_url: value.smithproxy.apiUrl,
         ca_cert: value.smithproxy.caCert,
         api_token_file: value.smithproxy.apiTokenFile,
+        previous_api_token_file: value.smithproxy.previousApiTokenFile,
+        credential_enabled: value.smithproxy.credentialEnabled,
+        credential_bootstrap_freshness_seconds: value.smithproxy.bootstrapFreshnessSeconds,
+        credential_rotation_seconds: value.smithproxy.rotationSeconds,
+        credential_overlap_seconds: value.smithproxy.overlapSeconds,
         cli_endpoint: value.smithproxy.cliEndpoint,
       } : null,
       gateway: value.gateway ? {
         secret_file: value.gateway.secretFile,
         previous_secret_file: value.gateway.previousSecretFile,
+        credential_enabled: value.gateway.credentialEnabled,
+        credential_bootstrap_freshness_seconds: value.gateway.bootstrapFreshnessSeconds,
+        credential_rotation_seconds: value.gateway.rotationSeconds,
+        credential_overlap_seconds: value.gateway.overlapSeconds,
       } : null,
     };
     const controller = new AbortController();
