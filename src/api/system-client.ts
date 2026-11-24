@@ -1595,7 +1595,9 @@ export class SystemClient {
     return parseGatewaySession(await this.#request(joinedPath(this.#apiBase, '/auth/session')));
   }
 
-  async enrollAdministrator(token: string, password: string): Promise<{administrator: string}> {
+  async enrollAdministrator(
+    token: string, password: string,
+  ): Promise<{administrator: string; operation: 'created' | 'rotated'}> {
     if (!/^[0-9a-f]{64}$/u.test(token)) throw new Error('Invalid enrollment token.');
     if (password.length < 14 || password.length > 1024) {
       throw new Error('Administrator password must contain 14 through 1024 characters.');
@@ -1620,10 +1622,11 @@ export class SystemClient {
       if (!response.ok) throw httpStatusError(response, 'Administrator enrollment');
       const value = await boundedJson(response, MAX_SYSTEM_RESPONSE_BYTES, 'Administrator enrollment');
       if (!isObject(value) || typeof value.administrator !== 'string' ||
-          value.administrator.length === 0 || value.administrator.length > 64) {
+          value.administrator.length === 0 || value.administrator.length > 64 ||
+          (value.operation !== 'created' && value.operation !== 'rotated')) {
         throw new Error('Invalid administrator enrollment response.');
       }
-      return {administrator: value.administrator};
+      return {administrator: value.administrator, operation: value.operation};
     } finally {
       globalThis.clearTimeout(timeout);
       this.#pendingRequests.delete(controller);

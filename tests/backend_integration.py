@@ -775,7 +775,8 @@ def main() -> int:
                     "password": enrollment_password,
                 }))
             assert status == 200, body
-            assert json.loads(body) == {"administrator": "security-admin"}
+            assert json.loads(body) == {
+                "administrator": "security-admin", "operation": "created"}
             assert "HttpOnly" in enrollment_headers["Set-Cookie"]
             assert "Secure" in enrollment_headers["Set-Cookie"]
             assert "SameSite=Strict" in enrollment_headers["Set-Cookie"]
@@ -813,10 +814,27 @@ def main() -> int:
                     "password": "another strong administrator password",
                 }))
             assert status == 200, body
-            assert json.loads(body) == {"administrator": "operations-admin"}
+            assert json.loads(body) == {
+                "administrator": "operations-admin", "operation": "created"}
             assert "Set-Cookie" not in peer_response_headers
             assert 'name = "security-admin"' in FakeSmithproxy.published_gui_resource
             assert 'name = "operations-admin"' in FakeSmithproxy.published_gui_resource
+
+            previous_peer_resource = FakeSmithproxy.published_gui_resource
+            FakeSmithproxy.enrollment_token = "a" * 64
+            status, rotation_headers, body = request(
+                enrollment_port, "/api/v1/auth/enroll", "POST", peer_headers,
+                json.dumps({
+                    "token": FakeSmithproxy.enrollment_token,
+                    "password": "rotated operations administrator password",
+                }))
+            assert status == 200, body
+            assert json.loads(body) == {
+                "administrator": "operations-admin", "operation": "rotated"}
+            assert "Set-Cookie" not in rotation_headers
+            assert FakeSmithproxy.published_gui_resource != previous_peer_resource
+            assert FakeSmithproxy.published_gui_resource.count(
+                'name = "operations-admin"') == 1
 
             status, _, body = request(
                 enrollment_port, "/api/v1/auth/session",

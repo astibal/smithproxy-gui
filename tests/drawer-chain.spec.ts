@@ -7071,7 +7071,7 @@ test('adds a standalone administrator with a single-use core enrollment capabili
   await page.route('**/api/v1/auth/enroll', async route => {
     enrollmentRequest = route.request().postDataJSON() as Record<string, unknown>;
     administrators = [...administrators, 'operations-admin'];
-    await route.fulfill({json: {administrator: 'operations-admin'}});
+    await route.fulfill({json: {administrator: 'operations-admin', operation: 'created'}});
   });
 
   await page.goto('/');
@@ -7081,11 +7081,11 @@ test('adds a standalone administrator with a single-use core enrollment capabili
     has: page.getByRole('heading', {name: 'GUI service'}),
   });
   await expect(gui).toContainText('security-admin');
-  await gui.getByRole('button', {name: 'Add administrator'}).click();
+  await gui.getByRole('button', {name: 'Add or rotate administrator'}).click();
   await gui.getByLabel('Single-use CLI enrollment token').fill(token);
   await gui.getByLabel('New administrator password').fill('another strong administrator password');
   await gui.getByLabel('Confirm password').fill('another strong administrator password');
-  await gui.locator('form').getByRole('button', {name: 'Add administrator'}).click();
+  await gui.locator('form').getByRole('button', {name: 'Add or rotate administrator'}).click();
 
   await expect.poll(() => enrollmentRequest).toEqual({
     token, password: 'another strong administrator password',

@@ -1792,12 +1792,13 @@ private:
             return {502, "application/json; charset=utf-8",
                     "{\"error\":\"Smithproxy GUI configuration is invalid\"}"};
         }
-        const auto duplicate = std::any_of(
+        const auto existing = std::find_if(
             persistent.config->administrators.begin(), persistent.config->administrators.end(),
             [&](const auto& administrator) {
                 return administrator.name == *enrollment.administrator;
             });
-        if(duplicate) {
+        const bool rotating_existing = existing != persistent.config->administrators.end();
+        if(rotating_existing && !current_administrator) {
             return {409, "application/json; charset=utf-8",
                     "{\"error\":\"administrator already exists\"}"};
         }
@@ -1807,7 +1808,8 @@ private:
                     "{\"error\":\"administrator verifier unavailable\"}"};
         }
         persistent.config->schema_version = 2U;
-        persistent.config->administrators.push_back(std::move(*verifier));
+        if(rotating_existing) *existing = std::move(*verifier);
+        else persistent.config->administrators.push_back(std::move(*verifier));
         const auto replacement = serialize_gui_bootstrap(*persistent.config);
         if(!replacement) {
             return {500, "application/json; charset=utf-8",
@@ -1839,7 +1841,10 @@ private:
         // current browser identity instead of silently replacing its session.
         if(current_administrator) {
             return {200, "application/json; charset=utf-8",
-                    nlohmann::json{{"administrator", *enrollment.administrator}}.dump(),
+                    nlohmann::json{
+                        {"administrator", *enrollment.administrator},
+                        {"operation", rotating_existing ? "rotated" : "created"},
+                    }.dump(),
                     "no-store"};
         }
         auto session = admin_sessions_.issue(*enrollment.administrator);
@@ -1851,7 +1856,10 @@ private:
             "; Max-Age=" + std::to_string(AdminSessionStore::ttl_seconds) +
             "; Path=/; Secure; HttpOnly; SameSite=Strict";
         return {200, "application/json; charset=utf-8",
-                nlohmann::json{{"administrator", *enrollment.administrator}}.dump(), "no-store",
+                nlohmann::json{
+                    {"administrator", *enrollment.administrator},
+                    {"operation", "created"},
+                }.dump(), "no-store",
                 {{"Set-Cookie", cookie}}};
     }
 

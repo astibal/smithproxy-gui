@@ -2414,7 +2414,8 @@ export class SmithproxyApp extends LitElement {
       this.enrollmentPasswordConfirmation = '';
       if (extendingConfiguration) {
         this.administratorEnrollmentOpen = false;
-        this.enrollmentSuccess = `${enrolled.administrator} was added to gui.cfg. Restart the GUI service before that administrator signs in.`;
+        const action = enrolled.operation === 'rotated' ? 'password was rotated in' : 'was added to';
+        this.enrollmentSuccess = `${enrolled.administrator} ${action} gui.cfg. Restart the GUI service to activate the change.`;
         await this.loadGuiConfiguration();
       } else {
         await this.refreshCapabilities();
@@ -11810,7 +11811,7 @@ export class SmithproxyApp extends LitElement {
               <div class="archive-actions">
                 <button class="primary" type="submit"
                   ?disabled=${this.enrollmentBusy || !validEnrollmentToken || !validEnrollmentPassword}>
-                  ${this.enrollmentBusy ? 'Adding…' : 'Add administrator'}
+                  ${this.enrollmentBusy ? 'Publishing…' : 'Add or rotate administrator'}
                 </button>
                 <button class="secondary" type="button" ?disabled=${this.enrollmentBusy}
                   @click=${() => {
@@ -11824,7 +11825,8 @@ export class SmithproxyApp extends LitElement {
             </form>
             <div class="privacy-note">
               Generate the token in a privilege-15 Smithproxy CLI session. The token selects the administrator name,
-              expires after ten minutes, and is consumed once; only a salted verifier is published to CFtar.
+              expires after ten minutes, and is consumed once. A new name adds an administrator; an existing name
+              rotates its password. Only a salted verifier is published to CFtar.
             </div>
           ` : nothing}
         ` : nothing}
@@ -11843,7 +11845,7 @@ export class SmithproxyApp extends LitElement {
                 this.administratorEnrollmentOpen = true;
                 this.enrollmentError = undefined;
                 this.enrollmentSuccess = undefined;
-              }}>Add administrator</button>
+              }}>Add or rotate administrator</button>
           ` : nothing}
         </div>
       `}

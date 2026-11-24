@@ -201,12 +201,14 @@ describe('SystemClient', () => {
   });
 
   it('exchanges a bounded enrollment token for a standalone administrator session', async () => {
-    const fetcher = vi.fn(async () => jsonResponse({administrator: 'security-admin'}));
+    const fetcher = vi.fn(async () => jsonResponse({
+      administrator: 'security-admin', operation: 'created',
+    }));
     const client = new SystemClient('/api/v1', '/', fetcher);
     const token = 'a'.repeat(64);
 
     await expect(client.enrollAdministrator(token, 'correct horse battery staple'))
-      .resolves.toEqual({administrator: 'security-admin'});
+      .resolves.toEqual({administrator: 'security-admin', operation: 'created'});
     expect(fetcher).toHaveBeenCalledWith('/api/v1/auth/enroll', expect.objectContaining({
       method: 'POST', body: JSON.stringify({token, password: 'correct horse battery staple'}),
       credentials: 'same-origin',
