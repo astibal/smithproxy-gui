@@ -7819,6 +7819,12 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'System settings', exact: true}).click();
 
+  const certificateCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Certificate resources'}),
+  });
+  await expect(certificateCard).toContainText('CA passwordConfigured');
+  await expect(page.getByText('private-ca-password', {exact: true})).toHaveCount(0);
+
   const trafficCard = page.getByRole('article').filter({
     has: page.getByRole('heading', {name: 'Traffic admission'}),
   });

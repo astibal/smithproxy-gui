@@ -12887,7 +12887,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Certificates</dt><dd><code>${settings.auxiliary.certificatesPath || 'Not configured'}</code></dd>
                 <dt>CA bundle path</dt><dd><code>${settings.auxiliary.caBundlePath || 'Not configured'}</code></dd>
                 <dt>CA bundle file</dt><dd><code>${settings.auxiliary.caBundleFile || 'Not configured'}</code></dd>
-                <dt>CA password</dt><dd><code>${settings.auxiliary.certificatePassword || 'Not configured'}</code></dd>
+                <dt>CA password</dt><dd>${settings.auxiliary.certificatePasswordConfigured ? 'Configured' : 'Not configured'}</dd>
                 <dt>Certificate transparency log</dt><dd><code>${settings.auxiliary.certificateTransparencyLog || 'Not configured'}</code></dd>
                 <dt>Custom certificate fallback</dt><dd><code>${settings.auxiliary.customCertificateFallbackDirectory || 'Disabled'}</code></dd>
               </dl>
@@ -12902,7 +12902,7 @@ export class SmithproxyApp extends LitElement {
               <dl>
                 <dt>Message assets</dt><dd><code>${settings.auxiliary.messagesDirectory || 'Not configured'}</code></dd>
                 <dt>Payload filename</dt><dd><code>${settings.auxiliary.payloadFilePrefix || '(no prefix)'}</code> … <code>${settings.auxiliary.payloadFileSuffix || '(no suffix)'}</code></dd>
-                <dt>Web rating key</dt><dd><code>${settings.auxiliary.webRatingKey || 'Not configured'}</code></dd>
+                <dt>Web rating key</dt><dd>${settings.auxiliary.webRatingKeyConfigured ? 'Configured' : 'Not configured'}</dd>
               </dl>
             </article>
             <article class="domain-card" data-system-section="settings">
