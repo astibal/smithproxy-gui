@@ -1084,6 +1084,7 @@ describe('SystemClient', () => {
   it('loads and serializes typed GUI bootstrap configuration without credential values', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       state: 'ready', schema_version: 1, restart_required: true, administrators: [],
+      active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       smithproxy: {
         api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
@@ -1095,6 +1096,7 @@ describe('SystemClient', () => {
     const value = await client.guiConfiguration();
     expect(value).toMatchObject({
       state: 'ready', backend: {port: 18082},
+      activeBackend: {port: 18082},
       smithproxy: {apiTokenFile: '/run/credentials/gui.api-token'},
     });
     const serialized = new TextDecoder().decode(serializeGuiConfiguration({
@@ -1129,9 +1131,11 @@ describe('SystemClient', () => {
 
   it('accepts an absent GUI resource and rejects malformed bootstrap metadata', async () => {
     const absent = new SystemClient('/api/v1', '/', async () =>
-      jsonResponse({state: 'absent', restart_required: true}));
+      jsonResponse({state: 'absent', restart_required: true,
+        active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'}}));
     await expect(absent.guiConfiguration()).resolves.toEqual({
       state: 'absent', restartRequired: true, administrators: [],
+      activeBackend: {bindAddress: '127.0.0.1', port: 18082, basePath: '/'},
     });
     const malformed = new SystemClient('/api/v1', '/', async () => jsonResponse({
       state: 'ready', schema_version: 1, restart_required: true, administrators: [],

@@ -2213,6 +2213,8 @@ export class SmithproxyApp extends LitElement {
       await this.systemClient.publishGuiConfiguration(draft, revision, archiveHash);
       this.guiConfiguration = {
         state: 'ready', restartRequired: true,
+        ...(this.guiConfiguration?.activeBackend
+          ? {activeBackend: {...this.guiConfiguration.activeBackend}} : {}),
         schemaVersion: this.guiConfiguration?.schemaVersion ?? 1,
         administrators: this.guiConfiguration?.administrators ?? [], backend: {...draft.backend},
         ...(draft.smithproxy ? {smithproxy: {...draft.smithproxy}} : {}),
@@ -11731,6 +11733,13 @@ export class SmithproxyApp extends LitElement {
   private renderGuiConfigurationCard() {
     const value = this.guiConfiguration;
     const draft = this.guiConfigurationDraft;
+    const activeBackend = value?.activeBackend;
+    const savedBackend = value?.backend;
+    const backendRestartPending = activeBackend !== undefined && savedBackend !== undefined &&
+      (activeBackend.bindAddress !== savedBackend.bindAddress ||
+       activeBackend.port !== savedBackend.port || activeBackend.basePath !== savedBackend.basePath);
+    const backendEndpoint = (backend: NonNullable<GuiConfiguration['backend']>) =>
+      `${backend.bindAddress}:${backend.port}${backend.basePath}`;
     const validationError = draft ? validateGuiBootstrapConfiguration(draft) : undefined;
     const valid = draft !== undefined && validationError === undefined;
     const validEnrollmentToken = /^[0-9a-f]{64}$/u.test(this.enrollmentToken.trim());
@@ -11853,8 +11862,10 @@ export class SmithproxyApp extends LitElement {
         </div>
       ` : html`
         <dl>
-          <dt>Backend</dt><dd>${value?.backend
-            ? `${value.backend.bindAddress}:${value.backend.port}${value.backend.basePath}` : 'Not configured'}</dd>
+          <dt>Running listener</dt><dd>${activeBackend ? backendEndpoint(activeBackend) : 'Not reported'}</dd>
+          <dt>Saved startup listener</dt><dd>${savedBackend ? backendEndpoint(savedBackend) : 'Not configured'}
+            ${backendRestartPending ? html` <span class="runtime-state warning">● restart pending</span>` :
+              activeBackend && savedBackend ? html` <span class="runtime-state success">● active</span>` : nothing}</dd>
           <dt>Smithproxy API</dt><dd>${value?.smithproxy?.apiUrl ?? 'Not configured'}</dd>
           <dt>API credential</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
           <dt>CLI broker</dt><dd>${value?.smithproxy?.cliEndpoint || 'Disabled'}</dd>
@@ -11879,7 +11890,7 @@ export class SmithproxyApp extends LitElement {
                   }}>${armed ? `Confirm remove ${administrator}` : `Remove ${administrator}`}</button>` : nothing}
               </span>`;
             }) : 'None configured'}</dd>
-          <dt>Activation</dt><dd>Controlled service restart required</dd>
+          <dt>Activation</dt><dd>Service settings activate after a controlled restart; administrator changes activate immediately.</dd>
         </dl>
         ${this.gatewaySession?.mode === 'standalone' ? html`
           ${this.administratorEnrollmentOpen ? html`

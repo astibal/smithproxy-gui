@@ -110,6 +110,11 @@ export interface ArchiveResourceWrite {
 export interface GuiConfiguration {
   state: 'ready' | 'absent';
   restartRequired: true;
+  activeBackend?: {
+    bindAddress: string;
+    port: number;
+    basePath: string;
+  };
   schemaVersion?: 1 | 2;
   administrators: ReadonlyArray<string>;
   backend?: {
@@ -1393,8 +1398,24 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
       (value.state !== 'ready' && value.state !== 'absent')) {
     throw new Error('Invalid GUI configuration response.');
   }
+  const parseBackend = (backend: unknown, label: string) => {
+    if (!isObject(backend) || typeof backend.bind_address !== 'string' ||
+        !Number.isSafeInteger(backend.port) || (backend.port as number) < 1 ||
+        (backend.port as number) > 65535 || typeof backend.base_path !== 'string' ||
+        !validIpv4Address(backend.bind_address) || !validBasePath(backend.base_path)) {
+      throw new Error(`Invalid GUI ${label} configuration.`);
+    }
+    return {
+      bindAddress: backend.bind_address,
+      port: backend.port as number,
+      basePath: backend.base_path,
+    };
+  };
+  const activeBackend = value.active_backend === undefined
+    ? undefined : parseBackend(value.active_backend, 'active backend');
   if (value.state === 'absent') return {
     state: 'absent', restartRequired: true, administrators: [],
+    ...(activeBackend ? {activeBackend} : {}),
   };
   if (value.schema_version !== 1 && value.schema_version !== 2) {
     throw new Error('Unsupported GUI configuration schema.');
@@ -1404,11 +1425,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
         !/^[A-Za-z0-9._@-]{1,64}$/u.test(item))) {
     throw new Error('Invalid GUI administrator configuration.');
   }
-  if (!isObject(value.backend) || typeof value.backend.bind_address !== 'string' ||
-      !Number.isSafeInteger(value.backend.port) || (value.backend.port as number) < 1 ||
-      (value.backend.port as number) > 65535 || typeof value.backend.base_path !== 'string') {
-    throw new Error('Invalid GUI backend configuration.');
-  }
+  const backend = parseBackend(value.backend, 'backend');
   const optionalGroup = (group: unknown, keys: ReadonlyArray<string>): Record<string, string> | undefined => {
     if (group === null) return undefined;
     if (!isObject(group) || keys.some(key => typeof group[key] !== 'string' ||
@@ -1423,13 +1440,10 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
   const parsed: GuiConfiguration = {
     state: 'ready',
     restartRequired: true,
+    ...(activeBackend ? {activeBackend} : {}),
     schemaVersion: value.schema_version,
     administrators: value.administrators as string[],
-    backend: {
-      bindAddress: value.backend.bind_address,
-      port: value.backend.port as number,
-      basePath: value.backend.base_path,
-    },
+    backend,
     ...(smithproxy ? {smithproxy: {
       apiUrl: smithproxy.api_url!,
       caCert: smithproxy.ca_cert!,

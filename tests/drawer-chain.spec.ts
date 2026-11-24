@@ -7010,6 +7010,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   }}));
   await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
     state: 'ready', schema_version: 1, restart_required: true, administrators: [],
+    active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
     backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
     smithproxy: {
       api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
@@ -7033,6 +7034,9 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   });
   await expect(gui).toContainText('Boot settings published with the Smithproxy configuration archive');
   await expect(gui).toContainText('/run/credentials/gui.api-token');
+  await expect(gui).toContainText('Running listener');
+  await expect(gui).toContainText('Saved startup listener');
+  await expect(gui).toContainText('active');
   await expect(gui).not.toContainText('boot-token-value');
   await gui.getByRole('button', {name: 'Edit GUI startup settings'}).click();
   await gui.getByLabel('Require a trusted frontend gateway for browser access').uncheck();
@@ -7048,7 +7052,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   expect(published).toContain('"api_token_file":"/run/credentials/gui.api-token"');
   expect(published).toContain('"gateway":null');
   expect(published).not.toContain('boot-token-value');
-  await expect(gui).toContainText('Controlled service restart required');
+  await expect(gui).toContainText('restart pending');
+  await expect(gui).toContainText('administrator changes activate immediately');
 });
 
 test('adds a standalone administrator with a single-use core enrollment capability', async ({page}) => {

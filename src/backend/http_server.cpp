@@ -1458,6 +1458,11 @@ private:
     }
 
     Response gui_configuration() const {
+        const nlohmann::json active_backend{
+            {"bind_address", config_.bind_address},
+            {"port", config_.port},
+            {"base_path", config_.base_path},
+        };
         const auto upstream = monitor_.archive_api(
             "GET", "/api/config/archive/resource?path=gui.cfg");
         if(!upstream.transport_ok) {
@@ -1465,8 +1470,11 @@ private:
                     "{\"error\":\"Smithproxy GUI configuration is unavailable\"}"};
         }
         if(upstream.status == 404L) {
-            return {200, "application/json; charset=utf-8",
-                    "{\"state\":\"absent\",\"restart_required\":true}"};
+            return {200, "application/json; charset=utf-8", nlohmann::json{
+                {"state", "absent"},
+                {"restart_required", true},
+                {"active_backend", active_backend},
+            }.dump()};
         }
         if(upstream.status != 200L) {
             return {static_cast<unsigned>(upstream.status),
@@ -1482,6 +1490,7 @@ private:
             {"state", "ready"},
             {"schema_version", value.schema_version},
             {"restart_required", true},
+            {"active_backend", active_backend},
             {"backend", {
                 {"bind_address", value.bind_address},
                 {"port", value.port},
