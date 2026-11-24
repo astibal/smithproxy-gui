@@ -21,6 +21,10 @@ ParseResult failure(std::string error) {
     return {std::nullopt, std::move(error), false};
 }
 
+GuiBootstrapParseResult bootstrap_failure(std::string error) {
+    return {std::nullopt, std::move(error)};
+}
+
 std::optional<std::string> environment(const char* name) {
     if (const char* value = std::getenv(name); value != nullptr && *value != '\0') {
         return std::string(value);
@@ -375,6 +379,83 @@ ParseResult parse_gui_config_file(
     std::string validation_error;
     if (!validate_final_config(config, validation_error)) return failure(std::move(validation_error));
     return {std::move(config), {}, false};
+}
+
+GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
+    libconfig::Config document;
+    try {
+        document.readString(std::string(source));
+    } catch (const libconfig::ParseException& error) {
+        return bootstrap_failure("invalid gui.cfg at line " + std::to_string(error.getLine()));
+    }
+    const auto& root = document.getRoot();
+    if (!root.exists("gui") || root["gui"].getType() != libconfig::Setting::TypeGroup) {
+        return bootstrap_failure("gui.cfg must contain a gui group");
+    }
+
+    const auto& gui = root["gui"];
+    GuiBootstrapConfig config;
+    try {
+        if (gui.exists("backend")) {
+            const auto& backend = gui["backend"];
+            backend.lookupValue("bind_address", config.bind_address);
+            int port = config.port;
+            backend.lookupValue("port", port);
+            if (port <= 0 || port > 65535) {
+                return bootstrap_failure("gui.backend.port must use 1..65535");
+            }
+            config.port = static_cast<std::uint16_t>(port);
+            backend.lookupValue("base_path", config.base_path);
+            const auto normalized = normalize_base_path(config.base_path);
+            if (!normalized) return bootstrap_failure("gui.backend.base_path is invalid");
+            config.base_path = *normalized;
+        }
+        if (gui.exists("smithproxy")) {
+            const auto& upstream = gui["smithproxy"];
+            std::string api_url;
+            std::string ca_cert;
+            std::string api_token_file;
+            if (!upstream.lookupValue("api_url", api_url) ||
+                !upstream.lookupValue("ca_cert", ca_cert) ||
+                !upstream.lookupValue("api_token_file", api_token_file)) {
+                return bootstrap_failure(
+                    "gui.smithproxy requires api_url, ca_cert, and api_token_file");
+            }
+            if (!valid_api_url(api_url)) {
+                return bootstrap_failure(
+                    "gui.smithproxy.api_url must use HTTPS or loopback HTTP");
+            }
+            while (api_url.ends_with('/')) api_url.pop_back();
+            config.api_url = std::move(api_url);
+            config.ca_cert = std::move(ca_cert);
+            config.api_token_file = std::move(api_token_file);
+            std::string cli_endpoint;
+            if (upstream.lookupValue("cli_endpoint", cli_endpoint)) {
+                if (!parse_cli_endpoint(cli_endpoint)) {
+                    return bootstrap_failure("gui.smithproxy.cli_endpoint is invalid");
+                }
+                config.cli_endpoint = std::move(cli_endpoint);
+            }
+        }
+        if (gui.exists("gateway")) {
+            const auto& gateway = gui["gateway"];
+            std::string secret_file;
+            if (!gateway.lookupValue("secret_file", secret_file)) {
+                return bootstrap_failure("gui.gateway requires secret_file");
+            }
+            config.gateway_secret_file = std::move(secret_file);
+            std::string previous_file;
+            if (gateway.lookupValue("previous_secret_file", previous_file)) {
+                config.gateway_previous_secret_file = std::move(previous_file);
+            }
+        }
+    } catch (const libconfig::SettingTypeException&) {
+        return bootstrap_failure("gui.cfg contains a value with the wrong type");
+    }
+    if (!valid_bind_address(config.bind_address)) {
+        return bootstrap_failure("gui.backend.bind_address must be an IPv4 literal");
+    }
+    return {std::move(config), {}};
 }
 
 std::string usage() {

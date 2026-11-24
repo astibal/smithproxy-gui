@@ -876,6 +876,8 @@ int main() {
     assert(valid_archive_resource_path("templates/replacement/notice.html"));
     assert(valid_archive_resource_path("commands/macros/disable-capture"));
     assert(valid_archive_resource_path("commands/scripts/collect-debug.sh"));
+    assert(valid_archive_resource_path("gui.cfg"));
+    assert(!valid_archive_resource_path("gui.cfg/extra"));
     assert(!valid_archive_resource_path("messages/notice.txt"));
     assert(!valid_archive_resource_path("scripts/collect-debug.sh"));
     assert(!valid_archive_resource_path("ssh/hostkeys/ed25519"));
@@ -2436,6 +2438,15 @@ int main() {
     assert(gui_bootstrap.config->smithproxy->api_key == "boot-api-token-0123456789abcdef");
     assert(gui_bootstrap.config->smithproxy_cli);
     assert(gui_bootstrap.config->gateway_secret);
+    const auto archive_bootstrap = parse_gui_bootstrap(
+        "gui = { backend = { bind_address = \"127.0.0.1\"; port = 18082; "
+        "base_path = \"/gui\"; }; smithproxy = { api_url = \"https://127.0.0.1:55555\"; "
+        "ca_cert = \"/run/gui/ca.pem\"; api_token_file = \"/run/gui/token\"; }; };\n");
+    assert(archive_bootstrap.config);
+    assert(archive_bootstrap.config->base_path == "/gui");
+    assert(archive_bootstrap.config->api_token_file == "/run/gui/token");
+    assert(!parse_gui_bootstrap("gui = { backend = { port = 0; }; };\n").config);
+    assert(!parse_gui_bootstrap("gui = { smithproxy = { api_url = \"http://remote:1\"; }; };\n").config);
     std::filesystem::permissions(
         api_token_path, owner_only | std::filesystem::perms::group_read,
         std::filesystem::perm_options::replace);

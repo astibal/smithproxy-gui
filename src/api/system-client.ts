@@ -105,6 +105,26 @@ export interface ArchiveResourceWrite {
   restartRequired: true;
 }
 
+export interface GuiConfiguration {
+  state: 'ready' | 'absent';
+  restartRequired: true;
+  backend?: {
+    bindAddress: string;
+    port: number;
+    basePath: string;
+  };
+  smithproxy?: {
+    apiUrl: string;
+    caCert: string;
+    apiTokenFile: string;
+    cliEndpoint: string;
+  };
+  gateway?: {
+    secretFile: string;
+    previousSecretFile: string;
+  };
+}
+
 export interface ProbeSample {
   state: SmithproxyState;
   checkedAtUnixMs: number;
@@ -1275,8 +1295,8 @@ function validArchiveEntryPath(path: string): boolean {
 }
 
 function managedArchiveResourcePath(path: string): boolean {
-  return validArchiveEntryPath(path) && ['pki/', 'templates/', 'commands/']
-    .some(prefix => path.startsWith(prefix) && path.length > prefix.length);
+  return validArchiveEntryPath(path) && (path === 'gui.cfg' || ['pki/', 'templates/', 'commands/']
+    .some(prefix => path.startsWith(prefix) && path.length > prefix.length));
 }
 
 function parseArchiveEntries(
@@ -1349,6 +1369,88 @@ function parseArchiveResourceWrite(value: unknown): ArchiveResourceWrite {
   };
 }
 
+function parseGuiConfiguration(value: unknown): GuiConfiguration {
+  if (!isObject(value) || value.restart_required !== true ||
+      (value.state !== 'ready' && value.state !== 'absent')) {
+    throw new Error('Invalid GUI configuration response.');
+  }
+  if (value.state === 'absent') return {state: 'absent', restartRequired: true};
+  if (!isObject(value.backend) || typeof value.backend.bind_address !== 'string' ||
+      !Number.isSafeInteger(value.backend.port) || (value.backend.port as number) < 1 ||
+      (value.backend.port as number) > 65535 || typeof value.backend.base_path !== 'string') {
+    throw new Error('Invalid GUI backend configuration.');
+  }
+  const optionalGroup = (group: unknown, keys: ReadonlyArray<string>): Record<string, string> | undefined => {
+    if (group === null) return undefined;
+    if (!isObject(group) || keys.some(key => typeof group[key] !== 'string' ||
+        (group[key] as string).length > 4096 || /[\u0000-\u001f\u007f]/u.test(group[key] as string))) {
+      throw new Error('Invalid GUI bootstrap configuration.');
+    }
+    return group as Record<string, string>;
+  };
+  const smithproxy = optionalGroup(
+    value.smithproxy, ['api_url', 'ca_cert', 'api_token_file', 'cli_endpoint']);
+  const gateway = optionalGroup(value.gateway, ['secret_file', 'previous_secret_file']);
+  return {
+    state: 'ready',
+    restartRequired: true,
+    backend: {
+      bindAddress: value.backend.bind_address,
+      port: value.backend.port as number,
+      basePath: value.backend.base_path,
+    },
+    ...(smithproxy ? {smithproxy: {
+      apiUrl: smithproxy.api_url!,
+      caCert: smithproxy.ca_cert!,
+      apiTokenFile: smithproxy.api_token_file!,
+      cliEndpoint: smithproxy.cli_endpoint!,
+    }} : {}),
+    ...(gateway ? {gateway: {
+      secretFile: gateway.secret_file!,
+      previousSecretFile: gateway.previous_secret_file!,
+    }} : {}),
+  };
+}
+
+function libconfigString(value: string): string {
+  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+export function serializeGuiConfiguration(value: {
+  backend: NonNullable<GuiConfiguration['backend']>;
+  smithproxy: GuiConfiguration['smithproxy'];
+  gateway: GuiConfiguration['gateway'];
+}): ArrayBuffer {
+  const lines = [
+    'gui = {',
+    '  backend = {',
+    `    bind_address = ${libconfigString(value.backend.bindAddress)};`,
+    `    port = ${value.backend.port};`,
+    `    base_path = ${libconfigString(value.backend.basePath)};`,
+    '  };',
+  ];
+  if (value.smithproxy) {
+    lines.push('', '  smithproxy = {',
+      `    api_url = ${libconfigString(value.smithproxy.apiUrl)};`,
+      `    ca_cert = ${libconfigString(value.smithproxy.caCert)};`,
+      `    api_token_file = ${libconfigString(value.smithproxy.apiTokenFile)};`);
+    if (value.smithproxy.cliEndpoint) {
+      lines.push(`    cli_endpoint = ${libconfigString(value.smithproxy.cliEndpoint)};`);
+    }
+    lines.push('  };');
+  }
+  if (value.gateway) {
+    lines.push('', '  gateway = {',
+      `    secret_file = ${libconfigString(value.gateway.secretFile)};`);
+    if (value.gateway.previousSecretFile) {
+      lines.push(`    previous_secret_file = ${libconfigString(value.gateway.previousSecretFile)};`);
+    }
+    lines.push('  };');
+  }
+  lines.push('};', '');
+  return new TextEncoder().encode(lines.join('\n')).buffer as ArrayBuffer;
+}
+
 export class SystemClient {
   readonly #apiBase: string;
   readonly #basePath: string;
@@ -1392,6 +1494,12 @@ export class SystemClient {
   async archiveInventory(): Promise<ArchiveInventory> {
     return parseArchiveInventory(
       await this.#request(joinedPath(this.#apiBase, '/config/archive')),
+    );
+  }
+
+  async guiConfiguration(): Promise<GuiConfiguration> {
+    return parseGuiConfiguration(
+      await this.#request(joinedPath(this.#apiBase, '/config/gui')),
     );
   }
 

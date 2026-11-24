@@ -38,6 +38,7 @@ import type {
 } from './api/models';
 import {
   SystemClient,
+  serializeGuiConfiguration,
   type ArchiveInventory,
   type ArchiveRestore,
   type ArchiveValidation,
@@ -47,6 +48,7 @@ import {
   type DnsLookup,
   type EventSnapshot,
   type GatewaySession,
+  type GuiConfiguration,
   type InterfaceSnapshot,
   type JobSnapshot,
   type LiveSessionSnapshot,
@@ -125,6 +127,11 @@ type SettingsGroup = 'interfaces' | 'traffic' | 'workers' | 'listeners' | 'loggi
   'management-api' | 'webhook' | 'debug';
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
+type EditableGuiConfiguration = {
+  backend: NonNullable<GuiConfiguration['backend']>;
+  smithproxy: GuiConfiguration['smithproxy'];
+  gateway: GuiConfiguration['gateway'];
+};
 
 const objectNavigation: ReadonlyArray<{
   kind: ObjectKindFilter;
@@ -583,6 +590,11 @@ export class SmithproxyApp extends LitElement {
   @state() private archiveResourcePath = '';
   @state() private archiveResourceExecutable = false;
   @state() private archiveResourceDeleteArmed: string | undefined;
+  @state() private guiConfiguration: GuiConfiguration | undefined;
+  @state() private guiConfigurationDraft: EditableGuiConfiguration | undefined;
+  @state() private guiConfigurationBusy = false;
+  @state() private guiConfigurationError: string | undefined;
+  @state() private guiConfigurationSaveArmed = false;
   @state() private consoleAvailable = false;
   @state() private consoleExpanded = false;
   @state() private drawerConsoleKey: string | undefined;
@@ -1009,6 +1021,9 @@ export class SmithproxyApp extends LitElement {
     .archive-resource-actions { display: flex; gap: 6px; }
     .archive-resource-actions .secondary, .archive-resource-actions .danger { padding: 4px 8px; }
     .archive-resource-editor { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(220px, 1fr) auto; gap: 8px; align-items: center; margin-top: 14px; }
+    .gui-config-editor { grid-template-columns: repeat(2, minmax(240px, 1fr)); align-items: end; }
+    .gui-config-editor label { display: grid; gap: 6px; min-width: 0; }
+    .gui-config-editor input { width: 100%; min-width: 0; }
     .job-list { display: grid; gap: 8px; margin-top: 16px; }
     .job-row { display: grid; grid-template-columns: minmax(145px, .8fr) minmax(170px, 1fr) minmax(120px, .7fr) 64px; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--app-border); background: var(--app-canvas); }
     .job-row small { overflow: hidden; color: var(--app-muted); text-overflow: ellipsis; white-space: nowrap; }
@@ -1216,6 +1231,7 @@ export class SmithproxyApp extends LitElement {
       .trend-grid { grid-template-columns: 1fr; }
       .system-grid { grid-template-columns: 1fr; }
       .management-diagnostics-grid { grid-template-columns: 1fr; }
+      .gui-config-editor { grid-template-columns: 1fr; }
       .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .35fr) minmax(220px, 1fr); max-width: 920px; }
       .identity-row { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
       .status-tertiary { display: none; }
@@ -2113,6 +2129,69 @@ export class SmithproxyApp extends LitElement {
         ? error.message : 'Configuration archive inventory is unavailable.';
     } finally {
       this.archiveBusy = false;
+    }
+  }
+
+  private async loadGuiConfiguration(): Promise<void> {
+    if (!this.systemClient || this.guiConfigurationBusy) return;
+    this.guiConfigurationBusy = true;
+    this.guiConfigurationError = undefined;
+    try {
+      this.guiConfiguration = await this.systemClient.guiConfiguration();
+    } catch (error) {
+      this.guiConfiguration = undefined;
+      this.guiConfigurationError = error instanceof Error
+        ? error.message : 'GUI startup configuration is unavailable.';
+    } finally {
+      this.guiConfigurationBusy = false;
+    }
+  }
+
+  private editGuiConfiguration(): void {
+    const current = this.guiConfiguration?.state === 'ready' ? this.guiConfiguration : undefined;
+    this.guiConfigurationDraft = {
+      backend: current?.backend ? {...current.backend} : {
+        bindAddress: '127.0.0.1', port: 18082, basePath: '/smithproxy-gui',
+      },
+      smithproxy: current?.smithproxy ? {...current.smithproxy} : {
+        apiUrl: 'https://127.0.0.1:55555',
+        caCert: '/run/smithproxy-gui/api-ca.pem',
+        apiTokenFile: '/run/credentials/smithproxy-gui.api-token',
+        cliEndpoint: '127.0.0.1:50000',
+      },
+      gateway: current?.gateway ? {...current.gateway} : {
+        secretFile: '/run/credentials/smithproxy-gui.gateway', previousSecretFile: '',
+      },
+    };
+    this.guiConfigurationSaveArmed = false;
+    this.guiConfigurationError = undefined;
+  }
+
+  private async saveGuiConfiguration(): Promise<void> {
+    const revision = this.snapshot?.revision;
+    const archiveHash = this.archiveInventory?.contentHash;
+    const draft = this.guiConfigurationDraft;
+    if (!this.systemClient || !draft || !revision || !archiveHash ||
+        this.guiConfigurationBusy || !this.guiConfigurationSaveArmed) return;
+    this.guiConfigurationBusy = true;
+    this.guiConfigurationError = undefined;
+    try {
+      await this.systemClient.writeArchiveResource(
+        'gui.cfg', serializeGuiConfiguration(draft), revision, archiveHash, false,
+      );
+      this.guiConfiguration = {
+        state: 'ready', restartRequired: true, backend: {...draft.backend},
+        ...(draft.smithproxy ? {smithproxy: {...draft.smithproxy}} : {}),
+        ...(draft.gateway ? {gateway: {...draft.gateway}} : {}),
+      };
+      this.guiConfigurationDraft = undefined;
+      this.guiConfigurationSaveArmed = false;
+      await this.loadArchiveInventory();
+    } catch (error) {
+      this.guiConfigurationError = error instanceof Error
+        ? error.message : 'GUI startup configuration could not be saved.';
+    } finally {
+      this.guiConfigurationBusy = false;
     }
   }
 
@@ -11519,6 +11598,110 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  private renderGuiConfigurationCard() {
+    const value = this.guiConfiguration;
+    const draft = this.guiConfigurationDraft;
+    const valid = draft && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(draft.backend.bindAddress) &&
+      Number.isSafeInteger(draft.backend.port) && draft.backend.port >= 1 && draft.backend.port <= 65535 &&
+      draft.backend.basePath.startsWith('/') && Boolean(draft.smithproxy?.apiUrl) &&
+      Boolean(draft.smithproxy?.caCert) && Boolean(draft.smithproxy?.apiTokenFile) &&
+      Boolean(draft.gateway?.secretFile);
+    const textField = (
+      label: string, current: string, update: (next: string) => void, placeholder = '',
+    ) => html`<label><span>${label}</span><input type="text" maxlength="4096"
+      .value=${current} placeholder=${placeholder}
+      @input=${(event: Event) => {
+        const input = event.currentTarget;
+        if (input instanceof HTMLInputElement) {
+          update(input.value); this.guiConfigurationSaveArmed = false;
+        }
+      }}></label>`;
+    return html`<article class="domain-card job-card" data-system-section="backend">
+      <header>
+        <div><h3>GUI service</h3><p>Boot settings published with the Smithproxy configuration archive</p></div>
+        <span class="runtime-state ${value?.state === 'ready' ? 'success' : 'warning'}">
+          ● ${this.guiConfigurationBusy ? 'Loading' : value?.state === 'ready' ? 'Configured' : 'Not configured'}
+        </span>
+      </header>
+      ${draft ? html`
+        <div class="archive-resource-editor gui-config-editor">
+          ${textField('Bind address', draft.backend.bindAddress, next => {
+            this.guiConfigurationDraft = {...draft, backend: {...draft.backend, bindAddress: next}};
+          })}
+          <label><span>Backend port</span><input type="number" min="1" max="65535"
+            .value=${String(draft.backend.port)} @input=${(event: Event) => {
+              const input = event.currentTarget;
+              if (input instanceof HTMLInputElement) {
+                this.guiConfigurationDraft = {
+                  ...draft, backend: {...draft.backend, port: Number(input.value)},
+                };
+                this.guiConfigurationSaveArmed = false;
+              }
+            }}></label>
+          ${textField('Public base path', draft.backend.basePath, next => {
+            this.guiConfigurationDraft = {...draft, backend: {...draft.backend, basePath: next}};
+          }, '/smithproxy-gui')}
+          ${textField('Smithproxy API URL', draft.smithproxy?.apiUrl ?? '', next => {
+            this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiUrl: next}};
+          }, 'https://127.0.0.1:55555')}
+          ${textField('Smithproxy API CA certificate', draft.smithproxy?.caCert ?? '', next => {
+            this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, caCert: next}};
+          }, '/run/smithproxy-gui/api-ca.pem')}
+          ${textField('Boot-time API token file', draft.smithproxy?.apiTokenFile ?? '', next => {
+            this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiTokenFile: next}};
+          }, '/run/credentials/smithproxy-gui.api-token')}
+          ${textField('CLI broker endpoint', draft.smithproxy?.cliEndpoint ?? '', next => {
+            this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, cliEndpoint: next}};
+          }, '127.0.0.1:50000')}
+          ${textField('Gateway credential file', draft.gateway?.secretFile ?? '', next => {
+            this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, secretFile: next}};
+          }, '/run/credentials/smithproxy-gui.gateway')}
+          ${textField('Previous gateway credential file', draft.gateway?.previousSecretFile ?? '', next => {
+            this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, previousSecretFile: next}};
+          }, 'Optional during rotation')}
+        </div>
+        <div class="privacy-note">
+          Paths are persistent configuration. Smithproxy creates the referenced credentials for each boot;
+          their values are never stored in CFtar or returned to the browser.
+        </div>
+        <div class="archive-actions">
+          <button class=${this.guiConfigurationSaveArmed ? 'danger' : 'primary'} type="button"
+            ?disabled=${!valid || this.guiConfigurationBusy || !this.configSaveAvailable ||
+              !this.archiveInventory || !this.snapshot?.revision}
+            @click=${() => {
+              if (this.guiConfigurationSaveArmed) void this.saveGuiConfiguration();
+              else this.guiConfigurationSaveArmed = true;
+            }}>${this.guiConfigurationSaveArmed ? 'Confirm publish & restart later' : 'Publish GUI startup settings'}</button>
+          <button class="secondary" type="button" ?disabled=${this.guiConfigurationBusy}
+            @click=${() => { this.guiConfigurationDraft = undefined; this.guiConfigurationSaveArmed = false; }}>
+            Cancel
+          </button>
+        </div>
+      ` : html`
+        <dl>
+          <dt>Backend</dt><dd>${value?.backend
+            ? `${value.backend.bindAddress}:${value.backend.port}${value.backend.basePath}` : 'Not configured'}</dd>
+          <dt>Smithproxy API</dt><dd>${value?.smithproxy?.apiUrl ?? 'Not configured'}</dd>
+          <dt>API credential</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
+          <dt>CLI broker</dt><dd>${value?.smithproxy?.cliEndpoint || 'Disabled'}</dd>
+          <dt>Browser gateway</dt><dd>${value?.gateway?.secretFile ?? 'Not configured'}</dd>
+          <dt>Activation</dt><dd>Controlled service restart required</dd>
+        </dl>
+        <div class="archive-actions">
+          <button class="primary" type="button"
+            ?disabled=${this.guiConfigurationBusy || !this.configSaveAvailable || !this.archiveInventory}
+            @click=${() => this.editGuiConfiguration()}>
+            ${value?.state === 'ready' ? 'Edit GUI startup settings' : 'Configure GUI service'}
+          </button>
+          <button class="secondary" type="button" ?disabled=${this.guiConfigurationBusy}
+            @click=${() => { void this.loadGuiConfiguration(); }}>Refresh</button>
+        </div>
+      `}
+      ${this.guiConfigurationError ? html`
+        <div class="metrics-message danger" role="alert">${this.guiConfigurationError}</div>` : nothing}
+    </article>`;
+  }
+
   private renderSystem() {
     if (this.systemView === 'control-plane') return this.renderSystemControlPlane();
     const settings = this.snapshot?.settings;
@@ -11726,11 +11909,12 @@ export class SmithproxyApp extends LitElement {
                       }}>
                     <span>Preserve this resource as executable. Stored files are never executed by the archive layer itself.</span>
                   </label>
-                  <p>Managed paths must begin with <code>pki/</code>, <code>templates/</code>, or <code>commands/</code>. Resource changes replace only the saved startup archive.</p>
+                  <p>Managed paths are <code>gui.cfg</code> or begin with <code>pki/</code>, <code>templates/</code>, or <code>commands/</code>. Resource changes replace only the saved startup archive. Prefer the typed GUI service editor for <code>gui.cfg</code>.</p>
                 </div>
               </details>
             ` : nothing}
           </article>
+          ${this.renderGuiConfigurationCard()}
           <article class="domain-card" data-system-section="backend">
             <header><div><h3>Smithproxy connection</h3><p>Authenticated management link</p></div></header>
             <dl>
@@ -15870,6 +16054,9 @@ export class SmithproxyApp extends LitElement {
                       if (this.configSaveAvailable && !this.archiveInventory && !this.archiveBusy) {
                         void this.loadArchiveInventory();
                       }
+                      if (this.configSaveAvailable && !this.guiConfiguration && !this.guiConfigurationBusy) {
+                        void this.loadGuiConfiguration();
+                      }
                     } else {
                       this.activeSection = item;
                       this.networkNavigationExpanded = false;
@@ -15995,6 +16182,13 @@ export class SmithproxyApp extends LitElement {
                       @click=${() => {
                         this.activeSection = 'System'; this.systemView = category.kind;
                         this.systemNavigationExpanded = true;
+                        if (this.configSaveAvailable && !this.archiveInventory && !this.archiveBusy) {
+                          void this.loadArchiveInventory();
+                        }
+                        if (category.kind === 'backend' && this.configSaveAvailable &&
+                            !this.guiConfiguration && !this.guiConfigurationBusy) {
+                          void this.loadGuiConfiguration();
+                        }
                       }}><span class="nav-icon" aria-hidden="true">${category.icon}</span>
                       <span class="nav-label">${category.label}</span></button>`)}
                   </div>

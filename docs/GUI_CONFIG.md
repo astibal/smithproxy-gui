@@ -12,6 +12,11 @@ The GUI never modifies this file or the archive directly. An administrator
 changes it through Smithproxy's CFG API; Smithproxy validates and publishes the
 new archive atomically.
 
+The **System → Access & integrations → GUI service** editor reads this resource
+through the authenticated Smithproxy archive API. Publishing from that editor
+uses the running revision and current archive SHA-256 as atomic preconditions;
+the new boot settings take effect only after a controlled service restart.
+
 ```libconfig
 gui = {
   backend = {

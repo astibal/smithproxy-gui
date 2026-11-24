@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from 'vitest';
-import {SystemClient} from './system-client';
+import {SystemClient, serializeGuiConfiguration} from './system-client';
 
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {status, headers: {'Content-Type': 'application/json'}});
@@ -960,6 +960,8 @@ describe('SystemClient', () => {
     await expect(client.restoreArchive(new ArrayBuffer(1), 'rev-1', 'sha256:bad'))
       .rejects.toThrow('content hash');
     expect(() => client.archiveResourceUrl('smithproxy.cfg')).toThrow('resource path');
+    expect(client.archiveResourceUrl('gui.cfg')).toBe(
+      '/api/v1/config/archive/resource?path=gui.cfg');
     for (const legacyPath of ['messages/notice.txt', 'scripts/task.sh', 'ssh/hostkeys/key']) {
       expect(() => client.archiveResourceUrl(legacyPath)).toThrow('resource path');
     }
@@ -973,10 +975,13 @@ describe('SystemClient', () => {
     const longResource = `templates/${'a'.repeat(1014)}`;
     const valid = new SystemClient('/api/v1', '/', async () => jsonResponse({
       state: 'ready', content_hash: hash,
-      resources: [{path: longResource, size: 1, executable: false}],
+      resources: [
+        {path: 'gui.cfg', size: 512, executable: false},
+        {path: longResource, size: 1, executable: false},
+      ],
     }));
     await expect(valid.archiveInventory()).resolves.toMatchObject({
-      resources: [{path: longResource}],
+      resources: [{path: 'gui.cfg'}, {path: longResource}],
     });
 
     for (const path of ['smithproxy.cfg', 'pki/', 'commands/task\nname']) {
@@ -1014,6 +1019,44 @@ describe('SystemClient', () => {
     expect(fetcher).toHaveBeenNthCalledWith(2,
       '/api/v1/config/archive/resource/delete?path=templates%2Freplacement%2Fnotice.html',
       expect.objectContaining({body: expect.any(ArrayBuffer)}));
+  });
+
+  it('loads and serializes typed GUI bootstrap configuration without credential values', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'ready', restart_required: true,
+      backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+      smithproxy: {
+        api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
+        api_token_file: '/run/credentials/gui.api-token', cli_endpoint: '127.0.0.1:50000',
+      },
+      gateway: {secret_file: '/run/credentials/gui.gateway', previous_secret_file: ''},
+    }));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+    const value = await client.guiConfiguration();
+    expect(value).toMatchObject({
+      state: 'ready', backend: {port: 18082},
+      smithproxy: {apiTokenFile: '/run/credentials/gui.api-token'},
+    });
+    const serialized = new TextDecoder().decode(serializeGuiConfiguration({
+      backend: value.backend!, smithproxy: value.smithproxy, gateway: value.gateway,
+    }));
+    expect(serialized).toContain('api_token_file = "/run/credentials/gui.api-token";');
+    expect(serialized).not.toContain('api-token-value');
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/gui', expect.any(Object));
+  });
+
+  it('accepts an absent GUI resource and rejects malformed bootstrap metadata', async () => {
+    const absent = new SystemClient('/api/v1', '/', async () =>
+      jsonResponse({state: 'absent', restart_required: true}));
+    await expect(absent.guiConfiguration()).resolves.toEqual({
+      state: 'absent', restartRequired: true,
+    });
+    const malformed = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', restart_required: true,
+      backend: {bind_address: '127.0.0.1', port: 0, base_path: '/'},
+      smithproxy: null, gateway: null,
+    }));
+    await expect(malformed.guiConfiguration()).rejects.toThrow('backend configuration');
   });
 
   it('rejects malformed responses and unsafe endpoint configuration', async () => {

@@ -3000,7 +3000,9 @@ test('enables all named profile editors without exposing ordered structural oper
     smithproxy: 'ready', validationReady: true, commitReady: true,
     namedStructuralDraftsReady: true, draftMutationBatches: [],
   };
-  await mockSystemApi(page, state, true);
+  // This flow opens an always-editable nested identity drawer. Do not let the
+  // generic protected-view helper race the parent Edit button while it closes.
+  await mockSystemApi(page, state, true, false);
   await page.goto('/');
   await page.getByRole('button', {name: 'Objects', exact: true}).click();
 
@@ -3022,6 +3024,7 @@ test('enables all named profile editors without exposing ordered structural oper
   const authenticationEditor = page.getByRole('dialog', {name: 'Edit legacy-auth'});
   await authenticationEditor.getByRole('button', {name: /2 entries/i}).click();
   const identityEditor = page.getByRole('dialog', {name: 'legacy-auth identities'});
+  await identityEditor.getByRole('button', {name: 'Edit', exact: true}).click();
   await expect(identityEditor.getByLabel('Identity name').nth(0)).toHaveValue('alice');
   await expect(identityEditor.getByLabel('Detection').nth(0)).toHaveValue('detect');
   await expect(identityEditor.getByLabel('Identity name').nth(1)).toHaveValue('bob');
@@ -6974,6 +6977,54 @@ test('persists the exact running revision with one explicit save action', async 
   }]);
 });
 
+test('edits gui.cfg through the core archive API without exposing boot credentials', async ({page}) => {
+  const revision = `sha256:${'2'.repeat(64)}`;
+  const archiveHash = `sha256:${'a'.repeat(64)}`;
+  let published = '';
+  await mockSystemApi(page, {
+    smithproxy: 'ready', configSaveReady: true,
+    configRevision: revision, savedConfigRevision: revision,
+  }, true);
+  await page.route('**/api/v1/config/archive', async route => route.fulfill({json: {
+    state: 'ready', content_hash: archiveHash,
+    resources: [{path: 'gui.cfg', size: 512, executable: false}],
+  }}));
+  await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
+    state: 'ready', restart_required: true,
+    backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+    smithproxy: {
+      api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
+      api_token_file: '/run/credentials/gui.api-token', cli_endpoint: '127.0.0.1:50000',
+    },
+    gateway: {secret_file: '/run/credentials/gui.gateway', previous_secret_file: ''},
+  }}));
+  await page.route('**/api/v1/config/archive/resource/write?path=gui.cfg', async route => {
+    published = route.request().postData() ?? '';
+    expect(route.request().headers()['x-smithproxy-expected-revision']).toBe(revision);
+    expect(route.request().headers()['x-smithproxy-archive-sha256']).toBe(archiveHash);
+    await route.fulfill({json: {
+      state: 'written', content_hash: `sha256:${'b'.repeat(64)}`, restart_required: true,
+    }});
+  });
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  const gui = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'GUI service'}),
+  });
+  await expect(gui).toContainText('Boot settings published with the Smithproxy configuration archive');
+  await expect(gui).toContainText('/run/credentials/gui.api-token');
+  await expect(gui).not.toContainText('boot-token-value');
+  await gui.getByRole('button', {name: 'Edit GUI startup settings'}).click();
+  await gui.getByLabel('Backend port').fill('19082');
+  await gui.getByRole('button', {name: 'Publish GUI startup settings'}).click();
+  await gui.getByRole('button', {name: 'Confirm publish & restart later'}).click();
+  await expect.poll(() => published).toContain('port = 19082;');
+  expect(published).toContain('api_token_file = "/run/credentials/gui.api-token";');
+  expect(published).not.toContain('boot-token-value');
+  await expect(gui).toContainText('Controlled service restart required');
+});
+
 test('exposes network, object, and system vertical slices', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
@@ -7211,7 +7262,7 @@ test('exposes network, object, and system vertical slices', async ({page}) => {
   await expect(backups).not.toContainText('pki/trust/live.pem');
   await expect(resources).toContainText('pki/trust/live.pem');
   await expect(resources).not.toContainText('templates/restored.html');
-  await expect(resources).toContainText('Managed paths must begin with pki/, templates/, or commands/.');
+  await expect(resources).toContainText('Managed paths are gui.cfg or begin with pki/, templates/, or commands/.');
   await expect(resources).not.toContainText('messages/');
   await expect(resources).not.toContainText('ssh/');
   await expect(resources.getByLabel('Managed resource path')).toHaveAttribute('maxlength', '1024');

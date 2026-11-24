@@ -94,8 +94,8 @@ bool valid_archive_resource_path(const std::string_view path) noexcept {
     // native archive would reject later during publication.
     if (path.empty() || path.size() > 1024U || path.front() == '/' ||
         path.find('\\') != std::string_view::npos ||
-        !(path.starts_with("pki/") || path.starts_with("templates/") ||
-          path.starts_with("commands/"))) {
+        !(path == "gui.cfg" || path.starts_with("pki/") ||
+          path.starts_with("templates/") || path.starts_with("commands/"))) {
         return false;
     }
 

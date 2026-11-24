@@ -810,11 +810,20 @@ private:
                 *relative == "/api/v1/config/archive/resource/delete";
             std::optional<std::string> resource_path;
             if(resource_write) {
-                resource_path = archive_resource_query(MHD_lookup_connection_value(
-                    connection, MHD_GET_ARGUMENT_KIND, "path"));
+                const auto* requested_resource = MHD_lookup_connection_value(
+                    connection, MHD_GET_ARGUMENT_KIND, "path");
+                resource_path = archive_resource_query(requested_resource);
                 if(!resource_path) {
                     return {400, "application/json; charset=utf-8",
                             "{\"error\":\"invalid archive resource path\"}"};
+                }
+                if(*relative == "/api/v1/config/archive/resource/write" &&
+                   std::string_view(requested_resource) == "gui.cfg") {
+                    const auto gui = parse_gui_bootstrap(body);
+                    if(!gui.config) {
+                        return {400, "application/json; charset=utf-8",
+                                nlohmann::json{{"error", gui.error}}.dump()};
+                    }
                 }
             }
             const std::string_view upstream_method = resource_write
@@ -1352,6 +1361,12 @@ private:
             }
             return config_snapshot();
         }
+        if (*relative == "/api/v1/config/gui") {
+            if (!gateway_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
+            }
+            return gui_configuration();
+        }
         if (*relative == "/api/v1/config/archive") {
             if (!gateway_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
@@ -1424,6 +1439,48 @@ private:
                 "{\"status\":\"ok\",\"smithproxy\":{\"state\":" + json_string(status.state) +
                     ",\"detail\":" + json_string(status.detail) +
                     ",\"checked_at_unix_ms\":" + timestamp_json(status.checked_at) + "}}"};
+    }
+
+    Response gui_configuration() const {
+        const auto upstream = monitor_.archive_api(
+            "GET", "/api/config/archive/resource?path=gui.cfg");
+        if(!upstream.transport_ok) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration is unavailable\"}"};
+        }
+        if(upstream.status == 404L) {
+            return {200, "application/json; charset=utf-8",
+                    "{\"state\":\"absent\",\"restart_required\":true}"};
+        }
+        if(upstream.status != 200L) {
+            return {static_cast<unsigned>(upstream.status),
+                    "application/json; charset=utf-8", upstream.body};
+        }
+        const auto parsed = parse_gui_bootstrap(upstream.body);
+        if(!parsed.config) {
+            return {422, "application/json; charset=utf-8",
+                    nlohmann::json{{"error", parsed.error}}.dump()};
+        }
+        const auto& value = *parsed.config;
+        nlohmann::json document{
+            {"state", "ready"},
+            {"restart_required", true},
+            {"backend", {
+                {"bind_address", value.bind_address},
+                {"port", value.port},
+                {"base_path", value.base_path},
+            }},
+        };
+        document["smithproxy"] = value.api_url
+            ? nlohmann::json{{"api_url", *value.api_url}, {"ca_cert", *value.ca_cert},
+                {"api_token_file", *value.api_token_file},
+                {"cli_endpoint", value.cli_endpoint.value_or("")}}
+            : nlohmann::json(nullptr);
+        document["gateway"] = value.gateway_secret_file
+            ? nlohmann::json{{"secret_file", *value.gateway_secret_file},
+                {"previous_secret_file", value.gateway_previous_secret_file.value_or("")}}
+            : nlohmann::json(nullptr);
+        return {200, "application/json; charset=utf-8", document.dump()};
     }
 
     Response capabilities(MHD_Connection* connection) {

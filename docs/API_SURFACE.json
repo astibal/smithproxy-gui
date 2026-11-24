@@ -235,6 +235,14 @@
       "response_media_type": "application/json"
     },
     {
+      "path": "/api/v1/config/gui",
+      "methods": ["GET", "HEAD"],
+      "authentication": "gateway",
+      "csrf": false,
+      "feature": "config_read",
+      "response_media_type": "application/json"
+    },
+    {
       "path": "/api/v1/config/archive",
       "methods": ["GET", "HEAD"],
       "authentication": "gateway",

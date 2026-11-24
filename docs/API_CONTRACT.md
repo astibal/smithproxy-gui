@@ -266,6 +266,7 @@ disabled and the GUI never discovers support by attempting a mutating request.
 Native CFtar administration is exposed through the same trusted gateway:
 
 ```http
+GET  /api/v1/config/gui
 GET  /api/v1/config/archive
 GET  /api/v1/config/archive/download?version=current|previous
 GET  /api/v1/config/archive/resource?path=...
@@ -274,6 +275,13 @@ POST /api/v1/config/archive/restore
 POST /api/v1/config/archive/resource/write?path=...
 POST /api/v1/config/archive/resource/delete?path=...
 ```
+
+`GET /api/v1/config/gui` parses the saved `gui.cfg` resource into bounded,
+typed non-secret boot settings. A replacement is serialized by the browser,
+validated again by the GUI core, and published through Smithproxy's resource
+API with the same revision and archive-hash preconditions. The GUI process
+never opens CFtar for writing. Credential values are boot-scoped and remain
+outside both the archive and browser response.
 
 The browser never receives the Smithproxy API key and never fetches resource
 contents while building the inventory. Archive validation precedes restore;
