@@ -7701,6 +7701,13 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
   await tcpPorts.getByRole('button', {name: 'Add port'}).click();
   await tcpPorts.getByRole('textbox').nth(1).fill('8080');
   await editor.getByLabel('Routing table').fill('1000');
+  await editor.locator('#networking-bypass-0-destination').fill('2001:db8::10');
+  await editor.locator('#networking-bypass-0-port').fill('8443');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect(editor.getByText(/networks from the same IP family/i)).toBeVisible();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
+  await editor.locator('#networking-bypass-0-destination').fill('192.0.2.10');
   await editor.locator('#networking-bypass-0-port').fill('0');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
 

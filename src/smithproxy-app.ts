@@ -7696,9 +7696,15 @@ export class SmithproxyApp extends LitElement {
       const source = text(`bypass-${index}-source`);
       const destination = text(`bypass-${index}-destination`);
       const port = integer(`bypass-${index}-port`, 1, 65535);
+      const sourceNetwork = source ? parseCidr(source.value) : undefined;
+      const destinationNetwork = destination ? parseCidr(destination.value) : undefined;
       if (!source || !destination || port === undefined || !source.value.trim() || !destination.value.trim() ||
           [source.value, destination.value].some(value => value.length > 128 || /[\u0000-\u001f\u007f]/u.test(value))) {
         this.draftError = 'Each bypass rule requires bounded source and destination networks and a port from 1 through 65535.';
+        return undefined;
+      }
+      if (!sourceNetwork || !destinationNetwork || sourceNetwork.family !== destinationNetwork.family) {
+        this.draftError = 'Each bypass rule requires valid source and destination networks from the same IP family.';
         return undefined;
       }
       const base = `networking.bypass.[${index}]`;
@@ -8244,6 +8250,12 @@ export class SmithproxyApp extends LitElement {
     if (!source || !destination || source.length > 128 || destination.length > 128 ||
         !Number.isInteger(port) || port < 1 || port > 65535) {
       this.draftError = 'A bypass rule requires source and destination networks and a port from 1 through 65535.';
+      return;
+    }
+    const sourceNetwork = parseCidr(source);
+    const destinationNetwork = parseCidr(destination);
+    if (!sourceNetwork || !destinationNetwork || sourceNetwork.family !== destinationNetwork.family) {
+      this.draftError = 'A bypass rule requires valid source and destination networks from the same IP family.';
       return;
     }
     this.draftSaving = true;
