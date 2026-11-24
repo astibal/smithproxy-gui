@@ -1753,6 +1753,49 @@ private:
         return host != nullptr && loopback_authority(host);
     }
 
+    // Captures every value required to publish a verifier before a one-time
+    // enrollment capability is consumed.
+    struct EnrollmentPreflight {
+        GuiBootstrapConfig persistent;
+        std::string revision;
+        std::string archive_hash;
+    };
+
+    std::optional<EnrollmentPreflight> enrollment_preflight() const {
+        const auto resource = monitor_.archive_api(
+            "GET", "/api/config/archive/resource?path=gui.cfg");
+        const auto inventory = monitor_.archive_api("GET", "/api/config/archive/resources");
+        const auto status = monitor_.status();
+        const bool resource_ready = resource.transport_ok && resource.status == 200L;
+        const bool inventory_ready = inventory.transport_ok && inventory.status == 200L;
+        const bool revision_ready = status.config_snapshot.revision.has_value();
+        if(!resource_ready || !inventory_ready || !revision_ready) return std::nullopt;
+
+        auto persistent = parse_gui_bootstrap(resource.body);
+        const auto inventory_document = nlohmann::json::parse(inventory.body, nullptr, false);
+        const bool inventory_valid = !inventory_document.is_discarded() &&
+            inventory_document.is_object() && inventory_document.contains("content_hash") &&
+            inventory_document["content_hash"].is_string();
+        if(!persistent.config || !inventory_valid) return std::nullopt;
+        const auto archive_hash = inventory_document["content_hash"].get<std::string>();
+        if(!is_content_hash(archive_hash)) return std::nullopt;
+        return EnrollmentPreflight{
+            .persistent = std::move(*persistent.config),
+            .revision = *status.config_snapshot.revision,
+            .archive_hash = archive_hash,
+        };
+    }
+
+    bool administrators_configured() const {
+        auto lock = std::scoped_lock(administrator_state_mutex_);
+        if(!runtime_administrator_verifiers_.empty()) return true;
+        return std::any_of(
+            config_.administrators.begin(), config_.administrators.end(),
+            [&](const auto& administrator) {
+                return !disabled_administrators_.contains(administrator.name);
+            });
+    }
+
     Response auth_session(MHD_Connection* connection) const {
         const bool gateway = config_.gateway_secret.has_value();
         const bool gateway_request = gateway_authenticated(connection);
@@ -1760,11 +1803,16 @@ private:
             ? std::optional<std::string>{}
             : session_administrator(connection);
         const bool authenticated = gateway_request || administrator.has_value();
+        const bool administrator_exists = administrators_configured();
+        const bool initial_enrollment_ready = !gateway && !administrator_exists &&
+            enrollment_preflight().has_value();
         return {200, "application/json; charset=utf-8",
                 "{\"mode\":" + json_string(gateway ? "gateway" : "standalone") +
                     ",\"authenticated\":" + (authenticated ? "true" : "false") +
                     ",\"administrators_configured\":" +
-                    (!config_.administrators.empty() ? "true" : "false") +
+                    (administrator_exists ? "true" : "false") +
+                    ",\"initial_enrollment_ready\":" +
+                    (initial_enrollment_ready ? "true" : "false") +
                     ",\"administrator\":" +
                     (administrator ? json_string(*administrator) : "null") + "}"};
     }
@@ -1793,25 +1841,10 @@ private:
         // Validate every publication prerequisite before consuming the
         // single-use capability. A transient archive failure must not burn a
         // token that the administrator can no longer recover or replay.
-        const auto resource = monitor_.archive_api(
-            "GET", "/api/config/archive/resource?path=gui.cfg");
-        const auto inventory = monitor_.archive_api("GET", "/api/config/archive/resources");
-        const auto status = monitor_.status();
-        const bool resource_ready = resource.transport_ok && resource.status == 200L;
-        const bool inventory_ready = inventory.transport_ok && inventory.status == 200L;
-        const bool revision_ready = status.config_snapshot.revision.has_value();
-        if(!resource_ready || !inventory_ready || !revision_ready) {
+        auto preflight = enrollment_preflight();
+        if(!preflight) {
             return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration is unavailable; enrollment token was not consumed\"}"};
-        }
-        auto persistent = parse_gui_bootstrap(resource.body);
-        const auto inventory_document = nlohmann::json::parse(inventory.body, nullptr, false);
-        if(!persistent.config || inventory_document.is_discarded() ||
-           !inventory_document.is_object() ||
-           !inventory_document.contains("content_hash") ||
-           !inventory_document["content_hash"].is_string()) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration is invalid; enrollment token was not consumed\"}"};
+                    "{\"error\":\"Smithproxy GUI configuration is unavailable or invalid; enrollment token was not consumed\"}"};
         }
         const auto enrollment = monitor_.consume_gui_enrollment(
             request["token"].get<std::string>());
@@ -1824,11 +1857,11 @@ private:
                         : "{\"error\":\"Smithproxy enrollment service unavailable\"}"};
         }
         const auto existing = std::find_if(
-            persistent.config->administrators.begin(), persistent.config->administrators.end(),
+            preflight->persistent.administrators.begin(), preflight->persistent.administrators.end(),
             [&](const auto& administrator) {
                 return administrator.name == *enrollment.administrator;
             });
-        const bool rotating_existing = existing != persistent.config->administrators.end();
+        const bool rotating_existing = existing != preflight->persistent.administrators.end();
         if(rotating_existing && !current_administrator) {
             return {409, "application/json; charset=utf-8",
                     "{\"error\":\"administrator already exists\"}"};
@@ -1839,23 +1872,18 @@ private:
                     "{\"error\":\"administrator verifier unavailable\"}"};
         }
         const auto runtime_verifier = *verifier;
-        persistent.config->schema_version = 2U;
+        preflight->persistent.schema_version = 2U;
         if(rotating_existing) *existing = std::move(*verifier);
-        else persistent.config->administrators.push_back(std::move(*verifier));
-        const auto replacement = serialize_gui_bootstrap(*persistent.config);
+        else preflight->persistent.administrators.push_back(std::move(*verifier));
+        const auto replacement = serialize_gui_bootstrap(preflight->persistent);
         if(!replacement) {
             return {500, "application/json; charset=utf-8",
                     "{\"error\":\"GUI configuration serialization failed\"}"};
         }
-        const auto archive_hash = inventory_document["content_hash"].get<std::string>();
-        if(!is_content_hash(archive_hash)) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy archive precondition is invalid\"}"};
-        }
         const auto publication = monitor_.archive_api(
             "PUT", "/api/config/archive/resource?path=gui.cfg", *replacement,
-            {"X-Smithproxy-Expected-Revision: " + *status.config_snapshot.revision,
-             "X-Smithproxy-Archive-SHA256: " + archive_hash,
+            {"X-Smithproxy-Expected-Revision: " + preflight->revision,
+             "X-Smithproxy-Archive-SHA256: " + preflight->archive_hash,
              "X-Smithproxy-Executable: false"});
         if(!publication.transport_ok) {
             return {502, "application/json; charset=utf-8",

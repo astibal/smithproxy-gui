@@ -632,7 +632,7 @@ def main() -> int:
         assert status == 200
         assert json.loads(body) == {
             "mode": "standalone", "authenticated": False, "administrator": None,
-            "administrators_configured": False}
+            "administrators_configured": False, "initial_enrollment_ready": False}
         assert request(port, "/ws001/smithproxy-gui/api/v1/config/snapshot")[0] == 401
 
         status, headers, body = request(port, "/ws001/smithproxy-gui/")
@@ -691,7 +691,8 @@ def main() -> int:
             assert status == 200
             assert json.loads(body) == {
                 "mode": "standalone", "authenticated": False,
-                "administrators_configured": True, "administrator": None}
+                "administrators_configured": True, "initial_enrollment_ready": False,
+                "administrator": None}
             mutation_headers = {
                 "Host": f"127.0.0.1:{standalone_port}",
                 "Origin": f"http://127.0.0.1:{standalone_port}",
@@ -773,6 +774,14 @@ def main() -> int:
                 "X-Smithproxy-GUI-CSRF": "1",
                 "Sec-Fetch-Site": "same-origin",
             }
+            status, _, body = request(enrollment_port, "/api/v1/auth/session")
+            assert status == 200
+            assert json.loads(body) == {
+                "mode": "standalone", "authenticated": False,
+                "administrators_configured": False,
+                "initial_enrollment_ready": True,
+                "administrator": None,
+            }
             # Archive readiness is checked before the single-use capability is
             # consumed. The same token therefore remains usable after a
             # transient publication-prerequisite failure.
@@ -785,6 +794,9 @@ def main() -> int:
                 }))
             assert status == 502, body
             assert FakeSmithproxy.enrollment_requests == 0
+            status, _, body = request(enrollment_port, "/api/v1/auth/session")
+            assert status == 200
+            assert json.loads(body)["initial_enrollment_ready"] is False
             FakeSmithproxy.gui_resource_status = 200
             status, enrollment_headers, body = request(
                 enrollment_port, "/api/v1/auth/enroll", "POST", mutation_headers,
@@ -806,7 +818,8 @@ def main() -> int:
             assert status == 200
             assert json.loads(body) == {
                 "mode": "standalone", "authenticated": True,
-                "administrators_configured": False,
+                "administrators_configured": True,
+                "initial_enrollment_ready": False,
                 "administrator": "security-admin",
             }
 
@@ -1386,13 +1399,13 @@ def main() -> int:
             assert status == 200
             assert json.loads(body) == {
                 "mode": "gateway", "authenticated": False, "administrator": None,
-                "administrators_configured": False}
+                "administrators_configured": False, "initial_enrollment_ready": False}
             status, _, body = request(
                 configured_port, "/api/v1/auth/session", headers=gateway_headers)
             assert status == 200
             assert json.loads(body) == {
                 "mode": "gateway", "authenticated": True, "administrator": None,
-                "administrators_configured": False}
+                "administrators_configured": False, "initial_enrollment_ready": False}
             assert request(configured_port, "/api/v1/tools/dns/resolve?name=localhost")[0] == 401
             status, _, body = request(
                 configured_port, "/api/v1/tools/dns/resolve?name=localhost",

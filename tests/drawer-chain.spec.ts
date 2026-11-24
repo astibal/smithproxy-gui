@@ -95,6 +95,7 @@ type MockState = {
   gatewayAuthenticated?: boolean;
   gatewayAdministrator?: string | null;
   administratorsConfigured?: boolean;
+  initialEnrollmentReady?: boolean;
   forceManagementCapabilities?: boolean;
   consoleReady?: boolean;
   inconsistentPrivilegedCapabilities?: boolean;
@@ -316,6 +317,7 @@ async function mockSystemApi(
       authenticated: state.gatewayAuthenticated ?? true,
       administrator: state.gatewayAdministrator ?? null,
       administrators_configured: state.administratorsConfigured ?? false,
+      initial_enrollment_ready: state.initialEnrollmentReady ?? false,
     }});
   });
   await page.route('**/api/v1/tools/dns/resolve?*', async route => {
@@ -7058,6 +7060,26 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   expect(published).not.toContain('boot-token-value');
   await expect(gui).toContainText('restart pending');
   await expect(gui).toContainText('administrator changes activate immediately');
+});
+
+test('blocks initial enrollment until the core publication preflight is ready', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'standalone', gatewayAuthenticated: false,
+    administratorsConfigured: false, initialEnrollmentReady: false,
+  };
+  await mockSystemApi(page, state);
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', {name: 'Administrator enrollment is not ready'}))
+    .toBeVisible();
+  await expect(page.getByLabel('Enrollment token')).toHaveCount(0);
+  await expect(page.getByText('Do not issue a one-time enrollment token yet.')).toBeVisible();
+
+  state.initialEnrollmentReady = true;
+  await page.getByRole('button', {name: 'Retry readiness'}).click();
+  await expect(page.getByRole('heading', {name: 'Administrator enrollment'})).toBeVisible();
+  await expect(page.getByText('execute gui enrollment issue <administrator>')).toBeVisible();
+  await expect(page.getByLabel('Enrollment token')).toBeVisible();
 });
 
 test('adds a standalone administrator with a single-use core enrollment capability', async ({page}) => {

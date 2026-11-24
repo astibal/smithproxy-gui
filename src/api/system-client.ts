@@ -71,6 +71,7 @@ export interface GatewaySession {
   authenticated: boolean;
   administrator: string | null;
   administratorsConfigured: boolean;
+  initialEnrollmentReady: boolean;
 }
 
 export interface ArchiveEntry {
@@ -650,6 +651,7 @@ function parseGatewaySession(value: unknown): GatewaySession {
   if (!isObject(value) || (value.mode !== 'gateway' && value.mode !== 'standalone') ||
       typeof value.authenticated !== 'boolean' ||
       typeof value.administrators_configured !== 'boolean' ||
+      typeof value.initial_enrollment_ready !== 'boolean' ||
       (value.administrator !== null &&
        (typeof value.administrator !== 'string' || value.administrator.length === 0 ||
         value.administrator.length > 64)) ||
@@ -661,6 +663,7 @@ function parseGatewaySession(value: unknown): GatewaySession {
     mode: value.mode, authenticated: value.authenticated,
     administrator: value.administrator,
     administratorsConfigured: value.administrators_configured,
+    initialEnrollmentReady: value.initial_enrollment_ready,
   };
 }
 

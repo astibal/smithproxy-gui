@@ -108,11 +108,13 @@ returned addresses and never mutates the configuration. The result is an
 operator aid only; Smithproxy may observe different DNS data at runtime.
 
 The session endpoint reports gateway or standalone mode, authentication state,
-and the current standalone administrator name. Enrollment atomically consumes a
-ten-minute CLI token in Smithproxy and publishes only a salted scrypt verifier
-to `gui.cfg`. The verifier becomes active immediately; every older session for
-that identity is revoked, while initial enrollment and self-rotation issue one
-eight-hour HttpOnly replacement session. Login verifies the active verifier
+the current standalone administrator name, whether any administrator is active,
+and whether every prerequisite for initial enrollment is currently available.
+The readiness bit contains no resource path, revision, hash, or credential.
+Enrollment consumes a ten-minute CLI token in Smithproxy only after this
+preflight succeeds and publishes only a salted scrypt verifier to `gui.cfg`.
+The verifier becomes active immediately; every older session for that identity
+is revoked, while initial enrollment and self-rotation issue one eight-hour HttpOnly replacement session. Login verifies the active verifier
 under a global derivation rate limit; logout revokes the session immediately.
 The snapshot endpoint requires either this session or the
 trusted gateway handoff described in `SECURITY.md`; missing or invalid

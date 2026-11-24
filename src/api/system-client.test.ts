@@ -178,11 +178,13 @@ describe('SystemClient', () => {
   it('loads and validates the trusted gateway session', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       mode: 'gateway', authenticated: true, administrator: null, administrators_configured: false,
+      initial_enrollment_ready: false,
     }));
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
 
     await expect(client.authSession()).resolves.toEqual({
       mode: 'gateway', authenticated: true, administrator: null, administratorsConfigured: false,
+      initialEnrollmentReady: false,
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/auth/session', expect.objectContaining({redirect: 'error'}),
@@ -192,7 +194,7 @@ describe('SystemClient', () => {
   it('rejects contradictory or malformed gateway sessions', async () => {
     const client = new SystemClient('/api/v1', '/', async () =>
       jsonResponse({mode: 'standalone', authenticated: true, administrator: null,
-        administrators_configured: true}));
+        administrators_configured: true, initial_enrollment_ready: false}));
     await expect(client.authSession()).rejects.toThrow('Invalid gateway session response');
 
     const malformed = new SystemClient('/api/v1', '/', async () =>

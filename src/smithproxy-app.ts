@@ -16299,6 +16299,21 @@ export class SmithproxyApp extends LitElement {
       const validPassword = this.enrollmentPassword.length >= 14 &&
         this.enrollmentPassword.length <= 1024 &&
         this.enrollmentPassword === this.enrollmentPasswordConfirmation;
+      if (!this.gatewaySession.initialEnrollmentReady) {
+        return html`<main class="enrollment-shell">
+          <section class="enrollment-card" role="alert">
+            <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
+            <h1>Administrator enrollment is not ready</h1>
+            <p>The GUI core cannot currently read a valid <code>gui.cfg</code>, archive inventory,
+              and running configuration revision from Smithproxy.</p>
+            <p>Make the GUI bootstrap resource and authenticated core connection available, then
+              retry. Do not issue a one-time enrollment token yet.</p>
+            <button class="primary" type="button" @click=${() => { void this.loadCapabilities(); }}>
+              Retry readiness
+            </button>
+          </section>
+        </main>`;
+      }
       return html`<main class="enrollment-shell">
         <form class="enrollment-card" @submit=${(event: SubmitEvent) => {
           event.preventDefault();
