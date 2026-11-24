@@ -1383,6 +1383,20 @@ private:
             }
             return gui_configuration();
         }
+        if (*relative == "/api/v1/admin/administrators") {
+            if (!management_authenticated(connection)) {
+                return {401, "application/json; charset=utf-8",
+                        "{\"error\":\"authentication required\"}"};
+            }
+            const auto upstream = monitor_.administrator_api(
+                "GET", "/api/admin/administrators");
+            if(!upstream.transport_ok) {
+                return {502, "application/json; charset=utf-8",
+                        "{\"error\":\"Smithproxy administrator API unavailable\"}"};
+            }
+            return {static_cast<unsigned>(upstream.status),
+                    "application/json; charset=utf-8", upstream.body};
+        }
         if (*relative == "/api/v1/config/archive") {
             if (!management_authenticated(connection)) {
                 return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};

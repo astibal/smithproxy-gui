@@ -215,6 +215,21 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     }
 
     def do_GET(self):
+        if self.path == "/api/admin/administrators":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "state": "ready", "revision": FakeSmithproxy.config_revision,
+                "content_hash": FakeSmithproxy.archive_hash,
+                "restart_required": False,
+                "administrators": [
+                    {"name": "security-admin", "enabled": True},
+                    {"name": "disabled-admin", "enabled": False},
+                ],
+            }).encode())
+            return
         if self.path == "/api/config/archive/resources":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
             self.send_response(200)
@@ -621,6 +636,7 @@ def main() -> int:
             "/api/v1/tls/cache/summary", "/api/v1/network/neighbors/summary",
             "/api/v1/network/interfaces/summary", "/api/v1/events/recent", "/api/v1/events",
             "/api/v1/alerts", "/api/v1/audit/recent", "/api/v1/jobs",
+            "/api/v1/admin/administrators",
         ):
             assert request(port, "/ws001/smithproxy-gui" + protected_path)[0] == 401
         assert_error_response(request(
@@ -1407,6 +1423,21 @@ def main() -> int:
             assert json.loads(body) == {
                 "mode": "gateway", "authenticated": True, "administrator": None,
                 "administrators_configured": False, "initial_enrollment_ready": False}
+
+            status, _, body = request(
+                configured_port, "/api/v1/admin/administrators",
+                headers=gateway_headers)
+            assert status == 200
+            assert json.loads(body) == {
+                "state": "ready", "revision": FakeSmithproxy.config_revision,
+                "content_hash": FakeSmithproxy.archive_hash,
+                "restart_required": False,
+                "administrators": [
+                    {"name": "security-admin", "enabled": True},
+                    {"name": "disabled-admin", "enabled": False},
+                ],
+            }
+            assert FakeSmithproxy.api_key == secret
 
             # A launcher-bootstrapped GUI can create its first persistent
             # gui.cfg through Smithproxy core. Absence is not treated as an

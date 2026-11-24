@@ -60,6 +60,12 @@ struct ArchiveApiResponse {
     bool transport_ok{};
 };
 
+struct AdministratorApiResponse {
+    long status{};
+    std::string body;
+    bool transport_ok{};
+};
+
 struct GuiEnrollmentResponse {
     std::optional<std::string> administrator;
     std::string error;
@@ -89,6 +95,13 @@ public:
     // allow-listed in the implementation; callers cannot turn GUI core into a
     // generic authenticated Smithproxy proxy.
     [[nodiscard]] ArchiveApiResponse archive_api(
+        std::string_view method, std::string_view path,
+        std::string_view body = {},
+        const std::vector<std::string>& extra_headers = {}) const;
+    // Restricted pass-through for Core-owned administrator records. The
+    // allow-list deliberately excludes archive resource writes: GUI core may
+    // request typed administrator operations, but never serialize admin.cfg.
+    [[nodiscard]] AdministratorApiResponse administrator_api(
         std::string_view method, std::string_view path,
         std::string_view body = {},
         const std::vector<std::string>& extra_headers = {}) const;
