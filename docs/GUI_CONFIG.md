@@ -75,12 +75,12 @@ the next typed publication writes the version explicitly.
 
 The referenced credential files are boot-time material, must be owned by the
 GUI service account, and must have mode `0600`. A trailing newline is accepted.
-The persistent archive contains only their locations. This permits Smithproxy to
-mint a new dedicated GUI API token for every boot without rewriting CFtar.
+The persistent archive contains only their locations. This layout permits a
+dedicated GUI API token to be replaced for every boot without rewriting CFtar.
 
-The service launcher generates one high-entropy token before starting either
-process and writes the same value into two separately owned `0600` runtime
-files. Smithproxy receives the path to its copy through
+A deployment that rotates the credential per boot generates one high-entropy
+token before starting either process and writes the same value into two
+separately owned `0600` runtime files. Smithproxy receives the path to its copy through
 `SMITHPROXY_GUI_API_KEY_FILE`; the GUI receives the path to its copy through the
 `smithproxy.api_token_file` setting above. Smithproxy loads this credential as
 an archive-capable API key because the GUI publishes `gui.cfg`, removes the
@@ -117,3 +117,10 @@ prevents both immediate self-lockout and an administrator-free next boot.
 Successful removal immediately revokes that identity's runtime sessions and
 blocks new logins for the rest of the current boot. A controlled restart then
 loads the reduced persistent administrator set from `gui.cfg`.
+
+Before consuming an enrollment token, the GUI verifies that `gui.cfg`, the
+archive inventory, and the running configuration revision are all available.
+A failed readiness check therefore leaves the one-time token usable. Failures
+after consumption require a new token; making consumption and publication one
+cross-process atomic operation requires a future reserve/commit capability in
+the Smithproxy core API.

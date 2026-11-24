@@ -1790,6 +1790,29 @@ private:
             return {400, "application/json; charset=utf-8",
                     "{\"error\":\"administrator password must contain 14..1024 characters\"}"};
         }
+        // Validate every publication prerequisite before consuming the
+        // single-use capability. A transient archive failure must not burn a
+        // token that the administrator can no longer recover or replay.
+        const auto resource = monitor_.archive_api(
+            "GET", "/api/config/archive/resource?path=gui.cfg");
+        const auto inventory = monitor_.archive_api("GET", "/api/config/archive/resources");
+        const auto status = monitor_.status();
+        const bool resource_ready = resource.transport_ok && resource.status == 200L;
+        const bool inventory_ready = inventory.transport_ok && inventory.status == 200L;
+        const bool revision_ready = status.config_snapshot.revision.has_value();
+        if(!resource_ready || !inventory_ready || !revision_ready) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration is unavailable; enrollment token was not consumed\"}"};
+        }
+        auto persistent = parse_gui_bootstrap(resource.body);
+        const auto inventory_document = nlohmann::json::parse(inventory.body, nullptr, false);
+        if(!persistent.config || inventory_document.is_discarded() ||
+           !inventory_document.is_object() ||
+           !inventory_document.contains("content_hash") ||
+           !inventory_document["content_hash"].is_string()) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration is invalid; enrollment token was not consumed\"}"};
+        }
         const auto enrollment = monitor_.consume_gui_enrollment(
             request["token"].get<std::string>());
         if(!enrollment.administrator) {
@@ -1799,24 +1822,6 @@ private:
                     status == 403U
                         ? "{\"error\":\"invalid or expired enrollment token\"}"
                         : "{\"error\":\"Smithproxy enrollment service unavailable\"}"};
-        }
-        const auto resource = monitor_.archive_api(
-            "GET", "/api/config/archive/resource?path=gui.cfg");
-        const auto inventory = monitor_.archive_api("GET", "/api/config/archive/resources");
-        const auto status = monitor_.status();
-        if(!resource.transport_ok || resource.status != 200L || !inventory.transport_ok ||
-           inventory.status != 200L || !status.config_snapshot.revision) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration is unavailable\"}"};
-        }
-        auto persistent = parse_gui_bootstrap(resource.body);
-        const auto inventory_document = nlohmann::json::parse(inventory.body, nullptr, false);
-        if(!persistent.config || inventory_document.is_discarded() ||
-           !inventory_document.is_object() ||
-           !inventory_document.contains("content_hash") ||
-           !inventory_document["content_hash"].is_string()) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration is invalid\"}"};
         }
         const auto existing = std::find_if(
             persistent.config->administrators.begin(), persistent.config->administrators.end(),

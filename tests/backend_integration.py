@@ -63,9 +63,11 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
 };
 '''
     gui_resource = initial_gui_resource
+    gui_resource_status = 200
     published_gui_resource = None
     enrollment_token = "e" * 64
     enrollment_administrator = "security-admin"
+    enrollment_requests = 0
     revision_requests = 0
     state_requests = 0
     state_status = 200
@@ -226,10 +228,11 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             return
         if self.path == "/api/config/archive/resource?path=gui.cfg":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
-            self.send_response(200)
+            self.send_response(FakeSmithproxy.gui_resource_status)
             self.send_header("Content-Type", "application/octet-stream")
             self.end_headers()
-            self.wfile.write(FakeSmithproxy.gui_resource.encode())
+            if FakeSmithproxy.gui_resource_status == 200:
+                self.wfile.write(FakeSmithproxy.gui_resource.encode())
             return
         if self.path == "/api/status/ping":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
@@ -406,6 +409,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             }).encode())
             return
         if self.path == "/api/gui/enrollment/consume":
+            FakeSmithproxy.enrollment_requests += 1
             expected_cookie = (
                 f"__sx_api={FakeSmithproxy.auth_token}; "
                 f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
@@ -745,6 +749,7 @@ def main() -> int:
             "HTTP_PROXY": "http://127.0.0.1:1",
         })
         FakeSmithproxy.published_gui_resource = None
+        FakeSmithproxy.enrollment_requests = 0
         enrollment_state_requests = FakeSmithproxy.state_requests
         enrollment = subprocess.Popen(
             [binary, "--port", str(enrollment_port), "--assets", assets],
@@ -768,6 +773,19 @@ def main() -> int:
                 "X-Smithproxy-GUI-CSRF": "1",
                 "Sec-Fetch-Site": "same-origin",
             }
+            # Archive readiness is checked before the single-use capability is
+            # consumed. The same token therefore remains usable after a
+            # transient publication-prerequisite failure.
+            FakeSmithproxy.gui_resource_status = 503
+            status, _, body = request(
+                enrollment_port, "/api/v1/auth/enroll", "POST", mutation_headers,
+                json.dumps({
+                    "token": FakeSmithproxy.enrollment_token,
+                    "password": enrollment_password,
+                }))
+            assert status == 502, body
+            assert FakeSmithproxy.enrollment_requests == 0
+            FakeSmithproxy.gui_resource_status = 200
             status, enrollment_headers, body = request(
                 enrollment_port, "/api/v1/auth/enroll", "POST", mutation_headers,
                 json.dumps({
@@ -775,6 +793,7 @@ def main() -> int:
                     "password": enrollment_password,
                 }))
             assert status == 200, body
+            assert FakeSmithproxy.enrollment_requests == 1
             assert json.loads(body) == {
                 "administrator": "security-admin", "operation": "created"}
             assert "HttpOnly" in enrollment_headers["Set-Cookie"]
@@ -932,6 +951,7 @@ def main() -> int:
             enrollment.wait(timeout=4)
         assert enrollment.returncode == 0, enrollment.stderr.read()
         FakeSmithproxy.gui_resource = FakeSmithproxy.initial_gui_resource
+        FakeSmithproxy.gui_resource_status = 200
         FakeSmithproxy.enrollment_token = "e" * 64
         FakeSmithproxy.enrollment_administrator = "security-admin"
 

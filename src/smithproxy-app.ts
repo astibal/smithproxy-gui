@@ -11888,7 +11888,7 @@ export class SmithproxyApp extends LitElement {
           </fieldset>
         </div>
         <div class="privacy-note">
-          Paths are persistent configuration. Smithproxy creates the referenced credentials for each boot;
+          Paths are persistent configuration. The referenced credentials are provisioned for the running boot;
           their values are never stored in CFtar or returned to the browser.
         </div>
         ${validationError ? html`<div class="metrics-message danger" role="alert">
