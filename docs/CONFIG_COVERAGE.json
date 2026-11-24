@@ -2,7 +2,7 @@
   "schema_version": 1,
   "upstream": {
     "repository": "astibal/smithproxy",
-    "revision": "8797d47fda5e469f5419852ff4bf177c27cee115",
+    "revision": "0273850eff0e9218f545bf8b7739ad733e4f1b02",
     "reference_config": "etc/smithproxy.cfg"
   },
   "status_definitions": {
