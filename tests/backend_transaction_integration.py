@@ -221,7 +221,10 @@ def main() -> int:
     script_profiles = FakeSmithproxy.config_sections.pop("script_profiles")
     auth_profiles = FakeSmithproxy.config_sections.pop("auth_profiles")
     captures = FakeSmithproxy.config_sections["captures"]
-    FakeSmithproxy.config_sections["captures"] = {"local": {"enabled": "false"}}
+    FakeSmithproxy.config_sections["captures"] = {"local": {
+        "enabled": "false",
+        "future_sink": "capture-value-must-not-cross-the-GUI-boundary",
+    }}
     tls_ca = FakeSmithproxy.config_sections.pop("tls_ca")
     detection_signatures = FakeSmithproxy.config_sections.pop("detection_signatures")
     port_objects = FakeSmithproxy.config_sections.pop("port_objects")
@@ -236,6 +239,8 @@ def main() -> int:
     FakeSmithproxy.config_sections["future_access_policy"] = {
         "private_value": "must-not-cross-the-GUI-boundary",
     }
+    FakeSmithproxy.config_sections["settings"]["future_control"] = (
+        "nested-value-must-not-cross-the-GUI-boundary")
 
     fake_port = free_port()
     fake = http.server.ThreadingHTTPServer(("127.0.0.1", fake_port), TransactionSmithproxy)
@@ -310,7 +315,12 @@ def main() -> int:
             assert live_config["ports"] == []
             assert live_config["protocols"] == []
             assert live_config["unmapped_sections"] == ["future_access_policy"]
+            assert live_config["unmapped_paths"] == [
+                "captures.local.future_sink", "settings.future_control",
+            ]
             assert b"must-not-cross-the-GUI-boundary" not in body
+            assert b"nested-value-must-not-cross-the-GUI-boundary" not in body
+            assert b"capture-value-must-not-cross-the-GUI-boundary" not in body
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
@@ -604,6 +614,7 @@ def main() -> int:
     FakeSmithproxy.config_sections["content_profiles"]["safe-content"][
         "content_rules"] = content_rules
     FakeSmithproxy.config_sections.pop("future_access_policy")
+    FakeSmithproxy.config_sections["settings"].pop("future_control")
     fake.shutdown()
     fake.server_close()
     fake_thread.join(timeout=2)

@@ -12509,18 +12509,20 @@ export class SmithproxyApp extends LitElement {
               </p>
             ` : nothing}
           </article>
-          ${this.snapshot?.unmappedSections.length ? html`
+          ${(this.snapshot?.unmappedSections.length || this.snapshot?.unmappedPaths.length) ? html`
             <article class="domain-card" data-system-section="configuration" role="alert">
               <header>
                 <div><h3>Some configuration is not supported</h3>
-                  <p>The running configuration contains sections added after this GUI version</p></div>
-                <span class="runtime-state danger">● ${this.snapshot.unmappedSections.length} unmapped</span>
+                  <p>The running configuration contains sections or fields added after this GUI version</p></div>
+                <span class="runtime-state danger">● ${this.snapshot.unmappedSections.length + this.snapshot.unmappedPaths.length} unmapped</span>
               </header>
               <p>Existing values remain active and untouched. Install a matching GUI version before changing
-                these sections; an unsafe generic editor is intentionally not used.</p>
-              <div class="archive-resources" aria-label="Unmapped configuration sections">
+                these settings; an unsafe generic editor is intentionally not used.</p>
+              <div class="archive-resources" aria-label="Unmapped configuration settings">
                 ${this.snapshot.unmappedSections.map(section => html`
-                  <div class="archive-resource"><code>${section}</code><span>Not editable</span></div>`)}
+                  <div class="archive-resource"><code>${section}</code><span>Section not editable</span></div>`)}
+                ${this.snapshot.unmappedPaths.map(path => html`
+                  <div class="archive-resource"><code>${path}</code><span>Field not editable</span></div>`)}
               </div>
             </article>
           ` : nothing}

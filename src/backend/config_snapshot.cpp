@@ -8,6 +8,7 @@
 #include <array>
 #include <charconv>
 #include <cctype>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <set>
@@ -26,6 +27,137 @@ constexpr std::size_t maximum_rule_length = 65536U;
 constexpr std::uint64_t maximum_config_integer = 2147483647U;
 
 bool valid_name(const std::string& value);
+
+constexpr std::size_t maximum_unmapped_paths = 128U;
+
+bool safe_config_field_name(const std::string_view value) {
+    if (value.empty()) return false;
+    const auto first = static_cast<unsigned char>(value.front());
+    const bool valid_first_character = std::isalpha(first) != 0 || value.front() == '_';
+    if (!valid_first_character) return false;
+    return std::all_of(value.begin() + 1, value.end(), [](const unsigned char character) {
+        return std::isalnum(character) != 0 || character == '_' || character == '-';
+    });
+}
+
+// Record schema drift without allowing an unknown value to cross the backend
+// boundary. Unsafe field names are represented by one stable placeholder.
+void append_unmapped_fields(
+    const Json& object, const std::string_view prefix,
+    const std::initializer_list<std::string_view> allowed,
+    std::vector<std::string>& paths) {
+    if (!object.is_object() || paths.size() >= maximum_unmapped_paths) return;
+    const std::set<std::string_view, std::less<>> allowed_fields(allowed);
+    for (const auto& [name, ignored] : object.items()) {
+        if (allowed_fields.contains(name) || paths.size() >= maximum_unmapped_paths) continue;
+        const auto field = safe_config_field_name(name) ? name : std::string{"_invalid_field_name"};
+        paths.push_back(std::string(prefix) + '.' + field);
+    }
+}
+
+std::vector<std::string> unmapped_fixed_schema_paths(const Json& config) {
+    std::vector<std::string> paths;
+    const auto inspect_object = [&](const char* section, const std::initializer_list<std::string_view> allowed) {
+        const auto value = config.find(section);
+        if (value != config.end()) append_unmapped_fields(*value, section, allowed, paths);
+    };
+
+    inspect_object("settings", {
+        "accept_tproxy", "accept_redirect", "accept_socks", "accept_http_connect", "accept_api",
+        "extended_local_destination_protection", "policy_fail_open", "policy_access_request_fail_open",
+        "plaintext_workers", "ssl_workers", "udp_workers", "dtls_workers", "quic_workers",
+        "socks_workers", "http_connect_workers", "plaintext_port", "ssl_port", "udp_port",
+        "dtls_port", "quic_port", "socks_port", "http_connect_port", "ssl_ocsp_status_ttl",
+        "ssl_crl_status_ttl", "default_write_payload", "write_payload_dir", "write_pcap_single_quota",
+        "log_level", "log_file", "log_console", "sslkeylog_file", "syslog_server", "syslog_port",
+        "syslog_facility", "syslog_level", "syslog_family", "udp_quick_ports", "certs_path",
+        "certs_ca_key_password", "certs_ctlog", "custom_cert_fallback_dir", "ca_bundle_path",
+        "ca_bundle_file", "messages_dir", "write_payload_file_prefix", "write_payload_file_suffix",
+        "tpool_log", "ssl_autodetect", "ssl_autodetect_harder", "ssl_use_ktls", "nameservers",
+        "interfaces", "cli", "web_rating", "admin", "tuning", "socks", "http_connect",
+        "http_api", "webhook",
+    });
+    inspect_object("networking", {
+        "table", "control_socket", "placement", "interfaces", "tenant_ranges", "tenant_index",
+        "tcp_all", "udp_all", "ipv6_udp", "tcp_ports", "tls_ports", "udp_ports", "dtls_ports",
+        "drop_udp_ports", "redirect_tcp_port", "redirect_tls_port", "redirect_dns_port",
+        "redirect_exempt_uids", "redirect_exempt_lan", "bypass", "manage_routing", "manage_sysctls",
+        "routing_table", "routing_priority", "forwarding", "nonlocal_bind", "tcp_low_latency",
+        "tcp_syn_retries", "mark", "mask", "blackhole_max_ttl_ms",
+    });
+    inspect_object("debug", {
+        "log_data_crc", "log_sockets", "log_online_cx_name", "log_srclines",
+        "log_srclines_always", "log",
+    });
+    inspect_object("captures", {"local", "remote", "options"});
+
+    const auto settings = config.find("settings");
+    if (settings != config.end() && settings->is_object()) {
+        const auto inspect_group = [&](const char* group, const std::initializer_list<std::string_view> allowed) {
+            const auto value = settings->find(group);
+            if (value != settings->end()) {
+                append_unmapped_fields(*value, std::string{"settings."} + group, allowed, paths);
+            }
+        };
+        inspect_group("cli", {"port", "enable_password"});
+        inspect_group("web_rating", {"wot_key"});
+        inspect_group("admin", {"group"});
+        inspect_group("tuning", {
+            "host_bufsz_min", "host_bufsz_max_multiplier", "host_write_full", "host_io_batch",
+            "tls_write_chunk", "quic_listener_rcvbuf", "quic_inbox_packets", "quic_inbox_bytes",
+            "host_open_timeout", "host_idle_timeout", "nbr_cache_size",
+        });
+        inspect_group("socks", {"async_dns", "ipver_mixing", "prefer_ipv6", "proxy_authorization"});
+        inspect_group("http_connect", {"proxy_authorization"});
+        inspect_group("http_api", {
+            "keys", "allowed_ips", "key_timeout", "port", "key_extend_on_access", "loopback_only",
+            "pam_login", "allow_api_header", "bind_address", "bind_interface",
+        });
+        inspect_group("webhook", {
+            "enabled", "tls_verify", "synchronous_mode", "url", "sift", "sift_url", "sift_tenant_id",
+            "sift_instance_id", "sift_payload_limit_per_direction", "sift_lored_mode",
+            "sift_lored_include_url", "hostid", "bind_interface", "api_override", "ping_interval",
+            "nbr_update_interval", "nbr_tag_refresh_age", "task_debug", "task_debug_dump",
+        });
+        if (const auto rules = settings->find("interfaces"); rules != settings->end() && rules->is_array()) {
+            for (const auto& rule : *rules) {
+                append_unmapped_fields(rule, "settings.interfaces[]", {"match", "role"}, paths);
+                if (rule.is_object()) {
+                    if (const auto match = rule.find("match"); match != rule.end()) {
+                        append_unmapped_fields(*match, "settings.interfaces[].match",
+                                               {"if_name", "if_address"}, paths);
+                    }
+                }
+            }
+        }
+    }
+
+    const auto networking = config.find("networking");
+    if (networking != config.end() && networking->is_object()) {
+        if (const auto bypass = networking->find("bypass"); bypass != networking->end() && bypass->is_array()) {
+            for (const auto& rule : *bypass) {
+                append_unmapped_fields(rule, "networking.bypass[]", {"source", "destination", "port"}, paths);
+            }
+        }
+    }
+
+    const auto captures = config.find("captures");
+    if (captures != config.end() && captures->is_object()) {
+        const auto inspect_group = [&](const char* group, const std::initializer_list<std::string_view> allowed) {
+            const auto value = captures->find(group);
+            if (value != captures->end()) {
+                append_unmapped_fields(*value, std::string{"captures."} + group, allowed, paths);
+            }
+        };
+        inspect_group("local", {"enabled", "dir", "file_prefix", "file_suffix", "format", "pcap_quota"});
+        inspect_group("remote", {"enabled", "tun_type", "gre_format", "tun_dst", "tun_ttl", "bind_interface"});
+        inspect_group("options", {"calculate_checksums", "metadata", "statistics", "transport", "protocol_events"});
+    }
+
+    std::sort(paths.begin(), paths.end());
+    paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+    return paths;
+}
 
 std::optional<Json> section_value(const std::string_view payload, const char* section) {
     const auto document = Json::parse(payload, nullptr, false);
@@ -407,6 +539,7 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
         if (!mapped_sections.contains(name)) unmapped_sections.push_back(name);
     }
     std::sort(unmapped_sections.begin(), unmapped_sections.end());
+    auto unmapped_paths = unmapped_fixed_schema_paths(config);
 
     // Empty collections are optional in valid Smithproxy configurations.
     // Normalize only the parser input; presence remains available below for
@@ -456,6 +589,7 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     parsed.snapshot->captures_present = captures_present;
     parsed.snapshot->present_collections = std::move(present_collections);
     parsed.snapshot->unmapped_sections = std::move(unmapped_sections);
+    parsed.snapshot->unmapped_paths = std::move(unmapped_paths);
     // Atomic snapshots bind every synthesized entity ID to one canonical
     // revision. They remain safe transaction handles until that revision
     // changes, unlike IDs assembled from legacy multi-request reads.

@@ -1386,6 +1386,13 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       unmappedSections.some(item => !/^[A-Za-z_][A-Za-z0-9_-]*$/u.test(item))) {
     throw new Error('Invalid unmapped configuration sections.');
   }
+  const unmappedPaths = boundedArray(
+    value.unmapped_paths, 'unmapped configuration paths', 128,
+  ).map(item => safeString(item, 'unmapped configuration path', 256));
+  if (new Set(unmappedPaths).size !== unmappedPaths.length ||
+      unmappedPaths.some(item => !/^[A-Za-z_][A-Za-z0-9_-]*(?:\[\])?(?:\.[A-Za-z_][A-Za-z0-9_-]*(?:\[\])?)*$/u.test(item))) {
+    throw new Error('Invalid unmapped configuration paths.');
+  }
 
   return {
     source: 'live',
@@ -1399,6 +1406,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     capturesPresent: value.captures_present === true,
     presentCollections,
     unmappedSections,
+    unmappedPaths,
     policies,
     addresses,
     ports,

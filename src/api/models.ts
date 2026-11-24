@@ -488,6 +488,7 @@ export interface ConfigSnapshot {
   capturesPresent: boolean;
   presentCollections: ReadonlyArray<string>;
   unmappedSections: ReadonlyArray<string>;
+  unmappedPaths: ReadonlyArray<string>;
   policies: ReadonlyArray<PolicySummary>;
   addresses: ReadonlyArray<AddressObject>;
   ports: ReadonlyArray<PortObject>;

@@ -16,6 +16,7 @@ const liveSnapshot = {
     'routing', 'starttls_signatures', 'detection_signatures', 'script_profiles', 'auth_profiles',
   ],
   unmapped_sections: [],
+  unmapped_paths: [],
   policies: [{
     id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
     source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
@@ -266,9 +267,15 @@ describe('ApiConfigClient', () => {
     expect(parseConfigSnapshot({
       ...liveSnapshot, unmapped_sections: ['future_access_policy'],
     }).unmappedSections).toEqual(['future_access_policy']);
+    expect(parseConfigSnapshot({
+      ...liveSnapshot, unmapped_paths: ['settings.future_control', 'networking.bypass[].label'],
+    }).unmappedPaths).toEqual(['settings.future_control', 'networking.bypass[].label']);
     expect(() => parseConfigSnapshot({
       ...liveSnapshot, unmapped_sections: ['unsafe section'],
     })).toThrow('Invalid unmapped configuration sections');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, unmapped_paths: ['settings.bad field'],
+    })).toThrow('Invalid unmapped configuration paths');
     expect(parseConfigSnapshot({
       ...liveSnapshot,
       revision: '89afe0b0ccaad050ce7fca8f78661c35',

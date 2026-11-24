@@ -17,6 +17,7 @@ const snapshot: ConfigSnapshot = {
     'routing', 'starttls_signatures', 'detection_signatures', 'script_profiles', 'auth_profiles',
   ],
   unmappedSections: [],
+  unmappedPaths: [],
   policies: [
     {
       id: 'policy-office',

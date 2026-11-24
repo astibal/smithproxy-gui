@@ -129,6 +129,7 @@ type MockState = {
   configSnapshotDelayMs?: number;
   configSnapshotState?: 'ready' | 'unavailable';
   unmappedConfigSections?: string[];
+  unmappedConfigPaths?: string[];
   tlsCaPresent?: boolean;
   starttlsSignaturesPresent?: boolean;
   detectionSignaturesPresent?: boolean;
@@ -913,6 +914,7 @@ async function mockSystemApi(
           : []),
       ],
       unmapped_sections: state.unmappedConfigSections ?? [],
+      unmapped_paths: state.unmappedConfigPaths ?? [],
       ports: [
         {id: 'port-0', name: 'https', start: 443, end: 443},
         ...(state.unusedPrimitives ? [{id: 'port-1', name: 'unused-admin', start: 9443, end: 9443}] : []),
@@ -7027,6 +7029,7 @@ test('keeps an unsaved running configuration visible on mobile', async ({page}) 
 test('surfaces unmapped configuration sections without exposing their values', async ({page}) => {
   await mockSystemApi(page, {
     smithproxy: 'ready', unmappedConfigSections: ['future_access_policy'],
+    unmappedConfigPaths: ['settings.future_control'],
   }, true);
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
@@ -7037,7 +7040,9 @@ test('surfaces unmapped configuration sections without exposing their values', a
   });
   await expect(warning).toBeVisible();
   await expect(warning).toContainText('future_access_policy');
-  await expect(warning).toContainText('Not editable');
+  await expect(warning).toContainText('settings.future_control');
+  await expect(warning).toContainText('Section not editable');
+  await expect(warning).toContainText('Field not editable');
 });
 
 test('keeps mobile draft and startup actions visible without overflowing the topbar', async ({page}) => {
