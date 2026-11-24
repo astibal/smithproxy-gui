@@ -141,6 +141,34 @@ bool is_loopback_http(const std::string_view url) {
            url.starts_with("http://[::1]:");
 }
 
+// Validate the small authority subset accepted by the GUI bootstrap contract.
+// API endpoints never carry credentials or paths and an explicit port, when
+// present, must be usable by the Smithproxy client after a service restart.
+bool valid_api_authority(const std::string_view authority) {
+    if(authority.empty()) return false;
+    std::string_view port;
+    if(authority.starts_with('[')) {
+        const auto closing = authority.find(']');
+        if(closing == std::string_view::npos || closing == 1U) return false;
+        const auto suffix = authority.substr(closing + 1U);
+        if(suffix.empty()) return true;
+        if(!suffix.starts_with(':') || suffix.size() == 1U) return false;
+        port = suffix.substr(1U);
+    } else {
+        const auto separator = authority.rfind(':');
+        if(separator == std::string_view::npos) return true;
+        const bool ambiguous_authority = separator == 0U ||
+            authority.find(':') != separator || separator + 1U == authority.size();
+        if(ambiguous_authority) return false;
+        port = authority.substr(separator + 1U);
+    }
+    unsigned parsed_port{};
+    const auto [end, error] = std::from_chars(
+        port.data(), port.data() + port.size(), parsed_port);
+    return error == std::errc{} && end == port.data() + port.size() &&
+        parsed_port >= 1U && parsed_port <= 65535U;
+}
+
 bool valid_api_url(const std::string_view url) {
     if (!(url.starts_with("https://") || is_loopback_http(url)) ||
         url.find_first_of(" \t\r\n?#@") != std::string_view::npos) {
@@ -148,7 +176,9 @@ bool valid_api_url(const std::string_view url) {
     }
     const auto authority = url.find("://") + 3U;
     const auto slash = url.find('/', authority);
-    return slash == std::string_view::npos || slash == url.size() - 1U;
+    const auto authority_end = slash == std::string_view::npos ? url.size() : slash;
+    return valid_api_authority(url.substr(authority, authority_end - authority)) &&
+        (slash == std::string_view::npos || slash == url.size() - 1U);
 }
 
 bool valid_header_value(const std::string_view value) {

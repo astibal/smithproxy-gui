@@ -2674,6 +2674,14 @@ int main() {
         "gui = { backend = { port = 18082; future_setting = true; }; };\n").config);
     assert(!parse_gui_bootstrap("gui = { backend = { port = 0; }; };\n").config);
     assert(!parse_gui_bootstrap("gui = { smithproxy = { api_url = \"http://remote:1\"; }; };\n").config);
+    for(const char* invalid_api_url : {
+            "https://", "https://host:", "https://host:0", "https://host:65536",
+            "https://host:port", "https://host:22:33", "http://127.0.0.1:",
+            "http://localhost:65536"}) {
+        const auto source = std::string{"gui = { smithproxy = { api_url = \""} +
+            invalid_api_url + "\"; }; };\n";
+        assert(!parse_gui_bootstrap(source).config);
+    }
     assert(!parse_gui_bootstrap(
         "gui = { backend = { bind_address = \"0.0.0.0\"; }; };\n").config);
     assert(!parse_gui_bootstrap(
