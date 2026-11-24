@@ -292,89 +292,55 @@ ParseResult parse_gui_config_file(
     const std::filesystem::path& path, const std::filesystem::path& default_asset_root) {
     const auto source = read_protected_file(path, "GUI configuration", 1024U * 1024U, false);
     if (!source.value) return failure(source.error);
-    libconfig::Config document;
-    try {
-        document.readString(*source.value);
-    } catch (const libconfig::ParseException& error) {
-        return failure("invalid gui.cfg at line " + std::to_string(error.getLine()));
-    }
-    const auto& root = document.getRoot();
-    if (!root.exists("gui") || root["gui"].getType() != libconfig::Setting::TypeGroup) {
-        return failure("gui.cfg must contain a gui group");
-    }
-    const auto& gui = root["gui"];
+    const auto bootstrap = parse_gui_bootstrap(*source.value);
+    if (!bootstrap.config) return failure(bootstrap.error);
+
+    const auto& persistent = *bootstrap.config;
     AppConfig config;
+    config.bind_address = persistent.bind_address;
+    config.port = persistent.port;
+    config.base_path = persistent.base_path;
     config.asset_root = default_asset_root;
     config.gui_config_path = path;
-    try {
-        if (gui.exists("backend")) {
-            const auto& backend = gui["backend"];
-            backend.lookupValue("bind_address", config.bind_address);
-            int port = config.port;
-            backend.lookupValue("port", port);
-            if (port <= 0 || port > 65535) return failure("gui.backend.port must use 1..65535");
-            config.port = static_cast<std::uint16_t>(port);
-            std::string base_path = config.base_path;
-            backend.lookupValue("base_path", base_path);
-            const auto normalized = normalize_base_path(base_path);
-            if (!normalized) return failure("gui.backend.base_path is invalid");
-            config.base_path = *normalized;
+
+    if (persistent.api_url) {
+        std::error_code filesystem_error;
+        if (!std::filesystem::is_regular_file(*persistent.ca_cert, filesystem_error) ||
+            filesystem_error) {
+            return failure("gui.smithproxy.ca_cert is not a readable regular file");
         }
-        if (gui.exists("smithproxy")) {
-            const auto& upstream = gui["smithproxy"];
-            std::string api_url;
-            std::string ca_cert;
-            std::string api_token_file;
-            if (!upstream.lookupValue("api_url", api_url) ||
-                !upstream.lookupValue("ca_cert", ca_cert) ||
-                !upstream.lookupValue("api_token_file", api_token_file)) {
-                return failure("gui.smithproxy requires api_url, ca_cert, and api_token_file");
-            }
-            if (!valid_api_url(api_url)) {
-                return failure("gui.smithproxy.api_url must use HTTPS or loopback HTTP");
-            }
-            std::error_code filesystem_error;
-            if (!std::filesystem::is_regular_file(ca_cert, filesystem_error) || filesystem_error) {
-                return failure("gui.smithproxy.ca_cert is not a readable regular file");
-            }
-            std::ifstream certificate(ca_cert);
-            if (!certificate) return failure("gui.smithproxy.ca_cert is not readable");
-            const auto token = read_protected_file(api_token_file, "GUI Smithproxy API token");
-            if (!token.value) return failure(token.error);
-            while (api_url.ends_with('/')) api_url.pop_back();
-            config.smithproxy = SmithproxyConfig{std::move(api_url), *token.value, ca_cert};
-            std::string cli_endpoint;
-            if (upstream.lookupValue("cli_endpoint", cli_endpoint)) {
-                config.smithproxy_cli = parse_cli_endpoint(cli_endpoint);
-                if (!config.smithproxy_cli) return failure("gui.smithproxy.cli_endpoint is invalid");
-            }
+        std::ifstream certificate(*persistent.ca_cert);
+        if (!certificate) return failure("gui.smithproxy.ca_cert is not readable");
+        const auto token = read_protected_file(
+            *persistent.api_token_file, "GUI Smithproxy API token");
+        if (!token.value) return failure(token.error);
+        config.smithproxy = SmithproxyConfig{
+            *persistent.api_url, *token.value, *persistent.ca_cert};
+        if (persistent.cli_endpoint) {
+            config.smithproxy_cli = parse_cli_endpoint(*persistent.cli_endpoint);
         }
-        if (gui.exists("gateway")) {
-            const auto& gateway = gui["gateway"];
-            std::string secret_file;
-            if (!gateway.lookupValue("secret_file", secret_file)) {
-                return failure("gui.gateway requires secret_file");
-            }
-            const auto secret = read_protected_file(secret_file, "GUI gateway secret");
-            if (!secret.value || secret.value->size() < 32U || secret.value->size() > 256U) {
-                return failure(secret.error.empty() ? "GUI gateway secret must contain 32..256 characters" : secret.error);
-            }
-            config.gateway_secret = *secret.value;
-            std::string previous_file;
-            if (gateway.lookupValue("previous_secret_file", previous_file)) {
-                const auto previous = read_protected_file(previous_file, "Previous GUI gateway secret");
-                if (!previous.value || previous.value->size() < 32U || previous.value->size() > 256U) {
-                    return failure(previous.error.empty()
-                        ? "previous GUI gateway secret must contain 32..256 characters" : previous.error);
-                }
-                if (*previous.value == *config.gateway_secret) {
-                    return failure("current and previous GUI gateway secrets must differ");
-                }
-                config.previous_gateway_secret = *previous.value;
-            }
+    }
+    if (persistent.gateway_secret_file) {
+        const auto secret = read_protected_file(
+            *persistent.gateway_secret_file, "GUI gateway secret");
+        if (!secret.value || secret.value->size() < 32U || secret.value->size() > 256U) {
+            return failure(secret.error.empty()
+                ? "GUI gateway secret must contain 32..256 characters" : secret.error);
         }
-    } catch (const libconfig::SettingTypeException&) {
-        return failure("gui.cfg contains a value with the wrong type");
+        config.gateway_secret = *secret.value;
+        if (persistent.gateway_previous_secret_file) {
+            const auto previous = read_protected_file(
+                *persistent.gateway_previous_secret_file, "Previous GUI gateway secret");
+            if (!previous.value || previous.value->size() < 32U || previous.value->size() > 256U) {
+                return failure(previous.error.empty()
+                    ? "previous GUI gateway secret must contain 32..256 characters"
+                    : previous.error);
+            }
+            if (*previous.value == *config.gateway_secret) {
+                return failure("current and previous GUI gateway secrets must differ");
+            }
+            config.previous_gateway_secret = *previous.value;
+        }
     }
     std::string validation_error;
     if (!validate_final_config(config, validation_error)) return failure(std::move(validation_error));
