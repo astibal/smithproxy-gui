@@ -1836,6 +1836,7 @@ export class SmithproxyApp extends LitElement {
     this.editingDrawerKeys = new Set<string>();
     this.settingsApiKeyDraft = undefined;
     this.settingsApiAllowedIpDraft = undefined;
+    this.touchedSettingsWorkers.clear();
     this.settingsResolutionDrafts.clear();
     this.networkingListDrafts.clear();
     this.tlsSniBypassDrafts.clear();
@@ -1896,6 +1897,22 @@ export class SmithproxyApp extends LitElement {
     this.configError = undefined;
     this.configSaving = false;
     this.configSaveError = undefined;
+    this.archiveInventory = undefined;
+    this.archiveValidation = undefined;
+    this.archiveRestore = undefined;
+    this.archivePayload = undefined;
+    this.archiveResourcePayload = undefined;
+    this.archiveFileName = '';
+    this.archiveBusy = false;
+    this.archiveRestoreAcknowledged = false;
+    this.archiveError = undefined;
+    this.archiveResourcePath = '';
+    this.archiveResourceExecutable = false;
+    this.archiveResourceDeleteArmed = undefined;
+    this.guiConfiguration = undefined;
+    this.guiConfigurationDraft = undefined;
+    this.guiConfigurationBusy = false;
+    this.guiConfigurationError = undefined;
     this.administratorInventory = undefined;
     this.administratorInventoryBusy = false;
     this.administratorEditor = undefined;
@@ -2191,33 +2208,40 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async loadArchiveInventory(): Promise<void> {
-    if (!this.systemClient || this.archiveBusy) return;
+    if (!this.systemClient || !this.configReadAvailable || this.archiveBusy) return;
     this.archiveBusy = true;
     this.archiveError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     try {
-      this.archiveInventory = await this.systemClient.archiveInventory();
+      const inventory = await this.systemClient.archiveInventory();
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      this.archiveInventory = inventory;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.archiveInventory = undefined;
       this.archiveError = error instanceof Error
         ? error.message : 'Configuration archive inventory is unavailable.';
     } finally {
-      this.archiveBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.archiveBusy = false;
     }
   }
 
   private async loadGuiConfiguration(): Promise<void> {
-    if (!this.systemClient || this.guiConfigurationBusy) return;
+    if (!this.systemClient || !this.configReadAvailable || this.guiConfigurationBusy) return;
     this.guiConfigurationBusy = true;
     this.guiConfigurationError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     try {
       const loaded = await this.systemClient.guiConfiguration();
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.guiConfiguration = loaded;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.guiConfiguration = undefined;
       this.guiConfigurationError = error instanceof Error
         ? error.message : 'GUI startup configuration is unavailable.';
     } finally {
-      this.guiConfigurationBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.guiConfigurationBusy = false;
     }
   }
 
@@ -2256,7 +2280,8 @@ export class SmithproxyApp extends LitElement {
   private async saveAdministratorEditor(): Promise<void> {
     const editor = this.administratorEditor;
     const inventory = this.administratorInventory;
-    if (!this.systemClient || !editor || !inventory || this.administratorInventoryBusy) return;
+    if (!this.systemClient || !this.configReadAvailable || !editor || !inventory ||
+        this.administratorInventoryBusy) return;
     if (editor.password !== editor.confirmation) {
       this.administratorError = 'Administrator password confirmation does not match.';
       return;
@@ -2264,6 +2289,7 @@ export class SmithproxyApp extends LitElement {
     this.administratorInventoryBusy = true;
     this.administratorError = undefined;
     this.administratorSuccess = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     let reload = false;
     let reauthenticate = false;
     try {
@@ -2272,6 +2298,7 @@ export class SmithproxyApp extends LitElement {
           editor.name.trim(), editor.password, inventory.revision, inventory.contentHash)
         : await this.systemClient.changeAdministratorPassword(
           editor.name, editor.password, inventory.revision, inventory.contentHash);
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.administratorEditor = undefined;
       this.administratorSuccess = editor.mode === 'create'
         ? `${result.administrator} is available immediately.`
@@ -2280,10 +2307,11 @@ export class SmithproxyApp extends LitElement {
         result.administrator === this.gatewaySession?.administrator;
       reload = !reauthenticate;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.administratorError = error instanceof Error
         ? error.message : 'Administrator change failed.';
     } finally {
-      this.administratorInventoryBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
     }
     if (reauthenticate) {
       await this.logoutAdministrator('Password changed. Sign in again with the new password.');
@@ -2294,7 +2322,8 @@ export class SmithproxyApp extends LitElement {
 
   private async setCoreAdministratorEnabled(name: string, enabled: boolean): Promise<void> {
     const inventory = this.administratorInventory;
-    if (!this.systemClient || !inventory || this.administratorInventoryBusy) return;
+    if (!this.systemClient || !this.configReadAvailable || !inventory ||
+        this.administratorInventoryBusy) return;
     const actionKey = `${enabled ? 'enable' : 'disable'}:${name}`;
     if (!enabled && this.administratorActionArmed !== actionKey) {
       this.administratorActionArmed = actionKey;
@@ -2305,27 +2334,31 @@ export class SmithproxyApp extends LitElement {
     this.administratorInventoryBusy = true;
     this.administratorError = undefined;
     this.administratorSuccess = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     let reload = false;
     try {
       const result = await this.systemClient.setAdministratorEnabled(
         name, enabled, inventory.revision, inventory.contentHash);
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.administratorActionArmed = undefined;
       this.administratorSuccess = result.changed
         ? `${name} was ${enabled ? 'enabled' : 'disabled'}; previous sessions were revoked.`
         : `${name} was already ${enabled ? 'enabled' : 'disabled'}.`;
       reload = true;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.administratorError = error instanceof Error
         ? error.message : 'Administrator state change failed.';
     } finally {
-      this.administratorInventoryBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
     }
     if (reload) await this.loadAdministratorInventory();
   }
 
   private async removeCoreAdministrator(name: string): Promise<void> {
     const inventory = this.administratorInventory;
-    if (!this.systemClient || !inventory || this.administratorInventoryBusy) return;
+    if (!this.systemClient || !this.configReadAvailable || !inventory ||
+        this.administratorInventoryBusy) return;
     const actionKey = `remove:${name}`;
     if (this.administratorActionArmed !== actionKey) {
       this.administratorActionArmed = actionKey;
@@ -2336,18 +2369,21 @@ export class SmithproxyApp extends LitElement {
     this.administratorInventoryBusy = true;
     this.administratorError = undefined;
     this.administratorSuccess = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     let reload = false;
     try {
       await this.systemClient.removeAdministrator(
         name, inventory.revision, inventory.contentHash);
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.administratorActionArmed = undefined;
       this.administratorSuccess = `${name} was removed; previous sessions were revoked.`;
       reload = true;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.administratorError = error instanceof Error
         ? error.message : 'Administrator removal failed.';
     } finally {
-      this.administratorInventoryBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
     }
     if (reload) await this.loadAdministratorInventory();
   }
@@ -2374,26 +2410,31 @@ export class SmithproxyApp extends LitElement {
     const revision = this.snapshot?.revision;
     const archiveHash = this.archiveInventory?.contentHash;
     const draft = this.guiConfigurationDraft;
-    if (!this.systemClient || !draft || !revision || !archiveHash || this.guiConfigurationBusy) return;
+    if (!this.systemClient || !this.configSaveAvailable || !draft || !revision || !archiveHash ||
+        this.guiConfigurationBusy) return;
     this.guiConfigurationBusy = true;
     this.guiConfigurationError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     let published = false;
     try {
       await this.systemClient.publishGuiConfiguration(draft, revision, archiveHash);
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       published = true;
       this.guiConfigurationDraft = undefined;
       const [confirmed] = await Promise.all([
         this.systemClient.guiConfiguration(),
         this.loadArchiveInventory(),
       ]);
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.guiConfiguration = confirmed;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       const detail = error instanceof Error ? error.message : 'The confirmation request failed.';
       this.guiConfigurationError = published
         ? `GUI startup settings were published, but the authoritative configuration could not be reloaded: ${detail}`
         : detail;
     } finally {
-      this.guiConfigurationBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.guiConfigurationBusy = false;
     }
   }
 
@@ -2407,27 +2448,32 @@ export class SmithproxyApp extends LitElement {
     this.archiveRestoreAcknowledged = false;
     this.archiveError = undefined;
     this.archiveFileName = file?.name ?? '';
-    if (!file || !this.systemClient) return;
+    if (!file || !this.systemClient || !this.configReadAvailable) return;
     this.archiveBusy = true;
+    const accessEpoch = this.configurationAccessEpoch;
     try {
       const payload = await file.arrayBuffer();
       const validation = await this.systemClient.validateArchive(payload);
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.archivePayload = payload;
       this.archiveValidation = validation;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.archiveError = error instanceof Error
         ? error.message : 'Configuration archive validation failed.';
     } finally {
-      this.archiveBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.archiveBusy = false;
     }
   }
 
   private async restoreSelectedArchive(): Promise<void> {
     const revision = this.snapshot?.revision;
-    if (!this.systemClient || !this.archivePayload || !this.archiveValidation || !revision ||
+    if (!this.systemClient || !this.configSaveAvailable || !this.archivePayload ||
+        !this.archiveValidation || !revision ||
         !this.archiveRestoreAcknowledged || this.archiveBusy) return;
     this.archiveBusy = true;
     this.archiveError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     let restored = false;
     try {
       this.archiveRestore = await this.systemClient.restoreArchive(
@@ -2435,12 +2481,14 @@ export class SmithproxyApp extends LitElement {
         revision,
         this.archiveValidation.contentHash,
       );
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       restored = true;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.archiveError = error instanceof Error
         ? error.message : 'Configuration archive restore failed.';
     } finally {
-      this.archiveBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.archiveBusy = false;
     }
     if (restored) await this.loadArchiveInventory();
   }
@@ -2449,17 +2497,21 @@ export class SmithproxyApp extends LitElement {
     const input = event.currentTarget;
     if (!(input instanceof HTMLInputElement)) return;
     const file = input.files?.item(0);
-    this.archiveResourcePayload = file ? await file.arrayBuffer() : undefined;
+    const accessEpoch = this.configurationAccessEpoch;
+    const payload = file ? await file.arrayBuffer() : undefined;
+    if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+    this.archiveResourcePayload = payload;
     this.archiveError = undefined;
   }
 
   private async writeArchiveResource(): Promise<void> {
     const revision = this.snapshot?.revision;
     const archiveHash = this.archiveInventory?.contentHash;
-    if (!this.systemClient || !this.archiveResourcePayload || !revision || !archiveHash ||
-        this.archiveBusy) return;
+    if (!this.systemClient || !this.configSaveAvailable || !this.archiveResourcePayload ||
+        !revision || !archiveHash || this.archiveBusy) return;
     this.archiveBusy = true;
     this.archiveError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     try {
       await this.systemClient.writeArchiveResource(
         this.archiveResourcePath.trim(),
@@ -2468,15 +2520,17 @@ export class SmithproxyApp extends LitElement {
         archiveHash,
         this.archiveResourceExecutable,
       );
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.archiveResourcePayload = undefined;
       this.archiveResourcePath = '';
       this.archiveResourceExecutable = false;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.archiveError = error instanceof Error
         ? error.message : 'Configuration resource could not be written.';
       return;
     } finally {
-      this.archiveBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.archiveBusy = false;
     }
     await this.loadArchiveInventory();
   }
@@ -2484,22 +2538,26 @@ export class SmithproxyApp extends LitElement {
   private async deleteArchiveResource(path: string): Promise<void> {
     const revision = this.snapshot?.revision;
     const archiveHash = this.archiveInventory?.contentHash;
-    if (!this.systemClient || !revision || !archiveHash || this.archiveBusy) return;
+    if (!this.systemClient || !this.configSaveAvailable || !revision || !archiveHash ||
+        this.archiveBusy) return;
     if (this.archiveResourceDeleteArmed !== path) {
       this.archiveResourceDeleteArmed = path;
       return;
     }
     this.archiveBusy = true;
     this.archiveError = undefined;
+    const accessEpoch = this.configurationAccessEpoch;
     try {
       await this.systemClient.deleteArchiveResource(path, revision, archiveHash);
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.archiveResourceDeleteArmed = undefined;
     } catch (error) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
       this.archiveError = error instanceof Error
         ? error.message : 'Configuration resource could not be removed.';
       return;
     } finally {
-      this.archiveBusy = false;
+      if (accessEpoch === this.configurationAccessEpoch) this.archiveBusy = false;
     }
     await this.loadArchiveInventory();
   }
@@ -17498,10 +17556,10 @@ export class SmithproxyApp extends LitElement {
                       this.systemView = 'configuration';
                       this.systemNavigationExpanded = wasActive ? !this.systemNavigationExpanded : true;
                       void this.fitSidebarNavigation('System');
-                      if (this.configSaveAvailable && !this.archiveInventory && !this.archiveBusy) {
+                      if (this.configReadAvailable && !this.archiveInventory && !this.archiveBusy) {
                         void this.loadArchiveInventory();
                       }
-                      if (this.configSaveAvailable && !this.guiConfiguration && !this.guiConfigurationBusy) {
+                      if (this.configReadAvailable && !this.guiConfiguration && !this.guiConfigurationBusy) {
                         void this.loadGuiConfiguration();
                       }
                     } else {
@@ -17629,10 +17687,10 @@ export class SmithproxyApp extends LitElement {
                       @click=${() => {
                         this.activeSection = 'System'; this.systemView = category.kind;
                         this.systemNavigationExpanded = true;
-                        if (this.configSaveAvailable && !this.archiveInventory && !this.archiveBusy) {
+                        if (this.configReadAvailable && !this.archiveInventory && !this.archiveBusy) {
                           void this.loadArchiveInventory();
                         }
-                        if (category.kind === 'backend' && this.configSaveAvailable &&
+                        if (category.kind === 'backend' && this.configReadAvailable &&
                             !this.guiConfiguration && !this.guiConfigurationBusy) {
                           void this.loadGuiConfiguration();
                         }

@@ -5917,6 +5917,64 @@ test('ignores late configuration and draft snapshots after gateway revocation', 
   ]));
 });
 
+test('discards late archive, GUI, and administrator configuration after access revocation', async ({page}) => {
+  const revision = `sha256:${'2'.repeat(64)}`;
+  const archiveHash = `sha256:${'a'.repeat(64)}`;
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: true,
+    configSaveReady: true, configRevision: revision, savedConfigRevision: revision,
+  };
+  let archiveRequests = 0;
+  let guiRequests = 0;
+  let administratorRequests = 0;
+  await mockSystemApi(page, state, true);
+  await page.route('**/api/v1/config/archive', async route => {
+    archiveRequests += 1;
+    await new Promise(resolve => setTimeout(resolve, 800));
+    await route.fulfill({json: {
+      state: 'ready', content_hash: archiveHash,
+      resources: [{path: 'late-secret.cfg', size: 64, executable: false}],
+    }});
+  });
+  await page.route('**/api/v1/config/gui', async route => {
+    guiRequests += 1;
+    await new Promise(resolve => setTimeout(resolve, 800));
+    await route.fulfill({json: {
+      state: 'ready', schema_version: 1, restart_required: true,
+      backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/late-gui'},
+      smithproxy: null, gateway: null,
+    }});
+  });
+  await page.route('**/api/v1/admin/administrators', async route => {
+    administratorRequests += 1;
+    await new Promise(resolve => setTimeout(resolve, 800));
+    await route.fulfill({json: {
+      state: 'ready', revision, content_hash: archiveHash,
+      restart_required: false,
+      administrators: [{name: 'late-administrator', enabled: true}],
+    }});
+  });
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  await expect.poll(() => archiveRequests).toBeGreaterThan(0);
+  await expect.poll(() => guiRequests).toBeGreaterThan(0);
+  await expect.poll(() => administratorRequests).toBeGreaterThan(0);
+
+  state.gatewayAuthenticated = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const statusbar = page.getByRole('contentinfo', {name: 'System status'});
+  await expect(statusbar).toContainText('Configuration access: Rejected');
+  await page.waitForTimeout(900);
+
+  await expect(page.getByText('late-secret.cfg', {exact: true})).toHaveCount(0);
+  await expect(page.getByText('/late-gui', {exact: true})).toHaveCount(0);
+  await expect(page.getByText('late-administrator', {exact: true})).toHaveCount(0);
+  await expect(page.getByText(
+    'Administrator inventory is unavailable until configuration access is verified.',
+  )).toBeVisible();
+});
+
 test('does not fabricate configuration without configuration API access', async ({page}) => {
   const state: MockState = {smithproxy: 'ready'};
   const protectedRequests: string[] = [];
