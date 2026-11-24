@@ -72,7 +72,10 @@
         "routing_table", "routing_priority", "forwarding", "nonlocal_bind",
         "tcp_low_latency", "tcp_syn_retries", "mark", "mask", "blackhole_max_ttl_ms"
       ],
-      "notes": "The complete smithproxy-networkd networking.cfg contract is visible and typed in the GUI. Interception, routing, sysctl, exemption, bypass, restart identity, and tenant-scope fields use drafts aligned to Networkd validation. Interface selectors, tenant ranges, interception ports, and exempt user IDs use explicit value rows instead of comma-authored lists. A bypass destination port of zero retains Networkd's explicit all-ports meaning. Table, control-socket, tenant-index, and tenant-range changes are published atomically but require a controlled Networkd restart; registry validation remains authoritative. Clearing an explicit control-socket override atomically removes the setting and restores Networkd's tenant-derived default. Empty interface selectors are accepted so TPROXY admission can be disabled and its scope cleared atomically. Clearing tenant ranges removes the tenant-0 override and restores Networkd's implicit all-address scope."
+      "constraints": {
+        "bypass.port": {"minimum": 1, "maximum": 65535}
+      },
+      "notes": "The complete smithproxy-networkd networking.cfg contract is visible and typed in the GUI. Interception, routing, sysctl, exemption, bypass, restart identity, and tenant-scope fields use drafts aligned to Networkd validation. Interface selectors, tenant ranges, interception ports, and exempt user IDs use explicit value rows instead of comma-authored lists. Every bypass rule requires a concrete destination port from 1 through 65535. Table, control-socket, tenant-index, and tenant-range changes are published atomically but require a controlled Networkd restart; registry validation remains authoritative. Clearing an explicit control-socket override atomically removes the setting and restores Networkd's tenant-derived default. Empty interface selectors are accepted so TPROXY admission can be disabled and its scope cleared atomically. Clearing tenant ranges removes the tenant-0 override and restores Networkd's implicit all-address scope."
     },
     {
       "name": "gui",

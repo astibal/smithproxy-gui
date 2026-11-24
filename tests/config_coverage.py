@@ -212,6 +212,11 @@ def main() -> None:
                 missing = sorted(expected_fields - actual_fields)
                 extra = sorted(actual_fields - expected_fields)
                 fail(f"{name}: audited field inventory drifted; missing={missing}, extra={extra}")
+        if name == "networking":
+            constraints = section.get("constraints")
+            expected_constraints = {"bypass.port": {"minimum": 1, "maximum": 65535}}
+            if constraints != expected_constraints:
+                fail("networking: audited bypass port constraint drifted")
         expected_read_fields = FULL_READ_FIELDS.get(name)
         if expected_read_fields is not None:
             if section["read"] != "full" or section["edit"] != "partial":
