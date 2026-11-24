@@ -8296,14 +8296,23 @@ export class SmithproxyApp extends LitElement {
     const ttl = this.renderRoot.querySelector<HTMLInputElement>('#captures-remote-ttl');
     const quotaValue = quota?.valueAsNumber ?? Number.NaN;
     const ttlValue = ttl?.valueAsNumber ?? Number.NaN;
-    if (!format || !tunnelType || !greFormat || !quota || !ttl ||
-        !['pcap_single', 'pcap', 'smcap'].includes(format.value) ||
-        tunnelType.value !== 'gre' ||
-        !['traffic', 'pcapng', 'spq1'].includes(greFormat.value) ||
-        !Number.isSafeInteger(quotaValue) || quotaValue < 0 || quotaValue > Number.MAX_SAFE_INTEGER ||
-        !Number.isInteger(ttlValue) || ttlValue < 0 || ttlValue > 255) {
-      this.draftError = 'Capture format, quota, or tunnel TTL is invalid.';
-      return undefined;
+    if (!format || !tunnelType || !greFormat || !quota || !ttl) return undefined;
+    if (!['pcap_single', 'pcap', 'smcap'].includes(format.value)) {
+      return this.rejectConfigurationInput(format, 'Local format', 'is not supported');
+    }
+    if (tunnelType.value !== 'gre') {
+      return this.rejectConfigurationInput(tunnelType, 'Tunnel type', 'is not supported');
+    }
+    if (!['traffic', 'pcapng', 'spq1'].includes(greFormat.value)) {
+      return this.rejectConfigurationInput(greFormat, 'GRE payload format', 'is not supported');
+    }
+    if (!Number.isSafeInteger(quotaValue) || quotaValue < 0 || quotaValue > Number.MAX_SAFE_INTEGER) {
+      return this.rejectConfigurationInput(
+        quota, 'Local quota', `must be a whole number from 0 through ${Number.MAX_SAFE_INTEGER} MiB`,
+      );
+    }
+    if (!Number.isInteger(ttlValue) || ttlValue < 0 || ttlValue > 255) {
+      return this.rejectConfigurationInput(ttl, 'Tunnel TTL', 'must be a whole number from 0 through 255');
     }
     changes.push(
       {path: 'captures.local.format', value: format.value},
@@ -8330,8 +8339,13 @@ export class SmithproxyApp extends LitElement {
       if (!empty && kind === 'host') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
       if (!empty && kind === 'interface') valid = valid && /^[A-Za-z0-9:._-]{1,128}$/u.test(replacement);
       if (!valid) {
-        this.draftError = 'A capture value is invalid for its field.';
-        return undefined;
+        const requirements = {
+          path: 'must be empty or an absolute path without control characters',
+          filename: 'must be a bounded filename without path separators',
+          host: 'must be a bounded host or address',
+          interface: 'must be a bounded interface name',
+        } as const;
+        return this.rejectConfigurationInput(input, path, requirements[kind]);
       }
       changes.push({path: `captures.${path}`, value: replacement});
     }

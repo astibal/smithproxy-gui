@@ -8058,6 +8058,10 @@ test('shows and saves the complete typed system and capture configuration', asyn
     .toHaveAttribute('max', String(Number.MAX_SAFE_INTEGER));
   await captureEditor.getByLabel('Local capture').selectOption('true');
   await captureEditor.getByLabel('Local format').selectOption('smcap');
+  await captureEditor.getByLabel('Tunnel TTL').fill('256');
+  await captureEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(captureEditor.getByText('Tunnel TTL must be a whole number from 0 through 255.')).toBeVisible();
+  await expect(captureEditor.getByLabel('Tunnel TTL')).toBeFocused();
   await captureEditor.getByLabel('Tunnel TTL').fill('32');
   await captureEditor.getByLabel('Session metadata blocks').selectOption('false');
   await captureEditor.getByLabel('Flow statistics blocks').selectOption('true');
