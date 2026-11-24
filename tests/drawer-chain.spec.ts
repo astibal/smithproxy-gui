@@ -7039,8 +7039,12 @@ test('surfaces unmapped configuration sections without exposing their values', a
     unmappedConfigPaths: ['settings.future_control'],
   }, true);
   await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Startup & backups', exact: true}).click();
+
+  const coverage = page.getByRole('button', {name: 'Configuration coverage: 2 unsupported'});
+  await expect(coverage).toBeVisible();
+  await coverage.click();
+  await expect(page.getByRole('button', {name: 'Startup & backups', exact: true}))
+    .toHaveAttribute('aria-current', 'page');
 
   const warning = page.getByRole('alert').filter({
     has: page.getByRole('heading', {name: 'Some configuration is not supported'}),

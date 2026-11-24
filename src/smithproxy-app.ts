@@ -17272,6 +17272,8 @@ export class SmithproxyApp extends LitElement {
     const attentionJobCount = activeJobCount + failedJobCount;
     const attentionEventCount = this.operationalEvents.events.filter(event =>
       event.severity === 'warning' || event.severity === 'error').length;
+    const unmappedConfigurationCount = (this.snapshot?.unmappedSections.length ?? 0) +
+      (this.snapshot?.unmappedPaths.length ?? 0);
     const gateway = this.gatewayStatus();
     const configurationAccessLabel = gateway.label === 'Disabled'
       ? 'Restricted'
@@ -17695,6 +17697,18 @@ export class SmithproxyApp extends LitElement {
             @click=${() => { this.activeSection = 'Draft'; }}>
             Draft: ${this.draftChangeCount} changes
           </button>
+          ${unmappedConfigurationCount > 0 ? html`
+            <button class="status-action status-secondary system-state danger" type="button"
+              title="Open configuration fields that this GUI version cannot safely edit"
+              aria-label=${`Configuration coverage: ${unmappedConfigurationCount} unsupported`}
+              @click=${() => {
+                this.activeSection = 'System';
+                this.systemView = 'configuration';
+                this.systemNavigationExpanded = true;
+              }}>
+              ● Config coverage: ${unmappedConfigurationCount} unsupported
+            </button>
+          ` : nothing}
           <span class="status-secondary" title=${this.configRefreshDeferred
             ? 'The current view is held while an editor or draft is active. Pending updates will load afterward.'
             : this.configError ?? this.snapshot?.detail ?? ''}>
