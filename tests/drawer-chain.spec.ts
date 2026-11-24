@@ -7144,16 +7144,32 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await gui.getByLabel('Frontend asset root').fill('/srv/smithproxy-gui/assets');
   await gui.getByLabel('Require a trusted frontend gateway for browser access').uncheck();
   await expect(gui.getByText('Direct standalone browser authentication is used')).toBeVisible();
+  await gui.getByLabel('Require a trusted frontend gateway for browser access').check();
+  await gui.getByLabel('Gateway credential file', {exact: true})
+    .fill('/run/credentials/gui.gateway.next');
+  await gui.getByLabel('Previous gateway credential file', {exact: true})
+    .fill('/run/credentials/gui.gateway.current');
   await gui.getByLabel('Bind address').fill('999.1.1.1');
   await expect(gui.getByRole('alert')).toContainText('valid IPv4 literal');
   await expect(gui.getByRole('button', {name: 'Publish GUI startup settings'})).toBeDisabled();
-  await gui.getByLabel('Bind address').fill('127.0.0.1');
+  await gui.getByLabel('Bind address').fill('0.0.0.0');
   await gui.getByLabel('Backend port').fill('19082');
+  await gui.getByLabel('Public frontend base path').fill('/security');
+  await gui.getByLabel('Smithproxy API URL').fill('https://127.0.0.1:56555');
+  await gui.getByLabel('Smithproxy API CA certificate').fill('/run/gui/next-api-ca.pem');
+  await gui.getByLabel('Boot-time API token file').fill('/run/credentials/gui.next-api-token');
+  await gui.getByLabel('CLI broker endpoint').fill('[::1]:51000');
   await gui.getByRole('button', {name: 'Publish GUI startup settings'}).click();
   await expect.poll(() => published).toContain('"port":19082');
-  expect(published).toContain('"api_token_file":"/run/credentials/gui.api-token"');
+  expect(published).toContain('"bind_address":"0.0.0.0"');
+  expect(published).toContain('"base_path":"/security"');
+  expect(published).toContain('"api_url":"https://127.0.0.1:56555"');
+  expect(published).toContain('"ca_cert":"/run/gui/next-api-ca.pem"');
+  expect(published).toContain('"api_token_file":"/run/credentials/gui.next-api-token"');
+  expect(published).toContain('"cli_endpoint":"[::1]:51000"');
   expect(published).toContain('"frontend":{"asset_root":"/srv/smithproxy-gui/assets"}');
-  expect(published).toContain('"gateway":null');
+  expect(published).toContain('"gateway":{"secret_file":"/run/credentials/gui.gateway.next",' +
+    '"previous_secret_file":"/run/credentials/gui.gateway.current"}');
   expect(published).not.toContain('boot-token-value');
   await expect.poll(() => guiConfigurationReads).toBeGreaterThanOrEqual(2);
   await expect(gui).toContainText('127.0.0.1:19083/smithproxy-gui');
