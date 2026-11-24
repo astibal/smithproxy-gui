@@ -6,7 +6,7 @@ import sys
 
 
 EXPECTED_SECTIONS = {
-    "settings", "networking", "gui",
+    "settings", "networking", "gui", "administrators",
     "debug",
     "address_objects",
     "port_objects",
@@ -28,7 +28,7 @@ EXPECTED_SECTIONS = {
 READ_STATUSES = {"full", "partial", "metadata", "unsupported"}
 EDIT_STATUSES = {"typed", "partial", "none"}
 ORIGINS = {"reference_config", "api_extension", "networkd_config", "gui_config"}
-API_EXTENSION_SECTIONS = {"captures", "script_profiles", "auth_profiles"}
+API_EXTENSION_SECTIONS = {"captures", "script_profiles", "auth_profiles", "administrators"}
 NETWORKD_CONFIG_SECTIONS = {"networking"}
 GUI_CONFIG_SECTIONS = {"gui"}
 SENSITIVITIES = {
@@ -132,6 +132,7 @@ FULL_TYPED_FIELDS = {
         "smithproxy.api_url", "smithproxy.ca_cert", "smithproxy.api_token_file",
         "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file",
     },
+    "administrators": {"name", "enabled", "password_write_only"},
 }
 
 FULL_READ_FIELDS = {"networking": NETWORKING_FIELDS}

@@ -91,6 +91,15 @@
       "notes": "The persistent gui.cfg schema contains only GUI service bootstrap settings and an optional absolute frontend asset root. Administrator identities and password verifiers are owned by admin.cfg and can change only through typed Smithproxy Core APIs. The frontend override, Smithproxy connection, and browser-gateway groups are independently optional and can be explicitly enabled or removed without silently materializing deployment paths or credentials. The browser validates and publishes configuration in one explicit action only through the authenticated Smithproxy Core archive API with running-revision and archive-hash preconditions. CFtar stores boot credential paths, never token or gateway-secret values; those are protected boot-time files. Boot-setting changes require a controlled restart after publication."
     },
     {
+      "name": "administrators",
+      "origin": "api_extension",
+      "read": "full",
+      "edit": "typed",
+      "sensitivity": "secret-bearing",
+      "tracked_fields": ["name", "enabled", "password_write_only"],
+      "notes": "The complete admin.cfg identity inventory is visible through a bounded typed Core API. Password verifiers and password input never cross the read boundary. Authenticated administrators can create identities, replace passwords, enable, disable, and remove accounts through typed Core transactions with revision and archive-hash preconditions. The active identity cannot disable or remove itself. Initial bootstrap is a separate one-time privilege-15 CLI enrollment transaction; the GUI never writes admin.cfg."
+    },
+    {
       "name": "address_objects",
       "origin": "reference_config",
       "read": "full",
