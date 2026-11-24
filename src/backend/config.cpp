@@ -345,7 +345,7 @@ ParseResult parse_gui_config_file(
     config.bind_address = persistent.bind_address;
     config.port = persistent.port;
     config.base_path = persistent.base_path;
-    config.asset_root = default_asset_root;
+    config.asset_root = persistent.asset_root.value_or(default_asset_root.string());
     config.gui_config_path = path;
     config.administrators = persistent.administrators;
 
@@ -408,12 +408,12 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
     GuiBootstrapConfig config;
     try {
         if (const auto member = unknown_member(
-                gui, {"schema_version", "backend", "smithproxy", "gateway", "administrators"})) {
+                gui, {"schema_version", "backend", "frontend", "smithproxy", "gateway", "administrators"})) {
             return bootstrap_failure("gui.cfg contains unsupported gui setting: " + *member);
         }
         int schema_version = config.schema_version;
         gui.lookupValue("schema_version", schema_version);
-        if (schema_version != 1 && schema_version != 2) {
+        if (schema_version != 1 && schema_version != 2 && schema_version != 3) {
             return bootstrap_failure("gui.schema_version is unsupported");
         }
         config.schema_version = static_cast<std::uint16_t>(schema_version);
@@ -437,6 +437,24 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
             const auto normalized = normalize_base_path(config.base_path);
             if (!normalized) return bootstrap_failure("gui.backend.base_path is invalid");
             config.base_path = *normalized;
+        }
+        if (gui.exists("frontend")) {
+            if(schema_version < 3) {
+                return bootstrap_failure("gui.frontend requires schema_version 3");
+            }
+            const auto& frontend = gui["frontend"];
+            if(frontend.getType() != libconfig::Setting::TypeGroup) {
+                return bootstrap_failure("gui.frontend must be a group");
+            }
+            if(const auto member = unknown_member(frontend, {"asset_root"})) {
+                return bootstrap_failure("gui.frontend contains unsupported setting: " + *member);
+            }
+            std::string asset_root;
+            if(!frontend.lookupValue("asset_root", asset_root) ||
+               !valid_bootstrap_path(std::optional<std::string>{asset_root})) {
+                return bootstrap_failure("gui.frontend.asset_root must use an absolute safe path");
+            }
+            config.asset_root = std::move(asset_root);
         }
         if (gui.exists("smithproxy")) {
             const auto& upstream = gui["smithproxy"];
@@ -580,11 +598,16 @@ std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& con
         output.push_back('"');
         return output;
     };
+    const auto schema_version = config.asset_root ? 3U :
+        config.administrators.empty() ? std::min<std::uint16_t>(config.schema_version, 2U) : 2U;
     std::string source = "gui = {\n  schema_version = " +
-        std::to_string(config.administrators.empty() ? config.schema_version : 2U) + ";\n\n";
+        std::to_string(schema_version) + ";\n\n";
     source += "  backend = {\n    bind_address = " + quote(config.bind_address) +
         ";\n    port = " + std::to_string(config.port) +
         ";\n    base_path = " + quote(config.base_path) + ";\n  };\n";
+    if(config.asset_root) {
+        source += "\n  frontend = {\n    asset_root = " + quote(*config.asset_root) + ";\n  };\n";
+    }
     if(config.api_url) {
         if(!config.ca_cert || !config.api_token_file) return std::nullopt;
         source += "\n  smithproxy = {\n    api_url = " + quote(*config.api_url) +

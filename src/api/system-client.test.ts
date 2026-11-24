@@ -1083,9 +1083,10 @@ describe('SystemClient', () => {
 
   it('loads and serializes typed GUI bootstrap configuration without credential values', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
-      state: 'ready', schema_version: 1, restart_required: true, administrators: [],
+      state: 'ready', schema_version: 3, restart_required: true, administrators: [],
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+      frontend: {asset_root: '/usr/share/smithproxy-gui'},
       smithproxy: {
         api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
         api_token_file: '/run/credentials/gui.api-token', cli_endpoint: '127.0.0.1:50000',
@@ -1097,12 +1098,15 @@ describe('SystemClient', () => {
     expect(value).toMatchObject({
       state: 'ready', backend: {port: 18082},
       activeBackend: {port: 18082},
+      frontend: {assetRoot: '/usr/share/smithproxy-gui'},
       smithproxy: {apiTokenFile: '/run/credentials/gui.api-token'},
     });
     const serialized = new TextDecoder().decode(serializeGuiConfiguration({
-      backend: value.backend!, smithproxy: value.smithproxy, gateway: value.gateway,
+      backend: value.backend!, frontend: value.frontend,
+      smithproxy: value.smithproxy, gateway: value.gateway,
     }));
-    expect(serialized).toContain('schema_version = 1;');
+    expect(serialized).toContain('schema_version = 3;');
+    expect(serialized).toContain('asset_root = "/usr/share/smithproxy-gui";');
     expect(serialized).toContain('api_token_file = "/run/credentials/gui.api-token";');
     expect(serialized).not.toContain('api-token-value');
     expect(fetcher).toHaveBeenCalledWith('/api/v1/config/gui', expect.any(Object));
@@ -1116,6 +1120,7 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', fetcher);
     await expect(client.publishGuiConfiguration({
       backend: {bindAddress: '127.0.0.1', port: 18082, basePath: '/'},
+      frontend: undefined,
       smithproxy: undefined, gateway: undefined,
     }, 'b'.repeat(32), archiveHash)).resolves.toEqual({
       state: 'written', contentHash: archiveHash, restartRequired: true,
@@ -1144,7 +1149,7 @@ describe('SystemClient', () => {
     }));
     await expect(malformed.guiConfiguration()).rejects.toThrow('backend configuration');
     const future = new SystemClient('/api/v1', '/', async () => jsonResponse({
-      state: 'ready', schema_version: 3, restart_required: true, administrators: [],
+      state: 'ready', schema_version: 4, restart_required: true, administrators: [],
     }));
     await expect(future.guiConfiguration()).rejects.toThrow('Unsupported GUI configuration schema');
   });
@@ -1152,6 +1157,7 @@ describe('SystemClient', () => {
   it('rejects GUI startup settings that would fail only after a service restart', () => {
     const valid = {
       backend: {bindAddress: '127.0.0.1', port: 18082, basePath: '/smithproxy-gui'},
+      frontend: undefined,
       smithproxy: {
         apiUrl: 'https://127.0.0.1:55555', caCert: '/run/gui/api-ca.pem',
         apiTokenFile: '/run/credentials/gui.api-token', cliEndpoint: '127.0.0.1:50000',

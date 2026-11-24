@@ -129,6 +129,7 @@ type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type StatusTone = 'success' | 'warning' | 'danger';
 type EditableGuiConfiguration = {
   backend: NonNullable<GuiConfiguration['backend']>;
+  frontend: GuiConfiguration['frontend'];
   smithproxy: GuiConfiguration['smithproxy'];
   gateway: GuiConfiguration['gateway'];
 };
@@ -2189,6 +2190,7 @@ export class SmithproxyApp extends LitElement {
       backend: current?.backend ? {...current.backend} : {
         bindAddress: '127.0.0.1', port: 18082, basePath: '/smithproxy-gui',
       },
+      frontend: current?.frontend ? {...current.frontend} : undefined,
       smithproxy: current ? (current.smithproxy ? {...current.smithproxy} : undefined) : {
         apiUrl: 'https://127.0.0.1:55555',
         caCert: '/run/smithproxy-gui/api-ca.pem',
@@ -2211,12 +2213,15 @@ export class SmithproxyApp extends LitElement {
     this.guiConfigurationError = undefined;
     try {
       await this.systemClient.publishGuiConfiguration(draft, revision, archiveHash);
+      const hasAdministrators = (this.guiConfiguration?.administrators.length ?? 0) > 0;
+      const schemaVersion = draft.frontend ? 3 : hasAdministrators ? 2 : 1;
       this.guiConfiguration = {
         state: 'ready', restartRequired: true,
         ...(this.guiConfiguration?.activeBackend
           ? {activeBackend: {...this.guiConfiguration.activeBackend}} : {}),
-        schemaVersion: this.guiConfiguration?.schemaVersion ?? 1,
+        schemaVersion,
         administrators: this.guiConfiguration?.administrators ?? [], backend: {...draft.backend},
+        ...(draft.frontend ? {frontend: {...draft.frontend}} : {}),
         ...(draft.smithproxy ? {smithproxy: {...draft.smithproxy}} : {}),
         ...(draft.gateway ? {gateway: {...draft.gateway}} : {}),
       };
@@ -11809,6 +11814,24 @@ export class SmithproxyApp extends LitElement {
               }, '/smithproxy-gui')}
             </div>
           </fieldset>
+          <fieldset class="gui-config-section"><legend>Frontend assets</legend>
+            <div class="gui-config-fields">
+              <label class="gui-config-toggle"><input type="checkbox"
+                .checked=${draft.frontend !== undefined}
+                @change=${(event: Event) => {
+                  const input = event.currentTarget;
+                  if (!(input instanceof HTMLInputElement)) return;
+                  this.guiConfigurationDraft = {...draft, frontend: input.checked ? {
+                    assetRoot: '/usr/share/smithproxy-gui',
+                  } : undefined};
+                  this.guiConfigurationSaveArmed = false;
+                }}><span>Override the packaged frontend asset directory</span></label>
+              ${draft.frontend ? html`${textField('Frontend asset root', draft.frontend.assetRoot, next => {
+                this.guiConfigurationDraft = {...draft, frontend: {assetRoot: next}};
+              }, '/usr/share/smithproxy-gui')}` : html`
+                <p>The executable's packaged frontend assets are used.</p>`}
+            </div>
+          </fieldset>
           <fieldset class="gui-config-section"><legend>Smithproxy core connection</legend>
             <div class="gui-config-fields">
               <label class="gui-config-toggle"><input type="checkbox"
@@ -11890,6 +11913,7 @@ export class SmithproxyApp extends LitElement {
           <dt>Saved startup listener</dt><dd>${savedBackend ? backendEndpoint(savedBackend) : 'Not configured'}
             ${backendRestartPending ? html` <span class="runtime-state warning">● restart pending</span>` :
               activeBackend && savedBackend ? html` <span class="runtime-state success">● active</span>` : nothing}</dd>
+          <dt>Frontend assets</dt><dd>${value?.frontend?.assetRoot ?? 'Packaged default'}</dd>
           <dt>Smithproxy API</dt><dd>${value?.smithproxy?.apiUrl ?? 'Not configured'}</dd>
           <dt>API credential</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
           <dt>CLI broker</dt><dd>${value?.smithproxy?.cliEndpoint || 'Disabled'}</dd>

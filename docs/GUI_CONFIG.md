@@ -23,12 +23,17 @@ an absent group instead of silently materializing deployment credentials.
 
 ```libconfig
 gui = {
-  schema_version = 2;
+  schema_version = 3;
 
   backend = {
     bind_address = "127.0.0.1";
     port = 18082;
     base_path = "/smithproxy-gui";
+  };
+
+  # Optional. Omit to use assets installed beside the executable.
+  frontend = {
+    asset_root = "/usr/share/smithproxy-gui";
   };
 
   smithproxy = {
@@ -61,7 +66,8 @@ gui = {
 ```
 
 Version 1 remains readable for installations without persistent administrators;
-the administrator list requires version 2. Unknown settings and unsupported
+the administrator list requires version 2 and the optional frontend asset override
+requires version 3. Unknown settings and unsupported
 schema versions are rejected. This prevents
 an older GUI from publishing a replacement that silently drops fields owned by
 a newer GUI schema. A legacy file without `schema_version` is read as version 1;

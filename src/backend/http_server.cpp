@@ -1497,6 +1497,9 @@ private:
                 {"base_path", value.base_path},
             }},
         };
+        document["frontend"] = value.asset_root
+            ? nlohmann::json{{"asset_root", *value.asset_root}}
+            : nlohmann::json(nullptr);
         document["smithproxy"] = value.api_url
             ? nlohmann::json{{"api_url", *value.api_url}, {"ca_cert", *value.ca_cert},
                 {"api_token_file", *value.api_token_file},
@@ -1532,7 +1535,7 @@ private:
                 return value.contains(std::string(key));
             });
         };
-        if(document.is_discarded() || !exact_keys(document, {"backend", "smithproxy", "gateway"}) ||
+        if(document.is_discarded() || !exact_keys(document, {"backend", "frontend", "smithproxy", "gateway"}) ||
            !exact_keys(document["backend"], {"bind_address", "port", "base_path"}) ||
            !document["backend"]["bind_address"].is_string() ||
            !document["backend"]["port"].is_number_integer() ||
@@ -1552,7 +1555,9 @@ private:
                     "{\"error\":\"current GUI configuration is invalid\"}"};
         }
         GuiBootstrapConfig replacement;
-        replacement.schema_version = current.config->administrators.empty() ? 1U : 2U;
+        const bool custom_frontend = !document["frontend"].is_null();
+        const bool administrators_configured = !current.config->administrators.empty();
+        replacement.schema_version = custom_frontend ? 3U : administrators_configured ? 2U : 1U;
         replacement.administrators = current.config->administrators;
         replacement.bind_address = document["backend"]["bind_address"].get<std::string>();
         const auto port = document["backend"]["port"].get<long long>();
@@ -1562,6 +1567,14 @@ private:
         }
         replacement.port = static_cast<std::uint16_t>(port);
         replacement.base_path = document["backend"]["base_path"].get<std::string>();
+        if(!document["frontend"].is_null()) {
+            const auto& frontend = document["frontend"];
+            if(!exact_keys(frontend, {"asset_root"}) || !frontend["asset_root"].is_string()) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid GUI frontend configuration\"}"};
+            }
+            replacement.asset_root = frontend["asset_root"].get<std::string>();
+        }
         if(!document["smithproxy"].is_null()) {
             const auto& upstream = document["smithproxy"];
             if(!exact_keys(upstream, {"api_url", "ca_cert", "api_token_file", "cli_endpoint"}) ||

@@ -115,12 +115,15 @@ export interface GuiConfiguration {
     port: number;
     basePath: string;
   };
-  schemaVersion?: 1 | 2;
+  schemaVersion?: 1 | 2 | 3;
   administrators: ReadonlyArray<string>;
   backend?: {
     bindAddress: string;
     port: number;
     basePath: string;
+  };
+  frontend?: {
+    assetRoot: string;
   };
   smithproxy?: {
     apiUrl: string;
@@ -136,6 +139,7 @@ export interface GuiConfiguration {
 
 export type GuiBootstrapConfiguration = {
   backend: NonNullable<GuiConfiguration['backend']>;
+  frontend: GuiConfiguration['frontend'];
   smithproxy: GuiConfiguration['smithproxy'];
   gateway: GuiConfiguration['gateway'];
 };
@@ -1417,7 +1421,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     state: 'absent', restartRequired: true, administrators: [],
     ...(activeBackend ? {activeBackend} : {}),
   };
-  if (value.schema_version !== 1 && value.schema_version !== 2) {
+  if (value.schema_version !== 1 && value.schema_version !== 2 && value.schema_version !== 3) {
     throw new Error('Unsupported GUI configuration schema.');
   }
   if (!Array.isArray(value.administrators) || value.administrators.length > 64 ||
@@ -1427,7 +1431,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
   }
   const backend = parseBackend(value.backend, 'backend');
   const optionalGroup = (group: unknown, keys: ReadonlyArray<string>): Record<string, string> | undefined => {
-    if (group === null) return undefined;
+    if (group === null || group === undefined) return undefined;
     if (!isObject(group) || keys.some(key => typeof group[key] !== 'string' ||
         (group[key] as string).length > 4096 || /[\u0000-\u001f\u007f]/u.test(group[key] as string))) {
       throw new Error('Invalid GUI bootstrap configuration.');
@@ -1437,6 +1441,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
   const smithproxy = optionalGroup(
     value.smithproxy, ['api_url', 'ca_cert', 'api_token_file', 'cli_endpoint']);
   const gateway = optionalGroup(value.gateway, ['secret_file', 'previous_secret_file']);
+  const frontend = optionalGroup(value.frontend, ['asset_root']);
   const parsed: GuiConfiguration = {
     state: 'ready',
     restartRequired: true,
@@ -1444,6 +1449,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     schemaVersion: value.schema_version,
     administrators: value.administrators as string[],
     backend,
+    ...(frontend ? {frontend: {assetRoot: frontend.asset_root!}} : {}),
     ...(smithproxy ? {smithproxy: {
       apiUrl: smithproxy.api_url!,
       caCert: smithproxy.ca_cert!,
@@ -1456,7 +1462,8 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     }} : {}),
   };
   const validationError = validateGuiBootstrapConfiguration({
-    backend: parsed.backend!, smithproxy: parsed.smithproxy, gateway: parsed.gateway,
+    backend: parsed.backend!, frontend: parsed.frontend,
+    smithproxy: parsed.smithproxy, gateway: parsed.gateway,
   });
   if (validationError) throw new Error(validationError);
   return parsed;
@@ -1506,6 +1513,9 @@ export function validateGuiBootstrapConfiguration(value: GuiBootstrapConfigurati
     return 'Backend port must use 1 through 65535.';
   }
   if (!validBasePath(value.backend.basePath)) return 'Public base path is invalid.';
+  if (value.frontend && !validAbsolutePath(value.frontend.assetRoot)) {
+    return 'Frontend asset root must use an absolute safe path.';
+  }
   if (value.smithproxy) {
     if (!validApiUrl(value.smithproxy.apiUrl)) {
       return 'Smithproxy API must use HTTPS, or HTTP on a loopback address.';
@@ -1539,7 +1549,7 @@ export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): Arr
   if (validationError) throw new Error(validationError);
   const lines = [
     'gui = {',
-    '  schema_version = 1;',
+    `  schema_version = ${value.frontend ? 3 : 1};`,
     '',
     '  backend = {',
     `    bind_address = ${libconfigString(value.backend.bindAddress)};`,
@@ -1547,6 +1557,11 @@ export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): Arr
     `    base_path = ${libconfigString(value.backend.basePath)};`,
     '  };',
   ];
+  if (value.frontend) {
+    lines.push('', '  frontend = {',
+      `    asset_root = ${libconfigString(value.frontend.assetRoot)};`,
+      '  };');
+  }
   if (value.smithproxy) {
     lines.push('', '  smithproxy = {',
       `    api_url = ${libconfigString(value.smithproxy.apiUrl)};`,
@@ -1693,6 +1708,7 @@ export class SystemClient {
         port: value.backend.port,
         base_path: value.backend.basePath,
       },
+      frontend: value.frontend ? {asset_root: value.frontend.assetRoot} : null,
       smithproxy: value.smithproxy ? {
         api_url: value.smithproxy.apiUrl,
         ca_cert: value.smithproxy.caCert,

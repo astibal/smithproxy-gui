@@ -289,7 +289,9 @@ POST /api/v1/config/archive/resource/delete?path=...
 typed boot settings and administrator names; password verifiers never cross the
 browser boundary. It also reports the active listener separately, allowing the
 GUI to distinguish saved startup settings from the endpoint serving the current
-process. The typed publish endpoint merges edited boot settings with
+process. An optional schema-version-three frontend group selects an absolute
+asset root; omission retains the executable's packaged asset directory. The
+typed publish endpoint merges edited boot settings with
 the opaque current administrator verifiers inside GUI core, validates the
 complete replacement, and publishes it through Smithproxy's resource
 API with the same revision and archive-hash preconditions. The GUI process

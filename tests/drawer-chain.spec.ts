@@ -7012,6 +7012,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     state: 'ready', schema_version: 1, restart_required: true, administrators: [],
     active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
     backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+    frontend: null,
     smithproxy: {
       api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
       api_token_file: '/run/credentials/gui.api-token', cli_endpoint: '127.0.0.1:50000',
@@ -7039,6 +7040,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('active');
   await expect(gui).not.toContainText('boot-token-value');
   await gui.getByRole('button', {name: 'Edit GUI startup settings'}).click();
+  await gui.getByLabel('Override the packaged frontend asset directory').check();
+  await gui.getByLabel('Frontend asset root').fill('/srv/smithproxy-gui/assets');
   await gui.getByLabel('Require a trusted frontend gateway for browser access').uncheck();
   await expect(gui.getByText('Direct standalone browser authentication is used')).toBeVisible();
   await gui.getByLabel('Bind address').fill('999.1.1.1');
@@ -7050,6 +7053,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await gui.getByRole('button', {name: 'Confirm publish & restart later'}).click();
   await expect.poll(() => published).toContain('"port":19082');
   expect(published).toContain('"api_token_file":"/run/credentials/gui.api-token"');
+  expect(published).toContain('"frontend":{"asset_root":"/srv/smithproxy-gui/assets"}');
   expect(published).toContain('"gateway":null');
   expect(published).not.toContain('boot-token-value');
   await expect(gui).toContainText('restart pending');

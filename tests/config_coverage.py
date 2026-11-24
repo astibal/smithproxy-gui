@@ -114,6 +114,7 @@ FULL_TYPED_FIELDS = {
     "auth_profiles": {"name", "authenticate", "resolve", "identity_count", "identities"},
     "gui": {
         "schema_version", "backend.bind_address", "backend.port", "backend.base_path",
+        "frontend.asset_root",
         "smithproxy.api_url", "smithproxy.ca_cert", "smithproxy.api_token_file",
         "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file",
         "administrators.name", "administrators.algorithm", "administrators.salt",

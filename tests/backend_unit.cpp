@@ -2457,7 +2457,9 @@ int main() {
         ca << "test-ca";
         std::ofstream gui(gui_config_path);
         gui << "gui = {\n"
+               "  schema_version = 3;\n"
                "  backend = { bind_address = \"0.0.0.0\"; port = 18443; base_path = \"/admin\"; };\n"
+               "  frontend = { asset_root = \"" << gui_config_root.string() << "\"; };\n"
                "  smithproxy = { api_url = \"https://127.0.0.1:55555/\"; ca_cert = \""
             << ca_path.string() << "\"; api_token_file = \"" << api_token_path.string()
             << "\"; cli_endpoint = \"127.0.0.1:50000\"; };\n"
@@ -2474,6 +2476,7 @@ int main() {
     assert(gui_bootstrap.config->bind_address == "0.0.0.0");
     assert(gui_bootstrap.config->port == 18443U);
     assert(gui_bootstrap.config->base_path == "/admin");
+    assert(gui_bootstrap.config->asset_root == gui_config_root.string());
     assert(gui_bootstrap.config->smithproxy);
     assert(gui_bootstrap.config->smithproxy->api_url == "https://127.0.0.1:55555");
     assert(gui_bootstrap.config->smithproxy->api_key == "boot-api-token-0123456789abcdef");
@@ -2507,6 +2510,18 @@ int main() {
     assert(reparsed_administrator_bootstrap.config->administrators.size() == 1U);
     assert(reparsed_administrator_bootstrap.config->administrators.front().verifier ==
            administrator_bootstrap.config->administrators.front().verifier);
+    const auto frontend_bootstrap = parse_gui_bootstrap(
+        "gui = { schema_version = 3; frontend = { "
+        "asset_root = \"/usr/share/smithproxy-gui\"; }; };\n");
+    assert(frontend_bootstrap.config);
+    assert(frontend_bootstrap.config->asset_root == "/usr/share/smithproxy-gui");
+    const auto serialized_frontend_bootstrap = serialize_gui_bootstrap(*frontend_bootstrap.config);
+    assert(serialized_frontend_bootstrap);
+    assert(serialized_frontend_bootstrap->find("schema_version = 3") != std::string::npos);
+    assert(!parse_gui_bootstrap(
+        "gui = { schema_version = 2; frontend = { asset_root = \"/srv/gui\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { schema_version = 3; frontend = { asset_root = \"relative\"; }; };\n").config);
     assert(!parse_gui_bootstrap(
         "gui = { schema_version = 1; administrators = (); };\n").config);
     assert(!parse_gui_bootstrap(

@@ -40,6 +40,7 @@ struct GuiBootstrapConfig {
     std::string bind_address{"127.0.0.1"};
     std::uint16_t port{18082};
     std::string base_path{"/"};
+    std::optional<std::string> asset_root;
     std::optional<std::string> api_url;
     std::optional<std::string> ca_cert;
     std::optional<std::string> api_token_file;
