@@ -52,6 +52,21 @@ GUI service account, and must have mode `0600`. A trailing newline is accepted.
 The persistent archive contains only their locations. This permits Smithproxy to
 mint a new dedicated GUI API token for every boot without rewriting CFtar.
 
+The service launcher generates one high-entropy token before starting either
+process and writes the same value into two separately owned `0600` runtime
+files. Smithproxy receives the path to its copy through
+`SMITHPROXY_GUI_API_KEY_FILE`; the GUI receives the path to its copy through the
+`smithproxy.api_token_file` setting above. Smithproxy loads this credential as
+an archive-capable API key because the GUI publishes `gui.cfg`, removes the
+environment variable immediately, and never adds the value to persistent API
+key snapshots. The files are replaced on the next coordinated start, so a token
+from an earlier boot no longer authorizes the new Smithproxy process.
+
+The two-file handoff is intentional: Smithproxy and the GUI may run under
+different service accounts, and neither process needs permission to read the
+other account's credential file. A deployment must not place the token itself
+in `gui.cfg`, a command-line option, or a shared environment file.
+
 Command-line options remain explicit deployment overrides. Existing environment
 variables remain available for compatibility, but a native installation should
 prefer `gui.cfg` plus protected runtime credential files.
