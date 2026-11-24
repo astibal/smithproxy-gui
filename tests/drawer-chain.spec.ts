@@ -7129,6 +7129,58 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('administrator changes activate immediately');
 });
 
+test('creates the first gui.cfg before enabling administrator enrollment', async ({page}) => {
+  const revision = `sha256:${'2'.repeat(64)}`;
+  const archiveHash = `sha256:${'a'.repeat(64)}`;
+  let published = false;
+  await mockSystemApi(page, {
+    smithproxy: 'ready', configSaveReady: true,
+    configRevision: revision, savedConfigRevision: revision,
+    gatewayMode: 'standalone', gatewayAuthenticated: true,
+    gatewayAdministrator: 'bootstrap-admin', administratorsConfigured: false,
+  }, true);
+  await page.route('**/api/v1/config/archive', async route => route.fulfill({json: {
+    state: 'ready', content_hash: archiveHash, resources: [],
+  }}));
+  await page.route('**/api/v1/config/gui', async route => route.fulfill({json: published ? {
+    state: 'ready', schema_version: 1, restart_required: true, administrators: [],
+    active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'},
+    backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+    frontend: null,
+    smithproxy: {
+      api_url: 'https://127.0.0.1:55555', ca_cert: '/run/smithproxy-gui/api-ca.pem',
+      api_token_file: '/run/credentials/smithproxy-gui.api-token',
+      cli_endpoint: '127.0.0.1:50000',
+    },
+    gateway: null,
+  } : {
+    state: 'absent', restart_required: true, administrators: [],
+    active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'},
+  }}));
+  await page.route('**/api/v1/config/gui/publish', async route => {
+    expect(route.request().headers()['x-smithproxy-expected-revision']).toBe(revision);
+    expect(route.request().headers()['x-smithproxy-archive-sha256']).toBe(archiveHash);
+    published = true;
+    await route.fulfill({json: {
+      state: 'written', content_hash: `sha256:${'b'.repeat(64)}`, restart_required: true,
+    }});
+  });
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  const gui = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'GUI service'}),
+  });
+  await expect(gui.getByRole('button', {name: 'Add or rotate administrator'})).toBeDisabled();
+  await expect(gui.getByRole('button', {name: 'Add or rotate administrator'}))
+    .toHaveAttribute('title', /Create GUI startup settings before enrolling/i);
+  await gui.getByRole('button', {name: 'Configure GUI service'}).click();
+  await gui.getByRole('button', {name: 'Create GUI startup settings'}).click();
+  await expect.poll(() => published).toBe(true);
+  await expect(gui).toContainText('Configured');
+  await expect(gui.getByRole('button', {name: 'Add or rotate administrator'})).toBeEnabled();
+});
+
 test('blocks initial enrollment until the core publication preflight is ready', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', gatewayMode: 'standalone', gatewayAuthenticated: false,

@@ -20,6 +20,10 @@ other boot settings take effect only after a controlled service restart.
 The Smithproxy connection and trusted browser-gateway groups are independently
 optional and can be explicitly enabled or removed. Opening the editor preserves
 an absent group instead of silently materializing deployment credentials.
+When `gui.cfg` does not exist yet, a launcher-bootstrapped GUI can create the
+first resource through this same core API. The initial document contains no
+administrator verifier; the first privilege-15 CLI enrollment is enabled only
+after the resource is published and can be read back authoritatively.
 
 ```libconfig
 gui = {

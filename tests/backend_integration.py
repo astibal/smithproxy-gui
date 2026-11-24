@@ -1406,6 +1406,57 @@ def main() -> int:
             assert json.loads(body) == {
                 "mode": "gateway", "authenticated": True, "administrator": None,
                 "administrators_configured": False, "initial_enrollment_ready": False}
+
+            # A launcher-bootstrapped GUI can create its first persistent
+            # gui.cfg through Smithproxy core. Absence is not treated as an
+            # invalid existing resource, and the browser never writes CFtar.
+            bootstrap_mutation_headers = {
+                **gateway_headers,
+                "Host": f"127.0.0.1:{configured_port}",
+                "Origin": f"http://127.0.0.1:{configured_port}",
+                "Sec-Fetch-Site": "same-origin",
+                "X-Smithproxy-GUI-CSRF": "1",
+                "X-Smithproxy-Expected-Revision": FakeSmithproxy.config_revision,
+                "X-Smithproxy-Archive-SHA256": FakeSmithproxy.archive_hash,
+                "Content-Type": "application/json",
+            }
+            FakeSmithproxy.gui_resource_status = 404
+            status, _, body = request(
+                configured_port, "/api/v1/config/gui", headers=gateway_headers)
+            assert status == 200
+            assert json.loads(body)["state"] == "absent"
+            first_gui_config = {
+                "backend": {
+                    "bind_address": "127.0.0.1", "port": configured_port,
+                    "base_path": "/",
+                },
+                "frontend": None,
+                "smithproxy": {
+                    "api_url": f"http://127.0.0.1:{fake_port}",
+                    "ca_cert": "/run/smithproxy-gui/api-ca.pem",
+                    "api_token_file": "/run/credentials/smithproxy-gui.api-token",
+                    "cli_endpoint": "127.0.0.1:50000",
+                },
+                "gateway": {
+                    "secret_file": "/run/credentials/smithproxy-gui.gateway",
+                    "previous_secret_file": "",
+                },
+            }
+            status, _, body = request(
+                configured_port, "/api/v1/config/gui/publish", "POST",
+                bootstrap_mutation_headers, json.dumps(first_gui_config))
+            assert status == 200, body
+            assert json.loads(body)["state"] == "written"
+            assert FakeSmithproxy.published_gui_resource is not None
+            assert "api_token_file = \"/run/credentials/smithproxy-gui.api-token\"" in \
+                FakeSmithproxy.published_gui_resource
+            assert secret not in FakeSmithproxy.published_gui_resource
+            FakeSmithproxy.gui_resource_status = 200
+            status, _, body = request(
+                configured_port, "/api/v1/config/gui", headers=gateway_headers)
+            assert status == 200
+            assert json.loads(body)["state"] == "ready"
+
             assert request(configured_port, "/api/v1/tools/dns/resolve?name=localhost")[0] == 401
             status, _, body = request(
                 configured_port, "/api/v1/tools/dns/resolve?name=localhost",

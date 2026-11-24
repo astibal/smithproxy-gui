@@ -12285,7 +12285,8 @@ export class SmithproxyApp extends LitElement {
           <button class="primary" type="button"
             ?disabled=${!valid || this.guiConfigurationBusy || !this.configSaveAvailable ||
               !this.archiveInventory || !this.snapshot?.revision}
-            @click=${() => { void this.saveGuiConfiguration(); }}>Publish GUI startup settings</button>
+            @click=${() => { void this.saveGuiConfiguration(); }}>${value?.state === 'absent'
+              ? 'Create GUI startup settings' : 'Publish GUI startup settings'}</button>
           <button class="secondary" type="button" ?disabled=${this.guiConfigurationBusy}
             @click=${() => { this.guiConfigurationDraft = undefined; }}>
             Cancel
@@ -12405,7 +12406,11 @@ export class SmithproxyApp extends LitElement {
             @click=${() => { void this.loadGuiConfiguration(); }}>Refresh</button>
           ${this.gatewaySession?.mode === 'standalone' ? html`
             <button class="secondary" type="button"
-              ?disabled=${this.guiConfigurationBusy || this.administratorEnrollmentOpen}
+              title=${value?.state === 'ready'
+                ? 'Use a single-use privilege-15 CLI token to add or rotate an administrator.'
+                : 'Create GUI startup settings before enrolling the first administrator.'}
+              ?disabled=${this.guiConfigurationBusy || this.administratorEnrollmentOpen ||
+                value?.state !== 'ready'}
               @click=${() => {
                 this.administratorEnrollmentOpen = true;
                 this.enrollmentError = undefined;

@@ -1556,20 +1556,27 @@ private:
         }
         const auto current_resource = monitor_.archive_api(
             "GET", "/api/config/archive/resource?path=gui.cfg");
-        if(!current_resource.transport_ok || current_resource.status != 200L) {
+        if(!current_resource.transport_ok) {
             return {502, "application/json; charset=utf-8",
                     "{\"error\":\"current GUI configuration is unavailable\"}"};
         }
-        auto current = parse_gui_bootstrap(current_resource.body);
-        if(!current.config) {
-            return {422, "application/json; charset=utf-8",
-                    "{\"error\":\"current GUI configuration is invalid\"}"};
+        GuiBootstrapConfig current;
+        if(current_resource.status == 200L) {
+            auto parsed = parse_gui_bootstrap(current_resource.body);
+            if(!parsed.config) {
+                return {422, "application/json; charset=utf-8",
+                        "{\"error\":\"current GUI configuration is invalid\"}"};
+            }
+            current = std::move(*parsed.config);
+        } else if(current_resource.status != 404L) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"current GUI configuration is unavailable\"}"};
         }
         GuiBootstrapConfig replacement;
         const bool custom_frontend = !document["frontend"].is_null();
-        const bool administrators_configured = !current.config->administrators.empty();
+        const bool administrators_configured = !current.administrators.empty();
         replacement.schema_version = custom_frontend ? 3U : administrators_configured ? 2U : 1U;
-        replacement.administrators = current.config->administrators;
+        replacement.administrators = current.administrators;
         replacement.bind_address = document["backend"]["bind_address"].get<std::string>();
         const auto port = document["backend"]["port"].get<long long>();
         if(port < 1 || port > 65535) {

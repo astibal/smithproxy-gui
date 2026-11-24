@@ -299,8 +299,11 @@ typed publish endpoint merges edited boot settings with
 the opaque current administrator verifiers inside GUI core, validates the
 complete replacement, and publishes it through Smithproxy's resource
 API with the same revision and archive-hash preconditions. The GUI process
-never opens CFtar for writing. Credential values are boot-scoped and remain
-outside both the archive and browser response.
+never opens CFtar for writing. If the resource is absent, the same endpoint
+creates the first bounded bootstrap configuration with no administrator
+identities; a privilege-15 CLI enrollment token can add the first persistent
+administrator only after that core-owned publication succeeds. Credential
+values are boot-scoped and remain outside both the archive and browser response.
 
 The browser never receives the Smithproxy API key and never fetches resource
 contents while building the inventory. Archive validation precedes restore;
