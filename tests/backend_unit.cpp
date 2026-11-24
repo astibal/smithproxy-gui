@@ -1153,6 +1153,26 @@ int main() {
         .position = {DraftPositionKind::Last, std::nullopt},
         .fields = {{"name", std::string("new")}},
     }));
+    assert(!valid_draft_structural_operation(DraftCreateOperation{
+        .local_id = "incomplete-network-bypass",
+        .collection = "networking.bypass",
+        .client_id = "incomplete-network-bypass",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {{"source", std::string("10.0.0.0/8")}},
+    }));
+    assert(!valid_draft_structural_operation(DraftCreateOperation{
+        .local_id = "zero-port-network-bypass",
+        .collection = "networking.bypass",
+        .client_id = "zero-port-network-bypass",
+        .parent_id = std::nullopt,
+        .position = {DraftPositionKind::Last, std::nullopt},
+        .fields = {
+            {"source", std::string("10.0.0.0/8")},
+            {"destination", std::string("192.0.2.10")},
+            {"port", std::int64_t{0}},
+        },
+    }));
     const auto commit_envelope = build_transaction_envelope(
         transaction_draft, TransactionMode::Commit, idempotency_key, ready_transaction);
     assert(commit_envelope.body);

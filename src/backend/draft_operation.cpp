@@ -130,6 +130,17 @@ bool valid_scalar(const DraftScalar& value) {
     }, value);
 }
 
+// Most collections have one identity field. A Networkd bypass is different:
+// it must enter the candidate as one complete, immediately valid rule because
+// source, destination, and port are validated together by the daemon.
+bool has_required_create_fields(
+    const CollectionSchema& schema,
+    const std::map<std::string, DraftScalar, std::less<>>& fields) {
+    if (!fields.contains(schema.required_field)) return false;
+    if (schema.id != "networking.bypass") return true;
+    return fields.contains("destination") && fields.contains("port");
+}
+
 } // namespace
 
 bool valid_draft_structural_operation(const DraftStructuralOperation& operation) {
@@ -144,7 +155,7 @@ bool valid_draft_structural_operation(const DraftStructuralOperation& operation)
             if (!valid_local_identifier(item.client_id) || !valid_position(item.position) ||
                 item.fields.empty() || item.fields.size() > maximum_fields ||
                 (item.parent_id && !valid_entity_identifier(*item.parent_id)) ||
-                !item.fields.contains(schema->required_field)) {
+                !has_required_create_fields(*schema, item.fields)) {
                 return false;
             }
             return std::all_of(item.fields.begin(), item.fields.end(), [&](const auto& field) {
