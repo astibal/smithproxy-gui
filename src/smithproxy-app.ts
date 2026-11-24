@@ -2,6 +2,7 @@ import {LitElement, css, html, nothing} from 'lit';
 import {customElement, property, state} from 'lit/decorators.js';
 import {keyed} from 'lit/directives/keyed.js';
 import {ApiConfigClient} from './api/config-client';
+import {isHttpStatusError} from './api/http-error';
 import {
   DraftClient,
   draftOperationCount,
@@ -2337,6 +2338,29 @@ export class SmithproxyApp extends LitElement {
     this.administratorActionArmed = undefined;
   }
 
+  /** Reloads authoritative administrator state after an optimistic concurrency conflict. */
+  private async handleAdministratorMutationFailure(
+    error: unknown, fallback: string, accessEpoch: number,
+  ): Promise<void> {
+    if (!isHttpStatusError(error, 409) || !this.systemClient) {
+      this.administratorError = error instanceof Error ? error.message : fallback;
+      return;
+    }
+    this.administratorActionArmed = undefined;
+    try {
+      const inventory = await this.systemClient.administratorInventory();
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      this.administratorInventory = inventory;
+      this.administratorError =
+        'Administrator configuration changed concurrently. Current state was reloaded; review it before applying another change.';
+    } catch (reloadError) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      const detail = reloadError instanceof Error ? reloadError.message : 'authoritative state is unavailable';
+      this.administratorError =
+        `Administrator configuration changed concurrently, but current state could not be reloaded: ${detail}`;
+    }
+  }
+
   private async saveAdministratorEditor(): Promise<void> {
     const editor = this.administratorEditor;
     const inventory = this.administratorInventory;
@@ -2368,8 +2392,9 @@ export class SmithproxyApp extends LitElement {
       reload = !reauthenticate;
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
-      this.administratorError = error instanceof Error
-        ? error.message : 'Administrator change failed.';
+      await this.handleAdministratorMutationFailure(
+        error, 'Administrator change failed.', accessEpoch,
+      );
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
     }
@@ -2407,8 +2432,9 @@ export class SmithproxyApp extends LitElement {
       reload = true;
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
-      this.administratorError = error instanceof Error
-        ? error.message : 'Administrator state change failed.';
+      await this.handleAdministratorMutationFailure(
+        error, 'Administrator state change failed.', accessEpoch,
+      );
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
     }
@@ -2440,8 +2466,9 @@ export class SmithproxyApp extends LitElement {
       reload = true;
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
-      this.administratorError = error instanceof Error
-        ? error.message : 'Administrator removal failed.';
+      await this.handleAdministratorMutationFailure(
+        error, 'Administrator removal failed.', accessEpoch,
+      );
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
     }
@@ -6737,8 +6764,7 @@ export class SmithproxyApp extends LitElement {
     try {
       return await mutation(this.draftVersion);
     } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      if (!/HTTP 409\b/u.test(message)) throw error;
+      if (!isHttpStatusError(error, 409)) throw error;
       await this.loadDraft();
       return mutation(this.draftVersion);
     }

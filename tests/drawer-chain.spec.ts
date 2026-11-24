@@ -7463,6 +7463,54 @@ test('protects the final enabled administrator in gateway mode', async ({page}) 
   await expect(card.getByRole('button', {name: 'Remove security-admin'})).toBeDisabled();
 });
 
+test('reloads administrator inventory after a concurrent mutation conflict', async ({page}) => {
+  const initialRevision = `sha256:${'2'.repeat(64)}`;
+  const currentRevision = `sha256:${'3'.repeat(64)}`;
+  const archiveHash = `sha256:${'a'.repeat(64)}`;
+  let inventoryReads = 0;
+  let mutationRequests = 0;
+  const state: MockState = {
+    smithproxy: 'ready', configSaveReady: true,
+    configRevision: initialRevision, savedConfigRevision: initialRevision,
+    gatewayMode: 'standalone', gatewayAuthenticated: true,
+    gatewayAdministrator: 'security-admin', administratorsConfigured: true,
+  };
+  await mockSystemApi(page, state, true);
+  await page.route('**/api/v1/admin/administrators', async route => {
+    inventoryReads += 1;
+    const concurrent = inventoryReads > 1;
+    await route.fulfill({json: {
+      state: 'ready', revision: concurrent ? currentRevision : initialRevision,
+      content_hash: archiveHash, restart_required: false,
+      administrators: [
+        {name: 'security-admin', enabled: true},
+        {name: 'operations-admin', enabled: !concurrent},
+      ],
+    }});
+  });
+  await page.route('**/api/v1/admin/administrators/**', async route => {
+    mutationRequests += 1;
+    await route.fulfill({status: 409, json: {error: {code: 'revision_conflict'}}});
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Administrators', exact: true}).click();
+  const card = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Administrators'}),
+  });
+  await card.getByRole('button', {name: 'Disable operations-admin'}).click();
+  await card.getByRole('button', {name: 'Confirm disable operations-admin'}).click();
+
+  await expect(card.getByRole('alert')).toContainText(
+    'Administrator configuration changed concurrently. Current state was reloaded',
+  );
+  await expect(card.getByRole('listitem').filter({hasText: 'operations-admin'}))
+    .toContainText('Disabled');
+  await expect.poll(() => inventoryReads).toBe(2);
+  expect(mutationRequests).toBe(1);
+});
+
 test('exposes network, object, and system vertical slices', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');
