@@ -254,6 +254,10 @@ describe('ApiConfigClient', () => {
       table: 'smithproxy_networkd', interfaces: ['-'], routingTable: 100,
       bypass: [{source: '10.0.0.0/8', port: 0}],
     });
+    expect(parseConfigSnapshot({
+      ...liveSnapshot,
+      networking: {...liveSnapshot.networking, interfaces: [], tenant_index: 0, tenant_ranges: []},
+    }).networking).toMatchObject({interfaces: [], tenantIndex: 0, tenantRanges: []});
     expect(snapshot.settings?.presentGroups).toEqual([
       'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
     ]);

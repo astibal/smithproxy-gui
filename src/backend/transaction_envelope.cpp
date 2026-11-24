@@ -869,6 +869,16 @@ TransactionEnvelope build_transaction_v2_operations(
         });
     }
 
+    std::uint64_t effective_networking_tenant = snapshot.networking
+        ? snapshot.networking->tenant_index : 0U;
+    for (const auto& change : draft.changes) {
+        if(change.path != "networking.tenant_index") continue;
+        const auto* tenant = std::get_if<std::int64_t>(&change.value);
+        if(tenant != nullptr && *tenant >= 0) {
+            effective_networking_tenant = static_cast<std::uint64_t>(*tenant);
+        }
+    }
+
     // Scalar paths are bound to the base snapshot. Apply them after named
     // prerequisites exist, but before ordered collections can shift indices.
     std::set<std::string, std::less<>> paths;
@@ -906,6 +916,17 @@ TransactionEnvelope build_transaction_v2_operations(
             operations.push_back({
                 {"op", "remove"}, {"path", "networking"},
                 {"entries", nlohmann::json::array({"control_socket"})},
+            });
+            continue;
+        }
+        const auto* strings = std::get_if<std::vector<std::string>>(&change.value);
+        const bool restores_default_tenant_ranges =
+            change.path == "networking.tenant_ranges" &&
+            strings != nullptr && strings->empty() && effective_networking_tenant == 0U;
+        if(restores_default_tenant_ranges) {
+            operations.push_back({
+                {"op", "remove"}, {"path", "networking"},
+                {"entries", nlohmann::json::array({"tenant_ranges"})},
             });
             continue;
         }

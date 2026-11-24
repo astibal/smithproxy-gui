@@ -724,6 +724,12 @@ int main() {
     assert(validate_draft_schema({
         "networking.tenant_ranges", std::vector<std::string>{"10.0.0.0/8", "2001:db8::/32"},
     }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "networking.interfaces", std::vector<std::string>{},
+    }) == DraftSchemaResult::Valid);
+    assert(validate_draft_schema({
+        "networking.interfaces", std::vector<std::string>{"*", "inside0"},
+    }) == DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({"networking.bypass.[0].port", std::int64_t{0}}) ==
            DraftSchemaResult::Valid);
     assert(validate_draft_schema({"networking.bypass.[0].port", std::int64_t{-1}}) ==
@@ -1609,6 +1615,25 @@ int main() {
     assert(network_bypass_operations.back() == nlohmann::json({
         {"op", "move"}, {"path", "networking.bypass"}, {"source", 1},
         {"target", 0}, {"position", "before"},
+    }));
+
+    v2_draft.changes = {
+        {"networking.tenant_ranges", std::vector<std::string>{}},
+        {"networking.interfaces", std::vector<std::string>{}},
+    };
+    v2_draft.structural_operations.clear();
+    const auto network_scope_defaults_envelope =
+        build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(network_scope_defaults_envelope.body);
+    assert(nlohmann::json::parse(*network_scope_defaults_envelope.body) == nlohmann::json::array({
+        {
+            {"op", "remove"}, {"path", "networking"},
+            {"entries", nlohmann::json::array({"tenant_ranges"})},
+        },
+        {
+            {"op", "set"}, {"path", "networking.interfaces"},
+            {"value", {{"type", "string_array"}, {"data", nlohmann::json::array()}}},
+        },
     }));
 
     ConfigProfile content_profile;

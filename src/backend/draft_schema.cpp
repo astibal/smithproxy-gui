@@ -506,7 +506,7 @@ Result validate_networking(const std::string_view field, const DraftScalar& valu
     if (field == "tenant_ranges") return valid(string_list(value, 128U));
     if (field == "placement") return valid(enumerated(value, {"before", "after"}));
     if (field == "interfaces") {
-        if (!string_list(value, 15U, false)) return Result::InvalidValue;
+        if (!string_list(value, 15U)) return Result::InvalidValue;
         const auto& items = *strings(value);
         const auto selectors = std::count_if(items.begin(), items.end(), [](const auto& item) {
             return item == "*" || item == "-" || item == "+";

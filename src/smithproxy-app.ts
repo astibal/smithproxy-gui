@@ -15044,7 +15044,8 @@ export class SmithproxyApp extends LitElement {
           <span class="form-label">Tenant ranges</span>
           <div>${this.renderNetworkingList('tenant-ranges', 'Tenant ranges',
             list('tenant_ranges', networking.tenantRanges))}
-            <small class="muted">Non-default tenants require at least one IPv4 or IPv6 CIDR.</small>
+            <small class="muted">Non-default tenants require at least one IPv4 or IPv6 CIDR.
+              For tenant 0, clearing every range restores Networkd's implicit all-address range.</small>
           </div>
           <label for="networking-placement">Rule placement</label><select id="networking-placement">
             <option value="before" ?selected=${scalar('placement', networking.placement) === 'before'}>Before existing rules</option>
@@ -15061,7 +15062,8 @@ export class SmithproxyApp extends LitElement {
               <button class="secondary" type="button" data-edit-control="true"
                 @click=${() => chooseInterfaceSelector('*')}>All addressed (*)</button>
             </span>
-            <small class="muted">A topology selector stands alone. Otherwise add each explicit interface separately.</small>
+            <small class="muted">A topology selector stands alone. Otherwise add each explicit interface separately.
+              An empty list is valid only when TPROXY admission is disabled in the same configuration.</small>
           </div>
         </div>
       </fieldset>

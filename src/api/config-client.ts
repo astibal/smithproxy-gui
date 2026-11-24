@@ -1029,7 +1029,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     const validInterfaceNames = interfaces.every(item => isTopologySelector(item) ||
       /^[A-Za-z0-9_.:-]{1,15}$/u.test(item));
     const table = safeString(value.networking.table, 'Networkd table', 40);
-    if (!/^[A-Za-z0-9_]+$/u.test(table) || interfaces.length === 0 || !validInterfaceNames ||
+    if (!/^[A-Za-z0-9_]+$/u.test(table) || !validInterfaceNames ||
         (selectors.length !== 0 &&
         (selectors.length !== 1 || interfaces.length !== 1)) ||
         [...tcpPorts, ...tlsPorts, ...udpPorts, ...dtlsPorts, ...dropUdpPorts].some(port => port === 0)) {
