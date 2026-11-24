@@ -259,6 +259,64 @@ describe('SystemClient', () => {
       .rejects.toThrow('Invalid administrator name');
   });
 
+  it('manages Core-owned administrators with optimistic preconditions', async () => {
+    const revision = 'r'.repeat(32);
+    const contentHash = `sha256:${'a'.repeat(64)}`;
+    const responses = [
+      {
+        state: 'ready', revision, content_hash: contentHash, restart_required: false,
+        administrators: [
+          {name: 'security-admin', enabled: true},
+          {name: 'disabled-admin', enabled: false},
+        ],
+      },
+      {state: 'created', administrator: 'operations-admin', revision,
+        content_hash: contentHash, changed: true, restart_required: false},
+      {state: 'password_changed', administrator: 'operations-admin', revision,
+        content_hash: contentHash, changed: true, restart_required: false},
+      {state: 'enabled_changed', administrator: 'operations-admin', revision,
+        content_hash: contentHash, changed: true, restart_required: false},
+      {state: 'removed', administrator: 'operations-admin', revision,
+        content_hash: contentHash, changed: true, restart_required: false},
+    ];
+    const fetcher = vi.fn(async () => jsonResponse(responses.shift()));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+
+    await expect(client.administratorInventory()).resolves.toMatchObject({
+      revision, contentHash,
+      administrators: [
+        {name: 'security-admin', enabled: true},
+        {name: 'disabled-admin', enabled: false},
+      ],
+    });
+    await expect(client.createAdministrator(
+      'operations-admin', 'new secure password', revision, contentHash,
+    )).resolves.toMatchObject({state: 'created', administrator: 'operations-admin'});
+    await expect(client.changeAdministratorPassword(
+      'operations-admin', 'rotated secure password', revision, contentHash,
+    )).resolves.toMatchObject({state: 'password_changed'});
+    await expect(client.setAdministratorEnabled(
+      'operations-admin', false, revision, contentHash,
+    )).resolves.toMatchObject({state: 'enabled_changed'});
+    await expect(client.removeAdministrator(
+      'operations-admin', revision, contentHash,
+    )).resolves.toMatchObject({state: 'removed'});
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1, '/api/v1/admin/administrators', expect.objectContaining({credentials: 'same-origin'}));
+    for (let index = 2; index <= 5; index += 1) {
+      expect(fetcher).toHaveBeenNthCalledWith(
+        index, expect.stringContaining('/api/v1/admin/administrators/'),
+        expect.objectContaining({
+          method: 'POST', credentials: 'same-origin',
+          headers: expect.objectContaining({
+            'X-Smithproxy-Expected-Revision': revision,
+            'X-Smithproxy-Archive-SHA256': contentHash,
+          }),
+        }));
+    }
+  });
+
   it('loads and validates the monitoring snapshot', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', uptime_ms: 1234,

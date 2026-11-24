@@ -145,6 +145,27 @@ export interface GuiConfiguration {
   };
 }
 
+export interface AdministratorRecord {
+  name: string;
+  enabled: boolean;
+}
+
+export interface AdministratorInventory {
+  revision: string;
+  contentHash: string;
+  restartRequired: boolean;
+  administrators: ReadonlyArray<AdministratorRecord>;
+}
+
+export interface AdministratorMutation {
+  state: 'created' | 'password_changed' | 'enabled_changed' | 'removed';
+  administrator: string;
+  revision: string;
+  contentHash: string;
+  changed: boolean;
+  restartRequired: boolean;
+}
+
 export type GuiBootstrapConfiguration = {
   backend: NonNullable<GuiConfiguration['backend']>;
   frontend: GuiConfiguration['frontend'];
@@ -1341,6 +1362,62 @@ function parseArchiveHash(value: unknown): string {
   return value;
 }
 
+function validAdministratorName(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._@-]{1,64}$/u.test(value);
+}
+
+function parseAdministratorRevision(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 256 ||
+      /[\r\n]/u.test(value)) {
+    throw new Error('Invalid administrator configuration revision.');
+  }
+  return value;
+}
+
+function parseAdministratorInventory(value: unknown): AdministratorInventory {
+  if (!isObject(value) || value.state !== 'ready' ||
+      typeof value.restart_required !== 'boolean' ||
+      !Array.isArray(value.administrators) || value.administrators.length > 64) {
+    throw new Error('Invalid administrator inventory.');
+  }
+  const administrators = value.administrators.map(item => {
+    if (!isObject(item) || !validAdministratorName(item.name) ||
+        typeof item.enabled !== 'boolean') {
+      throw new Error('Invalid administrator inventory entry.');
+    }
+    return {name: item.name, enabled: item.enabled};
+  });
+  if (new Set(administrators.map(item => item.name)).size !== administrators.length) {
+    throw new Error('Duplicate administrator inventory entry.');
+  }
+  return {
+    revision: parseAdministratorRevision(value.revision),
+    contentHash: parseArchiveHash(value.content_hash),
+    restartRequired: value.restart_required,
+    administrators,
+  };
+}
+
+function parseAdministratorMutation(
+  value: unknown,
+  expectedAdministrator: string,
+): AdministratorMutation {
+  const validStates = new Set(['created', 'password_changed', 'enabled_changed', 'removed']);
+  if (!isObject(value) || typeof value.state !== 'string' || !validStates.has(value.state) ||
+      value.administrator !== expectedAdministrator || typeof value.changed !== 'boolean' ||
+      typeof value.restart_required !== 'boolean') {
+    throw new Error('Invalid administrator mutation response.');
+  }
+  return {
+    state: value.state as AdministratorMutation['state'],
+    administrator: expectedAdministrator,
+    revision: parseAdministratorRevision(value.revision),
+    contentHash: parseArchiveHash(value.content_hash),
+    changed: value.changed,
+    restartRequired: value.restart_required,
+  };
+}
+
 function validArchiveEntryPath(path: string): boolean {
   return path.length > 0 && path.length <= 1024 && !path.startsWith('/') && !path.includes('\\') &&
     !/[\u0000-\u001f\u007f]/u.test(path) &&
@@ -1764,6 +1841,44 @@ export class SystemClient {
     );
   }
 
+  async administratorInventory(): Promise<AdministratorInventory> {
+    return parseAdministratorInventory(
+      await this.#request(joinedPath(this.#apiBase, '/admin/administrators')),
+    );
+  }
+
+  async createAdministrator(
+    name: string, password: string, expectedRevision: string, contentHash: string,
+  ): Promise<AdministratorMutation> {
+    this.#validateAdministratorPassword(name, password);
+    return await this.#administratorMutation(
+      'create', {name, password}, name, expectedRevision, contentHash);
+  }
+
+  async changeAdministratorPassword(
+    name: string, password: string, expectedRevision: string, contentHash: string,
+  ): Promise<AdministratorMutation> {
+    this.#validateAdministratorPassword(name, password);
+    return await this.#administratorMutation(
+      'password', {name, password}, name, expectedRevision, contentHash);
+  }
+
+  async setAdministratorEnabled(
+    name: string, enabled: boolean, expectedRevision: string, contentHash: string,
+  ): Promise<AdministratorMutation> {
+    if (!validAdministratorName(name)) throw new Error('Invalid administrator name.');
+    return await this.#administratorMutation(
+      'enabled', {name, enabled}, name, expectedRevision, contentHash);
+  }
+
+  async removeAdministrator(
+    name: string, expectedRevision: string, contentHash: string,
+  ): Promise<AdministratorMutation> {
+    if (!validAdministratorName(name)) throw new Error('Invalid administrator name.');
+    return await this.#administratorMutation(
+      'remove', {name}, name, expectedRevision, contentHash);
+  }
+
   async publishGuiConfiguration(
     value: GuiBootstrapConfiguration, expectedRevision: string, archiveHash: string,
   ): Promise<ArchiveResourceWrite> {
@@ -1995,8 +2110,35 @@ export class SystemClient {
     this.#pendingRequests.clear();
   }
 
+  #validateAdministratorPassword(name: string, password: string): void {
+    if (!validAdministratorName(name)) throw new Error('Invalid administrator name.');
+    if (password.length < 14 || password.length > 1024) {
+      throw new Error('Administrator password must contain 14 through 1024 characters.');
+    }
+  }
+
+  async #administratorMutation(
+    operation: 'create' | 'password' | 'enabled' | 'remove',
+    body: Readonly<Record<string, unknown>>,
+    expectedAdministrator: string,
+    expectedRevision: string,
+    contentHash: string,
+  ): Promise<AdministratorMutation> {
+    parseAdministratorRevision(expectedRevision);
+    parseArchiveHash(contentHash);
+    const value = await this.#jsonMutation(
+      `/admin/administrators/${operation}`, body, 'Administrator configuration', {
+        'X-Smithproxy-Expected-Revision': expectedRevision,
+        'X-Smithproxy-Archive-SHA256': contentHash,
+      });
+    return parseAdministratorMutation(value, expectedAdministrator);
+  }
+
   async #jsonMutation(
-    suffix: string, body: Readonly<Record<string, string>>, label: string,
+    suffix: string,
+    body: Readonly<Record<string, unknown>>,
+    label: string,
+    extraHeaders: Readonly<Record<string, string>> = {},
   ): Promise<unknown> {
     const controller = new AbortController();
     this.#pendingRequests.add(controller);
@@ -2008,6 +2150,7 @@ export class SystemClient {
         headers: {
           Accept: 'application/json', 'Content-Type': 'application/json',
           'X-Smithproxy-GUI-CSRF': '1',
+          ...extraHeaders,
         },
       });
       if (!response.ok) throw httpStatusError(response, label);
