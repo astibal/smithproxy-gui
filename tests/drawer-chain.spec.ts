@@ -1508,7 +1508,9 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   let routingEditor = page.getByRole('dialog', {name: 'Edit main'});
   await expect(routingEditor.getByRole('group', {name: 'Upstream destinations'})).toBeVisible();
   await expect(routingEditor.getByRole('group', {name: 'SNI rewriting'})).toBeVisible();
-  await routingEditor.getByLabel('Destination addresses').fill('internet, office');
+  const routingAddresses = routingEditor.getByRole('group', {name: 'Destination addresses'});
+  await routingAddresses.getByLabel('Select value to add to Destination addresses').selectOption('office');
+  await routingAddresses.getByRole('button', {name: 'Add to Destination addresses'}).click();
   await routingEditor.getByLabel('Load balancing').selectOption('sticky-l4');
   await routingEditor.getByLabel('Rewrite SNI match').fill('old.example');
   await routingEditor.getByRole('button', {name: 'Save to draft'}).click();
@@ -2202,14 +2204,15 @@ test('uses pending routing references for links and live previews', async ({page
     .getByRole('button', {name: 'main', exact: true}).click();
 
   const editor = page.getByRole('dialog', {name: 'Edit main'});
-  const addresses = editor.getByLabel('Destination addresses');
-  await expect(addresses).toHaveValue('office');
-  await expect(editor.getByText('Address object links').locator('..')
-    .getByRole('button', {name: 'office', exact: true})).toBeVisible();
-  await addresses.fill('internet, upstream-literal');
-  await expect(editor.getByText('Address object links').locator('..')
-    .getByRole('button', {name: 'internet', exact: true})).toBeVisible();
-  await expect(editor.getByText('Address object links').locator('..').locator('.reference-advisory'))
+  const addresses = editor.getByRole('group', {name: 'Destination addresses'});
+  await expect(addresses.getByRole('button', {name: 'office', exact: true})).toBeVisible();
+  await addresses.getByRole('button', {name: 'Remove office from Destination addresses'}).click();
+  await addresses.getByLabel('Select value to add to Destination addresses').selectOption('internet');
+  await addresses.getByRole('button', {name: 'Add to Destination addresses'}).click();
+  await addresses.getByLabel('Custom value for Destination addresses').fill('upstream-literal');
+  await addresses.getByRole('button', {name: 'Add custom value to Destination addresses'}).click();
+  await expect(addresses.getByRole('button', {name: 'internet', exact: true})).toBeVisible();
+  await expect(addresses.locator('.reference-advisory'))
     .toContainText('upstream-literalLiteral or unresolved');
 });
 
@@ -3133,8 +3136,16 @@ test('creates complete typed routing detection and DNS profiles', async ({page})
   await editor.getByLabel('Name').fill('branch-route');
   await expect(editor.getByRole('group', {name: 'Upstream destinations'})).toBeVisible();
   await expect(editor.getByRole('group', {name: 'SNI rewriting'})).toBeVisible();
-  await editor.getByLabel('Destination addresses').fill('backend-a, backend-b');
-  await editor.getByLabel('Destination ports').fill('https, 8443');
+  const createAddresses = editor.getByRole('group', {name: 'Destination addresses'});
+  await createAddresses.getByLabel('Custom value for Destination addresses').fill('backend-a');
+  await createAddresses.getByRole('button', {name: 'Add custom value to Destination addresses'}).click();
+  await createAddresses.getByLabel('Custom value for Destination addresses').fill('backend-b');
+  await createAddresses.getByRole('button', {name: 'Add custom value to Destination addresses'}).click();
+  const createPorts = editor.getByRole('group', {name: 'Destination ports'});
+  await createPorts.getByLabel('Select value to add to Destination ports').selectOption('https');
+  await createPorts.getByRole('button', {name: 'Add to Destination ports'}).click();
+  await createPorts.getByLabel('Custom value for Destination ports').fill('8443');
+  await createPorts.getByRole('button', {name: 'Add custom value to Destination ports'}).click();
   await editor.getByLabel('Load balancing').selectOption('sticky-l4');
   await editor.getByLabel('Rewrite SNI match').fill('public.example');
   await editor.getByLabel('Rewrite SNI target').fill('private.example');
@@ -3198,7 +3209,8 @@ test('creates complete typed routing detection and DNS profiles', async ({page})
   await routeRow.getByRole('button', {name: 'Edit'}).click();
   editor = page.getByRole('dialog', {name: 'Create profile'});
   await expect(editor.getByLabel('Profile type')).toHaveValue('routing');
-  await expect(editor.getByLabel('Destination addresses')).toHaveValue('backend-a, backend-b');
+  await expect(editor.getByRole('group', {name: 'Destination addresses'}).locator('.reference-advisory'))
+    .toContainText(['backend-aLiteral or unresolved', 'backend-bLiteral or unresolved']);
   await expect(editor.getByLabel('Rewrite SNI target')).toHaveValue('private.example');
   await expectNoWcagViolations(page);
 });
@@ -3891,8 +3903,10 @@ test('prefills every remaining typed profile with complete administrator values'
 
   let createEditor = await duplicate(/main routing/i, 'main');
   await expect(createEditor.getByLabel('Profile type')).toHaveValue('routing');
-  await expect(createEditor.getByLabel('Destination addresses')).toHaveValue('internet');
-  await expect(createEditor.getByLabel('Destination ports')).toHaveValue('https');
+  await expect(createEditor.getByRole('group', {name: 'Destination addresses'})
+    .getByRole('button', {name: 'internet', exact: true})).toBeVisible();
+  await expect(createEditor.getByRole('group', {name: 'Destination ports'})
+    .getByRole('button', {name: 'https', exact: true})).toBeVisible();
   await closePair(createEditor);
 
   createEditor = await duplicate(/inspect tls/i, 'inspect');
@@ -5327,8 +5341,10 @@ test('binds every profile editor to augment-owned persistent values', async ({pa
   await verify(/^main routing /u, 'main', 'Load balancing', 'sticky-l3');
   await profiles.getByRole('button', {name: /^main routing /u}).click();
   const routing = page.getByRole('dialog', {name: 'Edit main'});
-  await expect(routing.getByLabel('Destination addresses')).toHaveValue('office-net');
-  await expect(routing.getByLabel('Destination addresses')).toHaveAttribute('readonly', '');
+  const lockedAddresses = routing.getByRole('group', {name: 'Destination addresses'});
+  await expect(lockedAddresses.locator('.reference-advisory'))
+    .toContainText('office-netLiteral or unresolved');
+  await expect(lockedAddresses.getByLabel('Select value to add to Destination addresses')).toBeDisabled();
   await page.keyboard.press('Escape');
   await verify(/^inspect tls /u, 'inspect', 'Allow invalid certificates', 'true');
   await profiles.getByRole('button', {name: /^inspect tls /u}).click();

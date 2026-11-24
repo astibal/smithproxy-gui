@@ -13305,6 +13305,21 @@ export class SmithproxyApp extends LitElement {
     if (!current.includes(value)) this.setReferenceList(entry, inputId, [...current, value]);
   }
 
+  private addCustomReferenceListValue(
+    entry: DrawerEntry, inputId: string, fallback: ReadonlyArray<string>, customInputId: string,
+  ): void {
+    const input = this.renderRoot.querySelector<HTMLInputElement>(`#${customInputId}`);
+    const value = input?.value.trim() ?? '';
+    const valid = value.length > 0 && value.length <= 128 && !/[\u0000-\u001f\u007f]/u.test(value);
+    if (!valid) {
+      this.drawerError = 'Custom routing destinations must be non-empty bounded values.';
+      return;
+    }
+    const current = this.previewReferenceNames(entry, inputId, fallback);
+    if (!current.includes(value)) this.setReferenceList(entry, inputId, [...current, value]);
+    if (input) input.value = '';
+  }
+
   private renderReferenceListEditor(
     entry: DrawerEntry,
     inputId: string,
@@ -13312,6 +13327,7 @@ export class SmithproxyApp extends LitElement {
     kind: 'address' | 'port',
     fallback: ReadonlyArray<string>,
     readOnly: boolean,
+    allowCustom = false,
   ) {
     const values = this.previewReferenceNames(entry, inputId, fallback);
     const available = this.referenceListOptions(kind).filter(name => !values.includes(name));
@@ -13341,6 +13357,18 @@ export class SmithproxyApp extends LitElement {
           title=${`Add to ${label}`} ?disabled=${readOnly || available.length === 0}
           @click=${() => this.addReferenceListValue(entry, inputId, fallback, selectId)}>+</button>
       </div>
+      ${allowCustom ? html`<div class="reference-list-add">
+        <input id=${`${inputId}-custom`} maxlength="128" autocomplete="off"
+          aria-label=${`Custom value for ${label}`}
+          placeholder=${kind === 'address' ? 'Literal address or hostname' : 'Literal port or service'}
+          .readOnly=${readOnly} />
+        <button class="secondary" type="button" data-edit-control="true"
+          aria-label=${`Add custom value to ${label}`} title=${`Add custom value to ${label}`}
+          ?disabled=${readOnly}
+          @click=${() => this.addCustomReferenceListValue(
+            entry, inputId, fallback, `${inputId}-custom`,
+          )}>+</button>
+      </div>` : nothing}
     </div>`;
   }
 
@@ -13779,14 +13807,16 @@ export class SmithproxyApp extends LitElement {
             <legend>Upstream destinations</legend>
             <p>Selects destination objects and distributes matching traffic between them.</p>
             <div class="form-grid">
-          <label for="profile-create-addresses-${entry.id}">Destination addresses</label>
-          <input id="profile-create-addresses-${entry.id}"
-            .value=${stringList('dnat_address').join(', ')}
-            placeholder="backend-a, backend-b" autocomplete="off" .readOnly=${readOnly} />
-          <label for="profile-create-ports-${entry.id}">Destination ports</label>
-          <input id="profile-create-ports-${entry.id}"
-            .value=${stringList('dnat_port').join(', ')}
-            placeholder="https, 8443" autocomplete="off" .readOnly=${readOnly} />
+          <span class="form-label">Destination addresses</span>
+          ${this.renderReferenceListEditor(
+            entry, `profile-create-addresses-${entry.id}`, 'Destination addresses', 'address',
+            stringList('dnat_address'), readOnly, true,
+          )}
+          <span class="form-label">Destination ports</span>
+          ${this.renderReferenceListEditor(
+            entry, `profile-create-ports-${entry.id}`, 'Destination ports', 'port',
+            stringList('dnat_port'), readOnly, true,
+          )}
           <label for="profile-create-method-${entry.id}">Load balancing</label>
           <select id="profile-create-method-${entry.id}" .value=${String(field('dnat_lb_method', 'round-robin'))}
             ?disabled=${readOnly}>
@@ -14294,22 +14324,16 @@ export class SmithproxyApp extends LitElement {
             <legend>Upstream destinations</legend>
             <p>Selects destination objects and distributes matching traffic between them.</p>
             <div class="form-grid">
-          <label for="routing-addresses-${entry.id}">Destination addresses</label>
-          <input id="routing-addresses-${entry.id}"
-            .value=${routingAddressValues.join(', ')} data-reference-preview="true"
-            .readOnly=${fieldReadOnly('dnat_address')} />
-          <label>Address object links</label>
-          <div class="reference-stack">${routingAddressValues.length === 0
-            ? html`<span>None</span>`
-            : this.renderAddressReferences(entry, `routing-addresses-${entry.id}`, routingAddressValues)}</div>
-          <label for="routing-ports-${entry.id}">Destination ports</label>
-          <input id="routing-ports-${entry.id}"
-            .value=${routingPortValues.join(', ')} data-reference-preview="true"
-            .readOnly=${fieldReadOnly('dnat_port')} />
-          <label>Port object links</label>
-          ${routingPortValues.length === 0
-            ? html`<span>None</span>`
-            : this.renderPortReferences(entry, `routing-ports-${entry.id}`, routingPortValues)}
+          <span class="form-label">Destination addresses</span>
+          ${this.renderReferenceListEditor(
+            entry, `routing-addresses-${entry.id}`, 'Destination addresses', 'address',
+            routingAddressValues, fieldReadOnly('dnat_address'), true,
+          )}
+          <span class="form-label">Destination ports</span>
+          ${this.renderReferenceListEditor(
+            entry, `routing-ports-${entry.id}`, 'Destination ports', 'port',
+            routingPortValues, fieldReadOnly('dnat_port'), true,
+          )}
           <label for="routing-load-balancing-${entry.id}">Load balancing</label>
           <select id="routing-load-balancing-${entry.id}"
             .value=${persistent('dnat_lb_method', routing.loadBalancingMethod)}
