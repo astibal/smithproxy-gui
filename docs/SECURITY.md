@@ -80,6 +80,10 @@ revision- and archive-hash-guarded core API. Login derivations are globally
 rate-limited and return one generic credential error. Successful enrollment or
 login issues an eight-hour `Secure`, `HttpOnly`, `SameSite=Strict` cookie;
 logout revokes it in memory and expires it in the browser.
+An authenticated standalone administrator may enroll a peer with a separately
+issued CLI token. The response does not replace the current administrator's
+cookie, and the peer becomes login-capable only after the published boot
+configuration is activated by a controlled GUI restart.
 
 Best-effort DNS evaluation uses the same authenticated management boundary. It
 accepts only bounded ASCII DNS host names, rejects IP literals, returns at most

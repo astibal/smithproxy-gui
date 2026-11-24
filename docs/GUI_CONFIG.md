@@ -92,4 +92,7 @@ CLI creates a single-use token valid for ten minutes. After Smithproxy consumes
 it atomically, the GUI derives and publishes only the salted scrypt verifier
 through the core archive API. Successful authentication produces an eight-hour
 HttpOnly, Secure, SameSite=Strict runtime session; it never turns the password or
-enrollment token into a persistent API key.
+enrollment token into a persistent API key. A logged-in standalone administrator
+may consume another named CLI enrollment token from the GUI service card to add
+a peer. This preserves the current browser identity, publishes the new verifier,
+and requires a controlled GUI restart before the new administrator can sign in.

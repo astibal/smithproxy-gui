@@ -57,13 +57,15 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     response_status = 200
     config_revision = "c" * 32
     archive_hash = "sha256:" + "d" * 64
-    gui_resource = '''gui = {
+    initial_gui_resource = '''gui = {
   schema_version = 1;
   backend = { bind_address = "127.0.0.1"; port = 18082; base_path = "/"; };
 };
 '''
+    gui_resource = initial_gui_resource
     published_gui_resource = None
     enrollment_token = "e" * 64
+    enrollment_administrator = "security-admin"
     revision_requests = 0
     state_requests = 0
     state_status = 200
@@ -418,7 +420,9 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(b'{"administrator":"security-admin"}')
+            self.wfile.write(json.dumps({
+                "administrator": FakeSmithproxy.enrollment_administrator,
+            }).encode())
             return
         if self.path != "/api/config/uni/get":
             self.send_error(404)
@@ -459,6 +463,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             return
         FakeSmithproxy.published_gui_resource = self.rfile.read(
             int(self.headers.get("Content-Length", "0"))).decode()
+        FakeSmithproxy.gui_resource = FakeSmithproxy.published_gui_resource
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -794,10 +799,37 @@ def main() -> int:
             assert re.search(r'verifier = "[0-9a-f]{64}"', published)
             assert enrollment_password not in published
             assert FakeSmithproxy.enrollment_token not in published
+
+            # A logged-in administrator can consume another CLI capability
+            # without the response replacing the current browser identity.
+            FakeSmithproxy.enrollment_token = "f" * 64
+            FakeSmithproxy.enrollment_administrator = "operations-admin"
+            peer_headers = dict(mutation_headers)
+            peer_headers["Cookie"] = enrollment_cookie
+            status, peer_response_headers, body = request(
+                enrollment_port, "/api/v1/auth/enroll", "POST", peer_headers,
+                json.dumps({
+                    "token": FakeSmithproxy.enrollment_token,
+                    "password": "another strong administrator password",
+                }))
+            assert status == 200, body
+            assert json.loads(body) == {"administrator": "operations-admin"}
+            assert "Set-Cookie" not in peer_response_headers
+            assert 'name = "security-admin"' in FakeSmithproxy.published_gui_resource
+            assert 'name = "operations-admin"' in FakeSmithproxy.published_gui_resource
+
+            status, _, body = request(
+                enrollment_port, "/api/v1/auth/session",
+                headers={"Cookie": enrollment_cookie})
+            assert status == 200
+            assert json.loads(body)["administrator"] == "security-admin"
         finally:
             enrollment.send_signal(signal.SIGTERM)
             enrollment.wait(timeout=4)
         assert enrollment.returncode == 0, enrollment.stderr.read()
+        FakeSmithproxy.gui_resource = FakeSmithproxy.initial_gui_resource
+        FakeSmithproxy.enrollment_token = "e" * 64
+        FakeSmithproxy.enrollment_administrator = "security-admin"
 
         configured_port = free_port()
         configured_environment = environment.copy()

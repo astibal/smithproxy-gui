@@ -1747,6 +1747,7 @@ private:
         if(config_.gateway_secret) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
         }
+        const auto current_administrator = session_administrator(connection);
         if(!same_origin_mutation(connection)) {
             return {403, "application/json; charset=utf-8",
                     "{\"error\":\"same-origin CSRF check failed\"}"};
@@ -1833,6 +1834,13 @@ private:
         if(publication.status < 200L || publication.status >= 300L) {
             return {502, "application/json; charset=utf-8",
                     "{\"error\":\"Smithproxy rejected GUI configuration publication\"}"};
+        }
+        // An already authenticated administrator is adding a peer. Keep the
+        // current browser identity instead of silently replacing its session.
+        if(current_administrator) {
+            return {200, "application/json; charset=utf-8",
+                    nlohmann::json{{"administrator", *enrollment.administrator}}.dump(),
+                    "no-store"};
         }
         auto session = admin_sessions_.issue(*enrollment.administrator);
         if(!session) {

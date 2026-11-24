@@ -482,7 +482,9 @@ export class SmithproxyApp extends LitElement {
   @state() private enrollmentPassword = '';
   @state() private enrollmentPasswordConfirmation = '';
   @state() private enrollmentError: string | undefined;
+  @state() private enrollmentSuccess: string | undefined;
   @state() private enrollmentBusy = false;
+  @state() private administratorEnrollmentOpen = false;
   @state() private loginAdministratorName = '';
   @state() private loginPassword = '';
   @state() private loginError: string | undefined;
@@ -2399,16 +2401,24 @@ export class SmithproxyApp extends LitElement {
   /** Exchanges a short-lived CLI token for an HttpOnly standalone administrator session. */
   private async enrollAdministrator(): Promise<void> {
     if (!this.systemClient || this.enrollmentBusy) return;
+    const extendingConfiguration = this.gatewaySession?.authenticated === true;
     this.enrollmentBusy = true;
     this.enrollmentError = undefined;
+    this.enrollmentSuccess = undefined;
     try {
-      await this.systemClient.enrollAdministrator(
+      const enrolled = await this.systemClient.enrollAdministrator(
         this.enrollmentToken.trim(), this.enrollmentPassword,
       );
       this.enrollmentToken = '';
       this.enrollmentPassword = '';
       this.enrollmentPasswordConfirmation = '';
-      await this.refreshCapabilities();
+      if (extendingConfiguration) {
+        this.administratorEnrollmentOpen = false;
+        this.enrollmentSuccess = `${enrolled.administrator} was added to gui.cfg. Restart the GUI service before that administrator signs in.`;
+        await this.loadGuiConfiguration();
+      } else {
+        await this.refreshCapabilities();
+      }
     } catch (error) {
       this.enrollmentError = error instanceof Error ? error.message : 'Administrator enrollment failed.';
     } finally {
@@ -11674,6 +11684,10 @@ export class SmithproxyApp extends LitElement {
     const draft = this.guiConfigurationDraft;
     const validationError = draft ? validateGuiBootstrapConfiguration(draft) : undefined;
     const valid = draft !== undefined && validationError === undefined;
+    const validEnrollmentToken = /^[0-9a-f]{64}$/u.test(this.enrollmentToken.trim());
+    const validEnrollmentPassword = this.enrollmentPassword.length >= 14 &&
+      this.enrollmentPassword.length <= 1024 &&
+      this.enrollmentPassword === this.enrollmentPasswordConfirmation;
     const textField = (
       label: string, current: string, update: (next: string) => void, placeholder = '',
     ) => html`<label><span>${label}</span><input type="text" maxlength="4096"
@@ -11760,6 +11774,60 @@ export class SmithproxyApp extends LitElement {
             ? value.administrators.join(', ') : 'None configured'}</dd>
           <dt>Activation</dt><dd>Controlled service restart required</dd>
         </dl>
+        ${this.gatewaySession?.mode === 'standalone' ? html`
+          ${this.administratorEnrollmentOpen ? html`
+            <form class="archive-resource-editor gui-config-editor"
+              @submit=${(event: SubmitEvent) => {
+                event.preventDefault();
+                void this.enrollAdministrator();
+              }}>
+              <label><span>Single-use CLI enrollment token</span>
+                <input type="password" autocomplete="off" spellcheck="false" maxlength="64"
+                  .value=${this.enrollmentToken}
+                  @input=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.enrollmentToken = input.value;
+                  }}>
+              </label>
+              <label><span>New administrator password</span>
+                <input type="password" autocomplete="new-password" maxlength="1024"
+                  .value=${this.enrollmentPassword}
+                  @input=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.enrollmentPassword = input.value;
+                  }}>
+              </label>
+              <label><span>Confirm password</span>
+                <input type="password" autocomplete="new-password" maxlength="1024"
+                  .value=${this.enrollmentPasswordConfirmation}
+                  @input=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) {
+                      this.enrollmentPasswordConfirmation = input.value;
+                    }
+                  }}>
+              </label>
+              <div class="archive-actions">
+                <button class="primary" type="submit"
+                  ?disabled=${this.enrollmentBusy || !validEnrollmentToken || !validEnrollmentPassword}>
+                  ${this.enrollmentBusy ? 'Adding…' : 'Add administrator'}
+                </button>
+                <button class="secondary" type="button" ?disabled=${this.enrollmentBusy}
+                  @click=${() => {
+                    this.administratorEnrollmentOpen = false;
+                    this.enrollmentToken = '';
+                    this.enrollmentPassword = '';
+                    this.enrollmentPasswordConfirmation = '';
+                    this.enrollmentError = undefined;
+                  }}>Cancel</button>
+              </div>
+            </form>
+            <div class="privacy-note">
+              Generate the token in a privilege-15 Smithproxy CLI session. The token selects the administrator name,
+              expires after ten minutes, and is consumed once; only a salted verifier is published to CFtar.
+            </div>
+          ` : nothing}
+        ` : nothing}
         <div class="archive-actions">
           <button class="primary" type="button"
             ?disabled=${this.guiConfigurationBusy || !this.configSaveAvailable || !this.archiveInventory}
@@ -11768,8 +11836,21 @@ export class SmithproxyApp extends LitElement {
           </button>
           <button class="secondary" type="button" ?disabled=${this.guiConfigurationBusy}
             @click=${() => { void this.loadGuiConfiguration(); }}>Refresh</button>
+          ${this.gatewaySession?.mode === 'standalone' ? html`
+            <button class="secondary" type="button"
+              ?disabled=${this.guiConfigurationBusy || this.administratorEnrollmentOpen}
+              @click=${() => {
+                this.administratorEnrollmentOpen = true;
+                this.enrollmentError = undefined;
+                this.enrollmentSuccess = undefined;
+              }}>Add administrator</button>
+          ` : nothing}
         </div>
       `}
+      ${this.enrollmentError ? html`
+        <div class="metrics-message danger" role="alert">${this.enrollmentError}</div>` : nothing}
+      ${this.enrollmentSuccess ? html`
+        <div class="metrics-message success" role="status">${this.enrollmentSuccess}</div>` : nothing}
       ${this.guiConfigurationError ? html`
         <div class="metrics-message danger" role="alert">${this.guiConfigurationError}</div>` : nothing}
     </article>`;

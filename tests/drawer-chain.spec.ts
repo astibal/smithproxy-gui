@@ -93,6 +93,8 @@ type MockState = {
   smithproxy: 'ready' | 'unreachable';
   gatewayMode?: 'gateway' | 'standalone';
   gatewayAuthenticated?: boolean;
+  gatewayAdministrator?: string | null;
+  administratorsConfigured?: boolean;
   forceManagementCapabilities?: boolean;
   consoleReady?: boolean;
   inconsistentPrivilegedCapabilities?: boolean;
@@ -312,8 +314,8 @@ async function mockSystemApi(
     await route.fulfill({json: {
       mode: state.gatewayMode ?? 'gateway',
       authenticated: state.gatewayAuthenticated ?? true,
-      administrator: null,
-      administrators_configured: false,
+      administrator: state.gatewayAdministrator ?? null,
+      administrators_configured: state.administratorsConfigured ?? false,
     }});
   });
   await page.route('**/api/v1/tools/dns/resolve?*', async route => {
@@ -7043,6 +7045,53 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   expect(published).toContain('"api_token_file":"/run/credentials/gui.api-token"');
   expect(published).not.toContain('boot-token-value');
   await expect(gui).toContainText('Controlled service restart required');
+});
+
+test('adds a standalone administrator with a single-use core enrollment capability', async ({page}) => {
+  const revision = `sha256:${'2'.repeat(64)}`;
+  const archiveHash = `sha256:${'a'.repeat(64)}`;
+  const token = 'e'.repeat(64);
+  let administrators = ['security-admin'];
+  let enrollmentRequest: Record<string, unknown> | undefined;
+  await mockSystemApi(page, {
+    smithproxy: 'ready', configSaveReady: true,
+    configRevision: revision, savedConfigRevision: revision,
+    gatewayMode: 'standalone', gatewayAuthenticated: true,
+    gatewayAdministrator: 'security-admin', administratorsConfigured: true,
+  }, true);
+  await page.route('**/api/v1/config/archive', async route => route.fulfill({json: {
+    state: 'ready', content_hash: archiveHash,
+    resources: [{path: 'gui.cfg', size: 768, executable: false}],
+  }}));
+  await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
+    state: 'ready', schema_version: 2, restart_required: true, administrators,
+    backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'},
+    smithproxy: null, gateway: null,
+  }}));
+  await page.route('**/api/v1/auth/enroll', async route => {
+    enrollmentRequest = route.request().postDataJSON() as Record<string, unknown>;
+    administrators = [...administrators, 'operations-admin'];
+    await route.fulfill({json: {administrator: 'operations-admin'}});
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+  const gui = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'GUI service'}),
+  });
+  await expect(gui).toContainText('security-admin');
+  await gui.getByRole('button', {name: 'Add administrator'}).click();
+  await gui.getByLabel('Single-use CLI enrollment token').fill(token);
+  await gui.getByLabel('New administrator password').fill('another strong administrator password');
+  await gui.getByLabel('Confirm password').fill('another strong administrator password');
+  await gui.locator('form').getByRole('button', {name: 'Add administrator'}).click();
+
+  await expect.poll(() => enrollmentRequest).toEqual({
+    token, password: 'another strong administrator password',
+  });
+  await expect(gui).toContainText('security-admin, operations-admin');
+  await expect(gui.locator('.metrics-message.success')).toContainText('Restart the GUI service');
 });
 
 test('exposes network, object, and system vertical slices', async ({page}) => {
