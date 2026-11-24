@@ -2431,8 +2431,9 @@ export class SmithproxyApp extends LitElement {
       this.enrollmentPasswordConfirmation = '';
       if (extendingConfiguration) {
         this.administratorEnrollmentOpen = false;
-        const action = enrolled.operation === 'rotated' ? 'password was rotated in' : 'was added to';
-        this.enrollmentSuccess = `${enrolled.administrator} ${action} gui.cfg. Restart the GUI service to activate the change.`;
+        this.enrollmentSuccess = enrolled.operation === 'rotated'
+          ? `${enrolled.administrator} password was rotated in gui.cfg. Previous sessions were revoked and the new verifier is active now.`
+          : `${enrolled.administrator} was added to gui.cfg and is available now.`;
         await this.loadGuiConfiguration();
       } else {
         await this.refreshCapabilities();

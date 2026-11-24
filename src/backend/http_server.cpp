@@ -1811,6 +1811,7 @@ private:
             return {503, "application/json; charset=utf-8",
                     "{\"error\":\"administrator verifier unavailable\"}"};
         }
+        const auto runtime_verifier = *verifier;
         persistent.config->schema_version = 2U;
         if(rotating_existing) *existing = std::move(*verifier);
         else persistent.config->administrators.push_back(std::move(*verifier));
@@ -1841,28 +1842,44 @@ private:
             return {502, "application/json; charset=utf-8",
                     "{\"error\":\"Smithproxy rejected GUI configuration publication\"}"};
         }
-        // A successful replacement or recreation re-enables the identity in
-        // this boot without weakening the persistent core-owned write path.
+        // Activate the already-published verifier immediately. Revoking every
+        // older session makes password rotation a runtime security boundary,
+        // while a self-rotation receives exactly one replacement session.
+        std::optional<AdminSessionStore::IssuedSession> replacement_session;
         {
             auto lock = std::scoped_lock(administrator_state_mutex_);
+            runtime_administrator_verifiers_.insert_or_assign(
+                *enrollment.administrator, runtime_verifier);
             disabled_administrators_.erase(*enrollment.administrator);
+            admin_sessions_.revoke_administrator(*enrollment.administrator);
+            const bool initial_enrollment = !current_administrator;
+            const bool rotating_current = current_administrator &&
+                *current_administrator == *enrollment.administrator;
+            if(initial_enrollment || rotating_current) {
+                replacement_session = admin_sessions_.issue(*enrollment.administrator);
+            }
         }
-        // An already authenticated administrator is adding a peer. Keep the
-        // current browser identity instead of silently replacing its session.
-        if(current_administrator) {
-            return {200, "application/json; charset=utf-8",
-                    nlohmann::json{
-                        {"administrator", *enrollment.administrator},
-                        {"operation", rotating_existing ? "rotated" : "created"},
-                    }.dump(),
-                    "no-store"};
-        }
-        auto session = admin_sessions_.issue(*enrollment.administrator);
-        if(!session) {
+        if((!current_administrator || *current_administrator == *enrollment.administrator) &&
+           !replacement_session) {
             return {503, "application/json; charset=utf-8",
                     "{\"error\":\"administrator session unavailable\"}"};
         }
-        const auto cookie = std::string(admin_session_cookie) + "=" + session->token +
+        // Peer enrollment keeps the acting browser identity; self-rotation
+        // returns the replacement created above after revoking the old one.
+        if(current_administrator) {
+            std::vector<std::pair<std::string, std::string>> headers;
+            if(replacement_session) {
+                headers.emplace_back("Set-Cookie", std::string(admin_session_cookie) + "=" +
+                    replacement_session->token + "; Max-Age=" +
+                    std::to_string(AdminSessionStore::ttl_seconds) +
+                    "; Path=/; Secure; HttpOnly; SameSite=Strict");
+            }
+            return {200, "application/json; charset=utf-8", nlohmann::json{
+                        {"administrator", *enrollment.administrator},
+                        {"operation", rotating_existing ? "rotated" : "created"},
+                    }.dump(), "no-store", std::move(headers)};
+        }
+        const auto cookie = std::string(admin_session_cookie) + "=" + replacement_session->token +
             "; Max-Age=" + std::to_string(AdminSessionStore::ttl_seconds) +
             "; Path=/; Secure; HttpOnly; SameSite=Strict";
         return {200, "application/json; charset=utf-8",
@@ -1899,7 +1916,7 @@ private:
             }
             next_login_attempt_ = now + std::chrono::milliseconds(750);
         }
-        const auto found = std::find_if(
+        const auto persistent = std::find_if(
             config_.administrators.begin(), config_.administrators.end(),
             [&](const auto& administrator) { return administrator.name == administrator_name; });
         const GuiAdministratorConfig dummy{
@@ -1910,10 +1927,14 @@ private:
             .block_size = 8U,
             .parallelism = 1U,
         };
-        const auto& verifier = found == config_.administrators.end() ? dummy : *found;
-        const bool password_matches = verify_password(verifier, password) &&
-                                      found != config_.administrators.end();
         auto administrator_lock = std::scoped_lock(administrator_state_mutex_);
+        const auto runtime = runtime_administrator_verifiers_.find(administrator_name);
+        const bool runtime_configured = runtime != runtime_administrator_verifiers_.end();
+        const bool persistent_configured = persistent != config_.administrators.end();
+        const auto& verifier = runtime_configured ? runtime->second
+            : persistent_configured ? *persistent : dummy;
+        const bool password_matches = verify_password(verifier, password) &&
+                                      (runtime_configured || persistent_configured);
         const bool removed_during_this_boot =
             disabled_administrators_.contains(administrator_name);
         const bool accepted = password_matches && !removed_during_this_boot;
@@ -1921,7 +1942,7 @@ private:
             return {403, "application/json; charset=utf-8",
                     "{\"error\":\"invalid administrator credentials\"}"};
         }
-        auto session = admin_sessions_.issue(found->name);
+        auto session = admin_sessions_.issue(administrator_name);
         if(!session) {
             return {503, "application/json; charset=utf-8",
                     "{\"error\":\"administrator session unavailable\"}"};
@@ -1930,7 +1951,7 @@ private:
             "; Max-Age=" + std::to_string(AdminSessionStore::ttl_seconds) +
             "; Path=/; Secure; HttpOnly; SameSite=Strict";
         return {200, "application/json; charset=utf-8",
-                nlohmann::json{{"administrator", found->name}}.dump(), "no-store",
+                nlohmann::json{{"administrator", administrator_name}}.dump(), "no-store",
                 {{"Set-Cookie", cookie}}};
     }
 
@@ -2024,6 +2045,7 @@ private:
         {
             auto lock = std::scoped_lock(administrator_state_mutex_);
             disabled_administrators_.insert(administrator_name);
+            runtime_administrator_verifiers_.erase(administrator_name);
             admin_sessions_.revoke_administrator(administrator_name);
         }
         return {200, "application/json; charset=utf-8",
@@ -3281,6 +3303,8 @@ private:
     AuditStore audit_;
     mutable AdminSessionStore admin_sessions_;
     mutable std::mutex administrator_state_mutex_;
+    mutable std::map<std::string, GuiAdministratorConfig, std::less<>>
+        runtime_administrator_verifiers_;
     mutable std::set<std::string, std::less<>> disabled_administrators_;
     std::mutex login_mutex_;
     std::chrono::steady_clock::time_point next_login_attempt_{};

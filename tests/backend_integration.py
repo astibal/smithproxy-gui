@@ -820,6 +820,18 @@ def main() -> int:
             assert 'name = "security-admin"' in FakeSmithproxy.published_gui_resource
             assert 'name = "operations-admin"' in FakeSmithproxy.published_gui_resource
 
+            status, peer_login_headers, body = request(
+                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
+                json.dumps({
+                    "administrator": "operations-admin",
+                    "password": "another strong administrator password",
+                }))
+            assert status == 200, body
+            peer_cookie = peer_login_headers["Set-Cookie"].split(";", 1)[0]
+            assert request(
+                enrollment_port, "/api/v1/status",
+                headers={"Cookie": peer_cookie})[0] == 200
+
             previous_peer_resource = FakeSmithproxy.published_gui_resource
             FakeSmithproxy.enrollment_token = "a" * 64
             status, rotation_headers, body = request(
@@ -836,6 +848,28 @@ def main() -> int:
             assert FakeSmithproxy.published_gui_resource.count(
                 'name = "operations-admin"') == 1
 
+            # Rotation activates the published verifier immediately and
+            # invalidates both the old password and every older peer session.
+            assert request(
+                enrollment_port, "/api/v1/status",
+                headers={"Cookie": peer_cookie})[0] == 401
+            time.sleep(0.8)
+            assert request(
+                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
+                json.dumps({
+                    "administrator": "operations-admin",
+                    "password": "another strong administrator password",
+                }))[0] == 403
+            time.sleep(0.8)
+            status, rotated_peer_headers, body = request(
+                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
+                json.dumps({
+                    "administrator": "operations-admin",
+                    "password": "rotated operations administrator password",
+                }))
+            assert status == 200, body
+            rotated_peer_cookie = rotated_peer_headers["Set-Cookie"].split(";", 1)[0]
+
             status, _, body = request(
                 enrollment_port, "/api/v1/config/gui/administrators/remove",
                 "POST", peer_headers, json.dumps({"administrator": "operations-admin"}))
@@ -844,18 +878,53 @@ def main() -> int:
                 "administrator": "operations-admin", "operation": "removed"}
             assert 'name = "operations-admin"' not in FakeSmithproxy.published_gui_resource
             assert 'name = "security-admin"' in FakeSmithproxy.published_gui_resource
+            assert request(
+                enrollment_port, "/api/v1/status",
+                headers={"Cookie": rotated_peer_cookie})[0] == 401
+            time.sleep(0.8)
+            assert request(
+                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
+                json.dumps({
+                    "administrator": "operations-admin",
+                    "password": "rotated operations administrator password",
+                }))[0] == 403
+
+            # Rotating the active identity revokes its old browser session and
+            # returns exactly one authenticated replacement cookie.
+            FakeSmithproxy.enrollment_token = "b" * 64
+            FakeSmithproxy.enrollment_administrator = "security-admin"
+            status, self_rotation_headers, body = request(
+                enrollment_port, "/api/v1/auth/enroll", "POST", peer_headers,
+                json.dumps({
+                    "token": FakeSmithproxy.enrollment_token,
+                    "password": "rotated security administrator password",
+                }))
+            assert status == 200, body
+            assert json.loads(body) == {
+                "administrator": "security-admin", "operation": "rotated"}
+            assert "Set-Cookie" in self_rotation_headers
+            rotated_security_cookie = self_rotation_headers["Set-Cookie"].split(";", 1)[0]
+            assert request(
+                enrollment_port, "/api/v1/status",
+                headers={"Cookie": enrollment_cookie})[0] == 401
+            assert request(
+                enrollment_port, "/api/v1/status",
+                headers={"Cookie": rotated_security_cookie})[0] == 200
+            rotated_security_headers = dict(mutation_headers)
+            rotated_security_headers["Cookie"] = rotated_security_cookie
 
             retained_resource = FakeSmithproxy.published_gui_resource
             status, _, body = request(
                 enrollment_port, "/api/v1/config/gui/administrators/remove",
-                "POST", peer_headers, json.dumps({"administrator": "security-admin"}))
+                "POST", rotated_security_headers,
+                json.dumps({"administrator": "security-admin"}))
             assert status == 409
             assert b"cannot remove the active administrator" in body
             assert FakeSmithproxy.published_gui_resource == retained_resource
 
             status, _, body = request(
                 enrollment_port, "/api/v1/auth/session",
-                headers={"Cookie": enrollment_cookie})
+                headers={"Cookie": rotated_security_cookie})
             assert status == 200
             assert json.loads(body)["administrator"] == "security-admin"
         finally:

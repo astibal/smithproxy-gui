@@ -83,8 +83,10 @@ logout revokes it in memory and expires it in the browser.
 An authenticated standalone administrator may enroll a peer or rotate an
 existing password with a separately issued CLI token. The token supplies the
 administrator identity, so the browser cannot select a different account. The
-response does not replace the current administrator's cookie, and the change
-becomes active only after a controlled GUI restart.
+response does not replace the current administrator's cookie. The published
+verifier becomes active immediately and all older sessions for the target
+identity are revoked. Self-rotation instead returns exactly one replacement
+cookie for the same identity. Restart only reloads the persistent verifier.
 Peer removal is available only to a standalone administrator session. The
 active account and the last persistent account are protected from removal, and
 publication remains guarded by the current runtime revision and archive hash.

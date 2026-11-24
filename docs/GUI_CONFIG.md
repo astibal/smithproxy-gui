@@ -15,7 +15,8 @@ new archive atomically.
 The **System → Access & integrations → GUI service** editor reads this resource
 through the authenticated Smithproxy archive API. Publishing from that editor
 uses the running revision and current archive SHA-256 as atomic preconditions;
-the new boot settings take effect only after a controlled service restart.
+administrator verifier changes are activated in the running GUI immediately;
+other boot settings take effect only after a controlled service restart.
 The Smithproxy connection and trusted browser-gateway groups are independently
 optional and can be explicitly enabled or removed. Opening the editor preserves
 an absent group instead of silently materializing deployment credentials.
@@ -99,8 +100,11 @@ enrollment token into a persistent API key. A logged-in standalone administrator
 may consume another named CLI enrollment token from the GUI service card to add
 a peer or rotate an existing peer's password. The token's administrator identity
 selects create or rotation; arbitrary browser-supplied names are never trusted.
-This preserves the current browser identity, publishes the new verifier, and
-requires a controlled GUI restart before the change becomes active.
+This publishes and activates the new verifier immediately, then revokes every
+older session for that identity. A self-rotation receives one replacement
+browser session; a peer rotation leaves the acting administrator's session
+unchanged. Restart only reconciles the already-active verifier with persistent
+startup state.
 The service card also supports a confirmed removal of a peer administrator.
 The active account and the final remaining account cannot be removed; this
 prevents both immediate self-lockout and an administrator-free next boot.

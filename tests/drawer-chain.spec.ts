@@ -7102,7 +7102,7 @@ test('adds a standalone administrator with a single-use core enrollment capabili
   });
   await expect(gui).toContainText('security-admin');
   await expect(gui).toContainText('operations-admin');
-  await expect(gui.locator('.metrics-message.success')).toContainText('Restart the GUI service');
+  await expect(gui.locator('.metrics-message.success')).toContainText('is available now');
   await gui.getByRole('button', {name: 'Remove operations-admin'}).click();
   await gui.getByRole('button', {name: 'Confirm remove operations-admin'}).click();
   await expect(gui.locator('.administrator-list')).not.toContainText('operations-admin');
