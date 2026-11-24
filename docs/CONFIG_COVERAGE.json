@@ -52,7 +52,7 @@
       "name": "networking",
       "origin": "networkd_config",
       "read": "full",
-      "edit": "typed",
+      "edit": "partial",
       "sensitivity": "security-critical",
       "tracked_fields": [
         "table", "control_socket", "placement", "interfaces", "tenant_index", "tenant_ranges",
@@ -64,8 +64,7 @@
         "mark", "mask", "blackhole_max_ttl_ms"
       ],
       "editable_fields": [
-        "table", "control_socket", "placement", "interfaces", "tenant_index", "tenant_ranges",
-        "tcp_all", "udp_all", "ipv6_udp", "tcp_ports",
+        "placement", "interfaces", "tcp_all", "udp_all", "ipv6_udp", "tcp_ports",
         "tls_ports", "udp_ports", "dtls_ports", "drop_udp_ports", "redirect_tcp_port",
         "redirect_tls_port", "redirect_dns_port", "redirect_exempt_uids",
         "redirect_exempt_lan", "bypass", "manage_routing", "manage_sysctls",
@@ -75,7 +74,7 @@
       "constraints": {
         "bypass.port": {"minimum": 1, "maximum": 65535}
       },
-      "notes": "The complete smithproxy-networkd networking.cfg contract is visible and typed in the GUI. Interception, routing, sysctl, exemption, bypass, restart identity, and tenant-scope fields use drafts aligned to Networkd validation. Interface selectors, tenant ranges, interception ports, and exempt user IDs use explicit value rows instead of comma-authored lists. Every bypass rule requires a concrete destination port from 1 through 65535. Table, control-socket, tenant-index, and tenant-range changes are published atomically but require a controlled Networkd restart; registry validation remains authoritative. Clearing an explicit control-socket override atomically removes the setting and restores Networkd's tenant-derived default. Empty interface selectors are accepted so TPROXY admission can be disabled and its scope cleared atomically. Clearing tenant ranges removes the tenant-0 override and restores Networkd's implicit all-address scope."
+      "notes": "The complete smithproxy-networkd networking.cfg contract is visible in the GUI. Live-safe interception, routing, sysctl, exemption, and bypass fields use typed drafts aligned to Networkd validation. Interface selectors, interception ports, and exempt user IDs use explicit value rows instead of comma-authored lists. Every bypass rule requires a concrete destination port from 1 through 65535. Table, control-socket, tenant-index, and tenant-range identity remains read-only because the current Core transaction contract deliberately rejects those fields while Networkd owns live firewall state; changing them requires deployment-level restart orchestration."
     },
     {
       "name": "gui",

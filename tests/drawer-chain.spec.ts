@@ -7685,7 +7685,7 @@ test('projects pending listener settings into Network and opens their real edito
   await expect(editor.getByLabel('Require SOCKS authentication')).toHaveValue('true');
 });
 
-test('edits the complete Networkd policy while identifying restart-scoped fields', async ({page}) => {
+test('edits live-safe Networkd policy while protecting restart-only identity', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, draftMutationBatches: [],
   };
@@ -7700,21 +7700,13 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
   await expect(summary.getByRole('row', {name: /Current interface match/u})).not.toContainText('wan0');
   await summary.getByRole('button', {name: 'Edit interception'}).click();
   const editor = page.getByRole('dialog', {name: 'Edit Network interception'});
-  await expect(editor.getByText(/activate only after a controlled restart/i)).toBeVisible();
-  await editor.getByLabel('Table name').fill('smithproxy_lab3');
-  await editor.getByLabel('Control socket override').fill('');
-  await expect(editor.getByText(/restore Networkd's tenant-derived default/i)).toBeVisible();
-  await editor.getByLabel('Tenant index').fill('4');
+  await expect(editor.locator('.scope-note').filter({hasText: 'restart-only identity'})).toBeVisible();
+  await expect(editor.getByLabel('Table name')).toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('Control socket override')).toHaveAttribute('readonly', '');
+  await expect(editor.getByLabel('Tenant index')).toHaveAttribute('readonly', '');
   const tenantRanges = editor.getByRole('group', {name: 'Tenant ranges'});
-  await tenantRanges.getByRole('textbox').fill('10.4.0.0/99');
-  await editor.getByRole('button', {name: 'Save to draft'}).click();
-
-  await expect(editor.getByText('Tenant range 1 must be an IPv4 or IPv6 network with a prefix length.')).toBeVisible();
-  await expect(tenantRanges.getByRole('textbox')).toBeFocused();
-  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
-  await tenantRanges.getByRole('textbox').fill('10.4.0.0/16');
-  await tenantRanges.getByRole('button', {name: 'Add tenant range'}).click();
-  await tenantRanges.getByRole('textbox').nth(1).fill('2001:db8:4::/48');
+  await expect(tenantRanges.getByRole('textbox').first()).toHaveAttribute('readonly', '');
+  await expect(tenantRanges.getByRole('button', {name: 'Add tenant range'})).toBeDisabled();
   await editor.getByRole('button', {name: 'Default routes (+)', exact: true}).click();
   const interfaces = editor.getByRole('group', {name: 'Interface selectors'});
   await expect(interfaces.getByRole('textbox')).toHaveValue('+');
@@ -7751,15 +7743,17 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
 
   await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
   expect(state.draftMutationBatches![0]).toEqual(expect.arrayContaining([
-    {path: 'networking.table', value: 'smithproxy_lab3'},
-    {path: 'networking.control_socket', value: ''},
     {path: 'networking.placement', value: 'after'},
     {path: 'networking.interfaces', value: ['lan0', 'wan0']},
-    {path: 'networking.tenant_index', value: 4},
-    {path: 'networking.tenant_ranges', value: ['10.4.0.0/16', '2001:db8:4::/48']},
     {path: 'networking.tcp_ports', value: [80, 8080]},
     {path: 'networking.routing_table', value: 1000},
     {path: 'networking.bypass.[0].port', value: 8443},
+  ]));
+  expect(state.draftMutationBatches![0]).not.toEqual(expect.arrayContaining([
+    expect.objectContaining({path: 'networking.table'}),
+    expect.objectContaining({path: 'networking.control_socket'}),
+    expect.objectContaining({path: 'networking.tenant_index'}),
+    expect.objectContaining({path: 'networking.tenant_ranges'}),
   ]));
 });
 

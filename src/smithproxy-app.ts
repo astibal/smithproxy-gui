@@ -7893,11 +7893,7 @@ export class SmithproxyApp extends LitElement {
       changes.push({path: `networking.${path}`, value: input.value === 'true'});
     }
     const placement = select('placement');
-    const table = text('table');
-    const controlSocket = text('control-socket');
-    const tenantIndex = integer('tenant-index', 0, 65534);
     const interfaces = strings('interfaces');
-    const tenantRanges = strings('tenant-ranges');
     const tcpPorts = ports('tcp-ports');
     const tlsPorts = ports('tls-ports');
     const udpPorts = ports('udp-ports');
@@ -7909,43 +7905,7 @@ export class SmithproxyApp extends LitElement {
       /^[A-Za-z0-9:._-]{1,15}$/u.test(value));
     const validInterfaceSelection = validInterfaces &&
       (topologySelectors.length === 0 || (interfaces?.length === 1 && topologySelectors.length === 1));
-    const validTable = table !== null && /^[A-Za-z0-9_]{1,40}$/u.test(table.value);
-    const validControlSocket = controlSocket !== null &&
-      (controlSocket.value.length === 0 ||
-       (controlSocket.value.startsWith('/') && controlSocket.value.length <= 4096 &&
-        !/[\u0000-\u001f\u007f]/u.test(controlSocket.value)));
-    const validTenantRanges = tenantRanges !== undefined &&
-      tenantRanges.every(value => parseCidr(value) !== undefined) &&
-      (tenantIndex === 0 || tenantRanges.length > 0);
     if (!placement || !['before', 'after'].includes(placement.value)) return undefined;
-    if (!validTable) {
-      return this.rejectConfigurationInput(
-        table, 'Table name', 'must contain 1 through 40 letters, digits, or underscores',
-      );
-    }
-    if (!validControlSocket) {
-      return this.rejectConfigurationInput(
-        controlSocket, 'Control socket override', 'must be empty or an absolute bounded path',
-      );
-    }
-    if (tenantIndex === undefined) {
-      return this.rejectConfigurationInput(
-        text('tenant-index'), 'Tenant index', 'must be a whole number from 0 through 65534',
-      );
-    }
-    if (!tenantRanges) return undefined;
-    const invalidTenantRange = tenantRanges.findIndex(value => parseCidr(value) === undefined);
-    if (invalidTenantRange >= 0) {
-      return this.rejectConfigurationInput(
-        text(`tenant-ranges-${invalidTenantRange}`), `Tenant range ${invalidTenantRange + 1}`,
-        'must be an IPv4 or IPv6 network with a prefix length',
-      );
-    }
-    if (!validTenantRanges) {
-      return this.rejectConfigurationInput(
-        text('tenant-index'), 'Tenant index', 'requires at least one tenant range when it is not zero',
-      );
-    }
     if (!interfaces) return undefined;
     const invalidInterface = interfaces.findIndex(value =>
       !['*', '-', '+'].includes(value) && !/^[A-Za-z0-9:._-]{1,15}$/u.test(value));
@@ -8010,12 +7970,8 @@ export class SmithproxyApp extends LitElement {
       );
     }
     changes.push(
-      {path: 'networking.table', value: table.value},
-      {path: 'networking.control_socket', value: controlSocket.value},
       {path: 'networking.placement', value: placement.value},
       {path: 'networking.interfaces', value: interfaces},
-      {path: 'networking.tenant_index', value: tenantIndex},
-      {path: 'networking.tenant_ranges', value: tenantRanges},
       {path: 'networking.tcp_ports', value: tcpPorts},
       {path: 'networking.tls_ports', value: tlsPorts},
       {path: 'networking.udp_ports', value: udpPorts},
@@ -8230,7 +8186,7 @@ export class SmithproxyApp extends LitElement {
 
   /** Renders a Networkd array as explicit values instead of comma-authored text. */
   private renderNetworkingList(
-      list: NetworkingList, label: string, fallback: ReadonlyArray<string | number>) {
+      list: NetworkingList, label: string, fallback: ReadonlyArray<string | number>, readOnly = false) {
     const values = this.networkingListDrafts.get(list) ?? fallback.map(String);
     if (!this.networkingListDrafts.has(list)) this.networkingListDrafts.set(list, values);
     const interfaces = list === 'interfaces';
@@ -8244,19 +8200,20 @@ export class SmithproxyApp extends LitElement {
             <input id=${`networking-${list}-${index}`} maxlength="128" autocomplete="off"
               inputmode=${interfaces || tenantRanges ? nothing : 'numeric'}
               aria-label=${`${label} value ${index + 1}`}
-              .value=${value}
+              .value=${value} .readOnly=${readOnly}
               @input=${(event: Event) => {
                 const input = event.currentTarget;
                 if (input instanceof HTMLInputElement) this.updateNetworkingListValue(list, index, input.value);
               }} />
             <button class="reference-list-remove" type="button" data-edit-control="true"
               aria-label=${`Remove ${singular} ${index + 1} from ${label}`}
+              ?disabled=${readOnly}
               @click=${() => this.removeNetworkingListValue(list, index)}>×</button>
           </div>`,
         )}
       </div>
       <button class="secondary" type="button" data-edit-control="true"
-        ?disabled=${values.length >= 256} @click=${() => this.addNetworkingListValue(list)}>
+        ?disabled=${readOnly || values.length >= 256} @click=${() => this.addNetworkingListValue(list)}>
         Add ${singular}
       </button>
     </div>`;
@@ -15461,21 +15418,24 @@ export class SmithproxyApp extends LitElement {
     return html`<div class="editor-stack">
       <fieldset class="editor-group"><legend>Firewall ownership</legend>
         <p>Chooses the Networkd service identity and where its hooks sit relative to existing host rules.
-          Identity changes are published atomically but activate only after a controlled restart.</p>
+          Service and tenant identity are visible here but require deployment-level restart orchestration.</p>
+        <div class="scope-note">Table name, control socket, tenant index, and tenant ranges are restart-only
+          identity. The current Networkd transaction contract deliberately prevents changing them while the
+          service owns live firewall state.</div>
         <div class="form-grid">
           <label for="networking-table">Table name</label><input id="networking-table" maxlength="40"
-            .value=${scalar('table', networking.table)} />
+            .value=${scalar('table', networking.table)} readonly />
           <label for="networking-control-socket">Control socket override</label>
           <span><input id="networking-control-socket" maxlength="4096"
               placeholder="Packaged tenant default"
-              .value=${scalar('control_socket', networking.controlSocket)} />
-            <small class="muted">Use an absolute path, or clear it to restore Networkd's tenant-derived default.</small></span>
-          ${numberField('tenant_index', 'tenant-index', 'Tenant index', networking.tenantIndex, 0, 65534)}
+              .value=${scalar('control_socket', networking.controlSocket)} readonly />
+            <small class="muted">Packaged deployments derive this path from the tenant identity.</small></span>
+          <label for="networking-tenant-index">Tenant index</label>
+          <input id="networking-tenant-index" type="number" .value=${String(networking.tenantIndex)} readonly />
           <span class="form-label">Tenant ranges</span>
           <div>${this.renderNetworkingList('tenant-ranges', 'Tenant ranges',
-            list('tenant_ranges', networking.tenantRanges))}
-            <small class="muted">Non-default tenants require at least one IPv4 or IPv6 CIDR.
-              For tenant 0, clearing every range restores Networkd's implicit all-address range.</small>
+            list('tenant_ranges', networking.tenantRanges), true)}
+            <small class="muted">Tenant registry scope; change it through controlled deployment orchestration.</small>
           </div>
           <label for="networking-placement">Rule placement</label><select id="networking-placement">
             <option value="before" ?selected=${scalar('placement', networking.placement) === 'before'}>Before existing rules</option>
@@ -15526,7 +15486,7 @@ export class SmithproxyApp extends LitElement {
       </div></fieldset>
       <fieldset class="editor-group"><legend>Routing and host tuning</legend>
         <p>Ownership switches deliberately separate Smithproxy-managed state from externally managed hosts.
-          Changing routing ownership, table identity, priority, mark, or mask requires a controlled Networkd restart.</p>
+          Core validates conflicts before Networkd replaces the owned routing and firewall state.</p>
         <div class="form-grid">
           ${booleanField('manage_routing', 'manage-routing', 'Manage policy routing', networking.manageRouting)}
           ${booleanField('manage_sysctls', 'manage-sysctls', 'Manage kernel settings', networking.manageSysctls)}
