@@ -7635,21 +7635,15 @@ export class SmithproxyApp extends LitElement {
       (controlSocket.value.length === 0 ||
        (controlSocket.value.startsWith('/') && controlSocket.value.length <= 4096 &&
         !/[\u0000-\u001f\u007f]/u.test(controlSocket.value)));
-    const currentControlSocket = this.persistentValue(
-      'networking.control_socket', networking.controlSocket,
-    );
-    const removedControlSocketOverride = currentControlSocket.length > 0 && controlSocket?.value.length === 0;
     const validTenantRanges = tenantRanges !== undefined &&
       tenantRanges.every(value => parseCidr(value) !== undefined) &&
       (tenantIndex === 0 || tenantRanges.length > 0);
     if (!placement || !['before', 'after'].includes(placement.value) || !validTable ||
-        !validControlSocket || removedControlSocketOverride || tenantIndex === undefined ||
+        !validControlSocket || tenantIndex === undefined ||
         !validTenantRanges || !interfaces ||
         !validInterfaceSelection || !tcpPorts || !tlsPorts || !udpPorts || !dtlsPorts || !dropUdpPorts ||
         !exemptUids || !exemptUids.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 2147483647)) {
-      this.draftError = removedControlSocketOverride
-        ? 'Removing an explicit control socket requires Smithproxy unset support; enter an absolute replacement path.'
-        : 'Network identity, tenant ranges, interface selectors, or interception ports are invalid.';
+      this.draftError = 'Network identity, tenant ranges, interface selectors, or interception ports are invalid.';
       return undefined;
     }
     const numericFields = [
@@ -15045,7 +15039,7 @@ export class SmithproxyApp extends LitElement {
           <span><input id="networking-control-socket" maxlength="4096"
               placeholder="Packaged tenant default"
               .value=${scalar('control_socket', networking.controlSocket)} />
-            <small class="muted">Use an absolute path. A configured override requires an explicit replacement.</small></span>
+            <small class="muted">Use an absolute path, or clear it to restore Networkd's tenant-derived default.</small></span>
           ${numberField('tenant_index', 'tenant-index', 'Tenant index', networking.tenantIndex, 0, 65534)}
           <span class="form-label">Tenant ranges</span>
           <div>${this.renderNetworkingList('tenant-ranges', 'Tenant ranges',

@@ -899,6 +899,16 @@ TransactionEnvelope build_transaction_v2_operations(
             }
             continue;
         }
+        const auto* text = std::get_if<std::string>(&change.value);
+        const bool removes_control_socket = change.path == "networking.control_socket" &&
+            text != nullptr && text->empty();
+        if(removes_control_socket) {
+            operations.push_back({
+                {"op", "remove"}, {"path", "networking"},
+                {"entries", nlohmann::json::array({"control_socket"})},
+            });
+            continue;
+        }
         auto value = explicit_scalar_json(change.value);
         if (!path || value.is_null()) return {std::nullopt, "transaction.invalid_draft"};
         operations.push_back({

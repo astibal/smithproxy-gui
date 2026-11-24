@@ -1568,7 +1568,7 @@ int main() {
     };
     v2_draft.changes = {
         {"networking.table", std::string("edge_proxy")},
-        {"networking.control_socket", std::string("/run/smithproxy-networkd/edge/control.sock")},
+        {"networking.control_socket", std::string{}},
         {"networking.tenant_index", std::int64_t{7}},
         {"networking.tenant_ranges", std::vector<std::string>{"10.0.0.0/8", "2001:db8::/32"}},
         {"networking.bypass.[0].port", std::int64_t{8443}},
@@ -1593,7 +1593,10 @@ int main() {
     const auto network_bypass_operations = nlohmann::json::parse(*network_bypass_envelope.body);
     assert(network_bypass_operations[0]["path"] == "networking.table");
     assert(network_bypass_operations[0]["value"]["data"] == "edge_proxy");
-    assert(network_bypass_operations[1]["path"] == "networking.control_socket");
+    assert(network_bypass_operations[1] == nlohmann::json({
+        {"op", "remove"}, {"path", "networking"},
+        {"entries", nlohmann::json::array({"control_socket"})},
+    }));
     assert(network_bypass_operations[2]["path"] == "networking.tenant_index");
     assert(network_bypass_operations[2]["value"]["data"] == 7);
     assert(network_bypass_operations[3]["path"] == "networking.tenant_ranges");

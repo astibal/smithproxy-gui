@@ -7659,7 +7659,8 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
   const editor = page.getByRole('dialog', {name: 'Edit Network interception'});
   await expect(editor.getByText(/activate only after a controlled restart/i)).toBeVisible();
   await editor.getByLabel('Table name').fill('smithproxy_lab3');
-  await editor.getByLabel('Control socket override').fill('/run/networkd/lab3.sock');
+  await editor.getByLabel('Control socket override').fill('');
+  await expect(editor.getByText(/restore Networkd's tenant-derived default/i)).toBeVisible();
   await editor.getByLabel('Tenant index').fill('4');
   const tenantRanges = editor.getByRole('group', {name: 'Tenant ranges'});
   await tenantRanges.getByRole('textbox').fill('10.4.0.0/16');
@@ -7683,7 +7684,7 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
   await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
   expect(state.draftMutationBatches![0]).toEqual(expect.arrayContaining([
     {path: 'networking.table', value: 'smithproxy_lab3'},
-    {path: 'networking.control_socket', value: '/run/networkd/lab3.sock'},
+    {path: 'networking.control_socket', value: ''},
     {path: 'networking.placement', value: 'after'},
     {path: 'networking.interfaces', value: ['lan0', 'wan0']},
     {path: 'networking.tenant_index', value: 4},
