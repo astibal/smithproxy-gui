@@ -6870,7 +6870,9 @@ export class SmithproxyApp extends LitElement {
       const enabled = this.renderRoot.querySelector<HTMLInputElement>(`#policy-enabled-${entry.id}`);
       const destination = this.renderRoot.querySelector<HTMLInputElement>(`#destination-${entry.id}`);
       const action = this.renderRoot.querySelector<HTMLSelectElement>(`#action-${entry.id}`);
-      const field = (id: string) => this.renderRoot.querySelector<HTMLInputElement>(`#policy-${id}-${entry.id}`);
+      const field = (id: string) => this.renderRoot.querySelector<HTMLInputElement | HTMLSelectElement>(
+        `#policy-${id}-${entry.id}`,
+      );
       const protocol = field('protocol');
       const sources = field('sources');
       const sourcePorts = field('source-ports');
@@ -6924,19 +6926,61 @@ export class SmithproxyApp extends LitElement {
         featureValues.every(value => policyFeatures.some(feature => feature === value));
       const validList = (values: ReadonlyArray<string>) => values.length <= 256 &&
         values.every(value => value.length <= 128) && new Set(values).size === values.length;
-      if (normalizedName.length === 0 || normalizedName.length > 128 ||
-          !validAction || !validNat ||
-          protocol.value.trim().length === 0 || protocol.value.trim().length > 128 ||
-          ![sourceValues, sourcePortValues, destinations, destinationPortValues].every(validList) ||
-          !validFeatures ||
-          [...references.values()].some(value => value!.value.trim().length > 128) ||
-          ingressRole.value.trim().length > 128 || egressRole.value.trim().length > 128) {
-        this.draftError = 'Policy fields and unique bounded references are required.';
-        return undefined;
+      if (normalizedName.length === 0 || normalizedName.length > 128) {
+        return this.rejectConfigurationInput(name, 'Policy name', 'must contain 1 through 128 characters');
+      }
+      if (!validAction) return this.rejectConfigurationInput(action, 'Action', 'is not supported');
+      if (!validNat) return this.rejectConfigurationInput(nat, 'NAT', 'is not supported');
+      const protocolName = protocol.value.trim();
+      if (protocolName.length === 0 || protocolName.length > 128) {
+        return this.rejectConfigurationInput(
+          protocol, 'Protocol', 'must select one bounded protocol reference',
+        );
+      }
+      const policyLists = [
+        [sourceValues, 'Sources', `policy-sources-${entry.id}-add`],
+        [sourcePortValues, 'Source ports', `policy-source-ports-${entry.id}-add`],
+        [destinations, 'Destinations', `destination-${entry.id}-add`],
+        [destinationPortValues, 'Destination ports', `policy-destination-ports-${entry.id}-add`],
+      ] as const;
+      for (const [values, label, controlId] of policyLists) {
+        if (!validList(values)) {
+          return this.rejectConfigurationInput(
+            this.renderRoot.querySelector<HTMLSelectElement>(`#${controlId}`), label,
+            'must contain at most 256 unique references of at most 128 characters',
+          );
+        }
+      }
+      if (!validFeatures) {
+        const invalidFeature = [...features.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')]
+          .find(input => !currentFeatures.includes(input.value) &&
+            !policyFeatures.some(feature => feature === input.value));
+        return this.rejectConfigurationInput(invalidFeature, 'Features', 'contain an unsupported value');
+      }
+      const referenceLabels: Readonly<Record<typeof referenceIds[number], string>> = {
+        routing: 'Routing profile', tls: 'TLS profile', ssh: 'SSH profile',
+        detection: 'Detection profile', content: 'Content profile', dns: 'DNS ALG profile',
+        script: 'Script profile',
+      };
+      for (const [referenceId, reference] of references) {
+        if (reference!.value.trim().length > 128) {
+          return this.rejectConfigurationInput(
+            reference, referenceLabels[referenceId], 'must contain at most 128 characters',
+          );
+        }
+      }
+      if (ingressRole.value.trim().length > 128) {
+        return this.rejectConfigurationInput(
+          ingressRole, 'Ingress interface role', 'must contain at most 128 characters',
+        );
+      }
+      if (egressRole.value.trim().length > 128) {
+        return this.rejectConfigurationInput(
+          egressRole, 'Egress interface role', 'must contain at most 128 characters',
+        );
       }
       if (this.duplicateConfigurationName('policy', entry.id, normalizedName)) {
-        this.draftError = 'Policy names must be unique.';
-        return undefined;
+        return this.rejectConfigurationInput(name, 'Policy name', 'must be unique');
       }
       return [
         {path: `policy.[${index}].name`, value: normalizedName},
@@ -7914,7 +7958,8 @@ export class SmithproxyApp extends LitElement {
 
   /** Reports one invalid configuration control and moves the administrator to it. */
   private rejectConfigurationInput(
-    input: HTMLInputElement | null | undefined, fallbackLabel: string, requirement: string,
+    input: HTMLInputElement | HTMLSelectElement | null | undefined,
+    fallbackLabel: string, requirement: string,
   ): undefined {
     const label = input?.labels?.[0]?.textContent?.trim() || fallbackLabel;
     this.draftError = `${label} ${requirement}.`;

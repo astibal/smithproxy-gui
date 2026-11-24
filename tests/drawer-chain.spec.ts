@@ -1403,6 +1403,10 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   expect(state.dnsLookupRequests).toEqual(['example.test']);
   await fqdnEditor.getByRole('button', {name: 'Cancel'}).click();
   await expect(fqdnEditor).not.toBeVisible();
+  await editor.getByLabel('Name').fill('');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(editor.getByText('Name must contain 1 through 128 characters.')).toBeVisible();
+  await expect(editor.getByLabel('Name')).toBeFocused();
   await editor.getByLabel('Name').fill('Office outbound');
   await editor.locator('#policy-enabled-policy-0').uncheck();
   await setReferenceList(editor, 'Destinations', ['office', 'internet']);
