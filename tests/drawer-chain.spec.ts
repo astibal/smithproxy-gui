@@ -7387,6 +7387,35 @@ test('manages Core-owned administrators independently from GUI service settings'
     .toContainText('Password changed. Sign in again with the new password.');
 });
 
+test('protects the final enabled administrator in gateway mode', async ({page}) => {
+  const revision = `sha256:${'2'.repeat(64)}`;
+  const archiveHash = `sha256:${'a'.repeat(64)}`;
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'gateway', gatewayAuthenticated: true,
+    administratorsConfigured: true,
+  };
+  await mockSystemApi(page, state, true);
+  await page.route('**/api/v1/admin/administrators', async route => route.fulfill({json: {
+    state: 'ready', revision, content_hash: archiveHash,
+    restart_required: false,
+    administrators: [{name: 'security-admin', enabled: true}],
+  }}));
+
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
+
+  const card = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Administrators'}),
+  });
+  await expect(card).toContainText('final enabled identity · protected from lockout');
+  await expect(card.getByRole('button', {name: 'Disable security-admin'})).toBeDisabled();
+  await expect(card.getByRole('button', {name: 'Disable security-admin'})).toHaveAttribute(
+    'title', 'Create or enable another administrator before changing the final enabled account.',
+  );
+  await expect(card.getByRole('button', {name: 'Remove security-admin'})).toBeDisabled();
+});
+
 test('exposes network, object, and system vertical slices', async ({page}) => {
   await mockSystemApi(page, {smithproxy: 'ready'}, true);
   await page.goto('/');

@@ -12905,6 +12905,13 @@ export class SmithproxyApp extends LitElement {
           <div class="administrator-list" role="list" aria-label="Configured administrators">
           ${inventory.administrators.map(administrator => {
             const current = administrator.name === this.gatewaySession?.administrator;
+            const finalEnabled = administrator.enabled && enabledCount === 1;
+            const stateChangeProtected = current || finalEnabled;
+            const protectionDetail = current
+              ? 'Sign in as a different administrator before changing this account state.'
+              : finalEnabled
+                ? 'Create or enable another administrator before changing the final enabled account.'
+                : nothing;
             const disableKey = `disable:${administrator.name}`;
             const removeKey = `remove:${administrator.name}`;
             return html`<span class="administrator-row" role="listitem">
@@ -12913,6 +12920,8 @@ export class SmithproxyApp extends LitElement {
                 ● ${administrator.enabled ? 'Enabled' : 'Disabled'}
               </span>
               ${current ? html`<small>current session · protected from lockout</small>` : nothing}
+              ${!current && finalEnabled ? html`
+                <small>final enabled identity · protected from lockout</small>` : nothing}
               <button class="secondary" type="button"
                 aria-label=${`Change password for ${administrator.name}`}
                 ?disabled=${this.administratorInventoryBusy}
@@ -12925,10 +12934,8 @@ export class SmithproxyApp extends LitElement {
                     ? `Confirm disable ${administrator.name}`
                     : `Disable ${administrator.name}`
                   : `Enable ${administrator.name}`}
-                title=${current
-                  ? 'Sign in as a different administrator before changing this account state.'
-                  : nothing}
-                type="button" ?disabled=${this.administratorInventoryBusy || current}
+                title=${protectionDetail}
+                type="button" ?disabled=${this.administratorInventoryBusy || stateChangeProtected}
                 @click=${() => {
                   void this.setCoreAdministratorEnabled(administrator.name, !administrator.enabled);
                 }}>${administrator.enabled
@@ -12938,10 +12945,8 @@ export class SmithproxyApp extends LitElement {
                 aria-label=${this.administratorActionArmed === removeKey
                   ? `Confirm remove ${administrator.name}`
                   : `Remove ${administrator.name}`}
-                title=${current
-                  ? 'Sign in as a different administrator before removing this account.'
-                  : nothing}
-                type="button" ?disabled=${this.administratorInventoryBusy || current}
+                title=${protectionDetail}
+                type="button" ?disabled=${this.administratorInventoryBusy || stateChangeProtected}
                 @click=${() => { void this.removeCoreAdministrator(administrator.name); }}>
                 ${this.administratorActionArmed === removeKey ? 'Confirm remove' : 'Remove'}
               </button>
