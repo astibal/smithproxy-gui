@@ -2223,25 +2223,21 @@ export class SmithproxyApp extends LitElement {
     if (!this.systemClient || !draft || !revision || !archiveHash || this.guiConfigurationBusy) return;
     this.guiConfigurationBusy = true;
     this.guiConfigurationError = undefined;
+    let published = false;
     try {
       await this.systemClient.publishGuiConfiguration(draft, revision, archiveHash);
-      const hasAdministrators = (this.guiConfiguration?.administrators.length ?? 0) > 0;
-      const schemaVersion = draft.frontend ? 3 : hasAdministrators ? 2 : 1;
-      this.guiConfiguration = {
-        state: 'ready', restartRequired: true,
-        ...(this.guiConfiguration?.activeBackend
-          ? {activeBackend: {...this.guiConfiguration.activeBackend}} : {}),
-        schemaVersion,
-        administrators: this.guiConfiguration?.administrators ?? [], backend: {...draft.backend},
-        ...(draft.frontend ? {frontend: {...draft.frontend}} : {}),
-        ...(draft.smithproxy ? {smithproxy: {...draft.smithproxy}} : {}),
-        ...(draft.gateway ? {gateway: {...draft.gateway}} : {}),
-      };
+      published = true;
       this.guiConfigurationDraft = undefined;
-      await this.loadArchiveInventory();
+      const [confirmed] = await Promise.all([
+        this.systemClient.guiConfiguration(),
+        this.loadArchiveInventory(),
+      ]);
+      this.guiConfiguration = confirmed;
     } catch (error) {
-      this.guiConfigurationError = error instanceof Error
-        ? error.message : 'GUI startup configuration could not be saved.';
+      const detail = error instanceof Error ? error.message : 'The confirmation request failed.';
+      this.guiConfigurationError = published
+        ? `GUI startup settings were published, but the authoritative configuration could not be reloaded: ${detail}`
+        : detail;
     } finally {
       this.guiConfigurationBusy = false;
     }

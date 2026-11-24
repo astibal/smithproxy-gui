@@ -7048,6 +7048,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   const revision = `sha256:${'2'.repeat(64)}`;
   const archiveHash = `sha256:${'a'.repeat(64)}`;
   let published = '';
+  let guiConfigurationReads = 0;
   await mockSystemApi(page, {
     smithproxy: 'ready', configSaveReady: true,
     configRevision: revision, savedConfigRevision: revision,
@@ -7056,17 +7057,25 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     state: 'ready', content_hash: archiveHash,
     resources: [{path: 'gui.cfg', size: 512, executable: false}],
   }}));
-  await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
-    state: 'ready', schema_version: 1, restart_required: true, administrators: [],
-    active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
-    backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
-    frontend: null,
-    smithproxy: {
-      api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
-      api_token_file: '/run/credentials/gui.api-token', cli_endpoint: '127.0.0.1:50000',
-    },
-    gateway: {secret_file: '/run/credentials/gui.gateway', previous_secret_file: ''},
-  }}));
+  await page.route('**/api/v1/config/gui', async route => {
+    guiConfigurationReads += 1;
+    const confirmed = guiConfigurationReads > 1;
+    await route.fulfill({json: {
+      state: 'ready', schema_version: confirmed ? 3 : 1,
+      restart_required: true, administrators: [],
+      active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+      backend: {
+        bind_address: '127.0.0.1', port: confirmed ? 19083 : 18082,
+        base_path: '/smithproxy-gui',
+      },
+      frontend: confirmed ? {asset_root: '/srv/smithproxy-gui/canonical-assets'} : null,
+      smithproxy: {
+        api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
+        api_token_file: '/run/credentials/gui.api-token', cli_endpoint: '127.0.0.1:50000',
+      },
+      gateway: {secret_file: '/run/credentials/gui.gateway', previous_secret_file: ''},
+    }});
+  });
   await page.route('**/api/v1/config/gui/publish', async route => {
     published = route.request().postData() ?? '';
     expect(route.request().headers()['x-smithproxy-expected-revision']).toBe(revision);
@@ -7103,6 +7112,9 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   expect(published).toContain('"frontend":{"asset_root":"/srv/smithproxy-gui/assets"}');
   expect(published).toContain('"gateway":null');
   expect(published).not.toContain('boot-token-value');
+  await expect.poll(() => guiConfigurationReads).toBeGreaterThanOrEqual(2);
+  await expect(gui).toContainText('127.0.0.1:19083/smithproxy-gui');
+  await expect(gui).toContainText('/srv/smithproxy-gui/canonical-assets');
   await expect(gui).toContainText('restart pending');
   await expect(gui).toContainText('administrator changes activate immediately');
 });
