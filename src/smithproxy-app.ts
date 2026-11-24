@@ -2493,6 +2493,48 @@ export class SmithproxyApp extends LitElement {
     this.guiConfigurationError = undefined;
   }
 
+  /**
+   * Reconciles all revision inputs after Core rejects a stale GUI publication.
+   * The pending editor remains intact so an administrator can compare it with
+   * the newly loaded authoritative configuration before publishing again.
+   */
+  private async reconcileGuiConfigurationConflict(
+    error: unknown, accessEpoch: number,
+  ): Promise<boolean> {
+    if (!isHttpStatusError(error, 409) || !this.systemClient || !this.configClient) return false;
+
+    try {
+      const [snapshot, archiveInventory, guiConfiguration] = await Promise.all([
+        this.configClient.loadSnapshot(),
+        this.systemClient.archiveInventory(),
+        this.systemClient.guiConfiguration(),
+      ]);
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return true;
+      if (snapshot.state !== 'ready') throw new Error(snapshot.detail);
+
+      this.snapshot = snapshot;
+      this.archiveInventory = archiveInventory;
+      this.guiConfiguration = guiConfiguration;
+      this.configError = undefined;
+      this.archiveError = undefined;
+      this.configRefreshDeferred = false;
+      const draftBaseRevision = this.workspaceDraft?.baseRevision;
+      this.configRevisionDrift = this.draftChangeCount > 0 && draftBaseRevision !== null &&
+        draftBaseRevision !== undefined && snapshot.revision !== null &&
+        snapshot.revision !== draftBaseRevision;
+      if (this.configRevisionDrift) this.draftValidation = undefined;
+      this.guiConfigurationError =
+        'GUI startup configuration changed concurrently. Current state was reloaded; review your pending values before publishing again.';
+    } catch (reloadError) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return true;
+      const detail = reloadError instanceof Error
+        ? reloadError.message : 'authoritative state is unavailable';
+      this.guiConfigurationError =
+        `GUI startup configuration changed concurrently, but current state could not be reloaded: ${detail}`;
+    }
+    return true;
+  }
+
   private async saveGuiConfiguration(): Promise<void> {
     const revision = this.snapshot?.revision;
     const archiveHash = this.archiveInventory?.contentHash;
@@ -2516,6 +2558,7 @@ export class SmithproxyApp extends LitElement {
       this.guiConfiguration = confirmed;
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!published && await this.reconcileGuiConfigurationConflict(error, accessEpoch)) return;
       const detail = error instanceof Error ? error.message : 'The confirmation request failed.';
       this.guiConfigurationError = published
         ? `GUI startup settings were published, but the authoritative configuration could not be reloaded: ${detail}`

@@ -7270,6 +7270,79 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('differs from running');
 });
 
+test('reloads authoritative GUI configuration after a concurrent publication conflict', async ({page}) => {
+  const initialRevision = `sha256:${'2'.repeat(64)}`;
+  const currentRevision = `sha256:${'3'.repeat(64)}`;
+  const initialArchiveHash = `sha256:${'a'.repeat(64)}`;
+  const currentArchiveHash = `sha256:${'b'.repeat(64)}`;
+  let concurrent = false;
+  let archiveReads = 0;
+  let guiConfigurationReads = 0;
+  let publicationRequests = 0;
+  const state: MockState = {
+    smithproxy: 'ready', configSaveReady: true,
+    configRevision: initialRevision, savedConfigRevision: initialRevision,
+  };
+  await mockSystemApi(page, state, true);
+  await page.route('**/api/v1/config/archive', async route => {
+    archiveReads += 1;
+    await route.fulfill({json: {
+      state: 'ready', content_hash: concurrent ? currentArchiveHash : initialArchiveHash,
+      resources: [{path: 'gui.cfg', size: 512, executable: false}],
+    }});
+  });
+  await page.route('**/api/v1/config/gui', async route => {
+    guiConfigurationReads += 1;
+    await route.fulfill({json: {
+      state: 'ready', schema_version: 3, restart_required: concurrent,
+      active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+      backend: {
+        bind_address: '127.0.0.1', port: concurrent ? 19083 : 18082,
+        base_path: '/smithproxy-gui',
+      },
+      frontend: null,
+      smithproxy: {
+        api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
+        api_token_file: '/run/credentials/gui.api-token', cli_endpoint: '127.0.0.1:50000',
+      },
+      gateway: null,
+    }});
+  });
+  await page.route('**/api/v1/config/gui/publish', async route => {
+    publicationRequests += 1;
+    expect(route.request().headers()['x-smithproxy-expected-revision']).toBe(initialRevision);
+    expect(route.request().headers()['x-smithproxy-archive-sha256']).toBe(initialArchiveHash);
+    concurrent = true;
+    state.configRevision = currentRevision;
+    state.savedConfigRevision = currentRevision;
+    await route.fulfill({status: 409, json: {error: {code: 'revision_conflict'}}});
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'GUI service', exact: true}).click();
+  const gui = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'GUI service'}),
+  });
+  await gui.getByRole('button', {name: 'Edit GUI startup settings'}).click();
+  await gui.getByLabel('Backend port').fill('20000');
+  const configFetchesBeforePublication = state.configFetches ?? 0;
+  await gui.getByRole('button', {name: 'Publish GUI startup settings'}).click();
+
+  await expect(gui.getByRole('alert')).toContainText(
+    'GUI startup configuration changed concurrently. Current state was reloaded',
+  );
+  await expect(gui.getByLabel('Backend port')).toHaveValue('20000');
+  await expect.poll(() => archiveReads).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => guiConfigurationReads).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => state.configFetches ?? 0).toBeGreaterThan(configFetchesBeforePublication);
+  expect(publicationRequests).toBe(1);
+
+  await gui.getByRole('button', {name: 'Cancel'}).click();
+  await expect(gui).toContainText('127.0.0.1:19083/smithproxy-gui');
+  await expect(gui).toContainText('Restart pending');
+});
+
 test('keeps pending GUI startup activation visible in the global workflow', async ({page}) => {
   const revision = `sha256:${'2'.repeat(64)}`;
   await mockSystemApi(page, {
