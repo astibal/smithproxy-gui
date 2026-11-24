@@ -1096,7 +1096,8 @@ async function mockSystemApi(
         },
       },
       networking: {
-        table: 'smithproxy_networkd', placement: 'before', interfaces: ['-'],
+        table: 'smithproxy_networkd', control_socket: '/run/networkd/control.sock',
+        placement: 'before', interfaces: ['-'],
         tenant_index: 3, tenant_ranges: ['10.0.0.0/8'],
         tcp_all: true, udp_all: false, ipv6_udp: true,
         tcp_ports: [80], tls_ports: [443], udp_ports: [53], dtls_ports: [4433],
@@ -7494,8 +7495,9 @@ test('edits Networkd policy without pretending restart identity is live-editable
   await expect(summary).toContainText('smithproxy_networkd');
   await summary.getByRole('button', {name: 'Edit interception'}).click();
   const editor = page.getByRole('dialog', {name: 'Edit Network interception'});
-  await expect(editor.getByText('Restart identity', {exact: true})).toHaveCount(2);
+  await expect(editor.getByText('Restart identity', {exact: true})).toHaveCount(3);
   await expect(editor.locator('#networking-table')).toHaveCount(0);
+  await expect(editor.getByText('/run/networkd/control.sock', {exact: true})).toBeVisible();
   await expect(editor.locator('#networking-tenant-index')).toHaveCount(0);
   await expect(editor.locator('#networking-tenant-ranges')).toHaveCount(0);
 

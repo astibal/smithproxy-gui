@@ -14526,6 +14526,8 @@ export class SmithproxyApp extends LitElement {
           for review, but changes only through a separately validated restart operation.</p>
         <div class="form-grid">
           <label>Table name</label><span><code>${networking.table}</code> <span class="muted">Restart identity</span></span>
+          <label>Control socket</label><span><code>${networking.controlSocket || 'Packaged tenant default'}</code>
+            <span class="muted">Restart identity</span></span>
           <label>Tenant index</label><span><code>${networking.tenantIndex}</code> <span class="muted">Restart identity</span></span>
           <label>Tenant ranges</label><span>${networking.tenantRanges.join(', ') || 'None'}
             <span class="muted">Registry-owned</span></span>

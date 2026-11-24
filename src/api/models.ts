@@ -341,6 +341,7 @@ export interface NetworkingBypassRule {
 
 export interface NetworkingSettings {
   table: string;
+  controlSocket: string;
   placement: 'before' | 'after';
   interfaces: ReadonlyArray<string>;
   tenantIndex: number;

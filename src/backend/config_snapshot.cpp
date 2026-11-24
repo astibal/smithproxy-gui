@@ -1079,6 +1079,7 @@ ConfigNetworkingParseResult parse_config_networking(
     }
 
     auto table = bounded_string(*value, "table", 40U, true);
+    auto control_socket = bounded_string(*value, "control_socket", maximum_value_length, true);
     auto placement = bounded_string(*value, "placement", 16U, true);
     const bool interfaces_present = value->contains("interfaces");
     const bool tcp_ports_present = value->contains("tcp_ports");
@@ -1114,7 +1115,7 @@ ConfigNetworkingParseResult parse_config_networking(
     const auto blackhole_max_ttl_ms = optional_decimal(
         *value, "blackhole_max_ttl_ms", 86400000U, 86400000U);
 
-    if (!table || !placement || !interfaces || !tenant_ranges || !tenant_index || !tcp_all ||
+    if (!table || !control_socket || !placement || !interfaces || !tenant_ranges || !tenant_index || !tcp_all ||
         !udp_all || !ipv6_udp || !tcp_ports || !tls_ports || !udp_ports || !dtls_ports ||
         !drop_udp_ports || !redirect_tcp_port || !redirect_tls_port || !redirect_dns_port ||
         !redirect_exempt_uids || !redirect_exempt_lan || !manage_routing || !manage_sysctls ||
@@ -1132,6 +1133,14 @@ ConfigNetworkingParseResult parse_config_networking(
     });
     if (!valid_table) {
         return {std::nullopt, "Smithproxy returned an invalid Networkd table name"};
+    }
+    const bool valid_control_socket = control_socket->empty() ||
+        (control_socket->front() == '/' && std::all_of(
+            control_socket->begin(), control_socket->end(), [](const unsigned char character) {
+                return character >= 0x20U && character != 0x7fU;
+            }));
+    if (!valid_control_socket) {
+        return {std::nullopt, "Smithproxy returned an invalid Networkd control socket"};
     }
     if (!interfaces_present) interfaces->push_back("-");
     const bool topology_selector = interfaces->size() == 1U &&
@@ -1190,7 +1199,8 @@ ConfigNetworkingParseResult parse_config_networking(
     }
 
     return {ConfigNetworkingSettings{
-        *table, *placement, std::move(*interfaces), *tenant_index, std::move(*tenant_ranges),
+        *table, *control_socket, *placement, std::move(*interfaces), *tenant_index,
+        std::move(*tenant_ranges),
         *tcp_all, *udp_all, *ipv6_udp, std::move(*tcp_ports), std::move(*tls_ports),
         std::move(*udp_ports), std::move(*dtls_ports), std::move(*drop_udp_ports),
         *redirect_tcp_port, *redirect_tls_port, *redirect_dns_port,

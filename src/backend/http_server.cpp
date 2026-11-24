@@ -2634,6 +2634,7 @@ private:
             }
             bypass += ']';
             networking = "{\"table\":" + json_string(value.table) +
+                ",\"control_socket\":" + json_string(value.control_socket) +
                 ",\"placement\":" + json_string(value.placement) +
                 ",\"interfaces\":" + string_array_json(value.interfaces) +
                 ",\"tenant_index\":" + std::to_string(value.tenant_index) +

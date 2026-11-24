@@ -124,7 +124,7 @@ FULL_TYPED_FIELDS = {
 
 FULL_READ_FIELDS = {
     "networking": {
-        "table", "placement", "interfaces", "tenant_index", "tenant_ranges",
+        "table", "control_socket", "placement", "interfaces", "tenant_index", "tenant_ranges",
         "tcp_all", "udp_all", "ipv6_udp", "tcp_ports", "tls_ports", "udp_ports",
         "dtls_ports", "drop_udp_ports", "redirect_tcp_port", "redirect_tls_port",
         "redirect_dns_port", "redirect_exempt_uids", "redirect_exempt_lan", "bypass",

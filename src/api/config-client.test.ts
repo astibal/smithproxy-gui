@@ -174,7 +174,8 @@ const liveSnapshot = {
     },
   },
   networking: {
-    table: 'smithproxy_networkd', placement: 'before', interfaces: ['-'], tenant_index: 3,
+    table: 'smithproxy_networkd', control_socket: '/run/networkd/control.sock',
+    placement: 'before', interfaces: ['-'], tenant_index: 3,
     tenant_ranges: ['10.0.0.0/8'], tcp_all: true, udp_all: false, ipv6_udp: true,
     tcp_ports: [80], tls_ports: [443], udp_ports: [53], dtls_ports: [4433], drop_udp_ports: [443],
     redirect_tcp_port: 51080, redirect_tls_port: 51443, redirect_dns_port: 51053,

@@ -1057,6 +1057,9 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     }
     networking = {
       table,
+      controlSocket: optionalString(
+        value.networking.control_socket, 'Networkd control socket', 4096,
+      ),
       placement: allowedString(value.networking.placement, 'Networkd placement', ['before', 'after']) as 'before' | 'after',
       interfaces,
       tenantIndex: safeInteger(value.networking.tenant_index, 'Networkd tenant index', 65534),

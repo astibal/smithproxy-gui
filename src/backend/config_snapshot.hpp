@@ -216,6 +216,7 @@ struct ConfigNetworkingBypass {
 // derived Smithproxy listener targets for a migrated deployment.
 struct ConfigNetworkingSettings {
     std::string table;
+    std::string control_socket;
     std::string placement;
     std::vector<std::string> interfaces;
     std::uint64_t tenant_index{};
