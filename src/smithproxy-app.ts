@@ -7654,16 +7654,41 @@ export class SmithproxyApp extends LitElement {
     const strings = (id: NetworkingList): string[] | undefined => {
       const values = this.networkingListDrafts.get(id)?.map(item => item.trim());
       if (!values) return undefined;
-      return values.length <= 256 && new Set(values).size === values.length &&
-        values.every(value => value.length > 0 && value.length <= 128 &&
-          !/[\u0000-\u001f\u007f]/u.test(value)) ? values : undefined;
+      const labels: Record<NetworkingList, string> = {
+        interfaces: 'Interface selector', 'tcp-ports': 'Plain TCP port',
+        'tls-ports': 'TLS port', 'udp-ports': 'UDP port', 'dtls-ports': 'DTLS port',
+        'drop-udp-ports': 'Dropped UDP port', 'redirect-exempt-uids': 'Exempt user ID',
+        'tenant-ranges': 'Tenant range',
+      };
+      if (values.length > 256) {
+        this.draftError = `${labels[id]} lists may contain at most 256 entries.`;
+        return undefined;
+      }
+      const invalidIndex = values.findIndex(value => value.length === 0 || value.length > 128 ||
+        /[\u0000-\u001f\u007f]/u.test(value));
+      const duplicateIndex = values.findIndex((value, index) => values.indexOf(value) !== index);
+      if (invalidIndex >= 0 || duplicateIndex >= 0) {
+        const index = invalidIndex >= 0 ? invalidIndex : duplicateIndex;
+        return this.rejectConfigurationInput(
+          text(`${id}-${index}`), `${labels[id]} ${index + 1}`,
+          invalidIndex >= 0 ? 'must be a non-empty bounded value' : 'duplicates an earlier entry',
+        );
+      }
+      return values;
     };
     const ports = (id: NetworkingList, allowZero = false): number[] | undefined => {
       const values = strings(id);
       if (!values) return undefined;
       const parsed = values.map(value => Number(value));
-      return parsed.every(value => Number.isInteger(value) && value >= (allowZero ? 0 : 1) && value <= 65535)
-        ? parsed : undefined;
+      const invalidIndex = parsed.findIndex(value =>
+        !Number.isInteger(value) || value < (allowZero ? 0 : 1) || value > 65535);
+      if (invalidIndex >= 0) {
+        return this.rejectConfigurationInput(
+          text(`${id}-${invalidIndex}`), `Port ${invalidIndex + 1}`,
+          `must be a whole number from ${allowZero ? 0 : 1} through 65535`,
+        );
+      }
+      return parsed;
     };
     const booleans = [
       ['tcp_all', 'tcp-all'], ['udp_all', 'udp-all'], ['ipv6_udp', 'ipv6-udp'],
@@ -7701,13 +7726,60 @@ export class SmithproxyApp extends LitElement {
     const validTenantRanges = tenantRanges !== undefined &&
       tenantRanges.every(value => parseCidr(value) !== undefined) &&
       (tenantIndex === 0 || tenantRanges.length > 0);
-    if (!placement || !['before', 'after'].includes(placement.value) || !validTable ||
-        !validControlSocket || tenantIndex === undefined ||
-        !validTenantRanges || !interfaces ||
-        !validInterfaceSelection || !tcpPorts || !tlsPorts || !udpPorts || !dtlsPorts || !dropUdpPorts ||
-        !exemptUids || !exemptUids.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 2147483647)) {
-      this.draftError = 'Network identity, tenant ranges, interface selectors, or interception ports are invalid.';
-      return undefined;
+    if (!placement || !['before', 'after'].includes(placement.value)) return undefined;
+    if (!validTable) {
+      return this.rejectConfigurationInput(
+        table, 'Table name', 'must contain 1 through 40 letters, digits, or underscores',
+      );
+    }
+    if (!validControlSocket) {
+      return this.rejectConfigurationInput(
+        controlSocket, 'Control socket override', 'must be empty or an absolute bounded path',
+      );
+    }
+    if (tenantIndex === undefined) {
+      return this.rejectConfigurationInput(
+        text('tenant-index'), 'Tenant index', 'must be a whole number from 0 through 65534',
+      );
+    }
+    if (!tenantRanges) return undefined;
+    const invalidTenantRange = tenantRanges.findIndex(value => parseCidr(value) === undefined);
+    if (invalidTenantRange >= 0) {
+      return this.rejectConfigurationInput(
+        text(`tenant-ranges-${invalidTenantRange}`), `Tenant range ${invalidTenantRange + 1}`,
+        'must be an IPv4 or IPv6 network with a prefix length',
+      );
+    }
+    if (!validTenantRanges) {
+      return this.rejectConfigurationInput(
+        text('tenant-index'), 'Tenant index', 'requires at least one tenant range when it is not zero',
+      );
+    }
+    if (!interfaces) return undefined;
+    const invalidInterface = interfaces.findIndex(value =>
+      !['*', '-', '+'].includes(value) && !/^[A-Za-z0-9:._-]{1,15}$/u.test(value));
+    if (invalidInterface >= 0) {
+      return this.rejectConfigurationInput(
+        text(`interfaces-${invalidInterface}`), `Interface selector ${invalidInterface + 1}`,
+        'must be *, +, -, or a bounded interface name',
+      );
+    }
+    if (!validInterfaceSelection) {
+      const index = interfaces.findIndex(value => ['*', '-', '+'].includes(value));
+      return this.rejectConfigurationInput(
+        text(`interfaces-${Math.max(index, 0)}`), `Interface selector ${Math.max(index, 0) + 1}`,
+        'uses a topology selector that must be the only interface entry',
+      );
+    }
+    if (!tcpPorts || !tlsPorts || !udpPorts || !dtlsPorts || !dropUdpPorts) return undefined;
+    if (!exemptUids) return undefined;
+    const invalidExemptUid = exemptUids.findIndex(value =>
+      !Number.isSafeInteger(value) || value < 0 || value > 2147483647);
+    if (invalidExemptUid >= 0) {
+      return this.rejectConfigurationInput(
+        text(`redirect-exempt-uids-${invalidExemptUid}`), `Exempt user ID ${invalidExemptUid + 1}`,
+        'must be a whole number from 0 through 2147483647',
+      );
     }
     const numericFields = [
       ['redirect_tcp_port', 'redirect-tcp-port', 1, 65535],
@@ -7722,24 +7794,29 @@ export class SmithproxyApp extends LitElement {
     ] as const;
     const numericValues = new Map<string, number>();
     for (const [path, id, minimum, maximum] of numericFields) {
+      const input = text(id);
       const value = integer(id, minimum, maximum);
       if (value === undefined) {
-        this.draftError = 'A network interception numeric value is outside its supported range.';
-        return undefined;
+        return this.rejectConfigurationInput(
+          input, path, `must be a whole number from ${minimum} through ${maximum}`,
+        );
       }
       numericValues.set(path, value);
       changes.push({path: `networking.${path}`, value});
     }
     const routingTable = numericValues.get('routing_table')!;
     if (routingTable >= 253 && routingTable <= 255) {
-      this.draftError = 'Routing tables 253 through 255 are reserved by the kernel.';
-      return undefined;
+      return this.rejectConfigurationInput(
+        text('routing-table'), 'Routing table',
+        'must not use kernel-reserved table numbers 253 through 255',
+      );
     }
     const mark = numericValues.get('mark')!;
     const mask = numericValues.get('mask')!;
     if ((mark & mask) !== mark) {
-      this.draftError = 'The packet mark may only use bits enabled by its mask.';
-      return undefined;
+      return this.rejectConfigurationInput(
+        text('mark'), 'Packet mark', 'may only use bits enabled by the packet mark mask',
+      );
     }
     changes.push(
       {path: 'networking.table', value: table.value},

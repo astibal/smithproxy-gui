@@ -7702,6 +7702,12 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
   await expect(editor.getByText(/restore Networkd's tenant-derived default/i)).toBeVisible();
   await editor.getByLabel('Tenant index').fill('4');
   const tenantRanges = editor.getByRole('group', {name: 'Tenant ranges'});
+  await tenantRanges.getByRole('textbox').fill('10.4.0.0/99');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect(editor.getByText('Tenant range 1 must be an IPv4 or IPv6 network with a prefix length.')).toBeVisible();
+  await expect(tenantRanges.getByRole('textbox')).toBeFocused();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
   await tenantRanges.getByRole('textbox').fill('10.4.0.0/16');
   await tenantRanges.getByRole('button', {name: 'Add tenant range'}).click();
   await tenantRanges.getByRole('textbox').nth(1).fill('2001:db8:4::/48');
@@ -7716,6 +7722,13 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
   const tcpPorts = editor.getByRole('group', {name: 'Plain TCP ports'});
   await tcpPorts.getByRole('button', {name: 'Add port'}).click();
   await tcpPorts.getByRole('textbox').nth(1).fill('8080');
+  await editor.getByLabel('Routing priority').fill('0');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect(editor.getByText('Routing priority must be a whole number from 1 through 32765.')).toBeVisible();
+  await expect(editor.getByLabel('Routing priority')).toBeFocused();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
+  await editor.getByLabel('Routing priority').fill('100');
   await editor.getByLabel('Routing table').fill('1000');
   await editor.locator('#networking-bypass-0-destination').fill('2001:db8::10');
   await editor.locator('#networking-bypass-0-port').fill('8443');
