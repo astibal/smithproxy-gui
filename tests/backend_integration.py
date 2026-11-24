@@ -73,6 +73,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     }
     administrator_sessions = {}
     administrator_session_sequence = 0
+    administrator_login_requests = 0
     administrator_inventory_status = 200
     revision_requests = 0
     state_requests = 0
@@ -474,6 +475,7 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/api/login":
+            FakeSmithproxy.administrator_login_requests += 1
             document = json.loads(
                 self.rfile.read(int(self.headers.get("Content-Length", "0"))))
             administrator = document.get("username", "")
@@ -830,6 +832,7 @@ def main() -> int:
         FakeSmithproxy.enrollment_requests = 0
         FakeSmithproxy.administrators = {}
         FakeSmithproxy.administrator_sessions = {}
+        FakeSmithproxy.administrator_login_requests = 0
         FakeSmithproxy.administrator_inventory_status = 200
         enrollment_state_requests = FakeSmithproxy.state_requests
         enrollment = subprocess.Popen(
@@ -862,6 +865,19 @@ def main() -> int:
                 "initial_enrollment_ready": True,
                 "administrator": None,
             }
+            # Reject malformed or unbounded credentials at the browser-facing
+            # trust boundary without forwarding them to Smithproxy core.
+            invalid_login_requests = (
+                {"administrator": "x" * 65, "password": enrollment_password},
+                {"administrator": "security-admin", "password": "x" * 1025},
+                {"administrator": "../security-admin", "password": enrollment_password},
+            )
+            for login_request in invalid_login_requests:
+                status, _, body = request(
+                    enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
+                    json.dumps(login_request))
+                assert status == 400, body
+            assert FakeSmithproxy.administrator_login_requests == 0
             # Inventory preconditions are checked before the single-use
             # capability is consumed, so a transient failure does not burn it.
             FakeSmithproxy.administrator_inventory_status = 503

@@ -248,6 +248,21 @@ bool safe_audit_target(const std::string_view path) {
     });
 }
 
+bool valid_administrator_name(const std::string_view name) {
+    if(name.empty() || name.size() > 64U) return false;
+    return std::all_of(name.begin(), name.end(), [](const unsigned char value) {
+        const bool digit = value >= '0' && value <= '9';
+        const bool lowercase = value >= 'a' && value <= 'z';
+        const bool uppercase = value >= 'A' && value <= 'Z';
+        const bool separator = value == '.' || value == '_' || value == '-' || value == '@';
+        return digit || lowercase || uppercase || separator;
+    });
+}
+
+bool bounded_administrator_password(const std::string_view password) {
+    return !password.empty() && password.size() <= 1024U;
+}
+
 struct MutationAuditMetadata {
     std::string operation{"api.mutation"};
     std::size_t target_count{};
@@ -1668,15 +1683,7 @@ private:
         const auto name = has_name
             ? document["name"].get<std::string>()
             : std::string{};
-        const bool valid_name = !name.empty() && name.size() <= 64U &&
-            std::all_of(name.begin(), name.end(), [](const unsigned char value) {
-                const bool digit = value >= '0' && value <= '9';
-                const bool lowercase = value >= 'a' && value <= 'z';
-                const bool uppercase = value >= 'A' && value <= 'Z';
-                const bool separator = value == '.' || value == '_' ||
-                                       value == '-' || value == '@';
-                return digit || lowercase || uppercase || separator;
-            });
+        const bool valid_name = valid_administrator_name(name);
         if(!valid_name) {
             return {400, "application/json; charset=utf-8",
                     "{\"error\":\"invalid administrator name\"}"};
@@ -1687,10 +1694,10 @@ private:
         nlohmann::json request;
         if(route == "/api/v1/admin/administrators/create" ||
            route == "/api/v1/admin/administrators/password") {
-            const bool valid_password = document.size() == 2U &&
-                document.contains("password") && document["password"].is_string() &&
-                !document["password"].get_ref<const std::string&>().empty() &&
-                document["password"].get_ref<const std::string&>().size() <= 1024U;
+            const bool password_supplied = document.size() == 2U &&
+                document.contains("password") && document["password"].is_string();
+            const bool valid_password = password_supplied && bounded_administrator_password(
+                document["password"].get_ref<const std::string&>());
             if(!valid_password) {
                 return {400, "application/json; charset=utf-8",
                         "{\"error\":\"invalid administrator password\"}"};
@@ -2025,6 +2032,12 @@ private:
         }
         const auto administrator_name = request["administrator"].get<std::string>();
         const auto password = request["password"].get<std::string>();
+        const bool valid_credentials = valid_administrator_name(administrator_name) &&
+            bounded_administrator_password(password);
+        if(!valid_credentials) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid login request\"}"};
+        }
         const auto now = std::chrono::steady_clock::now();
         {
             std::scoped_lock lock(login_mutex_);
