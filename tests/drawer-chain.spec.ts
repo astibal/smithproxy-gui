@@ -1450,7 +1450,10 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await expect(tlsEditor.getByLabel('Allow invalid certificates')).toHaveValue('false');
   await tlsEditor.getByLabel('Client hello timeout').fill('0');
   await tlsEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(tlsEditor.getByText(/TLS timeouts and policy selections are invalid/i)).toBeVisible();
+  await expect(tlsEditor.getByText(
+    'Client hello timeout must be a whole number from 1 through 2147483647 ms.',
+  )).toBeVisible();
+  await expect(tlsEditor.getByLabel('Client hello timeout')).toBeFocused();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
   await tlsEditor.getByLabel('Client hello timeout').fill('4000');
   await tlsEditor.getByLabel('Allow invalid certificates').selectOption('true');

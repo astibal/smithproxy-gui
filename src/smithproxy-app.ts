@@ -7167,26 +7167,63 @@ export class SmithproxyApp extends LitElement {
         const overrideTimeoutValue = overrideTimeout?.valueAsNumber ?? Number.NaN;
         const warningPortValues = warningPorts?.map(value => Number(value.trim())) ?? [];
         if (!helloTimeout || !handshakeTimeout || !ocspMode || !staplingMode || !warningPorts ||
-            !overrideTimeout || !overrideTimeoutType || !clientAction || !alerts || !bypass ||
-            !Number.isInteger(helloValue) || helloValue < 1 || helloValue > 2147483647 ||
-            !Number.isInteger(handshakeValue) || handshakeValue < 1 || handshakeValue > 2147483647 ||
-            !['0', '1', '2'].includes(ocspMode.value) || !['0', '1', '2'].includes(staplingMode.value) ||
-            !Number.isInteger(overrideTimeoutValue) || overrideTimeoutValue < 1 || overrideTimeoutValue > 2147483647 ||
-            !['0', '1'].includes(overrideTimeoutType.value) || warningPortValues.length > 256 ||
-            warningPorts.some(value => value.trim().length === 0) ||
-            !warningPortValues.every(value => Number.isInteger(value) && value >= 0 && value <= 65535) ||
-            new Set(warningPortValues).size !== warningPortValues.length ||
+            !overrideTimeout || !overrideTimeoutType || !clientAction || !alerts || !bypass) return undefined;
+        if (!Number.isInteger(helloValue) || helloValue < 1 || helloValue > 2147483647) {
+          return this.rejectConfigurationInput(
+            helloTimeout, 'Client hello timeout', 'must be a whole number from 1 through 2147483647 ms',
+          );
+        }
+        if (!Number.isInteger(handshakeValue) || handshakeValue < 1 || handshakeValue > 2147483647) {
+          return this.rejectConfigurationInput(
+            handshakeTimeout, 'Handshake timeout', 'must be a whole number from 1 through 2147483647 ms',
+          );
+        }
+        if (!['0', '1', '2'].includes(ocspMode.value) ||
+            !['0', '1', '2'].includes(staplingMode.value) ||
+            !['0', '1'].includes(overrideTimeoutType.value) ||
             !['block_or_replacement', 'empty_client_cert', 'tls_bypass', 'use_configured'].includes(clientAction.value) ||
-            !['all', 'unusual', 'mute'].includes(alerts.value)) {
-          this.draftError = 'TLS timeouts and policy selections are invalid.';
+            !['all', 'unusual', 'mute'].includes(alerts.value)) return undefined;
+        if (!Number.isInteger(overrideTimeoutValue) ||
+            overrideTimeoutValue < 1 || overrideTimeoutValue > 2147483647) {
+          return this.rejectConfigurationInput(
+            overrideTimeout, 'Override timeout', 'must be a whole number from 1 through 2147483647',
+          );
+        }
+        if (warningPortValues.length > 256) {
+          this.draftError = 'Certificate warning ports may contain at most 256 entries.';
           return undefined;
         }
-        if (bypass.length > 256 ||
-            !bypass.every(item => item.length > 0 &&
-              item.length <= 1024 && !item.includes('\0')) ||
-            new Set(bypass).size !== bypass.length) {
-          this.draftError = 'SNI bypass names must be unique non-empty values with at most 256 entries.';
+        const invalidWarningPort = warningPorts.findIndex(value => {
+          const parsed = Number(value.trim());
+          return value.trim().length === 0 || !Number.isInteger(parsed) || parsed < 0 || parsed > 65535;
+        });
+        const duplicateWarningPort = warningPortValues.findIndex(
+          (value, warningIndex) => warningPortValues.indexOf(value) !== warningIndex,
+        );
+        if (invalidWarningPort >= 0 || duplicateWarningPort >= 0) {
+          const warningIndex = invalidWarningPort >= 0 ? invalidWarningPort : duplicateWarningPort;
+          return this.rejectConfigurationInput(
+            this.renderRoot.querySelector<HTMLInputElement>(`#tls-warning-port-${entry.id}-${warningIndex}`),
+            `Certificate warning port ${warningIndex + 1}`,
+            invalidWarningPort >= 0
+              ? 'must be a whole number from 0 through 65535'
+              : 'duplicates an earlier entry',
+          );
+        }
+        if (bypass.length > 256) {
+          this.draftError = 'SNI bypass names may contain at most 256 entries.';
           return undefined;
+        }
+        const invalidBypass = bypass.findIndex(item =>
+          item.length === 0 || item.length > 1024 || item.includes('\0'));
+        const duplicateBypass = bypass.findIndex((item, bypassIndex) => bypass.indexOf(item) !== bypassIndex);
+        if (invalidBypass >= 0 || duplicateBypass >= 0) {
+          const bypassIndex = invalidBypass >= 0 ? invalidBypass : duplicateBypass;
+          return this.rejectConfigurationInput(
+            this.renderRoot.querySelector<HTMLInputElement>(`#tls-sni-bypass-${entry.id}-${bypassIndex}`),
+            `SNI bypass name ${bypassIndex + 1}`,
+            invalidBypass >= 0 ? 'must be a non-empty bounded value' : 'duplicates an earlier entry',
+          );
         }
         return [
           {path: `tls_profiles.[${index}].name`, value: normalizedName},
