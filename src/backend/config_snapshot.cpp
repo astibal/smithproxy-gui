@@ -1443,6 +1443,9 @@ ConfigNetworkingParseResult parse_config_networking(
             if (!source || !destination || !port || source->empty() || destination->empty()) {
                 return {std::nullopt, "Smithproxy returned an incomplete Networkd bypass rule"};
             }
+            if (*port == 0U) {
+                return {std::nullopt, "Smithproxy returned an invalid Networkd bypass port"};
+            }
             bypass.push_back({stable_id("network-bypass", index), *source, *destination, *port});
         }
     }

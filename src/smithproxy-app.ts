@@ -7695,10 +7695,10 @@ export class SmithproxyApp extends LitElement {
     for (const [index] of networking.bypass.entries()) {
       const source = text(`bypass-${index}-source`);
       const destination = text(`bypass-${index}-destination`);
-      const port = integer(`bypass-${index}-port`, 0, 65535);
+      const port = integer(`bypass-${index}-port`, 1, 65535);
       if (!source || !destination || port === undefined || !source.value.trim() || !destination.value.trim() ||
           [source.value, destination.value].some(value => value.length > 128 || /[\u0000-\u001f\u007f]/u.test(value))) {
-        this.draftError = 'Each bypass rule requires bounded source and destination networks and a port from 0 through 65535.';
+        this.draftError = 'Each bypass rule requires bounded source and destination networks and a port from 1 through 65535.';
         return undefined;
       }
       const base = `networking.bypass.[${index}]`;
@@ -8242,8 +8242,8 @@ export class SmithproxyApp extends LitElement {
     const destination = input('destination')?.value.trim();
     const port = input('port')?.valueAsNumber ?? Number.NaN;
     if (!source || !destination || source.length > 128 || destination.length > 128 ||
-        !Number.isInteger(port) || port < 0 || port > 65535) {
-      this.draftError = 'A bypass rule requires source and destination networks and a port from 0 through 65535.';
+        !Number.isInteger(port) || port < 1 || port > 65535) {
+      this.draftError = 'A bypass rule requires source and destination networks and a port from 1 through 65535.';
       return;
     }
     this.draftSaving = true;
@@ -15130,7 +15130,7 @@ export class SmithproxyApp extends LitElement {
         </div>
       </fieldset>
       <fieldset class="editor-group"><legend>Ordered bypass rules</legend>
-        <p>Traffic matching the source, destination, and port bypasses interception. Port 0 matches every port.</p>
+        <p>Traffic matching the source, destination, and concrete destination port bypasses interception.</p>
         ${this.networkingBypassRows().length > 0 ? this.networkingBypassRows().map((row, rowIndex) => {
           const liveIndex = row.kind === 'live' ? networking.bypass.findIndex(rule => rule.id === row.item.id) : -1;
           const rule = row.kind === 'live' ? row.item : {
@@ -15148,7 +15148,7 @@ export class SmithproxyApp extends LitElement {
               maxlength="128" .value=${pending ? rule.destination : scalar(`${base}.destination`, rule.destination)}
               .readOnly=${pending} />
             <label>Destination port</label><input id=${pending ? nothing : `networking-bypass-${liveIndex}-port`}
-              type="number" min="0" max="65535" step="1"
+              type="number" min="1" max="65535" step="1"
               .value=${String(pending ? rule.port : scalar(`${base}.port`, rule.port))} .readOnly=${pending} />
             <span></span><span class="inline-actions">
               <button class="secondary" type="button" aria-label="Move bypass rule up"
@@ -15170,8 +15170,8 @@ export class SmithproxyApp extends LitElement {
           <input id="networking-new-bypass-source" maxlength="128" placeholder="10.0.0.0/8" />
           <label for="networking-new-bypass-destination">New destination</label>
           <input id="networking-new-bypass-destination" maxlength="128" placeholder="192.0.2.10" />
-          <label for="networking-new-bypass-port">New destination port (0 = any)</label>
-          <input id="networking-new-bypass-port" type="number" min="0" max="65535" step="1" value="0" />
+          <label for="networking-new-bypass-port">New destination port</label>
+          <input id="networking-new-bypass-port" type="number" min="1" max="65535" step="1" value="443" />
           <span></span><span><button class="secondary" type="button" @click=${() => this.createNetworkingBypass()}>
             Add bypass rule</button></span>
         </div>` : html`<div class="privacy-note section">The connected Smithproxy version does not advertise

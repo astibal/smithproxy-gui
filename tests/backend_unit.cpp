@@ -731,7 +731,7 @@ int main() {
         "networking.interfaces", std::vector<std::string>{"*", "inside0"},
     }) == DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({"networking.bypass.[0].port", std::int64_t{0}}) ==
-           DraftSchemaResult::Valid);
+           DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({"networking.bypass.[0].port", std::int64_t{-1}}) ==
            DraftSchemaResult::InvalidValue);
     assert(validate_draft_schema({
@@ -2326,7 +2326,7 @@ int main() {
     assert(!parse_config_settings(
         R"({"success":{"settings":{"ssl_ocsp_status_ttl":"9007199254740992"}}})").settings);
     const auto networking = parse_config_networking(
-        R"({"success":{"networking":{"table":"edge_proxy","control_socket":"/run/smithproxy-networkd/blue/control.sock","placement":"after","interfaces":["inside0","inside1"],"tenant_index":"7","tenant_ranges":["10.0.0.0/8"],"tcp_all":"false","udp_all":"true","ipv6_udp":"false","tcp_ports":["80"],"tls_ports":["443"],"udp_ports":["53"],"dtls_ports":["4433"],"drop_udp_ports":["443"],"redirect_tcp_port":"51080","redirect_tls_port":"51443","redirect_dns_port":"51053","redirect_exempt_uids":["0","1000"],"redirect_exempt_lan":"true","bypass":[{"source":"10.1.0.0/16","destination":"192.0.2.10","port":"0"}],"manage_routing":"false","manage_sysctls":"false","routing_table":"100","routing_priority":"10000","forwarding":"true","nonlocal_bind":"true","tcp_low_latency":"true","tcp_syn_retries":"3","mark":"1","mask":"255","blackhole_max_ttl_ms":"60000"}}})");
+        R"({"success":{"networking":{"table":"edge_proxy","control_socket":"/run/smithproxy-networkd/blue/control.sock","placement":"after","interfaces":["inside0","inside1"],"tenant_index":"7","tenant_ranges":["10.0.0.0/8"],"tcp_all":"false","udp_all":"true","ipv6_udp":"false","tcp_ports":["80"],"tls_ports":["443"],"udp_ports":["53"],"dtls_ports":["4433"],"drop_udp_ports":["443"],"redirect_tcp_port":"51080","redirect_tls_port":"51443","redirect_dns_port":"51053","redirect_exempt_uids":["0","1000"],"redirect_exempt_lan":"true","bypass":[{"source":"10.1.0.0/16","destination":"192.0.2.10","port":"443"}],"manage_routing":"false","manage_sysctls":"false","routing_table":"100","routing_priority":"10000","forwarding":"true","nonlocal_bind":"true","tcp_low_latency":"true","tcp_syn_retries":"3","mark":"1","mask":"255","blackhole_max_ttl_ms":"60000"}}})");
     assert(networking.networking);
     assert(networking.networking->table == "edge_proxy");
     assert(networking.networking->control_socket == "/run/smithproxy-networkd/blue/control.sock");
@@ -2336,7 +2336,7 @@ int main() {
     assert(!networking.networking->manage_routing);
     assert(networking.networking->bypass.size() == 1U);
     assert(networking.networking->bypass.front().destination == "192.0.2.10");
-    assert(networking.networking->bypass.front().port == 0U);
+    assert(networking.networking->bypass.front().port == 443U);
     const auto default_networking = parse_config_networking(
         R"({"success":{"networking":{}}})");
     assert(default_networking.networking);
@@ -2354,6 +2354,8 @@ int main() {
         R"({"success":{"networking":{"routing_table":"254"}}})").networking);
     assert(!parse_config_networking(
         R"({"success":{"networking":{"mark":"3","mask":"1"}}})").networking);
+    assert(!parse_config_networking(
+        R"({"success":{"networking":{"bypass":[{"source":"10.0.0.0/8","destination":"192.0.2.10","port":"0"}]}}})").networking);
     assert(!parse_config_networking(
         R"({"success":{"networking":{"bypass":[{"source":"10.0.0.0/8","destination":"","port":"443"}]}}})").networking);
     assert(!parse_config_networking(R"({"success":{}})", true).networking);

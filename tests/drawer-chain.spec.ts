@@ -7704,6 +7704,11 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
   await editor.locator('#networking-bypass-0-port').fill('0');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
 
+  await expect(editor.getByText(/port from 1 through 65535/i)).toBeVisible();
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(0);
+  await editor.locator('#networking-bypass-0-port').fill('8443');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
   await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
   expect(state.draftMutationBatches![0]).toEqual(expect.arrayContaining([
     {path: 'networking.table', value: 'smithproxy_lab3'},
@@ -7714,7 +7719,7 @@ test('edits the complete Networkd policy while identifying restart-scoped fields
     {path: 'networking.tenant_ranges', value: ['10.4.0.0/16', '2001:db8:4::/48']},
     {path: 'networking.tcp_ports', value: [80, 8080]},
     {path: 'networking.routing_table', value: 1000},
-    {path: 'networking.bypass.[0].port', value: 0},
+    {path: 'networking.bypass.[0].port', value: 8443},
   ]));
 });
 

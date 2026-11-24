@@ -182,7 +182,7 @@ const liveSnapshot = {
     tcp_ports: [80], tls_ports: [443], udp_ports: [53], dtls_ports: [4433], drop_udp_ports: [443],
     redirect_tcp_port: 51080, redirect_tls_port: 51443, redirect_dns_port: 51053,
     redirect_exempt_uids: [0], redirect_exempt_lan: false,
-    bypass: [{id: 'network-bypass-0', source: '10.0.0.0/8', destination: '192.0.2.10', port: 0}],
+    bypass: [{id: 'network-bypass-0', source: '10.0.0.0/8', destination: '192.0.2.10', port: 443}],
     manage_routing: true, manage_sysctls: true, routing_table: 100, routing_priority: 10000,
     forwarding: true, nonlocal_bind: true, tcp_low_latency: true, tcp_syn_retries: 3,
     mark: 1, mask: 255, blackhole_max_ttl_ms: 86400000,
@@ -254,7 +254,7 @@ describe('ApiConfigClient', () => {
     expect(snapshot).toMatchObject({source: 'live', state: 'ready', revision: null});
     expect(snapshot.networking).toMatchObject({
       table: 'smithproxy_networkd', interfaces: ['-'], routingTable: 100,
-      bypass: [{source: '10.0.0.0/8', port: 0}],
+      bypass: [{source: '10.0.0.0/8', port: 443}],
     });
     expect(parseConfigSnapshot({
       ...liveSnapshot,
@@ -307,6 +307,13 @@ describe('ApiConfigClient', () => {
       ...liveSnapshot,
       networking: {...liveSnapshot.networking, interfaces: ['*', 'eth0']},
     })).toThrow('Invalid Networkd selectors or port lists.');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      networking: {
+        ...liveSnapshot.networking,
+        bypass: [{id: 'network-bypass-0', source: '10.0.0.0/8', destination: '192.0.2.10', port: 0}],
+      },
+    })).toThrow('Networkd bypass port');
     expect(() => parseConfigSnapshot({
       ...liveSnapshot,
       networking: {...liveSnapshot.networking, interfaces: ['interface-name-is-too-long']},
