@@ -7913,6 +7913,10 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await settingsEditor.getByLabel('OCSP status TTL (seconds)').fill('3600');
   await settingsEditor.getByLabel('CRL status TTL (seconds)').fill('172800');
   await settingsEditor.getByLabel('Refresh tokens on access').selectOption('false');
+  await settingsEditor.getByLabel('API bind address').fill('192.0.2.999');
+  await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(settingsEditor.getByText(/API bind address must be a canonical IPv4 address/i)).toBeVisible();
+  await expect(settingsEditor.getByLabel('API bind address')).toBeFocused();
   await settingsEditor.getByLabel('API bind address').fill('192.0.2.77');
   await settingsEditor.getByLabel('API bind interface').fill('private-api0');
   await settingsEditor.getByLabel('Socket event logging').selectOption('true');
@@ -7968,6 +7972,10 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await settingsEditor.getByLabel('CA bundle path').fill('');
   await apiKeys.getByLabel('HTTP API key value 1', {exact: true}).fill('new-api-key');
   await apiKeys.getByRole('button', {name: 'Add API key'}).click();
+  await apiKeys.getByLabel('HTTP API key value 2', {exact: true}).fill('new-api-key');
+  await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(settingsEditor.getByText(/HTTP API key value 2 duplicates an earlier key/i)).toBeVisible();
+  await expect(apiKeys.getByLabel('HTTP API key value 2', {exact: true})).toBeFocused();
   await apiKeys.getByLabel('HTTP API key value 2', {exact: true}).fill('overlap-api-key');
   await apiKeys.getByRole('button', {name: 'Add API key'}).click();
   await apiKeys.getByLabel('HTTP API key value 3', {exact: true}).fill('discarded-api-key');

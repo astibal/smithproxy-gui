@@ -7529,12 +7529,20 @@ export class SmithproxyApp extends LitElement {
     changes.push({path: 'settings.webhook.sift_lored_mode', value: loredMode.value});
     const keys = this.settingsApiKeyDraft ??
       this.persistentListValue('settings.http_api.keys', settings.httpApi.keys, 'string');
-    const uniqueKeys = new Set(keys);
-    if (keys.length > 256 || uniqueKeys.size !== keys.length ||
-        !keys.every(key => key.length > 0 && key.length <= 65536 &&
-          !/[\u0000-\u001f\u007f]/u.test(key))) {
-      this.draftError = 'API keys must be unique, non-empty, and contain only safe header characters.';
+    const invalidApiKey = keys.findIndex(key => key.length === 0 || key.length > 65536 ||
+      /[\u0000-\u001f\u007f]/u.test(key));
+    const duplicateApiKey = duplicateIndex(keys);
+    if (keys.length > 256) {
+      this.draftError = 'HTTP API keys may contain at most 256 entries.';
       return undefined;
+    }
+    if (invalidApiKey >= 0 || duplicateApiKey >= 0) {
+      const index = invalidApiKey >= 0 ? invalidApiKey : duplicateApiKey;
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-api-key-${index}`);
+      return this.rejectConfigurationInput(
+        input, `HTTP API key value ${index + 1}`,
+        invalidApiKey >= 0 ? 'must be a non-empty safe header value' : 'duplicates an earlier key',
+      );
     }
     changes.push({path: 'settings.http_api.keys', value: [...keys]});
     const writeOnlyFields = [
@@ -7582,8 +7590,17 @@ export class SmithproxyApp extends LitElement {
         }
       }
       if (!valid) {
-        this.draftError = 'A configuration value is invalid for its field.';
-        return undefined;
+        const requirements = {
+          path: 'must be an absolute path without control characters',
+          file: 'must be a bounded file path without control characters',
+          host: 'must be a bounded host or interface name',
+          ipv4: 'must be a canonical IPv4 address',
+          filename: 'must be a bounded filename without path separators',
+          url: 'must be an HTTP or HTTPS URL without embedded credentials',
+          text: 'must be bounded text without control characters',
+          secret: 'must be a bounded value without control characters',
+        } as const;
+        return this.rejectConfigurationInput(input, path, requirements[kind]);
       }
       changes.push({path: `settings.${path}`, value: replacement});
     }
