@@ -1046,7 +1046,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
           id,
           source: safeString(item.source, 'Networkd bypass source', 128),
           destination: safeString(item.destination, 'Networkd bypass destination', 128),
-          port: rangedInteger(item.port, 'Networkd bypass port', 1, 65535),
+          port: rangedInteger(item.port, 'Networkd bypass port', 0, 65535),
         };
       });
     const mark = rangedInteger(value.networking.mark, 'Networkd mark', 1, 2147483647);

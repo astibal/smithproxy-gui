@@ -1191,7 +1191,7 @@ ConfigNetworkingParseResult parse_config_networking(
             const auto source = bounded_string(item, "source", maximum_name_length);
             const auto destination = bounded_string(item, "destination", maximum_name_length);
             const auto port = optional_decimal(item, "port", 0U, 65535U);
-            if (!source || !destination || !port || source->empty() || destination->empty() || *port == 0U) {
+            if (!source || !destination || !port || source->empty() || destination->empty()) {
                 return {std::nullopt, "Smithproxy returned an incomplete Networkd bypass rule"};
             }
             bypass.push_back({stable_id("network-bypass", index), *source, *destination, *port});

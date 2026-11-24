@@ -476,7 +476,8 @@ Result validate_networking(const std::string_view field, const DraftScalar& valu
         if (*nested == "source" || *nested == "destination") {
             return valid(bounded_text(value, 128U));
         }
-        if (*nested == "port") return valid(bounded_integer(value, 1, 65535));
+        // Networkd reserves zero for a bypass that applies to every port.
+        if (*nested == "port") return valid(bounded_integer(value, 0, 65535));
         return Result::UnknownPath;
     }
     constexpr std::array booleans{
