@@ -478,6 +478,8 @@ struct ConfigSnapshot {
     bool unsaved{};
     bool captures_present{};
     std::vector<std::string> present_collections;
+    // Names only: never expose values from an unreviewed configuration section.
+    std::vector<std::string> unmapped_sections;
     // Legacy multi-section reads synthesize index IDs and must keep this false.
     bool stable_entity_ids{};
     // Local monotonic time prevents a late pre-commit fetch from rebinding the draft.

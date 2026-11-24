@@ -16,6 +16,7 @@ const snapshot: ConfigSnapshot = {
     'content_profiles', 'tls_ca', 'tls_profiles', 'ssh_profiles', 'alg_dns_profiles',
     'routing', 'starttls_signatures', 'detection_signatures', 'script_profiles', 'auth_profiles',
   ],
+  unmappedSections: [],
   policies: [
     {
       id: 'policy-office',

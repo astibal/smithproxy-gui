@@ -233,6 +233,9 @@ def main() -> int:
     routing = FakeSmithproxy.config_sections.pop("routing")
     content_rules = FakeSmithproxy.config_sections["content_profiles"]["safe-content"].pop(
         "content_rules")
+    FakeSmithproxy.config_sections["future_access_policy"] = {
+        "private_value": "must-not-cross-the-GUI-boundary",
+    }
 
     fake_port = free_port()
     fake = http.server.ThreadingHTTPServer(("127.0.0.1", fake_port), TransactionSmithproxy)
@@ -306,6 +309,8 @@ def main() -> int:
             assert "port_objects" not in live_config["present_collections"]
             assert live_config["ports"] == []
             assert live_config["protocols"] == []
+            assert live_config["unmapped_sections"] == ["future_access_policy"]
+            assert b"must-not-cross-the-GUI-boundary" not in body
 
             status, _, body = request(
                 port, "/api/v1/config/draft", headers=gateway_headers)
@@ -598,6 +603,7 @@ def main() -> int:
     FakeSmithproxy.config_sections["routing"] = routing
     FakeSmithproxy.config_sections["content_profiles"]["safe-content"][
         "content_rules"] = content_rules
+    FakeSmithproxy.config_sections.pop("future_access_policy")
     fake.shutdown()
     fake.server_close()
     fake_thread.join(timeout=2)

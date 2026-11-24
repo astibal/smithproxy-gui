@@ -12509,6 +12509,21 @@ export class SmithproxyApp extends LitElement {
               </p>
             ` : nothing}
           </article>
+          ${this.snapshot?.unmappedSections.length ? html`
+            <article class="domain-card" data-system-section="configuration" role="alert">
+              <header>
+                <div><h3>Some configuration is not supported</h3>
+                  <p>The running configuration contains sections added after this GUI version</p></div>
+                <span class="runtime-state danger">● ${this.snapshot.unmappedSections.length} unmapped</span>
+              </header>
+              <p>Existing values remain active and untouched. Install a matching GUI version before changing
+                these sections; an unsafe generic editor is intentionally not used.</p>
+              <div class="archive-resources" aria-label="Unmapped configuration sections">
+                ${this.snapshot.unmappedSections.map(section => html`
+                  <div class="archive-resource"><code>${section}</code><span>Not editable</span></div>`)}
+              </div>
+            </article>
+          ` : nothing}
           <article class="domain-card job-card" data-system-section="configuration">
             <header>
               <div><h3>Configuration backups</h3><p>Download or restore a portable CFtar startup configuration</p></div>

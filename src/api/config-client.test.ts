@@ -15,6 +15,7 @@ const liveSnapshot = {
     'content_profiles', 'tls_ca', 'tls_profiles', 'ssh_profiles', 'alg_dns_profiles',
     'routing', 'starttls_signatures', 'detection_signatures', 'script_profiles', 'auth_profiles',
   ],
+  unmapped_sections: [],
   policies: [{
     id: 'policy-0', name: 'Policy 1', enabled: true, protocol: 'tcp', sources: ['office'],
     source_ports: ['any'], destinations: ['internet'], destination_ports: ['https'],
@@ -262,6 +263,12 @@ describe('ApiConfigClient', () => {
       'cli', 'web_rating', 'admin', 'tuning', 'socks', 'http_connect', 'http_api', 'webhook',
     ]);
     expect(snapshot.presentCollections).toContain('script_profiles');
+    expect(parseConfigSnapshot({
+      ...liveSnapshot, unmapped_sections: ['future_access_policy'],
+    }).unmappedSections).toEqual(['future_access_policy']);
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot, unmapped_sections: ['unsafe section'],
+    })).toThrow('Invalid unmapped configuration sections');
     expect(parseConfigSnapshot({
       ...liveSnapshot,
       revision: '89afe0b0ccaad050ce7fca8f78661c35',

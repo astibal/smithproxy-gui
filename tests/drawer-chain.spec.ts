@@ -128,6 +128,7 @@ type MockState = {
   configFailuresRemaining?: number;
   configSnapshotDelayMs?: number;
   configSnapshotState?: 'ready' | 'unavailable';
+  unmappedConfigSections?: string[];
   tlsCaPresent?: boolean;
   starttlsSignaturesPresent?: boolean;
   detectionSignaturesPresent?: boolean;
@@ -911,6 +912,7 @@ async function mockSystemApi(
           ? [{id: 'address-2', name: 'unused-branch', type: 'cidr', type_editable: true, value: '198.51.100.0/24'}]
           : []),
       ],
+      unmapped_sections: state.unmappedConfigSections ?? [],
       ports: [
         {id: 'port-0', name: 'https', start: 443, end: 443},
         ...(state.unusedPrimitives ? [{id: 'port-1', name: 'unused-admin', start: 9443, end: 9443}] : []),
@@ -7020,6 +7022,22 @@ test('keeps an unsaved running configuration visible on mobile', async ({page}) 
   await expect(card).toContainText('Explicit Smithproxy save required');
   await expect(card.getByTitle(`sha256:${'2'.repeat(64)}`)).toHaveText('sha256:22222222…');
   await expect(card.getByTitle(`sha256:${'1'.repeat(64)}`)).toHaveText('sha256:11111111…');
+});
+
+test('surfaces unmapped configuration sections without exposing their values', async ({page}) => {
+  await mockSystemApi(page, {
+    smithproxy: 'ready', unmappedConfigSections: ['future_access_policy'],
+  }, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Startup & backups', exact: true}).click();
+
+  const warning = page.getByRole('alert').filter({
+    has: page.getByRole('heading', {name: 'Some configuration is not supported'}),
+  });
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText('future_access_policy');
+  await expect(warning).toContainText('Not editable');
 });
 
 test('keeps mobile draft and startup actions visible without overflowing the topbar', async ({page}) => {

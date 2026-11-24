@@ -1379,6 +1379,13 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       presentCollections.some(item => !allowedCollections.has(item))) {
     throw new Error('Invalid present configuration collections.');
   }
+  const unmappedSections = boundedArray(
+    value.unmapped_sections, 'unmapped configuration sections', 64,
+  ).map(item => safeString(item, 'unmapped configuration section', 128));
+  if (new Set(unmappedSections).size !== unmappedSections.length ||
+      unmappedSections.some(item => !/^[A-Za-z_][A-Za-z0-9_-]*$/u.test(item))) {
+    throw new Error('Invalid unmapped configuration sections.');
+  }
 
   return {
     source: 'live',
@@ -1391,6 +1398,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     unsaved: value.unsaved,
     capturesPresent: value.captures_present === true,
     presentCollections,
+    unmappedSections,
     policies,
     addresses,
     ports,

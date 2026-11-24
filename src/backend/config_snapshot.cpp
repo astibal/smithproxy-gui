@@ -395,6 +395,18 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
         }
     }
     const auto captures_present = config.contains("captures");
+    const std::set<std::string, std::less<>> mapped_sections{
+        "settings", "debug", "networking", "captures", "policy",
+        "address_objects", "port_objects", "proto_objects", "detection_profiles",
+        "content_profiles", "tls_ca", "tls_profiles", "ssh_profiles",
+        "alg_dns_profiles", "routing", "starttls_signatures", "detection_signatures",
+        "script_profiles", "auth_profiles",
+    };
+    std::vector<std::string> unmapped_sections;
+    for (const auto& [name, ignored] : config.items()) {
+        if (!mapped_sections.contains(name)) unmapped_sections.push_back(name);
+    }
+    std::sort(unmapped_sections.begin(), unmapped_sections.end());
 
     // Empty collections are optional in valid Smithproxy configurations.
     // Normalize only the parser input; presence remains available below for
@@ -443,6 +455,7 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     parsed.snapshot->unsaved = document["unsaved"].get<bool>();
     parsed.snapshot->captures_present = captures_present;
     parsed.snapshot->present_collections = std::move(present_collections);
+    parsed.snapshot->unmapped_sections = std::move(unmapped_sections);
     // Atomic snapshots bind every synthesized entity ID to one canonical
     // revision. They remain safe transaction handles until that revision
     // changes, unlike IDs assembled from legacy multi-request reads.

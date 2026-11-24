@@ -2887,6 +2887,12 @@ private:
             present_collections += json_string(snapshot.present_collections[index]);
         }
         present_collections += ']';
+        std::string unmapped_sections{"["};
+        for (std::size_t index = 0; index < snapshot.unmapped_sections.size(); ++index) {
+            if (index != 0U) unmapped_sections += ',';
+            unmapped_sections += json_string(snapshot.unmapped_sections[index]);
+        }
+        unmapped_sections += ']';
 
         return {200, "application/json; charset=utf-8",
                 "{\"state\":" + json_string(snapshot.state) +
@@ -2901,6 +2907,7 @@ private:
                     ",\"captures_present\":" +
                     (snapshot.captures_present ? "true" : "false") +
                     ",\"present_collections\":" + present_collections +
+                    ",\"unmapped_sections\":" + unmapped_sections +
                     ",\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +
