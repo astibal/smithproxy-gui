@@ -33,7 +33,8 @@ export type DraftStructuralCollection =
   | 'tls_profiles' | 'content_profiles' | 'content_profiles.content_rules'
   | 'ssh_profiles' | 'script_profiles' | 'auth_profiles' | 'detection_profiles'
   | 'alg_dns_profiles' | 'tls_ca' | 'starttls_signatures' | 'starttls_signatures.flow'
-  | 'detection_signatures' | 'detection_signatures.flow' | 'settings.interfaces';
+  | 'detection_signatures' | 'detection_signatures.flow' | 'settings.interfaces'
+  | 'networking.bypass';
 
 export interface DraftCreateOperation extends DraftStructuralOperationBase {
   op: 'create';
@@ -68,7 +69,7 @@ export interface DraftSnapshot {
 }
 
 export type DraftSectionName =
-  | 'settings' | 'debug' | 'address_objects' | 'port_objects' | 'proto_objects'
+  | 'settings' | 'networking' | 'debug' | 'address_objects' | 'port_objects' | 'proto_objects'
   | 'detection_profiles' | 'captures' | 'content_profiles' | 'tls_ca' | 'tls_profiles'
   | 'ssh_profiles' | 'alg_dns_profiles' | 'routing' | 'policy' | 'starttls_signatures'
   | 'detection_signatures' | 'script_profiles' | 'auth_profiles';
@@ -214,6 +215,7 @@ const structuralCollections = new Set<DraftStructuralCollection>([
   'ssh_profiles', 'script_profiles', 'auth_profiles', 'detection_profiles',
   'alg_dns_profiles', 'tls_ca', 'starttls_signatures', 'starttls_signatures.flow',
   'detection_signatures', 'detection_signatures.flow', 'settings.interfaces',
+  'networking.bypass',
 ]);
 
 function localIdentifier(value: unknown): string {
@@ -381,7 +383,7 @@ export function draftOperationCount(value: DraftSnapshot): number {
 }
 
 const draftSectionNames = new Set<DraftSectionName>([
-  'settings', 'debug', 'address_objects', 'port_objects', 'proto_objects',
+  'settings', 'networking', 'debug', 'address_objects', 'port_objects', 'proto_objects',
   'detection_profiles', 'captures', 'content_profiles', 'tls_ca', 'tls_profiles',
   'ssh_profiles', 'alg_dns_profiles', 'routing', 'policy', 'starttls_signatures',
   'detection_signatures', 'script_profiles', 'auth_profiles',

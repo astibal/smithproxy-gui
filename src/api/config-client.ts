@@ -10,6 +10,7 @@ import type {
   ConfigValue,
   ConfigUsage,
   PolicySummary,
+  NetworkingSettings,
   PortObject,
   ProfileObject,
   ProtocolObject,
@@ -284,6 +285,13 @@ function safeAuthIdentities(value: unknown): ReadonlyArray<ConfigAuthIdentity> {
 
 function stringArray(value: unknown, label: string): string[] {
   return boundedArray(value, label, MAX_REFERENCES).map(item => safeString(item, label, 128));
+}
+
+function integerArray(value: unknown, label: string, maximum: number): number[] {
+  const result = boundedArray(value, label, MAX_REFERENCES)
+    .map(item => safeInteger(item, label, maximum));
+  if (new Set(result).size !== result.length) throw new Error(`Invalid ${label}.`);
+  return result;
 }
 
 function parseAddress(value: unknown): MutableAddress {
@@ -1003,6 +1011,80 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       },
     };
   }
+  let networking: NetworkingSettings | null = null;
+  if (value.networking != null) {
+    if (!isObject(value.networking)) throw new Error('Invalid networking configuration.');
+    const interfaces = stringArray(value.networking.interfaces, 'Networkd interface selector');
+    const tenantRanges = stringArray(value.networking.tenant_ranges, 'Networkd tenant range');
+    const tcpPorts = integerArray(value.networking.tcp_ports, 'Networkd TCP port', 65535);
+    const tlsPorts = integerArray(value.networking.tls_ports, 'Networkd TLS port', 65535);
+    const udpPorts = integerArray(value.networking.udp_ports, 'Networkd UDP port', 65535);
+    const dtlsPorts = integerArray(value.networking.dtls_ports, 'Networkd DTLS port', 65535);
+    const dropUdpPorts = integerArray(value.networking.drop_udp_ports, 'Networkd blocked UDP port', 65535);
+    const exemptUids = integerArray(
+      value.networking.redirect_exempt_uids, 'Networkd redirect-exempt UID', 2147483647,
+    );
+    const selectors = interfaces.filter(item => item === '*' || item === '-' || item === '+');
+    if (interfaces.length === 0 || (selectors.length !== 0 &&
+        (selectors.length !== 1 || interfaces.length !== 1)) ||
+        [...tcpPorts, ...tlsPorts, ...udpPorts, ...dtlsPorts, ...dropUdpPorts].some(port => port === 0)) {
+      throw new Error('Invalid Networkd selectors or port lists.');
+    }
+    const bypassIds = new Set<string>();
+    const bypass = boundedArray(value.networking.bypass, 'Networkd bypass rules', MAX_REFERENCES)
+      .map(item => {
+        if (!isObject(item)) throw new Error('Invalid Networkd bypass rule.');
+        const id = safeString(item.id, 'Networkd bypass ID', 128);
+        if (bypassIds.has(id)) throw new Error('Duplicate Networkd bypass ID.');
+        bypassIds.add(id);
+        return {
+          id,
+          source: safeString(item.source, 'Networkd bypass source', 128),
+          destination: safeString(item.destination, 'Networkd bypass destination', 128),
+          port: rangedInteger(item.port, 'Networkd bypass port', 1, 65535),
+        };
+      });
+    const mark = rangedInteger(value.networking.mark, 'Networkd mark', 1, 2147483647);
+    const mask = rangedInteger(value.networking.mask, 'Networkd mark mask', 1, 2147483647);
+    const routingTable = rangedInteger(value.networking.routing_table, 'Networkd routing table', 1, 2147483647);
+    if ((mark & mask) !== mark || (routingTable >= 253 && routingTable <= 255)) {
+      throw new Error('Invalid Networkd routing mark or table.');
+    }
+    networking = {
+      table: safeString(value.networking.table, 'Networkd table', 40),
+      placement: allowedString(value.networking.placement, 'Networkd placement', ['before', 'after']) as 'before' | 'after',
+      interfaces,
+      tenantIndex: safeInteger(value.networking.tenant_index, 'Networkd tenant index', 65534),
+      tenantRanges,
+      tcpAll: safeBoolean(value.networking.tcp_all, 'Networkd TCP catch-all state'),
+      udpAll: safeBoolean(value.networking.udp_all, 'Networkd UDP catch-all state'),
+      ipv6Udp: safeBoolean(value.networking.ipv6_udp, 'Networkd IPv6 UDP state'),
+      tcpPorts,
+      tlsPorts,
+      udpPorts,
+      dtlsPorts,
+      dropUdpPorts,
+      redirectTcpPort: rangedInteger(value.networking.redirect_tcp_port, 'Networkd redirect TCP port', 1, 65535),
+      redirectTlsPort: rangedInteger(value.networking.redirect_tls_port, 'Networkd redirect TLS port', 1, 65535),
+      redirectDnsPort: rangedInteger(value.networking.redirect_dns_port, 'Networkd redirect DNS port', 1, 65535),
+      redirectExemptUids: exemptUids,
+      redirectExemptLan: safeBoolean(value.networking.redirect_exempt_lan, 'Networkd LAN exemption state'),
+      bypass,
+      manageRouting: safeBoolean(value.networking.manage_routing, 'Networkd routing ownership'),
+      manageSysctls: safeBoolean(value.networking.manage_sysctls, 'Networkd sysctl ownership'),
+      routingTable,
+      routingPriority: rangedInteger(value.networking.routing_priority, 'Networkd routing priority', 1, 32765),
+      forwarding: safeBoolean(value.networking.forwarding, 'Networkd forwarding state'),
+      nonlocalBind: safeBoolean(value.networking.nonlocal_bind, 'Networkd nonlocal bind state'),
+      tcpLowLatency: safeBoolean(value.networking.tcp_low_latency, 'Networkd TCP low-latency state'),
+      tcpSynRetries: rangedInteger(value.networking.tcp_syn_retries, 'Networkd SYN retries', 1, 127),
+      mark,
+      mask,
+      blackholeMaxTtlMs: rangedInteger(
+        value.networking.blackhole_max_ttl_ms, 'Networkd blackhole TTL', 1, 86400000,
+      ),
+    };
+  }
   let captures: CaptureSettings | null = null;
   let debug: DebugSettings | null = null;
   if (value.debug !== null) {
@@ -1307,6 +1389,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     protocols,
     profiles,
     settings,
+    networking,
     debug,
     captures,
     securityAssets,

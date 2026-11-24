@@ -332,6 +332,46 @@ export interface SystemSettings {
   };
 }
 
+export interface NetworkingBypassRule {
+  id: string;
+  source: string;
+  destination: string;
+  port: number;
+}
+
+export interface NetworkingSettings {
+  table: string;
+  placement: 'before' | 'after';
+  interfaces: ReadonlyArray<string>;
+  tenantIndex: number;
+  tenantRanges: ReadonlyArray<string>;
+  tcpAll: boolean;
+  udpAll: boolean;
+  ipv6Udp: boolean;
+  tcpPorts: ReadonlyArray<number>;
+  tlsPorts: ReadonlyArray<number>;
+  udpPorts: ReadonlyArray<number>;
+  dtlsPorts: ReadonlyArray<number>;
+  dropUdpPorts: ReadonlyArray<number>;
+  redirectTcpPort: number;
+  redirectTlsPort: number;
+  redirectDnsPort: number;
+  redirectExemptUids: ReadonlyArray<number>;
+  redirectExemptLan: boolean;
+  bypass: ReadonlyArray<NetworkingBypassRule>;
+  manageRouting: boolean;
+  manageSysctls: boolean;
+  routingTable: number;
+  routingPriority: number;
+  forwarding: boolean;
+  nonlocalBind: boolean;
+  tcpLowLatency: boolean;
+  tcpSynRetries: number;
+  mark: number;
+  mask: number;
+  blackholeMaxTtlMs: number;
+}
+
 export interface CaptureSettings {
   editable: boolean;
   local: {
@@ -452,6 +492,7 @@ export interface ConfigSnapshot {
   protocols: ReadonlyArray<ProtocolObject>;
   profiles: ReadonlyArray<ProfileObject>;
   settings: SystemSettings | null;
+  networking: NetworkingSettings | null;
   debug: DebugSettings | null;
   captures: CaptureSettings | null;
   securityAssets: SecurityAssets | null;

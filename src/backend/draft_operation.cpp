@@ -42,6 +42,7 @@ constexpr std::array collection_schemas{
     CollectionSchema{"detection_signatures", "detection_signatures.[0]", "name"},
     CollectionSchema{"detection_signatures.flow", "detection_signatures.[0].flow.[0]", "signature"},
     CollectionSchema{"settings.interfaces", "settings.interfaces.[0]", "role"},
+    CollectionSchema{"networking.bypass", "networking.bypass.[0]", "source"},
 };
 
 const CollectionSchema* collection_schema(const std::string_view id) {

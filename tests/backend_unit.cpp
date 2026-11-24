@@ -1478,6 +1478,40 @@ int main() {
         },
     }));
 
+    transaction_snapshot.networking = ConfigNetworkingSettings{};
+    transaction_snapshot.networking->bypass = {
+        {.id = "network-bypass-0", .source = "10.0.0.0/8", .destination = "192.0.2.1", .port = 443U},
+    };
+    v2_draft.changes = {
+        {"networking.bypass.[0].port", std::int64_t{8443}},
+    };
+    v2_draft.structural_operations = {
+        DraftCreateOperation{
+            .local_id = "create-network-bypass-1",
+            .collection = "networking.bypass",
+            .client_id = "new-network-bypass",
+            .parent_id = std::nullopt,
+            .position = {DraftPositionKind::First, std::nullopt},
+            .fields = {
+                {"source", std::string("10.1.0.0/16")},
+                {"destination", std::string("198.51.100.10")},
+                {"port", std::int64_t{443}},
+            },
+        },
+    };
+    const auto network_bypass_envelope =
+        build_transaction_v2_operations(v2_draft, transaction_snapshot);
+    assert(network_bypass_envelope.body);
+    const auto network_bypass_operations = nlohmann::json::parse(*network_bypass_envelope.body);
+    assert(network_bypass_operations[0]["path"] == "networking.bypass.[0].port");
+    assert(network_bypass_operations[1] == nlohmann::json({
+        {"op", "add"}, {"path", "networking.bypass"}, {"name", ""},
+    }));
+    assert(network_bypass_operations.back() == nlohmann::json({
+        {"op", "move"}, {"path", "networking.bypass"}, {"source", 1},
+        {"target", 0}, {"position", "before"},
+    }));
+
     ConfigProfile content_profile;
     content_profile.id = "content-0";
     content_profile.name = "capture";
@@ -2167,6 +2201,30 @@ int main() {
         R"({"success":{"settings":{"write_pcap_single_quota":"9007199254740992"}}})").settings);
     assert(!parse_config_settings(
         R"({"success":{"settings":{"ssl_ocsp_status_ttl":"9007199254740992"}}})").settings);
+    const auto networking = parse_config_networking(
+        R"({"success":{"networking":{"table":"edge_proxy","placement":"after","interfaces":["inside0","inside1"],"tenant_index":"7","tenant_ranges":["10.0.0.0/8"],"tcp_all":"false","udp_all":"true","ipv6_udp":"false","tcp_ports":["80"],"tls_ports":["443"],"udp_ports":["53"],"dtls_ports":["4433"],"drop_udp_ports":["443"],"redirect_tcp_port":"51080","redirect_tls_port":"51443","redirect_dns_port":"51053","redirect_exempt_uids":["0","1000"],"redirect_exempt_lan":"true","bypass":[{"source":"10.1.0.0/16","destination":"192.0.2.10","port":"443"}],"manage_routing":"false","manage_sysctls":"false","routing_table":"100","routing_priority":"10000","forwarding":"true","nonlocal_bind":"true","tcp_low_latency":"true","tcp_syn_retries":"3","mark":"1","mask":"255","blackhole_max_ttl_ms":"60000"}}})");
+    assert(networking.networking);
+    assert(networking.networking->table == "edge_proxy");
+    assert(networking.networking->placement == "after");
+    assert(networking.networking->interfaces.size() == 2U);
+    assert(networking.networking->udp_all);
+    assert(!networking.networking->manage_routing);
+    assert(networking.networking->bypass.size() == 1U);
+    assert(networking.networking->bypass.front().destination == "192.0.2.10");
+    const auto default_networking = parse_config_networking(
+        R"({"success":{"networking":{}}})");
+    assert(default_networking.networking);
+    assert(default_networking.networking->interfaces == std::vector<std::string>{"-"});
+    assert(default_networking.networking->tcp_ports.front() == 80U);
+    assert(!parse_config_networking(
+        R"({"success":{"networking":{"interfaces":["*","eth0"]}}})").networking);
+    assert(!parse_config_networking(
+        R"({"success":{"networking":{"routing_table":"254"}}})").networking);
+    assert(!parse_config_networking(
+        R"({"success":{"networking":{"mark":"3","mask":"1"}}})").networking);
+    assert(!parse_config_networking(
+        R"({"success":{"networking":{"bypass":[{"source":"10.0.0.0/8","destination":"","port":"443"}]}}})").networking);
+    assert(!parse_config_networking(R"({"success":{}})", true).networking);
     const auto debug = parse_config_debug(
         R"({"success":{"debug":{"log_data_crc":"true","log_sockets":"false","log_online_cx_name":"true","log_srclines":"false","log_srclines_always":"true","log":{"proxy":"7","tls":"8"}}}})");
     assert(debug.debug);

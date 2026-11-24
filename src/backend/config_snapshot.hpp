@@ -204,6 +204,49 @@ struct ConfigInterfaceRole {
     std::string role;
 };
 
+struct ConfigNetworkingBypass {
+    std::string id;
+    std::string source;
+    std::string destination;
+    std::uint64_t port{};
+};
+
+// Native Networkd policy stored in the top-level networking configuration
+// group. Listener ports remain explicit here because Networkd may override the
+// derived Smithproxy listener targets for a migrated deployment.
+struct ConfigNetworkingSettings {
+    std::string table;
+    std::string placement;
+    std::vector<std::string> interfaces;
+    std::uint64_t tenant_index{};
+    std::vector<std::string> tenant_ranges;
+    bool tcp_all{};
+    bool udp_all{};
+    bool ipv6_udp{};
+    std::vector<std::uint64_t> tcp_ports;
+    std::vector<std::uint64_t> tls_ports;
+    std::vector<std::uint64_t> udp_ports;
+    std::vector<std::uint64_t> dtls_ports;
+    std::vector<std::uint64_t> drop_udp_ports;
+    std::uint64_t redirect_tcp_port{};
+    std::uint64_t redirect_tls_port{};
+    std::uint64_t redirect_dns_port{};
+    std::vector<std::uint64_t> redirect_exempt_uids;
+    bool redirect_exempt_lan{};
+    std::vector<ConfigNetworkingBypass> bypass;
+    bool manage_routing{};
+    bool manage_sysctls{};
+    std::uint64_t routing_table{};
+    std::uint64_t routing_priority{};
+    bool forwarding{};
+    bool nonlocal_bind{};
+    bool tcp_low_latency{};
+    std::uint64_t tcp_syn_retries{};
+    std::uint64_t mark{};
+    std::uint64_t mask{};
+    std::uint64_t blackhole_max_ttl_ms{};
+};
+
 struct ConfigSystemSettings {
     bool accept_tproxy{};
     bool accept_redirect{};
@@ -445,6 +488,7 @@ struct ConfigSnapshot {
     std::vector<ConfigProtocolObject> protocols;
     std::vector<ConfigProfile> profiles;
     std::optional<ConfigSystemSettings> settings;
+    std::optional<ConfigNetworkingSettings> networking;
     std::optional<ConfigDebugSettings> debug;
     std::optional<ConfigCaptureSettings> captures;
     std::optional<ConfigSecurityAssets> security_assets;
@@ -486,6 +530,13 @@ struct ConfigSettingsParseResult {
     std::optional<ConfigSystemSettings> settings;
     std::string error;
 };
+
+struct ConfigNetworkingParseResult {
+    std::optional<ConfigNetworkingSettings> networking;
+    std::string error;
+};
+
+ConfigNetworkingParseResult parse_config_networking(std::string_view payload, bool required = false);
 
 ConfigSettingsParseResult parse_config_settings(std::string_view payload);
 

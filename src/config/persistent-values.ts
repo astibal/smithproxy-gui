@@ -253,6 +253,37 @@ export function persistentConfigurationValues(snapshot: ConfigSnapshot): Readonl
     ];
     fields.forEach(([path, value]) => set(`${base}${path}`, value));
   }
+
+  const networking = snapshot.networking;
+  if (networking) {
+    const fields: ReadonlyArray<readonly [string, ConfigValue]> = [
+      ['table', networking.table], ['placement', networking.placement],
+      ['interfaces', networking.interfaces], ['tenant_index', networking.tenantIndex],
+      ['tenant_ranges', networking.tenantRanges], ['tcp_all', networking.tcpAll],
+      ['udp_all', networking.udpAll], ['ipv6_udp', networking.ipv6Udp],
+      ['tcp_ports', networking.tcpPorts], ['tls_ports', networking.tlsPorts],
+      ['udp_ports', networking.udpPorts], ['dtls_ports', networking.dtlsPorts],
+      ['drop_udp_ports', networking.dropUdpPorts],
+      ['redirect_tcp_port', networking.redirectTcpPort],
+      ['redirect_tls_port', networking.redirectTlsPort],
+      ['redirect_dns_port', networking.redirectDnsPort],
+      ['redirect_exempt_uids', networking.redirectExemptUids],
+      ['redirect_exempt_lan', networking.redirectExemptLan],
+      ['manage_routing', networking.manageRouting], ['manage_sysctls', networking.manageSysctls],
+      ['routing_table', networking.routingTable], ['routing_priority', networking.routingPriority],
+      ['forwarding', networking.forwarding], ['nonlocal_bind', networking.nonlocalBind],
+      ['tcp_low_latency', networking.tcpLowLatency], ['tcp_syn_retries', networking.tcpSynRetries],
+      ['mark', networking.mark], ['mask', networking.mask],
+      ['blackhole_max_ttl_ms', networking.blackholeMaxTtlMs],
+    ];
+    fields.forEach(([path, value]) => set(`networking.${path}`, value));
+    networking.bypass.forEach((rule, index) => {
+      const base = `networking.bypass.[${index}]`;
+      set(`${base}.source`, rule.source);
+      set(`${base}.destination`, rule.destination);
+      set(`${base}.port`, rule.port);
+    });
+  }
   if (snapshot.debug) {
     set('debug.log_data_crc', snapshot.debug.logDataCrc);
     set('debug.log_sockets', snapshot.debug.logSockets);

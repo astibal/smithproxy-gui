@@ -1,6 +1,7 @@
 import type {ConfigClient, ConfigSnapshot} from '../api/models';
 
 const snapshot: ConfigSnapshot = {
+  networking: null,
   source: 'live',
   state: 'ready',
   detail: 'Persistent configuration value fixture',

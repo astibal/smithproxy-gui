@@ -28,6 +28,7 @@ import type {
   ConfigUsage,
   DebugSettings,
   InterfaceRoleRule,
+  NetworkingBypassRule,
   PolicySummary,
   PortObject,
   ProfileObject,
@@ -115,7 +116,7 @@ type PolicyDensity = 'dense' | 'standard' | 'comfortable';
 type ObjectKindFilter = 'all' | 'address' | 'port' | 'protocol' | 'profile' | 'security';
 type ObjectSectionKind = Exclude<ObjectKindFilter, 'all'>;
 type SecurityObjectFilter = 'all' | 'trust' | 'signatures' | 'starttls' | 'detection';
-type NetworkView = 'overview' | 'neighborhood' | 'interfaces' | 'configuration';
+type NetworkView = 'overview' | 'neighborhood' | 'interfaces' | 'configuration' | 'networking';
 type MonitoringView = 'overview' | 'traffic' | 'sessions' | 'tls';
 type LogsView = 'events' | 'audit';
 type SystemView = 'configuration' | 'settings' | 'captures' | 'backend' | 'appearance' | 'control-plane';
@@ -145,6 +146,7 @@ const networkNavigation: ReadonlyArray<{kind: NetworkView; label: string; icon: 
   {kind: 'neighborhood', label: 'Neighborhood', icon: '⌘'},
   {kind: 'interfaces', label: 'Interfaces', icon: '⇄'},
   {kind: 'configuration', label: 'Listeners', icon: '≡'},
+  {kind: 'networking', label: 'Interception', icon: '↪'},
 ];
 
 const monitoringNavigation: ReadonlyArray<{kind: MonitoringView; label: string; icon: string}> = [
@@ -2537,10 +2539,12 @@ export class SmithproxyApp extends LitElement {
         }
       }
       if (change.path.startsWith('settings.')) objects.add('settings:settings');
+      if (change.path.startsWith('networking.')) objects.add('networking:networking');
       if (change.path.startsWith('debug.')) objects.add('settings:settings');
       if (change.path.startsWith('captures.')) objects.add('captures:captures');
     }
     for (const operation of snapshot.structuralOperations) {
+      if (operation.collection === 'networking.bypass') objects.add('networking:networking');
       if (operation.op === 'create' && operation.collection === 'address_objects') {
         objects.add(`address-create:${operation.localId}`);
       }
@@ -2611,6 +2615,9 @@ export class SmithproxyApp extends LitElement {
   private draftTargetForPath(path: string): DrawerEntry | undefined {
     if (path.startsWith('settings.') || path.startsWith('debug.')) {
       return {kind: 'settings', id: 'settings', title: 'System settings'};
+    }
+    if (path.startsWith('networking.')) {
+      return {kind: 'networking', id: 'networking', title: 'Network interception'};
     }
     if (path.startsWith('captures.')) {
       return {kind: 'captures', id: 'captures', title: 'Capture settings'};
@@ -4527,12 +4534,15 @@ export class SmithproxyApp extends LitElement {
   }
 
   private openSystemDrawer(
-    kind: 'settings' | 'captures', origin?: HTMLElement,
+    kind: 'settings' | 'networking' | 'captures', origin?: HTMLElement,
     settingsGroup?: SettingsGroup,
   ): void {
     if ((kind === 'settings' && !this.snapshot?.settings) ||
+        (kind === 'networking' && !this.snapshot?.networking) ||
         (kind === 'captures' && !this.snapshot?.captures)) return;
-    this.openObjectDrawer({kind, id: kind, title: kind === 'settings' ? 'System settings' : 'Capture settings'}, origin);
+    const title = kind === 'settings' ? 'System settings' :
+      kind === 'networking' ? 'Network interception' : 'Capture settings';
+    this.openObjectDrawer({kind, id: kind, title}, origin);
     if (kind !== 'settings' || settingsGroup === undefined) return;
     // The shared settings drawer remains read-only until Edit is selected. We
     // only position its existing scroll container at the task the admin chose.
@@ -4589,6 +4599,7 @@ export class SmithproxyApp extends LitElement {
   private cliCommandsForDrawer(entry: DrawerEntry): ReadonlyArray<string> | undefined {
     if (this.drawerStartsEditable(entry)) return undefined;
     if (entry.kind === 'settings') return ['configure terminal', 'edit settings'];
+    if (entry.kind === 'networking') return ['configure terminal', 'edit networking'];
     if (entry.kind === 'captures') return ['configure terminal', 'edit captures'];
     const prefix = this.originPrefix(entry);
     if (!prefix) return undefined;
@@ -4979,6 +4990,9 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'protocol') return this.snapshot.protocols.find(item => item.id === entry.id);
     if (entry.kind === 'settings' && entry.id === 'settings' && this.snapshot.settings) {
       return {id: 'settings', name: 'System settings'};
+    }
+    if (entry.kind === 'networking' && entry.id === 'networking' && this.snapshot.networking) {
+      return {id: 'networking', name: 'Network interception'};
     }
     if (entry.kind === 'captures' && entry.id === 'captures' && this.snapshot.captures) {
       return {id: 'captures', name: 'Capture settings'};
@@ -6425,6 +6439,7 @@ export class SmithproxyApp extends LitElement {
   private draftChanges(entry: DrawerEntry): ReadonlyArray<DraftChange> | undefined {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'settings') return this.systemSettingsDraftChanges();
+    if (entry.kind === 'networking') return this.networkingDraftChanges();
     if (entry.kind === 'captures') return this.captureSettingsDraftChanges();
     if (entry.kind === 'content-rule') {
       const profile = this.snapshot.profiles.find(item => item.content?.rules.some(rule => rule.id === entry.id));
@@ -7298,6 +7313,119 @@ export class SmithproxyApp extends LitElement {
     return changes.filter(change => this.settingsPathAvailable(change.path));
   }
 
+  /** Reads and validates the complete smithproxy-networkd configuration editor. */
+  private networkingDraftChanges(): ReadonlyArray<DraftChange> | undefined {
+    const networking = this.snapshot?.networking;
+    if (!networking) return undefined;
+    const changes: DraftChange[] = [];
+    const text = (id: string) => this.renderRoot.querySelector<HTMLInputElement>(`#networking-${id}`);
+    const select = (id: string) => this.renderRoot.querySelector<HTMLSelectElement>(`#networking-${id}`);
+    const integer = (id: string, minimum: number, maximum: number): number | undefined => {
+      const input = text(id);
+      const value = input?.valueAsNumber ?? Number.NaN;
+      return input && Number.isSafeInteger(value) && value >= minimum && value <= maximum ? value : undefined;
+    };
+    const strings = (id: string): string[] | undefined => {
+      const input = text(id);
+      if (!input) return undefined;
+      const values = input.value.split(',').map(item => item.trim()).filter(Boolean);
+      return values.length <= 256 && new Set(values).size === values.length &&
+        values.every(value => value.length <= 128 && !/[\u0000-\u001f\u007f]/u.test(value)) ? values : undefined;
+    };
+    const ports = (id: string, allowZero = false): number[] | undefined => {
+      const values = strings(id);
+      if (!values) return undefined;
+      const parsed = values.map(value => Number(value));
+      return parsed.every(value => Number.isInteger(value) && value >= (allowZero ? 0 : 1) && value <= 65535)
+        ? parsed : undefined;
+    };
+    const booleans = [
+      ['tcp_all', 'tcp-all'], ['udp_all', 'udp-all'], ['ipv6_udp', 'ipv6-udp'],
+      ['redirect_exempt_lan', 'redirect-exempt-lan'], ['manage_routing', 'manage-routing'],
+      ['manage_sysctls', 'manage-sysctls'], ['forwarding', 'forwarding'],
+      ['nonlocal_bind', 'nonlocal-bind'], ['tcp_low_latency', 'tcp-low-latency'],
+    ] as const;
+    for (const [path, id] of booleans) {
+      const input = select(id);
+      if (!input || !['true', 'false'].includes(input.value)) return undefined;
+      changes.push({path: `networking.${path}`, value: input.value === 'true'});
+    }
+    const table = text('table');
+    const placement = select('placement');
+    const interfaces = strings('interfaces');
+    const tenantRanges = strings('tenant-ranges');
+    const tcpPorts = ports('tcp-ports');
+    const tlsPorts = ports('tls-ports');
+    const udpPorts = ports('udp-ports');
+    const dtlsPorts = ports('dtls-ports');
+    const dropUdpPorts = ports('drop-udp-ports');
+    const exemptUids = strings('redirect-exempt-uids')?.map(value => Number(value));
+    const validSelectors = interfaces?.every(value => value === '*' || value === '-' || value === '+' ||
+      /^[A-Za-z0-9:._-]{1,128}$/u.test(value));
+    if (!table || !/^[A-Za-z0-9_-]{1,64}$/u.test(table.value) || !placement ||
+        !['before', 'after'].includes(placement.value) || !interfaces || !validSelectors ||
+        !tenantRanges || !tcpPorts || !tlsPorts || !udpPorts || !dtlsPorts || !dropUdpPorts ||
+        !exemptUids || !exemptUids.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 2147483647)) {
+      this.draftError = 'Network interception lists, selectors, ports, or table name are invalid.';
+      return undefined;
+    }
+    const numericFields = [
+      ['tenant_index', 'tenant-index', 0, 65534],
+      ['redirect_tcp_port', 'redirect-tcp-port', 1, 65535],
+      ['redirect_tls_port', 'redirect-tls-port', 1, 65535],
+      ['redirect_dns_port', 'redirect-dns-port', 1, 65535],
+      ['routing_table', 'routing-table', 1, 252],
+      ['routing_priority', 'routing-priority', 1, 32765],
+      ['tcp_syn_retries', 'tcp-syn-retries', 1, 127],
+      ['mark', 'mark', 1, 2147483647],
+      ['mask', 'mask', 1, 2147483647],
+      ['blackhole_max_ttl_ms', 'blackhole-max-ttl-ms', 1, 86400000],
+    ] as const;
+    const numericValues = new Map<string, number>();
+    for (const [path, id, minimum, maximum] of numericFields) {
+      const value = integer(id, minimum, maximum);
+      if (value === undefined) {
+        this.draftError = 'A network interception numeric value is outside its supported range.';
+        return undefined;
+      }
+      numericValues.set(path, value);
+      changes.push({path: `networking.${path}`, value});
+    }
+    const mark = numericValues.get('mark')!;
+    const mask = numericValues.get('mask')!;
+    if ((mark & mask) !== mark) {
+      this.draftError = 'The packet mark may only use bits enabled by its mask.';
+      return undefined;
+    }
+    changes.push(
+      {path: 'networking.table', value: table.value},
+      {path: 'networking.placement', value: placement.value},
+      {path: 'networking.interfaces', value: interfaces},
+      {path: 'networking.tenant_ranges', value: tenantRanges},
+      {path: 'networking.tcp_ports', value: tcpPorts},
+      {path: 'networking.tls_ports', value: tlsPorts},
+      {path: 'networking.udp_ports', value: udpPorts},
+      {path: 'networking.dtls_ports', value: dtlsPorts},
+      {path: 'networking.drop_udp_ports', value: dropUdpPorts},
+      {path: 'networking.redirect_exempt_uids', value: exemptUids},
+    );
+    for (const [index] of networking.bypass.entries()) {
+      const source = text(`bypass-${index}-source`);
+      const destination = text(`bypass-${index}-destination`);
+      const port = integer(`bypass-${index}-port`, 0, 65535);
+      if (!source || !destination || port === undefined || !source.value.trim() || !destination.value.trim() || port === 0 ||
+          [source.value, destination.value].some(value => value.length > 128 || /[\u0000-\u001f\u007f]/u.test(value))) {
+        this.draftError = 'Each bypass rule requires a bounded source and a valid optional destination and port.';
+        return undefined;
+      }
+      const base = `networking.bypass.[${index}]`;
+      changes.push({path: `${base}.source`, value: source.value.trim()});
+      changes.push({path: `${base}.destination`, value: destination.value.trim()});
+      changes.push({path: `${base}.port`, value: port});
+    }
+    return changes;
+  }
+
   private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
     if (!this.snapshot?.captures?.editable) return undefined;
     const changes: DraftChange[] = [];
@@ -7471,6 +7599,115 @@ export class SmithproxyApp extends LitElement {
     } catch (error) {
       if (!this.draftAccessIsCurrent(accessEpoch)) return;
       this.draftError = error instanceof Error ? error.message : 'The interface role could not be moved.';
+      await this.loadDraft();
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  /** Combines live and staged Networkd bypass rows in their effective order. */
+  private networkingBypassRows(): Array<DraftOrderedRow<NetworkingBypassRule>> {
+    const operations = (this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftCreateOperation | DraftMoveOperation =>
+        operation.collection === 'networking.bypass' &&
+        (operation.op === 'create' || operation.op === 'move'),
+    );
+    return this.draftOrderedRows(this.snapshot?.networking?.bypass ?? [], operations);
+  }
+
+  /** Stages a new ordered Networkd bypass rule. */
+  private async createNetworkingBypass(): Promise<void> {
+    if (!this.draftClient || !this.collectionTransactionsAvailable('networking.bypass') ||
+        this.draftSaving || this.draftCommitting) return;
+    const input = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
+      `#networking-new-bypass-${field}`,
+    );
+    const source = input('source')?.value.trim();
+    const destination = input('destination')?.value.trim();
+    const port = input('port')?.valueAsNumber ?? Number.NaN;
+    if (!source || !destination || source.length > 128 || destination.length > 128 ||
+        !Number.isInteger(port) || port < 1 || port > 65535) {
+      this.draftError = 'A bypass rule requires a source, destination, and destination port.';
+      return;
+    }
+    this.draftSaving = true;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const localId = `create-network-bypass-${crypto.randomUUID()}`;
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'create', localId, collection: 'networking.bypass', clientId: localId,
+        parentId: null, position: {kind: 'last', reference: null},
+        fields: {source, destination, port},
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.draftError = error instanceof Error ? error.message : 'The bypass rule could not be staged.';
+      await this.loadDraft();
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  /** Stages removal of a live rule or removes an uncommitted new rule. */
+  private async deleteNetworkingBypass(row: DraftOrderedRow<NetworkingBypassRule>): Promise<void> {
+    if (row.kind === 'create') {
+      await this.removeDraftOperation(row.operation.localId);
+      return;
+    }
+    if (!this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const key = `networking.bypass:${row.item.id}`;
+    if (this.structuralDeleteArmedKey !== key) {
+      this.structuralDeleteArmedKey = key;
+      this.draftError = 'Delete is armed. Select the same bypass rule again to confirm.';
+      return;
+    }
+    this.draftSaving = true;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, {
+        op: 'delete', localId: `delete-network-bypass-${crypto.randomUUID()}`,
+        collection: 'networking.bypass', entityId: row.item.id,
+      });
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      this.structuralDeleteArmedKey = undefined;
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.draftError = error instanceof Error ? error.message : 'The bypass rule could not be deleted.';
+      await this.loadDraft();
+    } finally {
+      if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
+    }
+  }
+
+  /** Moves a Networkd bypass rule without changing its content. */
+  private async moveNetworkingBypass(rowId: string, direction: -1 | 1): Promise<void> {
+    if (!this.draftClient || this.draftSaving || this.draftCommitting) return;
+    const rows = this.networkingBypassRows();
+    const index = rows.findIndex(row => row.id === rowId);
+    const row = rows[index];
+    const reference = rows[index + direction];
+    if (!row || !reference) return;
+    const position: DraftPosition = direction < 0
+      ? {kind: 'before', reference: reference.id} : {kind: 'after', reference: reference.id};
+    const operation: DraftCreateOperation | DraftMoveOperation = row.kind === 'create'
+      ? {...row.operation, position}
+      : {op: 'move', localId: `move-network-bypass-${row.item.id}`,
+          collection: 'networking.bypass', entityId: row.item.id, position};
+    this.draftSaving = true;
+    const accessEpoch = this.configurationAccessEpoch;
+    try {
+      const draft = await this.draftClient.upsertOperation(this.draftVersion, operation);
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.applyDraft(draft);
+      await this.loadDraftPreflight();
+    } catch (error) {
+      if (!this.draftAccessIsCurrent(accessEpoch)) return;
+      this.draftError = error instanceof Error ? error.message : 'The bypass rule could not be moved.';
       await this.loadDraft();
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.draftSaving = false;
@@ -9995,6 +10232,45 @@ export class SmithproxyApp extends LitElement {
       </section>`;
   }
 
+  /** Presents the effective networkd ownership, interception, and routing posture. */
+  private renderNetworkInterception() {
+    const networking = this.snapshot?.state === 'ready' ? this.snapshot.networking : null;
+    if (!networking) {
+      return html`<section class="monitor-panel" aria-label="Network interception">
+        <div class="runtime-heading"><div><h3>Network interception</h3>
+          <p>Native smithproxy-networkd configuration</p></div>
+          <span class="runtime-state warning">● Not configured</span></div>
+        <div class="metrics-message">This configuration archive does not contain a native
+          <code>networking</code> section. The host may still use an external or legacy network setup.</div>
+      </section>`;
+    }
+    const enabledProtocols = [networking.tcpAll ? 'All TCP' : `${networking.tcpPorts.length} TCP ports`,
+      networking.udpAll ? 'All UDP' : `${networking.udpPorts.length} UDP ports`,
+      networking.ipv6Udp ? 'IPv6 UDP' : 'IPv4 UDP only'];
+    return html`<section class="monitor-panel" aria-label="Network interception">
+      <div class="runtime-heading">
+        <div><h3>Network interception</h3><p>Effective native firewall and routing ownership</p></div>
+        <div class="preflight-actions">${this.renderPendingBadge('networking', 'networking')}
+          <button class="secondary" type="button"
+            @click=${(event: MouseEvent) => this.openSystemDrawer(
+              'networking', event.currentTarget as HTMLElement,
+            )}>Edit interception</button></div>
+      </div>
+      <div class="table network-config-table" tabindex="0"><table class="listener-table">
+        <tbody>
+          <tr><th>Firewall table</th><td><code>${networking.table}</code> · ${networking.placement} existing rules</td></tr>
+          <tr><th>Interface scope</th><td>${networking.interfaces.join(', ') || 'None'}</td></tr>
+          <tr><th>Interception</th><td>${enabledProtocols.join(' · ')}</td></tr>
+          <tr><th>Redirect ports</th><td>TCP ${networking.redirectTcpPort} · TLS ${networking.redirectTlsPort} · DNS ${networking.redirectDnsPort}</td></tr>
+          <tr><th>Routing ownership</th><td>${networking.manageRouting ? `Table ${networking.routingTable}, priority ${networking.routingPriority}` : 'External routing'}</td></tr>
+          <tr><th>System tuning</th><td>${networking.manageSysctls ? 'Managed by smithproxy-networkd' : 'External sysctl ownership'}</td></tr>
+          <tr><th>Packet mark</th><td><code>${networking.mark.toString(16)} / ${networking.mask.toString(16)}</code></td></tr>
+          <tr><th>Bypass rules</th><td>${networking.bypass.length.toLocaleString()}</td></tr>
+        </tbody>
+      </table></div>
+    </section>`;
+  }
+
   private renderNetwork() {
     const metrics = this.runtimeMetrics;
     const presentation = this.collectorPresentation(
@@ -10009,6 +10285,9 @@ export class SmithproxyApp extends LitElement {
     }
     if (this.networkView === 'configuration') {
       return html`<div class="content dashboard" tabindex="0">${this.renderNetworkConfiguration()}</div>`;
+    }
+    if (this.networkView === 'networking') {
+      return html`<div class="content dashboard" tabindex="0">${this.renderNetworkInterception()}</div>`;
     }
     return html`
       <div class="content dashboard" tabindex="0">
@@ -13787,6 +14066,132 @@ export class SmithproxyApp extends LitElement {
     `;
   }
 
+  /** Renders every currently supported smithproxy-networkd configuration field. */
+  private renderNetworkingEditor() {
+    const networking = this.snapshot?.networking;
+    if (!networking) return html`<div class="metrics-message">Network interception is not configured.</div>`;
+    const scalar = <T extends ConfigScalar>(path: string, fallback: T): T =>
+      this.persistentValue(`networking.${path}`, fallback);
+    const list = <T extends string | number>(path: string, fallback: ReadonlyArray<T>): ReadonlyArray<T> =>
+      this.persistentListValue(`networking.${path}`, fallback, typeof fallback[0] === 'number' ? 'number' : 'string') as T[];
+    const booleanField = (path: string, id: string, label: string, fallback: boolean) => html`
+      <label for="networking-${id}">${label}</label><select id="networking-${id}">
+        <option value="true" ?selected=${scalar(path, fallback)}>Enabled</option>
+        <option value="false" ?selected=${!scalar(path, fallback)}>Disabled</option>
+      </select>`;
+    const numberField = (path: string, id: string, label: string, fallback: number,
+      minimum: number, maximum: number) => html`
+      <label for="networking-${id}">${label}</label><input id="networking-${id}" type="number"
+        min=${String(minimum)} max=${String(maximum)} step="1" .value=${String(scalar(path, fallback))} />`;
+    const listField = <T extends string | number>(path: string, id: string, label: string,
+      fallback: ReadonlyArray<T>, placeholder: string) => html`
+      <label for="networking-${id}">${label}</label><input id="networking-${id}" maxlength="4096"
+        .value=${list(path, fallback).join(', ')} placeholder=${placeholder} />`;
+    return html`<div class="editor-stack">
+      <fieldset class="editor-group"><legend>Firewall ownership</legend>
+        <p>Names the native table and chooses where its hooks sit relative to existing host rules.</p>
+        <div class="form-grid">
+          <label for="networking-table">Table name</label><input id="networking-table" maxlength="64"
+            .value=${scalar('table', networking.table)} />
+          <label for="networking-placement">Rule placement</label><select id="networking-placement">
+            <option value="before" ?selected=${scalar('placement', networking.placement) === 'before'}>Before existing rules</option>
+            <option value="after" ?selected=${scalar('placement', networking.placement) === 'after'}>After existing rules</option>
+          </select>
+          ${listField('interfaces', 'interfaces', 'Interface selectors', networking.interfaces,
+            '-, +, *, eth0')}
+          ${numberField('tenant_index', 'tenant-index', 'Tenant index', networking.tenantIndex, 0, 65534)}
+          ${listField('tenant_ranges', 'tenant-ranges', 'Tenant ranges', networking.tenantRanges,
+            '10.0.0.0/8, 2001:db8::/32')}
+        </div>
+      </fieldset>
+      <fieldset class="editor-group"><legend>Interception scope</legend>
+        <p>Selects complete protocols or explicit destination-port sets.</p><div class="form-grid">
+          ${booleanField('tcp_all', 'tcp-all', 'Intercept all TCP', networking.tcpAll)}
+          ${booleanField('udp_all', 'udp-all', 'Intercept all UDP', networking.udpAll)}
+          ${booleanField('ipv6_udp', 'ipv6-udp', 'Intercept IPv6 UDP', networking.ipv6Udp)}
+          ${listField('tcp_ports', 'tcp-ports', 'Plain TCP ports', networking.tcpPorts, '80, 8080')}
+          ${listField('tls_ports', 'tls-ports', 'TLS ports', networking.tlsPorts, '443, 8443')}
+          ${listField('udp_ports', 'udp-ports', 'UDP ports', networking.udpPorts, '53, 123')}
+          ${listField('dtls_ports', 'dtls-ports', 'DTLS ports', networking.dtlsPorts, '4433')}
+          ${listField('drop_udp_ports', 'drop-udp-ports', 'Dropped UDP ports', networking.dropUdpPorts, '443')}
+        </div>
+      </fieldset>
+      <fieldset class="editor-group"><legend>Redirect targets and exemptions</legend><div class="form-grid">
+        ${numberField('redirect_tcp_port', 'redirect-tcp-port', 'TCP proxy port', networking.redirectTcpPort, 1, 65535)}
+        ${numberField('redirect_tls_port', 'redirect-tls-port', 'TLS proxy port', networking.redirectTlsPort, 1, 65535)}
+        ${numberField('redirect_dns_port', 'redirect-dns-port', 'DNS proxy port', networking.redirectDnsPort, 1, 65535)}
+        ${listField('redirect_exempt_uids', 'redirect-exempt-uids', 'Exempt user IDs',
+          networking.redirectExemptUids, '0, 1000')}
+        ${booleanField('redirect_exempt_lan', 'redirect-exempt-lan', 'Exempt local networks', networking.redirectExemptLan)}
+      </div></fieldset>
+      <fieldset class="editor-group"><legend>Routing and host tuning</legend>
+        <p>Ownership switches deliberately separate Smithproxy-managed state from externally managed hosts.</p>
+        <div class="form-grid">
+          ${booleanField('manage_routing', 'manage-routing', 'Manage policy routing', networking.manageRouting)}
+          ${booleanField('manage_sysctls', 'manage-sysctls', 'Manage kernel settings', networking.manageSysctls)}
+          ${numberField('routing_table', 'routing-table', 'Routing table', networking.routingTable, 1, 252)}
+          ${numberField('routing_priority', 'routing-priority', 'Routing priority', networking.routingPriority, 1, 32765)}
+          ${booleanField('forwarding', 'forwarding', 'IP forwarding', networking.forwarding)}
+          ${booleanField('nonlocal_bind', 'nonlocal-bind', 'Non-local bind', networking.nonlocalBind)}
+          ${booleanField('tcp_low_latency', 'tcp-low-latency', 'TCP low latency', networking.tcpLowLatency)}
+          ${numberField('tcp_syn_retries', 'tcp-syn-retries', 'TCP SYN retries', networking.tcpSynRetries, 1, 127)}
+          ${numberField('mark', 'mark', 'Packet mark', networking.mark, 1, 2147483647)}
+          ${numberField('mask', 'mask', 'Packet mark mask', networking.mask, 1, 2147483647)}
+          ${numberField('blackhole_max_ttl_ms', 'blackhole-max-ttl-ms', 'Blackhole maximum TTL (ms)',
+            networking.blackholeMaxTtlMs, 1, 86400000)}
+        </div>
+      </fieldset>
+      <fieldset class="editor-group"><legend>Ordered bypass rules</legend>
+        <p>Traffic matching the source, destination, and port bypasses interception.</p>
+        ${this.networkingBypassRows().length > 0 ? this.networkingBypassRows().map((row, rowIndex) => {
+          const liveIndex = row.kind === 'live' ? networking.bypass.findIndex(rule => rule.id === row.item.id) : -1;
+          const rule = row.kind === 'live' ? row.item : {
+            id: row.id, source: String(row.operation.fields['source'] ?? ''),
+            destination: String(row.operation.fields['destination'] ?? ''),
+            port: Number(row.operation.fields['port'] ?? 0),
+          };
+          const base = `bypass.[${liveIndex}]`;
+          const pending = row.kind === 'create';
+          return html`<div class="form-grid section">
+            <label>Source</label><input id=${pending ? nothing : `networking-bypass-${liveIndex}-source`}
+              maxlength="128" .value=${pending ? rule.source : scalar(`${base}.source`, rule.source)}
+              .readOnly=${pending} />
+            <label>Destination</label><input id=${pending ? nothing : `networking-bypass-${liveIndex}-destination`}
+              maxlength="128" .value=${pending ? rule.destination : scalar(`${base}.destination`, rule.destination)}
+              .readOnly=${pending} />
+            <label>Destination port</label><input id=${pending ? nothing : `networking-bypass-${liveIndex}-port`}
+              type="number" min="1" max="65535" step="1"
+              .value=${String(pending ? rule.port : scalar(`${base}.port`, rule.port))} .readOnly=${pending} />
+            <span></span><span class="inline-actions">
+              <button class="secondary" type="button" aria-label="Move bypass rule up"
+                ?disabled=${rowIndex === 0 || this.draftSaving}
+                @click=${() => this.moveNetworkingBypass(row.id, -1)}>↑</button>
+              <button class="secondary" type="button" aria-label="Move bypass rule down"
+                ?disabled=${rowIndex === this.networkingBypassRows().length - 1 || this.draftSaving}
+                @click=${() => this.moveNetworkingBypass(row.id, 1)}>↓</button>
+              <button class=${this.structuralDeleteArmedKey === `networking.bypass:${row.id}`
+                  ? 'danger' : 'secondary danger-button'} type="button"
+                @click=${() => this.deleteNetworkingBypass(row)}>
+                ${this.structuralDeleteArmedKey === `networking.bypass:${row.id}` ? 'Confirm delete' : 'Delete'}
+              </button>${pending ? html`<span class="muted">Pending create</span>` : nothing}
+            </span>
+          </div>`;
+        }) : html`<div class="metrics-message">No interception bypass rules are configured.</div>`}
+        ${this.collectionTransactionsAvailable('networking.bypass') ? html`<div class="form-grid section">
+          <label for="networking-new-bypass-source">New source</label>
+          <input id="networking-new-bypass-source" maxlength="128" placeholder="10.0.0.0/8" />
+          <label for="networking-new-bypass-destination">New destination</label>
+          <input id="networking-new-bypass-destination" maxlength="128" placeholder="192.0.2.10" />
+          <label for="networking-new-bypass-port">New destination port</label>
+          <input id="networking-new-bypass-port" type="number" min="1" max="65535" step="1" value="443" />
+          <span></span><span><button class="secondary" type="button" @click=${() => this.createNetworkingBypass()}>
+            Add bypass rule</button></span>
+        </div>` : html`<div class="privacy-note section">The connected Smithproxy version does not advertise
+          structural Networkd bypass changes.</div>`}
+      </fieldset>
+    </div>`;
+  }
+
   private renderSystemSettingsEditor() {
     const settings = this.snapshot?.settings;
     if (!settings) return nothing;
@@ -14852,6 +15257,7 @@ export class SmithproxyApp extends LitElement {
   private originPrefix(entry: DrawerEntry): string | undefined {
     if (!this.snapshot) return undefined;
     if (entry.kind === 'settings') return 'settings.';
+    if (entry.kind === 'networking') return 'networking.';
     if (entry.kind === 'captures') return 'captures.';
     if (entry.kind === 'authority') {
       const index = this.snapshot.securityAssets?.certificateAuthorities.findIndex(item => item.id === entry.id) ?? -1;
@@ -15064,6 +15470,7 @@ export class SmithproxyApp extends LitElement {
     if (entry.kind === 'protocol-create') return this.renderProtocolCreateEditor(entry);
     if (entry.kind === 'profile-create') return this.renderProfileCreateEditor(entry);
     if (entry.kind === 'settings') return this.renderSystemSettingsEditor();
+    if (entry.kind === 'networking') return this.renderNetworkingEditor();
     if (entry.kind === 'captures') return this.renderCaptureSettingsEditor();
     if (entry.kind === 'authority') return this.renderCertificateAuthorityEditor(entry);
     if (entry.kind === 'authority-create') return this.renderCertificateAuthorityCreateEditor(entry);
@@ -15096,7 +15503,7 @@ export class SmithproxyApp extends LitElement {
     const visibleDepth = Math.min(index, 5);
     const active = index === this.drawers.length - 1;
     const draftableKinds: ReadonlyArray<DrawerEntry['kind']> = [
-      'policy', 'address', 'port', 'protocol', 'settings', 'captures', 'authority',
+      'policy', 'address', 'port', 'protocol', 'settings', 'networking', 'captures', 'authority',
       'signature', 'signature-flow',
       'content-rule', 'auth-identities',
     ];

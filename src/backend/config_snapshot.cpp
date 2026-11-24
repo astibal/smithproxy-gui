@@ -403,10 +403,12 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     if (!parsed.snapshot) return parsed;
 
     auto settings = parse_config_settings(envelope);
+    auto networking = parse_config_networking(envelope);
     auto debug = parse_config_debug(envelope);
     auto captures = captures_present ? parse_config_captures(envelope) : ConfigCapturesParseResult{};
     auto security = parse_config_security_assets(envelope, envelope, envelope);
     if (!settings.settings) return {std::nullopt, std::move(settings.error)};
+    if (!networking.error.empty()) return {std::nullopt, std::move(networking.error)};
     if (!debug.debug) return {std::nullopt, std::move(debug.error)};
     if (captures_present && !captures.captures) return {std::nullopt, std::move(captures.error)};
     if (!security.security_assets) return {std::nullopt, std::move(security.error)};
@@ -431,6 +433,7 @@ ConfigSnapshotParseResult parse_config_state(const std::string_view payload) {
     }
     finalize_private_profile_references(parsed.snapshot->profiles);
     parsed.snapshot->settings = std::move(settings.settings);
+    parsed.snapshot->networking = std::move(networking.networking);
     parsed.snapshot->debug = std::move(debug.debug);
     parsed.snapshot->captures = std::move(captures.captures);
     parsed.snapshot->security_assets = std::move(security.security_assets);
@@ -1060,6 +1063,124 @@ ConfigSettingsParseResult parse_config_settings(const std::string_view payload) 
                 *webhook_url, *webhook_sift_url, *webhook_sift_tenant,
                 *webhook_sift_instance, *webhook_host_id, *webhook_bind_interface,
             }, {}};
+}
+
+ConfigNetworkingParseResult parse_config_networking(
+    const std::string_view payload, const bool required) {
+    const auto value = section_value(payload, "networking");
+    if (!value) {
+        return required
+            ? ConfigNetworkingParseResult{std::nullopt, "Smithproxy returned no networking configuration"}
+            : ConfigNetworkingParseResult{std::nullopt, {}};
+    }
+    if (!value->is_object()) {
+        return {std::nullopt, "Smithproxy returned an invalid networking configuration"};
+    }
+
+    auto table = bounded_string(*value, "table", 40U, true);
+    auto placement = bounded_string(*value, "placement", 16U, true);
+    const bool interfaces_present = value->contains("interfaces");
+    const bool tcp_ports_present = value->contains("tcp_ports");
+    const bool tls_ports_present = value->contains("tls_ports");
+    const bool udp_ports_present = value->contains("udp_ports");
+    const bool exempt_uids_present = value->contains("redirect_exempt_uids");
+    auto interfaces = string_array(*value, "interfaces", true);
+    auto tenant_ranges = string_array(*value, "tenant_ranges", true);
+    const auto tenant_index = optional_decimal(*value, "tenant_index", 0U, 65534U);
+    const auto tcp_all = boolean_scalar(*value, "tcp_all", true);
+    const auto udp_all = boolean_scalar(*value, "udp_all", false);
+    const auto ipv6_udp = boolean_scalar(*value, "ipv6_udp", true);
+    auto tcp_ports = optional_decimal_array(*value, "tcp_ports", 65535U);
+    auto tls_ports = optional_decimal_array(*value, "tls_ports", 65535U);
+    auto udp_ports = optional_decimal_array(*value, "udp_ports", 65535U);
+    auto dtls_ports = optional_decimal_array(*value, "dtls_ports", 65535U);
+    auto drop_udp_ports = optional_decimal_array(*value, "drop_udp_ports", 65535U);
+    const auto redirect_tcp_port = optional_decimal(*value, "redirect_tcp_port", 51080U, 65535U);
+    const auto redirect_tls_port = optional_decimal(*value, "redirect_tls_port", 51443U, 65535U);
+    const auto redirect_dns_port = optional_decimal(*value, "redirect_dns_port", 51053U, 65535U);
+    auto redirect_exempt_uids = optional_decimal_array(*value, "redirect_exempt_uids", maximum_config_integer);
+    const auto redirect_exempt_lan = boolean_scalar(*value, "redirect_exempt_lan", false);
+    const auto manage_routing = boolean_scalar(*value, "manage_routing", true);
+    const auto manage_sysctls = boolean_scalar(*value, "manage_sysctls", true);
+    const auto routing_table = optional_decimal(*value, "routing_table", 100U, maximum_config_integer);
+    const auto routing_priority = optional_decimal(*value, "routing_priority", 10000U, 32765U);
+    const auto forwarding = boolean_scalar(*value, "forwarding", true);
+    const auto nonlocal_bind = boolean_scalar(*value, "nonlocal_bind", true);
+    const auto tcp_low_latency = boolean_scalar(*value, "tcp_low_latency", true);
+    const auto tcp_syn_retries = optional_decimal(*value, "tcp_syn_retries", 3U, 127U);
+    const auto mark = optional_decimal(*value, "mark", 1U, maximum_config_integer);
+    const auto mask = optional_decimal(*value, "mask", 1U, maximum_config_integer);
+    const auto blackhole_max_ttl_ms = optional_decimal(
+        *value, "blackhole_max_ttl_ms", 86400000U, 86400000U);
+
+    if (!table || !placement || !interfaces || !tenant_ranges || !tenant_index || !tcp_all ||
+        !udp_all || !ipv6_udp || !tcp_ports || !tls_ports || !udp_ports || !dtls_ports ||
+        !drop_udp_ports || !redirect_tcp_port || !redirect_tls_port || !redirect_dns_port ||
+        !redirect_exempt_uids || !redirect_exempt_lan || !manage_routing || !manage_sysctls ||
+        !routing_table || !routing_priority || !forwarding || !nonlocal_bind || !tcp_low_latency ||
+        !tcp_syn_retries || !mark || !mask || !blackhole_max_ttl_ms) {
+        return {std::nullopt, "Smithproxy returned invalid networking fields"};
+    }
+    if (table->empty()) *table = "smithproxy_networkd";
+    if (placement->empty()) *placement = "before";
+    if (*placement != "before" && *placement != "after") {
+        return {std::nullopt, "Smithproxy returned invalid Networkd placement"};
+    }
+    if (!interfaces_present) interfaces->push_back("-");
+    const bool topology_selector = interfaces->size() == 1U &&
+        ((*interfaces)[0] == "*" || (*interfaces)[0] == "-" || (*interfaces)[0] == "+");
+    if (!topology_selector && std::any_of(interfaces->begin(), interfaces->end(), [](const auto& item) {
+            return item == "*" || item == "-" || item == "+";
+        })) {
+        return {std::nullopt, "Smithproxy returned an invalid Networkd interface selector"};
+    }
+    if (!tcp_ports_present) *tcp_ports = {80U, 25U, 587U, 21U, 143U, 110U, 5222U, 65000U};
+    if (!tls_ports_present) *tls_ports = {443U, 465U, 636U, 993U, 995U, 10443U};
+    if (!udp_ports_present) udp_ports->push_back(53U);
+    if (!exempt_uids_present) redirect_exempt_uids->push_back(0U);
+    const auto contains_zero = [](const auto& ports) {
+        return std::find(ports.begin(), ports.end(), 0U) != ports.end();
+    };
+    if (contains_zero(*tcp_ports) || contains_zero(*tls_ports) || contains_zero(*udp_ports) ||
+        contains_zero(*dtls_ports) || contains_zero(*drop_udp_ports) ||
+        *redirect_tcp_port == 0U || *redirect_tls_port == 0U || *redirect_dns_port == 0U ||
+        *routing_table == 0U || (*routing_table >= 253U && *routing_table <= 255U) ||
+        *routing_priority == 0U || *mark == 0U || *mask == 0U || (*mark & *mask) != *mark ||
+        *tcp_syn_retries == 0U || *blackhole_max_ttl_ms == 0U) {
+        return {std::nullopt, "Smithproxy returned unsafe networking values"};
+    }
+
+    std::vector<ConfigNetworkingBypass> bypass;
+    if (const auto list = value->find("bypass"); list != value->end()) {
+        if (!list->is_array() || list->size() > maximum_references) {
+            return {std::nullopt, "Smithproxy returned an invalid Networkd bypass list"};
+        }
+        bypass.reserve(list->size());
+        for (std::size_t index = 0U; index < list->size(); ++index) {
+            const auto& item = (*list)[index];
+            if (!item.is_object()) {
+                return {std::nullopt, "Smithproxy returned an invalid Networkd bypass rule"};
+            }
+            const auto source = bounded_string(item, "source", maximum_name_length);
+            const auto destination = bounded_string(item, "destination", maximum_name_length);
+            const auto port = optional_decimal(item, "port", 0U, 65535U);
+            if (!source || !destination || !port || source->empty() || destination->empty() || *port == 0U) {
+                return {std::nullopt, "Smithproxy returned an incomplete Networkd bypass rule"};
+            }
+            bypass.push_back({stable_id("network-bypass", index), *source, *destination, *port});
+        }
+    }
+
+    return {ConfigNetworkingSettings{
+        *table, *placement, std::move(*interfaces), *tenant_index, std::move(*tenant_ranges),
+        *tcp_all, *udp_all, *ipv6_udp, std::move(*tcp_ports), std::move(*tls_ports),
+        std::move(*udp_ports), std::move(*dtls_ports), std::move(*drop_udp_ports),
+        *redirect_tcp_port, *redirect_tls_port, *redirect_dns_port,
+        std::move(*redirect_exempt_uids), *redirect_exempt_lan, std::move(bypass),
+        *manage_routing, *manage_sysctls, *routing_table, *routing_priority, *forwarding,
+        *nonlocal_bind, *tcp_low_latency, *tcp_syn_retries, *mark, *mask,
+        *blackhole_max_ttl_ms,
+    }, {}};
 }
 
 ConfigDebugParseResult parse_config_debug(const std::string_view payload) {

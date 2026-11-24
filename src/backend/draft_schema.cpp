@@ -471,6 +471,60 @@ Result validate_settings(const std::string_view field, const DraftScalar& value)
     return Result::UnknownPath;
 }
 
+Result validate_networking(const std::string_view field, const DraftScalar& value) {
+    if (const auto nested = indexed_suffix(field, "bypass")) {
+        if (*nested == "source" || *nested == "destination") {
+            return valid(bounded_text(value, 128U));
+        }
+        if (*nested == "port") return valid(bounded_integer(value, 1, 65535));
+        return Result::UnknownPath;
+    }
+    constexpr std::array booleans{
+        std::string_view{"tcp_all"}, std::string_view{"udp_all"},
+        std::string_view{"ipv6_udp"}, std::string_view{"redirect_exempt_lan"},
+        std::string_view{"manage_routing"}, std::string_view{"manage_sysctls"},
+        std::string_view{"forwarding"}, std::string_view{"nonlocal_bind"},
+        std::string_view{"tcp_low_latency"},
+    };
+    if (one_of(field, booleans)) return valid(boolean(value));
+    if (field == "table") return valid(config_group_name(value));
+    if (field == "placement") return valid(enumerated(value, {"before", "after"}));
+    if (field == "interfaces") {
+        if (!string_list(value, 15U, false)) return Result::InvalidValue;
+        const auto& items = *strings(value);
+        const auto selectors = std::count_if(items.begin(), items.end(), [](const auto& item) {
+            return item == "*" || item == "-" || item == "+";
+        });
+        return valid(selectors == 0 || (selectors == 1 && items.size() == 1U));
+    }
+    if (field == "tenant_ranges") return valid(string_list(value, 128U));
+    if (field == "tcp_ports" || field == "tls_ports" || field == "udp_ports" ||
+        field == "dtls_ports" || field == "drop_udp_ports") {
+        return valid(integer_list(value, 1, 65535));
+    }
+    if (field == "redirect_exempt_uids") {
+        return valid(integer_list(value, 0, 2147483647));
+    }
+    struct IntegerRule { std::string_view path; std::int64_t minimum; std::int64_t maximum; };
+    constexpr std::array integer_rules{
+        IntegerRule{"tenant_index", 0, 65534},
+        IntegerRule{"redirect_tcp_port", 1, 65535},
+        IntegerRule{"redirect_tls_port", 1, 65535},
+        IntegerRule{"redirect_dns_port", 1, 65535},
+        IntegerRule{"routing_table", 1, 2147483647},
+        IntegerRule{"routing_priority", 1, 32765},
+        IntegerRule{"tcp_syn_retries", 1, 127},
+        IntegerRule{"mark", 1, 2147483647},
+        IntegerRule{"mask", 1, 2147483647},
+        IntegerRule{"blackhole_max_ttl_ms", 1, 86400000},
+    };
+    const auto rule = std::find_if(integer_rules.begin(), integer_rules.end(),
+        [&](const IntegerRule& item) { return item.path == field; });
+    return rule == integer_rules.end()
+        ? Result::UnknownPath
+        : valid(bounded_integer(value, rule->minimum, rule->maximum));
+}
+
 Result validate_capture(const std::string_view field, const DraftScalar& value) {
     if (field == "local.enabled" || field == "remote.enabled" ||
         field == "options.calculate_checksums" || field == "options.metadata" ||
@@ -518,6 +572,9 @@ Result validate_debug(const std::string_view field, const DraftScalar& value) {
 } // namespace
 
 DraftSchemaResult validate_draft_schema(const DraftChange& change) {
+    if (change.path.starts_with("networking.")) {
+        return validate_networking(std::string_view(change.path).substr(11U), change.value);
+    }
     if (change.path.starts_with("settings.")) {
         return validate_settings(std::string_view(change.path).substr(9U), change.value);
     }

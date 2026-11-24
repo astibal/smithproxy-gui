@@ -354,12 +354,11 @@ bool append_policy_operation(
     }, operation);
 }
 
-bool append_interface_role_operation(
+bool append_ordered_record_operation(
     nlohmann::json& operations, std::vector<std::string>& rows,
-    const DraftStructuralOperation& operation) {
+    const DraftStructuralOperation& operation, const std::string_view collection) {
     return std::visit([&](const auto& item) {
         using Operation = std::decay_t<decltype(item)>;
-        constexpr std::string_view collection{"settings.interfaces"};
         if (item.collection != collection) return false;
         if constexpr (std::is_same_v<Operation, DraftCreateOperation>) {
             if (item.parent_id || item.fields.empty()) return false;
@@ -887,6 +886,13 @@ TransactionEnvelope build_transaction_v2_operations(
             interface_role_rows.push_back(role.id);
         }
     }
+    std::vector<std::string> network_bypass_rows;
+    if (snapshot.networking) {
+        network_bypass_rows.reserve(snapshot.networking->bypass.size());
+        for (const auto& rule : snapshot.networking->bypass) {
+            network_bypass_rows.push_back(rule.id);
+        }
+    }
     for (const auto& operation : draft.structural_operations) {
         const auto collection = draft_structural_collection(operation);
         if (collection == "policy") {
@@ -902,7 +908,15 @@ TransactionEnvelope build_transaction_v2_operations(
             continue;
         }
         if (collection == "settings.interfaces") {
-            if (!append_interface_role_operation(operations, interface_role_rows, operation)) {
+            if (!append_ordered_record_operation(
+                    operations, interface_role_rows, operation, "settings.interfaces")) {
+                return {std::nullopt, "transaction.invalid_draft"};
+            }
+            continue;
+        }
+        if (collection == "networking.bypass") {
+            if (!append_ordered_record_operation(
+                    operations, network_bypass_rows, operation, "networking.bypass")) {
                 return {std::nullopt, "transaction.invalid_draft"};
             }
             continue;

@@ -2137,6 +2137,50 @@ private:
                        ",\"task_debug\":" + (value.webhook_task_debug ? "true" : "false") +
                        ",\"task_debug_dump\":" + (value.webhook_task_debug_dump ? "true" : "false") + "}}";
         }
+        std::string networking{"null"};
+        if (snapshot.networking) {
+            const auto& value = *snapshot.networking;
+            std::string bypass{"["};
+            for (std::size_t index = 0U; index < value.bypass.size(); ++index) {
+                if (index != 0U) bypass += ',';
+                const auto& rule = value.bypass[index];
+                bypass += "{\"id\":" + json_string(rule.id) +
+                          ",\"source\":" + json_string(rule.source) +
+                          ",\"destination\":" + json_string(rule.destination) +
+                          ",\"port\":" + std::to_string(rule.port) + "}";
+            }
+            bypass += ']';
+            networking = "{\"table\":" + json_string(value.table) +
+                ",\"placement\":" + json_string(value.placement) +
+                ",\"interfaces\":" + string_array_json(value.interfaces) +
+                ",\"tenant_index\":" + std::to_string(value.tenant_index) +
+                ",\"tenant_ranges\":" + string_array_json(value.tenant_ranges) +
+                ",\"tcp_all\":" + (value.tcp_all ? "true" : "false") +
+                ",\"udp_all\":" + (value.udp_all ? "true" : "false") +
+                ",\"ipv6_udp\":" + (value.ipv6_udp ? "true" : "false") +
+                ",\"tcp_ports\":" + number_array_json(value.tcp_ports) +
+                ",\"tls_ports\":" + number_array_json(value.tls_ports) +
+                ",\"udp_ports\":" + number_array_json(value.udp_ports) +
+                ",\"dtls_ports\":" + number_array_json(value.dtls_ports) +
+                ",\"drop_udp_ports\":" + number_array_json(value.drop_udp_ports) +
+                ",\"redirect_tcp_port\":" + std::to_string(value.redirect_tcp_port) +
+                ",\"redirect_tls_port\":" + std::to_string(value.redirect_tls_port) +
+                ",\"redirect_dns_port\":" + std::to_string(value.redirect_dns_port) +
+                ",\"redirect_exempt_uids\":" + number_array_json(value.redirect_exempt_uids) +
+                ",\"redirect_exempt_lan\":" + (value.redirect_exempt_lan ? "true" : "false") +
+                ",\"bypass\":" + bypass +
+                ",\"manage_routing\":" + (value.manage_routing ? "true" : "false") +
+                ",\"manage_sysctls\":" + (value.manage_sysctls ? "true" : "false") +
+                ",\"routing_table\":" + std::to_string(value.routing_table) +
+                ",\"routing_priority\":" + std::to_string(value.routing_priority) +
+                ",\"forwarding\":" + (value.forwarding ? "true" : "false") +
+                ",\"nonlocal_bind\":" + (value.nonlocal_bind ? "true" : "false") +
+                ",\"tcp_low_latency\":" + (value.tcp_low_latency ? "true" : "false") +
+                ",\"tcp_syn_retries\":" + std::to_string(value.tcp_syn_retries) +
+                ",\"mark\":" + std::to_string(value.mark) +
+                ",\"mask\":" + std::to_string(value.mask) +
+                ",\"blackhole_max_ttl_ms\":" + std::to_string(value.blackhole_max_ttl_ms) + "}";
+        }
         std::string captures{"null"};
         std::string debug{"null"};
         if (snapshot.debug) {
@@ -2277,7 +2321,8 @@ private:
                     ",\"policies\":" + policies +
                     ",\"addresses\":" + addresses + ",\"ports\":" + ports +
                     ",\"protocols\":" + protocols + ",\"profiles\":" + profiles +
-                    ",\"settings\":" + settings + ",\"debug\":" + debug +
+                    ",\"settings\":" + settings + ",\"networking\":" + networking +
+                    ",\"debug\":" + debug +
                     ",\"captures\":" + captures +
                     ",\"security_assets\":" + security_assets +
                     ",\"augment_support\":false,\"value_origins\":[]}"};
