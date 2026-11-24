@@ -2629,6 +2629,15 @@ int main() {
     assert(!parse_gui_bootstrap(
         "gui = { gateway = { secret_file = \"/run/gui/secret\"; "
         "previous_secret_file = \"/run/gui/secret\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { smithproxy = { api_url = \"https://127.0.0.1:55555\"; "
+        "ca_cert = \"/run/gui/ca.pem\"; api_token_file = \"/run/gui/credential\"; }; "
+        "gateway = { secret_file = \"/run/gui/credential\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { smithproxy = { api_url = \"https://127.0.0.1:55555\"; "
+        "ca_cert = \"/run/gui/ca.pem\"; api_token_file = \"/run/gui/credential\"; }; "
+        "gateway = { secret_file = \"/run/gui/gateway\"; "
+        "previous_secret_file = \"/run/gui/credential\"; }; };\n").config);
     std::filesystem::permissions(
         api_token_path, owner_only | std::filesystem::perms::group_read,
         std::filesystem::perm_options::replace);

@@ -33,8 +33,8 @@ struct GuiAdministratorConfig {
     std::uint32_t parallelism{1U};
 };
 
-// Persistent bootstrap values stored in gui.cfg. Credential paths are visible;
-// password verifiers remain sensitive archive data and never cross to browsers.
+// Persistent bootstrap values stored in core-owned gui.cfg. Paths identify
+// boot-scoped credentials; live tokens never become persistent configuration.
 struct GuiBootstrapConfig {
     std::uint16_t schema_version{1};
     std::string bind_address{"127.0.0.1"};

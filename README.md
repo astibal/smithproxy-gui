@@ -89,7 +89,21 @@ cmake --install build --prefix ./package
 ./package/bin/smithproxy-gui --base-path /ws001/smithproxy-gui/
 ```
 
-The backend reads Smithproxy access exclusively from its process environment:
+For a native deployment, Smithproxy core exposes the active `gui.cfg` resource
+read-only and starts the backend with `--config`. The persistent resource holds
+stable service settings and paths to protected runtime credentials; it never
+contains a live API key or gateway secret. Smithproxy core remains the sole
+CFtar writer, including when the GUI submits a typed `gui.cfg` change through
+the authenticated CFG/archive API.
+
+The runtime credential files are boot-scoped. A launcher may generate a fresh
+GUI API key for every coordinated Smithproxy/GUI start, give each process its
+own owner-only copy, and invalidate the preceding key by restarting Smithproxy.
+The GUI reads its copy once during bootstrap and retains the resulting upstream
+session only in memory.
+
+The environment form below remains a compatibility bootstrap for deployments
+that have not adopted `gui.cfg` yet:
 
 ```text
 SMITHPROXY_API_URL=https://127.0.0.1:55555
@@ -100,8 +114,10 @@ SMITHPROXY_GUI_GATEWAY_SECRET=at-least-32-random-characters
 SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS=optional-overlap-during-rotation
 ```
 
-The variables must be provided together. The API key is never accepted through
-command-line arguments, exposed to the browser, or written to logs. For a
+The three Smithproxy variables must be provided together. Secret environment
+values are removed immediately after bootstrap. The API key is never accepted
+through command-line arguments, exposed to the browser, persisted by the GUI,
+or written to logs. For a
 deployment behind the Saslik gateway, use a base path such as
 `--base-path /ws001/smithproxy-gui/`.
 

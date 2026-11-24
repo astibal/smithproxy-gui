@@ -603,6 +603,13 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
         return bootstrap_failure(
             "gui.backend non-loopback bind requires gui.gateway.secret_file");
     }
+    if(config.api_token_file && config.gateway_secret_file &&
+       (*config.api_token_file == *config.gateway_secret_file ||
+        (config.gateway_previous_secret_file &&
+         *config.api_token_file == *config.gateway_previous_secret_file))) {
+        return bootstrap_failure(
+            "GUI API token and gateway credentials must use separate files");
+    }
     return {std::move(config), {}};
 }
 
@@ -669,8 +676,9 @@ std::string usage() {
            "  --base-path PATH  public URL prefix (/)\n"
            "  --assets PATH     frontend asset directory (build/frontend)\n"
            "  --config FILE     GUI configuration exposed from the active CFtar\n"
-           "\nSmithproxy credentials are read only from SMITHPROXY_API_URL,\n"
-           "SMITHPROXY_API_KEY and SMITHPROXY_CA_CERT. A trusted reverse proxy\n"
+           "\nNative deployments use core-owned gui.cfg plus protected boot-time\n"
+           "credential files. SMITHPROXY_API_URL, SMITHPROXY_API_KEY and\n"
+           "SMITHPROXY_CA_CERT remain a compatibility bootstrap. A trusted reverse proxy\n"
            "must authenticate non-loopback browser APIs with SMITHPROXY_GUI_GATEWAY_SECRET.\n"
            "SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS supports bounded rotation overlap.\n"
            "SMITHPROXY_CLI optionally identifies the existing libcli2 broker as host:port.\n"

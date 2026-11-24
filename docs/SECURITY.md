@@ -52,6 +52,9 @@ content only in process memory. The token itself must not appear in `gui.cfg`,
 service arguments, environment variables, logs, diagnostics, or archive backups.
 Legacy environment-secret inputs are consumed and removed during bootstrap;
 native deployments use the protected runtime files instead.
+The upstream API token and current or previous gateway secret must reference
+different files. Reusing one credential across those trust boundaries is
+rejected before the service starts or publishes a replacement configuration.
 The exposed `gui.cfg` may be owned by root or the service account, but must not
 be writable by its group or by other users.
 

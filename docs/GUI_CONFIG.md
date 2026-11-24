@@ -96,6 +96,9 @@ The two-file handoff is intentional: Smithproxy and the GUI may run under
 different service accounts, and neither process needs permission to read the
 other account's credential file. A deployment must not place the token itself
 in `gui.cfg`, a command-line option, or a shared environment file.
+The API-token file and both trusted-gateway credential files must also be
+distinct. They authenticate different trust boundaries and are rejected when a
+single configured path attempts to collapse those identities.
 
 Command-line options remain explicit deployment overrides. Existing environment
 variables remain available for compatibility and their secret values are removed

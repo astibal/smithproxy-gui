@@ -1569,6 +1569,11 @@ export function validateGuiBootstrapConfiguration(value: GuiBootstrapConfigurati
     if (value.gateway.previousSecretFile === value.gateway.secretFile) {
       return 'Current and previous gateway credential files must differ.';
     }
+    if (value.smithproxy &&
+        (value.smithproxy.apiTokenFile === value.gateway.secretFile ||
+         value.smithproxy.apiTokenFile === value.gateway.previousSecretFile)) {
+      return 'Smithproxy API and gateway credentials must use separate files.';
+    }
   }
   if (!value.backend.bindAddress.startsWith('127.') && !value.gateway) {
     return 'A non-loopback bind requires a gateway credential.';

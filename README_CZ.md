@@ -48,9 +48,17 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target smithproxy-gui
 ```
 
-Backend načítá `SMITHPROXY_API_URL`, `SMITHPROXY_API_KEY` a
-`SMITHPROXY_CA_CERT` pouze z prostředí procesu. Klíč neposkytuje browseru ani
-jej nezapisuje do logu.
+Při nativním nasazení zpřístupní Smithproxy core aktivní `gui.cfg` pouze pro
+čtení a spustí backend s `--config`. V CFtaru jsou jen stabilní parametry služby
+a cesty k chráněným runtime credentials; nikdy samotný živý API klíč nebo
+gateway secret. Jediným zapisovatelem CFtaru zůstává Smithproxy core, i když
+administrátor odešle typovanou změnu `gui.cfg` z GUI přes CFG/archive API.
+
+Runtime credentials patří jednomu bootu. Launcher může pro každý společný start
+Smithproxy a GUI vytvořit nový GUI API klíč, oběma procesům předat vlastní
+owner-only kopii a restartem Smithproxy zneplatnit klíč z minulého bootu. GUI
+svou kopii přečte právě jednou při startu a odvozenou upstream session drží jen
+v paměti.
 
 Backend vyžaduje C++23, CMake, pkg-config, libmicrohttpd a libcurl. Výchozí
 CMake build vytvoří frontend i výsledný proces:
@@ -63,7 +71,8 @@ ctest --test-dir build --output-on-failure
 ./build/smithproxy-gui --help
 ```
 
-Proces čte přístup ke Smithproxy pouze z prostředí:
+Následující proměnné zůstávají kompatibilním bootstrapem pro starší deploymenty
+bez `gui.cfg`:
 
 ```text
 SMITHPROXY_API_URL=https://127.0.0.1:55555
@@ -72,8 +81,9 @@ SMITHPROXY_CA_CERT=/path/to/ca-cert.pem
 SMITHPROXY_CLI=127.0.0.1:55000
 ```
 
-Proměnné se nastavují společně. Klíč se nepředává přes argumenty, neposílá se
-do prohlížeče a neloguje se. Pro nasazení za Saslik gateway použij například
+Tři Smithproxy proměnné se nastavují společně a tajné hodnoty se po bootstrapu
+okamžitě odstraní z prostředí. Klíč se nepředává přes argumenty, neposílá se
+do prohlížeče, GUI jej nepersistuje a neloguje se. Pro nasazení za Saslik gateway použij například
 `--base-path /ws001/smithproxy-gui/`.
 
 Volitelná proměnná `SMITHPROXY_CLI` zpřístupní omezený WebSocket bridge k

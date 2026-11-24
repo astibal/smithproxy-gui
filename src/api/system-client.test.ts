@@ -1196,9 +1196,15 @@ describe('SystemClient', () => {
     expect(validateGuiBootstrapConfiguration({
       ...valid, backend: {...valid.backend, bindAddress: '0.0.0.0'}, gateway: undefined,
     })).toContain('gateway credential');
-    expect(() => serializeGuiConfiguration({
-      ...valid, gateway: {...valid.gateway, previousSecretFile: valid.gateway.secretFile},
-    })).toThrow('must differ');
+  expect(() => serializeGuiConfiguration({
+    ...valid, gateway: {...valid.gateway, previousSecretFile: valid.gateway.secretFile},
+  })).toThrow('must differ');
+  expect(() => serializeGuiConfiguration({
+    ...valid, gateway: {...valid.gateway, secretFile: valid.smithproxy.apiTokenFile},
+  })).toThrow('separate files');
+  expect(() => serializeGuiConfiguration({
+    ...valid, gateway: {...valid.gateway, previousSecretFile: valid.smithproxy.apiTokenFile},
+  })).toThrow('separate files');
   });
 
   it('rejects malformed responses and unsafe endpoint configuration', async () => {
