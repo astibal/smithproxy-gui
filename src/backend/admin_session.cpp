@@ -40,8 +40,12 @@ bool valid_token(const std::string_view token) {
 } // namespace
 
 std::optional<AdminSessionStore::IssuedSession> AdminSessionStore::issue(
-    std::string administrator, const std::int64_t now) {
+    std::string administrator,
+    std::string upstream_auth_token,
+    std::string upstream_csrf_token,
+    const std::int64_t now) {
     if(administrator.empty() || administrator.size() > 64U ||
+       upstream_auth_token.empty() || upstream_csrf_token.empty() ||
        now > std::numeric_limits<std::int64_t>::max() - ttl_seconds)
         return std::nullopt;
     auto token = random_token();
@@ -51,12 +55,17 @@ std::optional<AdminSessionStore::IssuedSession> AdminSessionStore::issue(
     prune_locked(now);
     if(sessions_.size() >= capacity) return std::nullopt;
     const bool inserted = sessions_.emplace(
-        *token, Session{std::move(administrator), expires_at}).second;
+        *token, Session{
+            std::move(administrator),
+            std::move(upstream_auth_token),
+            std::move(upstream_csrf_token),
+            expires_at,
+        }).second;
     if(!inserted) return std::nullopt;
     return IssuedSession{std::move(*token), expires_at};
 }
 
-std::optional<std::string> AdminSessionStore::authenticate(
+std::optional<AdminSessionStore::AuthenticatedSession> AdminSessionStore::authenticate(
     const std::string_view token, const std::int64_t now) {
     if(!valid_token(token)) return std::nullopt;
     auto lock = std::scoped_lock(mutex_);
@@ -66,7 +75,11 @@ std::optional<std::string> AdminSessionStore::authenticate(
         sessions_.erase(found);
         return std::nullopt;
     }
-    return found->second.administrator;
+    return AuthenticatedSession{
+        .administrator = found->second.administrator,
+        .upstream_auth_token = found->second.upstream_auth_token,
+        .upstream_csrf_token = found->second.upstream_csrf_token,
+    };
 }
 
 void AdminSessionStore::revoke(const std::string_view token) {

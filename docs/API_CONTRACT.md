@@ -277,7 +277,11 @@ Native CFtar administration is exposed through the same authenticated management
 ```http
 GET  /api/v1/config/gui
 POST /api/v1/config/gui/publish
-POST /api/v1/config/gui/administrators/remove
+GET  /api/v1/admin/administrators
+POST /api/v1/admin/administrators/create
+POST /api/v1/admin/administrators/password
+POST /api/v1/admin/administrators/enabled
+POST /api/v1/admin/administrators/remove
 GET  /api/v1/config/archive
 GET  /api/v1/config/archive/download?version=current|previous
 GET  /api/v1/config/archive/resource?path=...
@@ -288,22 +292,21 @@ POST /api/v1/config/archive/resource/delete?path=...
 ```
 
 `GET /api/v1/config/gui` parses the saved `gui.cfg` resource into bounded,
-typed boot settings and administrator names; password verifiers never cross the
-browser boundary. It reports the active listener separately and exposes only
+typed service boot settings. It reports the active listener separately and exposes only
 boolean loaded/configured states for the current process's API, gateway, and CLI
 boot integrations. Credential contents never cross this boundary. This allows
 the GUI to distinguish saved startup settings from the endpoint and credentials
 serving the current process. An optional schema-version-three frontend group selects an absolute
 asset root; omission retains the executable's packaged asset directory. The
-typed publish endpoint merges edited boot settings with
-the opaque current administrator verifiers inside GUI core, validates the
-complete replacement, and publishes it through Smithproxy's resource
+typed publish endpoint validates the complete service-bootstrap replacement and
+publishes it through Smithproxy's resource
 API with the same revision and archive-hash preconditions. The GUI process
-never opens CFtar for writing. If the resource is absent, the same endpoint
-creates the first bounded bootstrap configuration with no administrator
-identities; a privilege-15 CLI enrollment token can add the first persistent
-administrator only after that core-owned publication succeeds. Credential
-values are boot-scoped and remain outside both the archive and browser response.
+never opens CFtar for writing. Administrator identities live only in `admin.cfg`.
+The GUI reads their bounded inventory and requests create, password, enabled-state,
+and removal changes through typed Core endpoints with revision and archive-hash
+preconditions. Initial enrollment consumes a privilege-15 CLI capability through
+Core and never publishes a verifier through `gui.cfg`. Credential values are
+boot-scoped and remain outside both the archive and browser response.
 In the native lifecycle Smithproxy core materializes the read-only resource,
 issues and registers the runtime-only GUI API credential, and starts the GUI
 backend. The GUI does not generate its own Smithproxy credential and cannot

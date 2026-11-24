@@ -2,7 +2,6 @@
 
 import http.client
 import http.server
-import hashlib
 import json
 import os
 import re
@@ -68,6 +67,13 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     enrollment_token = "e" * 64
     enrollment_administrator = "security-admin"
     enrollment_requests = 0
+    administrators = {
+        "security-admin": {"password": "correct horse battery staple", "enabled": True},
+        "disabled-admin": {"password": "disabled administrator password", "enabled": False},
+    }
+    administrator_sessions = {}
+    administrator_session_sequence = 0
+    administrator_inventory_status = 200
     revision_requests = 0
     state_requests = 0
     state_status = 200
@@ -217,17 +223,37 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/admin/administrators":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
-            self.send_response(200)
+            self.send_response(FakeSmithproxy.administrator_inventory_status)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
+            if FakeSmithproxy.administrator_inventory_status != 200:
+                return
             self.wfile.write(json.dumps({
                 "state": "ready", "revision": FakeSmithproxy.config_revision,
                 "content_hash": FakeSmithproxy.archive_hash,
                 "restart_required": False,
                 "administrators": [
-                    {"name": "security-admin", "enabled": True},
-                    {"name": "disabled-admin", "enabled": False},
+                    {"name": name, "enabled": record["enabled"]}
+                    for name, record in FakeSmithproxy.administrators.items()
                 ],
+            }).encode())
+            return
+        if self.path == "/api/session":
+            cookie = self.headers.get("Cookie", "")
+            auth_match = re.search(r"(?:^|; )__sx_api=([0-9a-f]{32})(?:;|$)", cookie)
+            token = auth_match.group(1) if auth_match else ""
+            administrator = FakeSmithproxy.administrator_sessions.get(token)
+            record = FakeSmithproxy.administrators.get(administrator)
+            if not administrator or not record or not record["enabled"]:
+                self.send_error(401)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "state": "ready", "principal": administrator,
+                "authentication_method": "password",
+                "capabilities": {"standard": True, "administrator": True, "archive": False},
             }).encode())
             return
         if self.path == "/api/config/archive/resources":
@@ -421,6 +447,21 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         if document != expected_document:
             self.send_error(400)
             return
+        name = document["name"]
+        if state == "created":
+            FakeSmithproxy.administrators[name] = {
+                "password": document["password"], "enabled": True}
+        elif state == "password_changed":
+            FakeSmithproxy.administrators[name]["password"] = document["password"]
+        elif state == "enabled_changed":
+            FakeSmithproxy.administrators[name]["enabled"] = document["enabled"]
+        elif state == "removed":
+            FakeSmithproxy.administrators.pop(name, None)
+        if state in {"password_changed", "enabled_changed", "removed"}:
+            FakeSmithproxy.administrator_sessions = {
+                token: owner for token, owner in FakeSmithproxy.administrator_sessions.items()
+                if owner != name
+            }
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -432,6 +473,64 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         }).encode())
 
     def do_POST(self):
+        if self.path == "/api/login":
+            document = json.loads(
+                self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            administrator = document.get("username", "")
+            record = FakeSmithproxy.administrators.get(administrator)
+            accepted = record and record["enabled"] and record["password"] == document.get("password")
+            if not accepted:
+                self.send_error(401)
+                return
+            FakeSmithproxy.administrator_session_sequence += 1
+            auth_token = f"{FakeSmithproxy.administrator_session_sequence:032x}"
+            csrf_token = f"{FakeSmithproxy.administrator_session_sequence + 4096:032x}"
+            FakeSmithproxy.administrator_sessions[auth_token] = administrator
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header(
+                "Set-Cookie",
+                f"__sx_api={auth_token}; Max-Age=3600; Secure; HttpOnly; Path=/; SameSite=Strict")
+            self.send_header(
+                "Set-Cookie",
+                f"__Host-csrf_token={csrf_token}; Max-Age=3600; Secure; Path=/; SameSite=Strict")
+            self.end_headers()
+            self.wfile.write(json.dumps({"csrf_token": csrf_token}).encode())
+            return
+        if self.path == "/api/admin/enrollment/consume":
+            FakeSmithproxy.enrollment_requests += 1
+            document = json.loads(
+                self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            valid_precondition = (
+                self.headers.get("X-Smithproxy-Expected-Revision") ==
+                FakeSmithproxy.config_revision and
+                self.headers.get("X-Smithproxy-Archive-SHA256") ==
+                FakeSmithproxy.archive_hash)
+            valid_request = (
+                document.get("enrollment_token") == FakeSmithproxy.enrollment_token and
+                isinstance(document.get("password"), str) and
+                len(document["password"]) >= 14 and
+                FakeSmithproxy.enrollment_administrator not in FakeSmithproxy.administrators)
+            if not valid_precondition:
+                self.send_error(409)
+                return
+            if not valid_request:
+                self.send_error(403)
+                return
+            FakeSmithproxy.administrators[FakeSmithproxy.enrollment_administrator] = {
+                "password": document["password"], "enabled": True}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "state": "enrolled",
+                "administrator": FakeSmithproxy.enrollment_administrator,
+                "revision": FakeSmithproxy.config_revision,
+                "content_hash": FakeSmithproxy.archive_hash,
+                "changed": True,
+                "restart_required": False,
+            }).encode())
+            return
         if self.path == "/api/admin/administrators":
             self.administrator_mutation(
                 {"name": "operations-admin", "password": "new secure password"},
@@ -454,26 +553,6 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({
                 "auth_token": FakeSmithproxy.auth_token,
                 "csrf_token": FakeSmithproxy.csrf_token,
-            }).encode())
-            return
-        if self.path == "/api/gui/enrollment/consume":
-            FakeSmithproxy.enrollment_requests += 1
-            expected_cookie = (
-                f"__sx_api={FakeSmithproxy.auth_token}; "
-                f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
-            if (self.headers.get("Cookie") != expected_cookie or
-                    self.headers.get("csrf_token") != FakeSmithproxy.csrf_token):
-                self.send_error(401)
-                return
-            document = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-            if document != {"enrollment_token": FakeSmithproxy.enrollment_token}:
-                self.send_error(403)
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "administrator": FakeSmithproxy.enrollment_administrator,
             }).encode())
             return
         if self.path != "/api/config/uni/get":
@@ -727,78 +806,6 @@ def main() -> int:
             process.wait(timeout=2)
     assert process.returncode == 0, process.stderr.read()
 
-    # A standalone deployment loads only the scrypt verifier from gui.cfg,
-    # issues an HttpOnly runtime cookie, throttles failures, and revokes it.
-    with tempfile.TemporaryDirectory() as standalone_root:
-        standalone_port = free_port()
-        salt = bytes.fromhex("0123456789abcdef0123456789abcdef")
-        password = "correct horse battery staple"
-        verifier = hashlib.scrypt(
-            password.encode(), salt=salt, n=32768, r=8, p=1, dklen=32,
-            maxmem=64 * 1024 * 1024).hex()
-        config_path = os.path.join(standalone_root, "gui.cfg")
-        with open(config_path, "w", encoding="utf-8") as config_file:
-            config_file.write(f'''gui = {{
-  schema_version = 2;
-  backend = {{ bind_address = "127.0.0.1"; port = {standalone_port}; base_path = "/"; }};
-  administrators = ({{ name = "security-admin"; algorithm = "scrypt";
-    salt = "{salt.hex()}"; verifier = "{verifier}";
-    cost = 32768L; block_size = 8; parallelism = 1; }});
-}};
-''')
-        os.chmod(config_path, 0o600)
-        standalone = subprocess.Popen(
-            [binary, "--config", config_path, "--assets", assets],
-            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        try:
-            for _ in range(50):
-                try:
-                    if request(standalone_port, "/healthz")[0] == 200:
-                        break
-                except OSError:
-                    time.sleep(0.05)
-            status, _, body = request(standalone_port, "/api/v1/auth/session")
-            assert status == 200
-            assert json.loads(body) == {
-                "mode": "standalone", "authenticated": False,
-                "administrators_configured": True, "initial_enrollment_ready": False,
-                "administrator": None}
-            mutation_headers = {
-                "Host": f"127.0.0.1:{standalone_port}",
-                "Origin": f"http://127.0.0.1:{standalone_port}",
-                "Content-Type": "application/json", "X-Smithproxy-GUI-CSRF": "1",
-                "Sec-Fetch-Site": "same-origin",
-            }
-            status, _, _ = request(
-                standalone_port, "/api/v1/auth/login", "POST", mutation_headers,
-                json.dumps({"administrator": "security-admin", "password": "wrong password value"}))
-            assert status == 403
-            assert request(
-                standalone_port, "/api/v1/auth/login", "POST", mutation_headers,
-                json.dumps({"administrator": "security-admin", "password": password}))[0] == 429
-            time.sleep(0.8)
-            status, login_headers, body = request(
-                standalone_port, "/api/v1/auth/login", "POST", mutation_headers,
-                json.dumps({"administrator": "security-admin", "password": password}))
-            assert status == 200
-            assert json.loads(body) == {"administrator": "security-admin"}
-            cookie = login_headers["Set-Cookie"].split(";", 1)[0]
-            assert "HttpOnly" in login_headers["Set-Cookie"]
-            assert "Secure" in login_headers["Set-Cookie"]
-            assert "SameSite=Strict" in login_headers["Set-Cookie"]
-            assert request(
-                standalone_port, "/api/v1/status", headers={"Cookie": cookie})[0] == 200
-            logout_headers = dict(mutation_headers)
-            logout_headers["Cookie"] = cookie
-            assert request(
-                standalone_port, "/api/v1/auth/logout", "POST", logout_headers, "{}")[0] == 200
-            assert request(
-                standalone_port, "/api/v1/status", headers={"Cookie": cookie})[0] == 401
-        finally:
-            standalone.send_signal(signal.SIGTERM)
-            standalone.wait(timeout=4)
-        assert standalone.returncode == 0, standalone.stderr.read()
-
     fake_port = free_port()
     FakeSmithproxy.authorization_access_key = None
     FakeSmithproxy.authorization_requests = 0
@@ -809,8 +816,8 @@ def main() -> int:
     gateway_secret = "gateway-secret-used-only-by-integration-tests"
     previous_gateway_secret = "previous-gateway-secret-used-by-tests"
     with tempfile.NamedTemporaryFile() as certificate:
-        # Initial administrator enrollment consumes the one-time core token and
-        # asks Smithproxy core to publish gui.cfg. The GUI never writes CFtar.
+        # Initial administrator enrollment creates admin.cfg through the typed
+        # Core API. GUI core never serializes an administrator credential.
         enrollment_port = free_port()
         enrollment_environment = environment.copy()
         enrollment_environment.update({
@@ -821,6 +828,9 @@ def main() -> int:
         })
         FakeSmithproxy.published_gui_resource = None
         FakeSmithproxy.enrollment_requests = 0
+        FakeSmithproxy.administrators = {}
+        FakeSmithproxy.administrator_sessions = {}
+        FakeSmithproxy.administrator_inventory_status = 200
         enrollment_state_requests = FakeSmithproxy.state_requests
         enrollment = subprocess.Popen(
             [binary, "--port", str(enrollment_port), "--assets", assets],
@@ -852,10 +862,9 @@ def main() -> int:
                 "initial_enrollment_ready": True,
                 "administrator": None,
             }
-            # Archive readiness is checked before the single-use capability is
-            # consumed. The same token therefore remains usable after a
-            # transient publication-prerequisite failure.
-            FakeSmithproxy.gui_resource_status = 503
+            # Inventory preconditions are checked before the single-use
+            # capability is consumed, so a transient failure does not burn it.
+            FakeSmithproxy.administrator_inventory_status = 503
             status, _, body = request(
                 enrollment_port, "/api/v1/auth/enroll", "POST", mutation_headers,
                 json.dumps({
@@ -867,7 +876,7 @@ def main() -> int:
             status, _, body = request(enrollment_port, "/api/v1/auth/session")
             assert status == 200
             assert json.loads(body)["initial_enrollment_ready"] is False
-            FakeSmithproxy.gui_resource_status = 200
+            FakeSmithproxy.administrator_inventory_status = 200
             status, enrollment_headers, body = request(
                 enrollment_port, "/api/v1/auth/enroll", "POST", mutation_headers,
                 json.dumps({
@@ -893,142 +902,16 @@ def main() -> int:
                 "administrator": "security-admin",
             }
 
-            published = FakeSmithproxy.published_gui_resource
-            assert published is not None
-            assert "schema_version = 2" in published
-            assert 'name = "security-admin"' in published
-            assert 'algorithm = "scrypt"' in published
-            assert re.search(r'salt = "[0-9a-f]{32}"', published)
-            assert re.search(r'verifier = "[0-9a-f]{64}"', published)
-            assert enrollment_password not in published
-            assert FakeSmithproxy.enrollment_token not in published
+            assert FakeSmithproxy.administrators == {
+                "security-admin": {"password": enrollment_password, "enabled": True}}
+            assert FakeSmithproxy.published_gui_resource is None
 
-            # A logged-in administrator can consume another CLI capability
-            # without the response replacing the current browser identity.
-            FakeSmithproxy.enrollment_token = "f" * 64
-            FakeSmithproxy.enrollment_administrator = "operations-admin"
-            peer_headers = dict(mutation_headers)
-            peer_headers["Cookie"] = enrollment_cookie
-            status, peer_response_headers, body = request(
-                enrollment_port, "/api/v1/auth/enroll", "POST", peer_headers,
-                json.dumps({
-                    "token": FakeSmithproxy.enrollment_token,
-                    "password": "another strong administrator password",
-                }))
-            assert status == 200, body
-            assert json.loads(body) == {
-                "administrator": "operations-admin", "operation": "created"}
-            assert "Set-Cookie" not in peer_response_headers
-            assert 'name = "security-admin"' in FakeSmithproxy.published_gui_resource
-            assert 'name = "operations-admin"' in FakeSmithproxy.published_gui_resource
-
-            status, peer_login_headers, body = request(
-                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
-                json.dumps({
-                    "administrator": "operations-admin",
-                    "password": "another strong administrator password",
-                }))
-            assert status == 200, body
-            peer_cookie = peer_login_headers["Set-Cookie"].split(";", 1)[0]
-            assert request(
-                enrollment_port, "/api/v1/status",
-                headers={"Cookie": peer_cookie})[0] == 200
-
-            previous_peer_resource = FakeSmithproxy.published_gui_resource
-            FakeSmithproxy.enrollment_token = "a" * 64
-            status, rotation_headers, body = request(
-                enrollment_port, "/api/v1/auth/enroll", "POST", peer_headers,
-                json.dumps({
-                    "token": FakeSmithproxy.enrollment_token,
-                    "password": "rotated operations administrator password",
-                }))
-            assert status == 200, body
-            assert json.loads(body) == {
-                "administrator": "operations-admin", "operation": "rotated"}
-            assert "Set-Cookie" not in rotation_headers
-            assert FakeSmithproxy.published_gui_resource != previous_peer_resource
-            assert FakeSmithproxy.published_gui_resource.count(
-                'name = "operations-admin"') == 1
-
-            # Rotation activates the published verifier immediately and
-            # invalidates both the old password and every older peer session.
-            assert request(
-                enrollment_port, "/api/v1/status",
-                headers={"Cookie": peer_cookie})[0] == 401
-            time.sleep(0.8)
-            assert request(
-                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
-                json.dumps({
-                    "administrator": "operations-admin",
-                    "password": "another strong administrator password",
-                }))[0] == 403
-            time.sleep(0.8)
-            status, rotated_peer_headers, body = request(
-                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
-                json.dumps({
-                    "administrator": "operations-admin",
-                    "password": "rotated operations administrator password",
-                }))
-            assert status == 200, body
-            rotated_peer_cookie = rotated_peer_headers["Set-Cookie"].split(";", 1)[0]
-
-            status, _, body = request(
-                enrollment_port, "/api/v1/config/gui/administrators/remove",
-                "POST", peer_headers, json.dumps({"administrator": "operations-admin"}))
-            assert status == 200, body
-            assert json.loads(body) == {
-                "administrator": "operations-admin", "operation": "removed"}
-            assert 'name = "operations-admin"' not in FakeSmithproxy.published_gui_resource
-            assert 'name = "security-admin"' in FakeSmithproxy.published_gui_resource
-            assert request(
-                enrollment_port, "/api/v1/status",
-                headers={"Cookie": rotated_peer_cookie})[0] == 401
-            time.sleep(0.8)
-            assert request(
-                enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
-                json.dumps({
-                    "administrator": "operations-admin",
-                    "password": "rotated operations administrator password",
-                }))[0] == 403
-
-            # Rotating the active identity revokes its old browser session and
-            # returns exactly one authenticated replacement cookie.
-            FakeSmithproxy.enrollment_token = "b" * 64
-            FakeSmithproxy.enrollment_administrator = "security-admin"
-            status, self_rotation_headers, body = request(
-                enrollment_port, "/api/v1/auth/enroll", "POST", peer_headers,
-                json.dumps({
-                    "token": FakeSmithproxy.enrollment_token,
-                    "password": "rotated security administrator password",
-                }))
-            assert status == 200, body
-            assert json.loads(body) == {
-                "administrator": "security-admin", "operation": "rotated"}
-            assert "Set-Cookie" in self_rotation_headers
-            rotated_security_cookie = self_rotation_headers["Set-Cookie"].split(";", 1)[0]
+            # The local browser session is only a handle for the Core session.
+            # Revoking that Core session invalidates the GUI cookie immediately.
+            FakeSmithproxy.administrator_sessions = {}
             assert request(
                 enrollment_port, "/api/v1/status",
                 headers={"Cookie": enrollment_cookie})[0] == 401
-            assert request(
-                enrollment_port, "/api/v1/status",
-                headers={"Cookie": rotated_security_cookie})[0] == 200
-            rotated_security_headers = dict(mutation_headers)
-            rotated_security_headers["Cookie"] = rotated_security_cookie
-
-            retained_resource = FakeSmithproxy.published_gui_resource
-            status, _, body = request(
-                enrollment_port, "/api/v1/config/gui/administrators/remove",
-                "POST", rotated_security_headers,
-                json.dumps({"administrator": "security-admin"}))
-            assert status == 409
-            assert b"cannot remove the active administrator" in body
-            assert FakeSmithproxy.published_gui_resource == retained_resource
-
-            status, _, body = request(
-                enrollment_port, "/api/v1/auth/session",
-                headers={"Cookie": rotated_security_cookie})
-            assert status == 200
-            assert json.loads(body)["administrator"] == "security-admin"
         finally:
             enrollment.send_signal(signal.SIGTERM)
             enrollment.wait(timeout=4)
@@ -1037,6 +920,13 @@ def main() -> int:
         FakeSmithproxy.gui_resource_status = 200
         FakeSmithproxy.enrollment_token = "e" * 64
         FakeSmithproxy.enrollment_administrator = "security-admin"
+        FakeSmithproxy.administrators = {
+            "security-admin": {
+                "password": "correct horse battery staple", "enabled": True},
+            "disabled-admin": {
+                "password": "disabled administrator password", "enabled": False},
+        }
+        FakeSmithproxy.administrator_sessions = {}
 
         configured_port = free_port()
         configured_environment = environment.copy()
@@ -1469,13 +1359,13 @@ def main() -> int:
             assert status == 200
             assert json.loads(body) == {
                 "mode": "gateway", "authenticated": False, "administrator": None,
-                "administrators_configured": False, "initial_enrollment_ready": False}
+                "administrators_configured": True, "initial_enrollment_ready": False}
             status, _, body = request(
                 configured_port, "/api/v1/auth/session", headers=gateway_headers)
             assert status == 200
             assert json.loads(body) == {
                 "mode": "gateway", "authenticated": True, "administrator": None,
-                "administrators_configured": False, "initial_enrollment_ready": False}
+                "administrators_configured": True, "initial_enrollment_ready": False}
 
             status, _, body = request(
                 configured_port, "/api/v1/admin/administrators",

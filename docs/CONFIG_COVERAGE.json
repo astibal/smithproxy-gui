@@ -87,12 +87,9 @@
         "schema_version", "backend.bind_address", "backend.port", "backend.base_path",
         "frontend.asset_root",
         "smithproxy.api_url", "smithproxy.ca_cert", "smithproxy.api_token_file",
-        "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file",
-        "administrators.name", "administrators.algorithm", "administrators.salt",
-        "administrators.verifier", "administrators.cost", "administrators.block_size",
-        "administrators.parallelism"
+        "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file"
       ],
-      "notes": "The persistent gui.cfg schema includes bounded salted scrypt administrator verifiers and an optional absolute frontend asset root. Passwords and enrollment tokens never enter CFtar. Privilege-15 CLI capabilities support initial enrollment, peer creation, and password rotation; published verifiers activate immediately and revoke older sessions for the target identity. Confirmed peer removal protects both the active and final administrator. The frontend override, Smithproxy connection, and browser-gateway groups are independently optional and can be explicitly enabled or removed without silently materializing deployment paths or credentials. The browser validates and publishes configuration in one explicit action only through the authenticated Smithproxy core archive API with running-revision and archive-hash preconditions. CFtar stores boot credential paths, never token or gateway-secret values; those are protected boot-time files. Other boot-setting changes require a controlled restart after publication."
+      "notes": "The persistent gui.cfg schema contains only GUI service bootstrap settings and an optional absolute frontend asset root. Administrator identities and password verifiers are owned by admin.cfg and can change only through typed Smithproxy Core APIs. The frontend override, Smithproxy connection, and browser-gateway groups are independently optional and can be explicitly enabled or removed without silently materializing deployment paths or credentials. The browser validates and publishes configuration in one explicit action only through the authenticated Smithproxy Core archive API with running-revision and archive-hash preconditions. CFtar stores boot credential paths, never token or gateway-secret values; those are protected boot-time files. Boot-setting changes require a controlled restart after publication."
     },
     {
       "name": "address_objects",

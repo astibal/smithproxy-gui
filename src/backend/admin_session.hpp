@@ -16,6 +16,12 @@ namespace smithproxy::gui {
 // administrator verifiers again.
 class AdminSessionStore {
 public:
+    struct AuthenticatedSession {
+        std::string administrator;
+        std::string upstream_auth_token;
+        std::string upstream_csrf_token;
+    };
+
     struct IssuedSession {
         std::string token;
         std::int64_t expires_at_unix_seconds{};
@@ -26,8 +32,10 @@ public:
 
     [[nodiscard]] std::optional<IssuedSession> issue(
         std::string administrator,
+        std::string upstream_auth_token,
+        std::string upstream_csrf_token,
         std::int64_t now = unix_seconds());
-    [[nodiscard]] std::optional<std::string> authenticate(
+    [[nodiscard]] std::optional<AuthenticatedSession> authenticate(
         std::string_view token,
         std::int64_t now = unix_seconds());
     void revoke(std::string_view token);
@@ -39,6 +47,8 @@ public:
 private:
     struct Session {
         std::string administrator;
+        std::string upstream_auth_token;
+        std::string upstream_csrf_token;
         std::int64_t expires_at_unix_seconds{};
     };
 

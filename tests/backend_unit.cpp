@@ -17,7 +17,6 @@
 #include "operational_alerts.hpp"
 #include "operational_event_store.hpp"
 #include "path.hpp"
-#include "password.hpp"
 #include "runtime_metrics.hpp"
 #include "revision.hpp"
 #include "smithproxy_client.hpp"
@@ -50,35 +49,39 @@ int main() {
     unsetenv("SMITHPROXY_CLI");
 
     AdminSessionStore admin_sessions;
-    const auto admin_session = admin_sessions.issue("security-admin", 1000);
+    const auto admin_session = admin_sessions.issue(
+        "security-admin", std::string(32U, 'a'), std::string(32U, 'b'), 1000);
     assert(admin_session);
     assert(admin_session->token.size() == 64U);
-    assert(admin_sessions.authenticate(admin_session->token, 1001) == "security-admin");
+    const auto authenticated_admin = admin_sessions.authenticate(admin_session->token, 1001);
+    assert(authenticated_admin);
+    assert(authenticated_admin->administrator == "security-admin");
+    assert(authenticated_admin->upstream_auth_token == std::string(32U, 'a'));
+    assert(authenticated_admin->upstream_csrf_token == std::string(32U, 'b'));
 
-    const auto password_verifier = create_password_verifier(
-        "security-admin", "correct horse battery staple");
-    assert(password_verifier);
-    assert(password_verifier->salt.size() == 32U);
-    assert(password_verifier->verifier.size() == 64U);
-    assert(verify_password(*password_verifier, "correct horse battery staple"));
-    assert(!verify_password(*password_verifier, "wrong horse battery staple"));
-    assert(!create_password_verifier("security-admin", "too-short"));
     assert(!admin_sessions.authenticate(std::string(64U, 'f'), 1001));
     assert(!admin_sessions.authenticate(admin_session->token,
                                         1000 + AdminSessionStore::ttl_seconds));
     assert(admin_sessions.size(1000 + AdminSessionStore::ttl_seconds) == 0U);
-    const auto revoked_session = admin_sessions.issue("operator", 2000);
+    const auto revoked_session = admin_sessions.issue(
+        "operator", std::string(32U, 'c'), std::string(32U, 'd'), 2000);
     assert(revoked_session);
     admin_sessions.revoke(revoked_session->token);
     assert(!admin_sessions.authenticate(revoked_session->token, 2001));
-    const auto first_peer_session = admin_sessions.issue("peer", 3000);
-    const auto second_peer_session = admin_sessions.issue("peer", 3000);
-    const auto survivor_session = admin_sessions.issue("survivor", 3000);
+    const auto first_peer_session = admin_sessions.issue(
+        "peer", std::string(32U, 'e'), std::string(32U, 'f'), 3000);
+    const auto second_peer_session = admin_sessions.issue(
+        "peer", std::string(32U, '1'), std::string(32U, '2'), 3000);
+    const auto survivor_session = admin_sessions.issue(
+        "survivor", std::string(32U, '3'), std::string(32U, '4'), 3000);
     assert(first_peer_session && second_peer_session && survivor_session);
     admin_sessions.revoke_administrator("peer");
     assert(!admin_sessions.authenticate(first_peer_session->token, 3001));
     assert(!admin_sessions.authenticate(second_peer_session->token, 3001));
-    assert(admin_sessions.authenticate(survivor_session->token, 3001) == "survivor");
+    const auto authenticated_survivor =
+        admin_sessions.authenticate(survivor_session->token, 3001);
+    assert(authenticated_survivor);
+    assert(authenticated_survivor->administrator == "survivor");
 
     assert(websocket_accept("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
     assert(websocket_accept("not-a-websocket-key") == "");
@@ -2631,26 +2634,6 @@ int main() {
     assert(archive_bootstrap.config->base_path == "/gui");
     assert(archive_bootstrap.config->api_token_file == "/run/gui/token");
     assert(archive_bootstrap.config->schema_version == 1U);
-    // Schema two introduces persistent administrator verifiers.
-    const auto administrator_bootstrap = parse_gui_bootstrap(
-        "gui = { schema_version = 2; administrators = ("
-        "{ name = \"security-admin\"; algorithm = \"scrypt\"; "
-        "salt = \"0123456789abcdef0123456789abcdef\"; "
-        "verifier = \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"; "
-        "cost = 32768L; block_size = 8; parallelism = 1; }); };\n");
-    assert(administrator_bootstrap.config);
-    assert(administrator_bootstrap.config->schema_version == 2U);
-    assert(administrator_bootstrap.config->administrators.size() == 1U);
-    assert(administrator_bootstrap.config->administrators.front().name == "security-admin");
-    const auto serialized_administrator_bootstrap =
-        serialize_gui_bootstrap(*administrator_bootstrap.config);
-    assert(serialized_administrator_bootstrap);
-    const auto reparsed_administrator_bootstrap =
-        parse_gui_bootstrap(*serialized_administrator_bootstrap);
-    assert(reparsed_administrator_bootstrap.config);
-    assert(reparsed_administrator_bootstrap.config->administrators.size() == 1U);
-    assert(reparsed_administrator_bootstrap.config->administrators.front().verifier ==
-           administrator_bootstrap.config->administrators.front().verifier);
     const auto frontend_bootstrap = parse_gui_bootstrap(
         "gui = { schema_version = 3; frontend = { "
         "asset_root = \"/usr/share/smithproxy-gui\"; }; };\n");

@@ -12,7 +12,6 @@
 #include "json.hpp"
 #include "operational_alerts.hpp"
 #include "operational_event_store.hpp"
-#include "password.hpp"
 #include "path.hpp"
 #include "revision.hpp"
 
@@ -765,7 +764,6 @@ private:
             *relative != "/api/v1/config/archive/resource/write" &&
             *relative != "/api/v1/config/archive/resource/delete" &&
             *relative != "/api/v1/config/gui/publish" &&
-            *relative != "/api/v1/config/gui/administrators/remove" &&
             *relative != "/api/v1/admin/administrators/create" &&
             *relative != "/api/v1/admin/administrators/password" &&
             *relative != "/api/v1/admin/administrators/enabled" &&
@@ -790,9 +788,6 @@ private:
         if(*relative == "/api/v1/auth/logout") return logout(connection);
         if(*relative == "/api/v1/config/gui/publish") {
             return publish_gui_configuration(connection, body);
-        }
-        if(*relative == "/api/v1/config/gui/administrators/remove") {
-            return remove_gui_administrator(connection, body);
         }
         if(relative->starts_with("/api/v1/admin/administrators/")) {
             return mutate_administrator(connection, *relative, body);
@@ -1541,10 +1536,6 @@ private:
             ? nlohmann::json{{"secret_file", *value.gateway_secret_file},
                 {"previous_secret_file", value.gateway_previous_secret_file.value_or("")}}
             : nlohmann::json(nullptr);
-        document["administrators"] = nlohmann::json::array();
-        for(const auto& administrator : value.administrators) {
-            document["administrators"].push_back(administrator.name);
-        }
         return {200, "application/json; charset=utf-8", document.dump()};
     }
 
@@ -1595,9 +1586,7 @@ private:
         }
         GuiBootstrapConfig replacement;
         const bool custom_frontend = !document["frontend"].is_null();
-        const bool administrators_configured = !current.administrators.empty();
-        replacement.schema_version = custom_frontend ? 3U : administrators_configured ? 2U : 1U;
-        replacement.administrators = current.administrators;
+        replacement.schema_version = custom_frontend ? 3U : 1U;
         replacement.bind_address = document["backend"]["bind_address"].get<std::string>();
         const auto port = document["backend"]["port"].get<long long>();
         if(port < 1 || port > 65535) {
@@ -1869,7 +1858,15 @@ private:
         const auto* supplied = MHD_lookup_connection_value(
             connection, MHD_COOKIE_KIND, admin_session_cookie.data());
         if(!supplied) return std::nullopt;
-        return admin_sessions_.authenticate(supplied);
+        const auto session = admin_sessions_.authenticate(supplied);
+        if(!session) return std::nullopt;
+        const bool current = monitor_.administrator_session_current(
+            session->administrator,
+            session->upstream_auth_token,
+            session->upstream_csrf_token);
+        if(current) return session->administrator;
+        admin_sessions_.revoke(supplied);
+        return std::nullopt;
     }
 
     bool management_authenticated(MHD_Connection* connection) const {
@@ -1883,47 +1880,32 @@ private:
         return host != nullptr && loopback_authority(host);
     }
 
-    // Captures every value required to publish a verifier before a one-time
-    // enrollment capability is consumed.
+    // Captures the optimistic admin.cfg publication boundary before a
+    // one-time enrollment capability is consumed.
     struct EnrollmentPreflight {
-        GuiBootstrapConfig persistent;
         std::string revision;
         std::string archive_hash;
+        bool administrators_configured{};
     };
 
     std::optional<EnrollmentPreflight> enrollment_preflight() const {
-        const auto resource = monitor_.archive_api(
-            "GET", "/api/config/archive/resource?path=gui.cfg");
-        const auto inventory = monitor_.archive_api("GET", "/api/config/archive/resources");
-        const auto status = monitor_.status();
-        const bool resource_ready = resource.transport_ok && resource.status == 200L;
-        const bool inventory_ready = inventory.transport_ok && inventory.status == 200L;
-        const bool revision_ready = status.config_snapshot.revision.has_value();
-        if(!resource_ready || !inventory_ready || !revision_ready) return std::nullopt;
-
-        auto persistent = parse_gui_bootstrap(resource.body);
-        const auto inventory_document = nlohmann::json::parse(inventory.body, nullptr, false);
-        const bool inventory_valid = !inventory_document.is_discarded() &&
-            inventory_document.is_object() && inventory_document.contains("content_hash") &&
-            inventory_document["content_hash"].is_string();
-        if(!persistent.config || !inventory_valid) return std::nullopt;
-        const auto archive_hash = inventory_document["content_hash"].get<std::string>();
-        if(!is_content_hash(archive_hash)) return std::nullopt;
+        const auto inventory = monitor_.administrator_api(
+            "GET", "/api/admin/administrators");
+        if(!inventory.transport_ok || inventory.status != 200L) return std::nullopt;
+        const auto document = nlohmann::json::parse(inventory.body, nullptr, false);
+        const bool valid = !document.is_discarded() && document.is_object() &&
+            document.contains("revision") && document["revision"].is_string() &&
+            document.contains("content_hash") && document["content_hash"].is_string() &&
+            document.contains("administrators") && document["administrators"].is_array();
+        if(!valid) return std::nullopt;
+        const auto revision = document["revision"].get<std::string>();
+        const auto archive_hash = document["content_hash"].get<std::string>();
+        if(!is_config_revision(revision) || !is_content_hash(archive_hash)) return std::nullopt;
         return EnrollmentPreflight{
-            .persistent = std::move(*persistent.config),
-            .revision = *status.config_snapshot.revision,
+            .revision = revision,
             .archive_hash = archive_hash,
+            .administrators_configured = !document["administrators"].empty(),
         };
-    }
-
-    bool administrators_configured() const {
-        auto lock = std::scoped_lock(administrator_state_mutex_);
-        if(!runtime_administrator_verifiers_.empty()) return true;
-        return std::any_of(
-            config_.administrators.begin(), config_.administrators.end(),
-            [&](const auto& administrator) {
-                return !disabled_administrators_.contains(administrator.name);
-            });
     }
 
     Response auth_session(MHD_Connection* connection) const {
@@ -1933,9 +1915,9 @@ private:
             ? std::optional<std::string>{}
             : session_administrator(connection);
         const bool authenticated = gateway_request || administrator.has_value();
-        const bool administrator_exists = administrators_configured();
-        const bool initial_enrollment_ready = !gateway && !administrator_exists &&
-            enrollment_preflight().has_value();
+        const auto preflight = enrollment_preflight();
+        const bool administrator_exists = preflight && preflight->administrators_configured;
+        const bool initial_enrollment_ready = !gateway && !administrator_exists && preflight;
         return {200, "application/json; charset=utf-8",
                 "{\"mode\":" + json_string(gateway ? "gateway" : "standalone") +
                     ",\"authenticated\":" + (authenticated ? "true" : "false") +
@@ -1968,16 +1950,21 @@ private:
             return {400, "application/json; charset=utf-8",
                     "{\"error\":\"administrator password must contain 14..1024 characters\"}"};
         }
-        // Validate every publication prerequisite before consuming the
-        // single-use capability. A transient archive failure must not burn a
-        // token that the administrator can no longer recover or replay.
+        // Resolve optimistic admin.cfg preconditions before consuming the
+        // one-time capability. A transient inventory failure must not burn a
+        // token that the administrator cannot recover or replay.
         auto preflight = enrollment_preflight();
         if(!preflight) {
             return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration is unavailable or invalid; enrollment token was not consumed\"}"};
+                    "{\"error\":\"Smithproxy administrator inventory is unavailable; enrollment token was not consumed\"}"};
+        }
+        if(preflight->administrators_configured && !current_administrator) {
+            return {409, "application/json; charset=utf-8",
+                    "{\"error\":\"administrator enrollment requires an authenticated session after initial setup\"}"};
         }
         const auto enrollment = monitor_.consume_gui_enrollment(
-            request["token"].get<std::string>());
+            request["token"].get<std::string>(), password,
+            preflight->revision, preflight->archive_hash);
         if(!enrollment.administrator) {
             const unsigned status = enrollment.error == "rejected" ||
                                     enrollment.error == "invalid-token" ? 403U : 502U;
@@ -1986,85 +1973,31 @@ private:
                         ? "{\"error\":\"invalid or expired enrollment token\"}"
                         : "{\"error\":\"Smithproxy enrollment service unavailable\"}"};
         }
-        const auto existing = std::find_if(
-            preflight->persistent.administrators.begin(), preflight->persistent.administrators.end(),
-            [&](const auto& administrator) {
-                return administrator.name == *enrollment.administrator;
-            });
-        const bool rotating_existing = existing != preflight->persistent.administrators.end();
-        if(rotating_existing && !current_administrator) {
-            return {409, "application/json; charset=utf-8",
-                    "{\"error\":\"administrator already exists\"}"};
+        if(current_administrator) {
+            return {200, "application/json; charset=utf-8", nlohmann::json{
+                        {"administrator", *enrollment.administrator},
+                        {"operation", "created"},
+                    }.dump(), "no-store"};
         }
-        auto verifier = create_password_verifier(*enrollment.administrator, password);
-        if(!verifier) {
+
+        const auto authenticated = monitor_.login_administrator(
+            *enrollment.administrator, password);
+        const bool login_ready = authenticated.transport_ok &&
+            authenticated.status == 200L && authenticated.auth_token &&
+            authenticated.csrf_token;
+        if(!login_ready) {
             return {503, "application/json; charset=utf-8",
-                    "{\"error\":\"administrator verifier unavailable\"}"};
+                    "{\"error\":\"administrator was enrolled but its GUI session is unavailable\"}"};
         }
-        const auto runtime_verifier = *verifier;
-        preflight->persistent.schema_version = 2U;
-        if(rotating_existing) *existing = std::move(*verifier);
-        else preflight->persistent.administrators.push_back(std::move(*verifier));
-        const auto replacement = serialize_gui_bootstrap(preflight->persistent);
-        if(!replacement) {
-            return {500, "application/json; charset=utf-8",
-                    "{\"error\":\"GUI configuration serialization failed\"}"};
-        }
-        const auto publication = monitor_.archive_api(
-            "PUT", "/api/config/archive/resource?path=gui.cfg", *replacement,
-            {"X-Smithproxy-Expected-Revision: " + preflight->revision,
-             "X-Smithproxy-Archive-SHA256: " + preflight->archive_hash,
-             "X-Smithproxy-Executable: false"});
-        if(!publication.transport_ok) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration publication unavailable\"}"};
-        }
-        if(publication.status == 409L) {
-            return {409, "application/json; charset=utf-8",
-                    "{\"error\":\"configuration changed during enrollment\"}"};
-        }
-        if(publication.status < 200L || publication.status >= 300L) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy rejected GUI configuration publication\"}"};
-        }
-        // Activate the already-published verifier immediately. Revoking every
-        // older session makes password rotation a runtime security boundary,
-        // while a self-rotation receives exactly one replacement session.
-        std::optional<AdminSessionStore::IssuedSession> replacement_session;
-        {
-            auto lock = std::scoped_lock(administrator_state_mutex_);
-            runtime_administrator_verifiers_.insert_or_assign(
-                *enrollment.administrator, runtime_verifier);
-            disabled_administrators_.erase(*enrollment.administrator);
-            admin_sessions_.revoke_administrator(*enrollment.administrator);
-            const bool initial_enrollment = !current_administrator;
-            const bool rotating_current = current_administrator &&
-                *current_administrator == *enrollment.administrator;
-            if(initial_enrollment || rotating_current) {
-                replacement_session = admin_sessions_.issue(*enrollment.administrator);
-            }
-        }
-        if((!current_administrator || *current_administrator == *enrollment.administrator) &&
-           !replacement_session) {
+        auto session = admin_sessions_.issue(
+            *enrollment.administrator,
+            *authenticated.auth_token,
+            *authenticated.csrf_token);
+        if(!session) {
             return {503, "application/json; charset=utf-8",
                     "{\"error\":\"administrator session unavailable\"}"};
         }
-        // Peer enrollment keeps the acting browser identity; self-rotation
-        // returns the replacement created above after revoking the old one.
-        if(current_administrator) {
-            std::vector<std::pair<std::string, std::string>> headers;
-            if(replacement_session) {
-                headers.emplace_back("Set-Cookie", std::string(admin_session_cookie) + "=" +
-                    replacement_session->token + "; Max-Age=" +
-                    std::to_string(AdminSessionStore::ttl_seconds) +
-                    "; Path=/; Secure; HttpOnly; SameSite=Strict");
-            }
-            return {200, "application/json; charset=utf-8", nlohmann::json{
-                        {"administrator", *enrollment.administrator},
-                        {"operation", rotating_existing ? "rotated" : "created"},
-                    }.dump(), "no-store", std::move(headers)};
-        }
-        const auto cookie = std::string(admin_session_cookie) + "=" + replacement_session->token +
+        const auto cookie = std::string(admin_session_cookie) + "=" + session->token +
             "; Max-Age=" + std::to_string(AdminSessionStore::ttl_seconds) +
             "; Path=/; Secure; HttpOnly; SameSite=Strict";
         return {200, "application/json; charset=utf-8",
@@ -2101,33 +2034,27 @@ private:
             }
             next_login_attempt_ = now + std::chrono::milliseconds(750);
         }
-        const auto persistent = std::find_if(
-            config_.administrators.begin(), config_.administrators.end(),
-            [&](const auto& administrator) { return administrator.name == administrator_name; });
-        const GuiAdministratorConfig dummy{
-            .name = "unavailable",
-            .salt = "00000000000000000000000000000000",
-            .verifier = "0000000000000000000000000000000000000000000000000000000000000000",
-            .cost = 32768U,
-            .block_size = 8U,
-            .parallelism = 1U,
-        };
-        auto administrator_lock = std::scoped_lock(administrator_state_mutex_);
-        const auto runtime = runtime_administrator_verifiers_.find(administrator_name);
-        const bool runtime_configured = runtime != runtime_administrator_verifiers_.end();
-        const bool persistent_configured = persistent != config_.administrators.end();
-        const auto& verifier = runtime_configured ? runtime->second
-            : persistent_configured ? *persistent : dummy;
-        const bool password_matches = verify_password(verifier, password) &&
-                                      (runtime_configured || persistent_configured);
-        const bool removed_during_this_boot =
-            disabled_administrators_.contains(administrator_name);
-        const bool accepted = password_matches && !removed_during_this_boot;
+        const auto authenticated = monitor_.login_administrator(
+            administrator_name, password);
+        if(!authenticated.transport_ok) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy administrator authentication unavailable\"}"};
+        }
+        if(authenticated.status == 429L) {
+            return {429, "application/json; charset=utf-8",
+                    "{\"error\":\"login rate limit exceeded\"}"};
+        }
+        const bool accepted = authenticated.status == 200L &&
+            authenticated.administrator && authenticated.auth_token &&
+            authenticated.csrf_token;
         if(!accepted) {
             return {403, "application/json; charset=utf-8",
                     "{\"error\":\"invalid administrator credentials\"}"};
         }
-        auto session = admin_sessions_.issue(administrator_name);
+        auto session = admin_sessions_.issue(
+            administrator_name,
+            *authenticated.auth_token,
+            *authenticated.csrf_token);
         if(!session) {
             return {503, "application/json; charset=utf-8",
                     "{\"error\":\"administrator session unavailable\"}"};
@@ -2138,105 +2065,6 @@ private:
         return {200, "application/json; charset=utf-8",
                 nlohmann::json{{"administrator", administrator_name}}.dump(), "no-store",
                 {{"Set-Cookie", cookie}}};
-    }
-
-    Response remove_gui_administrator(
-        MHD_Connection* connection, const std::string_view body) const {
-        const auto current_administrator = session_administrator(connection);
-        if(!current_administrator) {
-            return {403, "application/json; charset=utf-8",
-                    "{\"error\":\"standalone administrator session required\"}"};
-        }
-        const auto request = nlohmann::json::parse(body, nullptr, false);
-        if(request.is_discarded() || !request.is_object() || request.size() != 1U ||
-           !request.contains("administrator") || !request["administrator"].is_string()) {
-            return {400, "application/json; charset=utf-8",
-                    "{\"error\":\"invalid administrator removal request\"}"};
-        }
-        const auto administrator_name = request["administrator"].get<std::string>();
-        const bool valid_administrator = !administrator_name.empty() &&
-            administrator_name.size() <= 64U &&
-            std::all_of(administrator_name.begin(), administrator_name.end(),
-                [](const unsigned char character) {
-                    return (character >= 'a' && character <= 'z') ||
-                           (character >= 'A' && character <= 'Z') ||
-                           (character >= '0' && character <= '9') || character == '.' ||
-                           character == '_' || character == '-' || character == '@';
-                });
-        if(!valid_administrator) {
-            return {400, "application/json; charset=utf-8",
-                    "{\"error\":\"invalid administrator name\"}"};
-        }
-        if(administrator_name == *current_administrator) {
-            return {409, "application/json; charset=utf-8",
-                    "{\"error\":\"cannot remove the active administrator\"}"};
-        }
-        const auto resource = monitor_.archive_api(
-            "GET", "/api/config/archive/resource?path=gui.cfg");
-        const auto inventory = monitor_.archive_api("GET", "/api/config/archive/resources");
-        const auto status = monitor_.status();
-        if(!resource.transport_ok || resource.status != 200L || !inventory.transport_ok ||
-           inventory.status != 200L || !status.config_snapshot.revision) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration is unavailable\"}"};
-        }
-        auto persistent = parse_gui_bootstrap(resource.body);
-        const auto inventory_document = nlohmann::json::parse(inventory.body, nullptr, false);
-        if(!persistent.config || inventory_document.is_discarded() ||
-           !inventory_document.is_object() ||
-           !inventory_document.contains("content_hash") ||
-           !inventory_document["content_hash"].is_string()) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration is invalid\"}"};
-        }
-        const auto found = std::find_if(
-            persistent.config->administrators.begin(), persistent.config->administrators.end(),
-            [&](const auto& administrator) { return administrator.name == administrator_name; });
-        if(found == persistent.config->administrators.end()) {
-            return {404, "application/json; charset=utf-8",
-                    "{\"error\":\"administrator does not exist\"}"};
-        }
-        if(persistent.config->administrators.size() <= 1U) {
-            return {409, "application/json; charset=utf-8",
-                    "{\"error\":\"cannot remove the last administrator\"}"};
-        }
-        persistent.config->administrators.erase(found);
-        const auto replacement = serialize_gui_bootstrap(*persistent.config);
-        const auto archive_hash = inventory_document["content_hash"].get<std::string>();
-        if(!replacement || !is_content_hash(archive_hash)) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration is invalid\"}"};
-        }
-        const auto publication = monitor_.archive_api(
-            "PUT", "/api/config/archive/resource?path=gui.cfg", *replacement,
-            {"X-Smithproxy-Expected-Revision: " + *status.config_snapshot.revision,
-             "X-Smithproxy-Archive-SHA256: " + archive_hash,
-             "X-Smithproxy-Executable: false"});
-        if(!publication.transport_ok) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy GUI configuration publication unavailable\"}"};
-        }
-        if(publication.status == 409L) {
-            return {409, "application/json; charset=utf-8",
-                    "{\"error\":\"configuration changed during administrator removal\"}"};
-        }
-        if(publication.status < 200L || publication.status >= 300L) {
-            return {502, "application/json; charset=utf-8",
-                    "{\"error\":\"Smithproxy rejected GUI configuration publication\"}"};
-        }
-        // Removal must take effect now, not merely after the next service
-        // restart. Serialize this boundary with login so a concurrent login
-        // is either rejected or issued before all peer sessions are revoked.
-        {
-            auto lock = std::scoped_lock(administrator_state_mutex_);
-            disabled_administrators_.insert(administrator_name);
-            runtime_administrator_verifiers_.erase(administrator_name);
-            admin_sessions_.revoke_administrator(administrator_name);
-        }
-        return {200, "application/json; charset=utf-8",
-                nlohmann::json{
-                    {"administrator", administrator_name}, {"operation", "removed"},
-                }.dump(), "no-store"};
     }
 
     Response logout(MHD_Connection* connection) {
@@ -3501,10 +3329,6 @@ private:
     OperationalEventStore operational_events_;
     AuditStore audit_;
     mutable AdminSessionStore admin_sessions_;
-    mutable std::mutex administrator_state_mutex_;
-    mutable std::map<std::string, GuiAdministratorConfig, std::less<>>
-        runtime_administrator_verifiers_;
-    mutable std::set<std::string, std::less<>> disabled_administrators_;
     std::mutex login_mutex_;
     std::chrono::steady_clock::time_point next_login_attempt_{};
 };

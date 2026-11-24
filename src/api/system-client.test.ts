@@ -1130,7 +1130,7 @@ describe('SystemClient', () => {
 
   it('loads and serializes typed GUI bootstrap configuration without credential values', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
-      state: 'ready', schema_version: 3, restart_required: true, administrators: [],
+      state: 'ready', schema_version: 3, restart_required: true,
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       active_runtime: {
         smithproxy_api_credential_loaded: true,
@@ -1198,17 +1198,17 @@ describe('SystemClient', () => {
       jsonResponse({state: 'absent', restart_required: true,
         active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'}}));
     await expect(absent.guiConfiguration()).resolves.toEqual({
-      state: 'absent', restartRequired: true, administrators: [],
+      state: 'absent', restartRequired: true,
       activeBackend: {bindAddress: '127.0.0.1', port: 18082, basePath: '/'},
     });
     const malformed = new SystemClient('/api/v1', '/', async () => jsonResponse({
-      state: 'ready', schema_version: 1, restart_required: true, administrators: [],
+      state: 'ready', schema_version: 1, restart_required: true,
       backend: {bind_address: '127.0.0.1', port: 0, base_path: '/'},
       smithproxy: null, gateway: null,
     }));
     await expect(malformed.guiConfiguration()).rejects.toThrow('backend configuration');
     const future = new SystemClient('/api/v1', '/', async () => jsonResponse({
-      state: 'ready', schema_version: 4, restart_required: true, administrators: [],
+      state: 'ready', schema_version: 4, restart_required: true,
     }));
     await expect(future.guiConfiguration()).rejects.toThrow('Unsupported GUI configuration schema');
     const malformedRuntime = new SystemClient('/api/v1', '/', async () => jsonResponse({

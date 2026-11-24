@@ -71,6 +71,14 @@ struct GuiEnrollmentResponse {
     std::string error;
 };
 
+struct AdministratorLoginResponse {
+    long status{};
+    std::optional<std::string> administrator;
+    std::optional<std::string> auth_token;
+    std::optional<std::string> csrf_token;
+    bool transport_ok{};
+};
+
 class SmithproxyMonitor {
 public:
     explicit SmithproxyMonitor(
@@ -106,7 +114,14 @@ public:
         std::string_view body = {},
         const std::vector<std::string>& extra_headers = {}) const;
     [[nodiscard]] GuiEnrollmentResponse consume_gui_enrollment(
-        std::string_view token) const;
+        std::string_view token, std::string_view password,
+        std::string_view revision, std::string_view archive_hash) const;
+    [[nodiscard]] AdministratorLoginResponse login_administrator(
+        std::string_view administrator, std::string_view password) const;
+    [[nodiscard]] bool administrator_session_current(
+        std::string_view administrator,
+        std::string_view auth_token,
+        std::string_view csrf_token) const;
     [[nodiscard]] bool configured() const noexcept { return config_.has_value(); }
     [[nodiscard]] bool config_enabled() const noexcept { return config_enabled_; }
 

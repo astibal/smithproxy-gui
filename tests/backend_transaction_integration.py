@@ -304,8 +304,8 @@ def main() -> int:
             ]
 
             status, _, body = request(port, "/api/v1/config/snapshot", headers=gateway_headers)
+            assert status == 200, body
             live_config = json.loads(body)
-            assert status == 200
             assert live_config["state"] == "ready"
             assert live_config["captures_present"] is True
             assert live_config["captures"]["editable"] is False
@@ -322,6 +322,7 @@ def main() -> int:
             assert "port_objects" not in live_config["present_collections"]
             assert live_config["ports"] == []
             assert live_config["protocols"] == []
+            assert "unmapped_sections" in live_config, body
             assert live_config["unmapped_sections"] == ["future_access_policy"]
             assert live_config["unmapped_paths"] == [
                 "address_objects[].future_label", "captures.local.future_sink",

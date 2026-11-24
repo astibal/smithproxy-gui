@@ -124,7 +124,6 @@ export interface GuiConfiguration {
     cliBrokerConfigured: boolean;
   };
   schemaVersion?: 1 | 2 | 3;
-  administrators: ReadonlyArray<string>;
   backend?: {
     bindAddress: string;
     port: number;
@@ -1536,17 +1535,12 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     };
   })();
   if (value.state === 'absent') return {
-    state: 'absent', restartRequired: true, administrators: [],
+    state: 'absent', restartRequired: true,
     ...(activeBackend ? {activeBackend} : {}),
     ...(activeRuntime ? {activeRuntime} : {}),
   };
   if (value.schema_version !== 1 && value.schema_version !== 2 && value.schema_version !== 3) {
     throw new Error('Unsupported GUI configuration schema.');
-  }
-  if (!Array.isArray(value.administrators) || value.administrators.length > 64 ||
-      value.administrators.some(item => typeof item !== 'string' ||
-        !/^[A-Za-z0-9._@-]{1,64}$/u.test(item))) {
-    throw new Error('Invalid GUI administrator configuration.');
   }
   const backend = parseBackend(value.backend, 'backend');
   const optionalGroup = (group: unknown, keys: ReadonlyArray<string>): Record<string, string> | undefined => {
@@ -1567,7 +1561,6 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     ...(activeBackend ? {activeBackend} : {}),
     ...(activeRuntime ? {activeRuntime} : {}),
     schemaVersion: value.schema_version,
-    administrators: value.administrators as string[],
     backend,
     ...(frontend ? {frontend: {assetRoot: frontend.asset_root!}} : {}),
     ...(smithproxy ? {smithproxy: {

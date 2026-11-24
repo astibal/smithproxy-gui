@@ -5,7 +5,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace smithproxy::gui {
 
@@ -22,17 +21,6 @@ struct SmithproxyCliConfig {
     std::uint16_t port{};
 };
 
-// Persistent administrator verifier. gui.cfg never contains the original
-// password; the bounded scrypt parameters are validated before use.
-struct GuiAdministratorConfig {
-    std::string name;
-    std::string salt;
-    std::string verifier;
-    std::uint64_t cost{32768U};
-    std::uint32_t block_size{8U};
-    std::uint32_t parallelism{1U};
-};
-
 // Persistent bootstrap values stored in core-owned gui.cfg. Paths identify
 // boot-scoped credentials; live tokens never become persistent configuration.
 struct GuiBootstrapConfig {
@@ -47,7 +35,6 @@ struct GuiBootstrapConfig {
     std::optional<std::string> cli_endpoint;
     std::optional<std::string> gateway_secret_file;
     std::optional<std::string> gateway_previous_secret_file;
-    std::vector<GuiAdministratorConfig> administrators;
 };
 
 struct GuiBootstrapParseResult {
@@ -65,7 +52,6 @@ struct AppConfig {
     std::optional<std::string> gateway_secret;
     std::optional<std::string> previous_gateway_secret;
     std::optional<std::filesystem::path> gui_config_path;
-    std::vector<GuiAdministratorConfig> administrators;
 };
 
 struct ParseResult {
@@ -83,8 +69,8 @@ ParseResult parse_gui_config_file(
 // Parses archive content without opening referenced credentials. The CFG API
 // uses this validation before publishing a replacement gui.cfg resource.
 GuiBootstrapParseResult parse_gui_bootstrap(std::string_view source);
-// Emits the complete validated resource, including opaque administrator
-// verifiers, for publication through Smithproxy's atomic archive API.
+// Emits the complete validated service bootstrap resource for publication
+// through Smithproxy's atomic archive API.
 std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& config);
 std::filesystem::path resolve_default_asset_root(
     const std::filesystem::path& executable,

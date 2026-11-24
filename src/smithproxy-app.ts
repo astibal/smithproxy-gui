@@ -2585,7 +2585,7 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
-  /** Opens a standalone runtime session from a persistent gui.cfg verifier. */
+  /** Opens a standalone browser session backed by a revocable Core session. */
   private async loginAdministrator(): Promise<void> {
     if (!this.systemClient || this.loginBusy) return;
     this.loginBusy = true;
@@ -12787,11 +12787,17 @@ export class SmithproxyApp extends LitElement {
               </span>
               ${current ? html`<small>current session</small>` : nothing}
               <button class="secondary" type="button"
+                aria-label=${`Change password for ${administrator.name}`}
                 ?disabled=${this.administratorInventoryBusy}
                 @click=${() => this.beginAdministratorEditor('password', administrator.name)}>
                 Change password
               </button>
               <button class=${this.administratorActionArmed === disableKey ? 'danger' : 'secondary'}
+                aria-label=${administrator.enabled
+                  ? this.administratorActionArmed === disableKey
+                    ? `Confirm disable ${administrator.name}`
+                    : `Disable ${administrator.name}`
+                  : `Enable ${administrator.name}`}
                 type="button" ?disabled=${this.administratorInventoryBusy}
                 @click=${() => {
                   void this.setCoreAdministratorEnabled(administrator.name, !administrator.enabled);
@@ -12799,6 +12805,9 @@ export class SmithproxyApp extends LitElement {
                   ? this.administratorActionArmed === disableKey ? 'Confirm disable' : 'Disable'
                   : 'Enable'}</button>
               <button class=${this.administratorActionArmed === removeKey ? 'danger' : 'secondary'}
+                aria-label=${this.administratorActionArmed === removeKey
+                  ? `Confirm remove ${administrator.name}`
+                  : `Remove ${administrator.name}`}
                 type="button" ?disabled=${this.administratorInventoryBusy}
                 @click=${() => { void this.removeCoreAdministrator(administrator.name); }}>
                 ${this.administratorActionArmed === removeKey ? 'Confirm remove' : 'Remove'}
@@ -17226,7 +17235,7 @@ export class SmithproxyApp extends LitElement {
           <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
           <h1>Administrator enrollment</h1>
           <p>Issue a single-use token from a privileged Smithproxy CLI session:</p>
-          <p><code>execute gui enrollment issue &lt;administrator&gt;</code></p>
+          <p><code>execute admin enrollment issue &lt;administrator&gt;</code></p>
           <label>Enrollment token
             <input type="password" autocomplete="one-time-code" spellcheck="false" maxlength="64"
               .value=${this.enrollmentToken}

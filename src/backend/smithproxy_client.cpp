@@ -663,19 +663,28 @@ AdministratorApiResponse SmithproxyMonitor::administrator_api(
 }
 
 GuiEnrollmentResponse SmithproxyMonitor::consume_gui_enrollment(
-    const std::string_view token) const {
+    const std::string_view token,
+    const std::string_view password,
+    const std::string_view revision,
+    const std::string_view archive_hash) const {
     const bool valid_token = token.size() == 64U &&
         std::all_of(token.begin(), token.end(), [](const unsigned char value) {
             return std::isdigit(value) || (value >= 'a' && value <= 'f');
         });
     if(!valid_token) return {.administrator = std::nullopt, .error = "invalid-token"};
-    const auto request = nlohmann::json{{"enrollment_token", token}}.dump();
-    const auto response = archive_api("POST", "/api/gui/enrollment/consume", request);
+    const auto request = nlohmann::json{
+        {"enrollment_token", token},
+        {"password", password},
+    }.dump();
+    const auto response = administrator_api(
+        "POST", "/api/admin/enrollment/consume", request,
+        {"X-Smithproxy-Expected-Revision: " + std::string(revision),
+         "X-Smithproxy-Archive-SHA256: " + std::string(archive_hash)});
     if(!response.transport_ok) return {.administrator = std::nullopt, .error = "unavailable"};
     if(response.status == 403L) return {.administrator = std::nullopt, .error = "rejected"};
     if(response.status != 200L) return {.administrator = std::nullopt, .error = "invalid-response"};
     const auto document = nlohmann::json::parse(response.body, nullptr, false);
-    if(document.is_discarded() || !document.is_object() || document.size() != 1U ||
+    if(document.is_discarded() || !document.is_object() ||
        !document.contains("administrator") || !document["administrator"].is_string()) {
         return {.administrator = std::nullopt, .error = "invalid-response"};
     }
@@ -688,6 +697,131 @@ GuiEnrollmentResponse SmithproxyMonitor::consume_gui_enrollment(
     if(!valid_administrator)
         return {.administrator = std::nullopt, .error = "invalid-response"};
     return {.administrator = std::move(administrator), .error = {}};
+}
+
+AdministratorLoginResponse SmithproxyMonitor::login_administrator(
+    const std::string_view administrator,
+    const std::string_view password) const {
+    if(!config_ || !config_enabled_) return {};
+
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if(!curl) return {};
+    auto* raw_headers = curl_slist_append(nullptr, "Content-Type: application/json");
+    if(!raw_headers) return {};
+    auto* updated_headers = curl_slist_append(raw_headers, "Accept: application/json");
+    if(!updated_headers) {
+        curl_slist_free_all(raw_headers);
+        return {};
+    }
+    std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
+    const auto request = nlohmann::json{
+        {"username", administrator},
+        {"password", password},
+    }.dump();
+    ResponseBuffer response{.limit = 4096U, .body = {}, .exceeded = false};
+    configure_request(curl.get(), *config_, config_->api_url + "/api/login", headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, request.data());
+    curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE_LARGE,
+                     static_cast<curl_off_t>(request.size()));
+    curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, "");
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto performed = curl_easy_perform(curl.get());
+    const bool transport_failed = performed != CURLE_OK;
+    const bool response_too_large = response.exceeded;
+    if(transport_failed || response_too_large) return {};
+
+    long status{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+    if(status != 200L) {
+        return {
+            .status = status,
+            .administrator = std::nullopt,
+            .auth_token = std::nullopt,
+            .csrf_token = std::nullopt,
+            .transport_ok = true,
+        };
+    }
+    const auto document = nlohmann::json::parse(response.body, nullptr, false);
+    if(document.is_discarded() || !document.is_object() ||
+       !document.contains("csrf_token") || !document["csrf_token"].is_string()) {
+        return {
+            .status = status,
+            .administrator = std::nullopt,
+            .auth_token = std::nullopt,
+            .csrf_token = std::nullopt,
+            .transport_ok = true,
+        };
+    }
+    auto csrf_token = document["csrf_token"].get<std::string>();
+    std::optional<std::string> auth_token;
+    curl_slist* cookies = nullptr;
+    if(curl_easy_getinfo(curl.get(), CURLINFO_COOKIELIST, &cookies) == CURLE_OK) {
+        for(auto* entry = cookies; entry != nullptr; entry = entry->next) {
+            const std::string_view line(entry->data ? entry->data : "");
+            const auto name = line.rfind('\t');
+            if(name == std::string_view::npos) continue;
+            const auto value = line.substr(name + 1U);
+            const auto before_name = line.substr(0U, name);
+            const auto name_start = before_name.rfind('\t');
+            if(name_start == std::string_view::npos) continue;
+            if(before_name.substr(name_start + 1U) == "__sx_api") {
+                auth_token = std::string(value);
+                break;
+            }
+        }
+    }
+    curl_slist_free_all(cookies);
+    if(!auth_token || !valid_session_token(*auth_token) ||
+       !valid_session_token(csrf_token)) {
+        return {
+            .status = status,
+            .administrator = std::nullopt,
+            .auth_token = std::nullopt,
+            .csrf_token = std::nullopt,
+            .transport_ok = true,
+        };
+    }
+    return {
+        .status = status,
+        .administrator = std::string(administrator),
+        .auth_token = std::move(auth_token),
+        .csrf_token = std::move(csrf_token),
+        .transport_ok = true,
+    };
+}
+
+bool SmithproxyMonitor::administrator_session_current(
+    const std::string_view administrator,
+    const std::string_view auth_token,
+    const std::string_view csrf_token) const {
+    if(!config_ || !config_enabled_ || !valid_session_token(auth_token) ||
+       !valid_session_token(csrf_token)) {
+        return false;
+    }
+    auto* raw_headers = append_session_headers(nullptr, auth_token, csrf_token);
+    if(!raw_headers) return false;
+    std::unique_ptr<curl_slist, HeaderCleanup> headers(raw_headers);
+    std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
+    if(!curl) return false;
+    ResponseBuffer response{.limit = 4096U, .body = {}, .exceeded = false};
+    configure_request(curl.get(), *config_, config_->api_url + "/api/session", headers.get());
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, collect_body);
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+    const auto performed = curl_easy_perform(curl.get());
+    const bool transport_failed = performed != CURLE_OK;
+    const bool response_too_large = response.exceeded;
+    if(transport_failed || response_too_large) return false;
+    long status{};
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+    if(status != 200L) return false;
+    const auto document = nlohmann::json::parse(response.body, nullptr, false);
+    const bool valid_document = !document.is_discarded() && document.is_object() &&
+        document.value("principal", "") == administrator &&
+        document.contains("capabilities") && document["capabilities"].is_object() &&
+        document["capabilities"].value("administrator", false);
+    return valid_document;
 }
 
 TransactionResponse SmithproxyMonitor::execute_transaction(

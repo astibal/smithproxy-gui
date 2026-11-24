@@ -275,11 +275,43 @@
       "response_media_type": "application/json"
     },
     {
-      "path": "/api/v1/config/gui/administrators/remove",
+      "path": "/api/v1/admin/administrators",
+      "methods": ["GET", "HEAD"],
+      "authentication": "management",
+      "csrf": false,
+      "feature": "config_write",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/admin/administrators/create",
       "methods": ["POST"],
       "authentication": "management",
       "csrf": true,
-      "feature": "config_save",
+      "feature": "config_write",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/admin/administrators/password",
+      "methods": ["POST"],
+      "authentication": "management",
+      "csrf": true,
+      "feature": "config_write",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/admin/administrators/enabled",
+      "methods": ["POST"],
+      "authentication": "management",
+      "csrf": true,
+      "feature": "config_write",
+      "response_media_type": "application/json"
+    },
+    {
+      "path": "/api/v1/admin/administrators/remove",
+      "methods": ["POST"],
+      "authentication": "management",
+      "csrf": true,
+      "feature": "config_write",
       "response_media_type": "application/json"
     },
     {

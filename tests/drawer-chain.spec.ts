@@ -7102,7 +7102,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     const confirmed = guiConfigurationReads > 1;
     await route.fulfill({json: {
       state: 'ready', schema_version: confirmed ? 3 : 1,
-      restart_required: true, administrators: [],
+      restart_required: true,
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       active_runtime: {
         smithproxy_api_credential_loaded: true,
@@ -7190,58 +7190,6 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('administrator changes activate immediately');
 });
 
-test('creates the first gui.cfg before enabling administrator enrollment', async ({page}) => {
-  const revision = `sha256:${'2'.repeat(64)}`;
-  const archiveHash = `sha256:${'a'.repeat(64)}`;
-  let published = false;
-  await mockSystemApi(page, {
-    smithproxy: 'ready', configSaveReady: true,
-    configRevision: revision, savedConfigRevision: revision,
-    gatewayMode: 'standalone', gatewayAuthenticated: true,
-    gatewayAdministrator: 'bootstrap-admin', administratorsConfigured: false,
-  }, true);
-  await page.route('**/api/v1/config/archive', async route => route.fulfill({json: {
-    state: 'ready', content_hash: archiveHash, resources: [],
-  }}));
-  await page.route('**/api/v1/config/gui', async route => route.fulfill({json: published ? {
-    state: 'ready', schema_version: 1, restart_required: true, administrators: [],
-    active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'},
-    backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
-    frontend: null,
-    smithproxy: {
-      api_url: 'https://127.0.0.1:55555', ca_cert: '/run/smithproxy-gui/api-ca.pem',
-      api_token_file: '/run/credentials/smithproxy-gui.api-token',
-      cli_endpoint: '127.0.0.1:50000',
-    },
-    gateway: null,
-  } : {
-    state: 'absent', restart_required: true, administrators: [],
-    active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'},
-  }}));
-  await page.route('**/api/v1/config/gui/publish', async route => {
-    expect(route.request().headers()['x-smithproxy-expected-revision']).toBe(revision);
-    expect(route.request().headers()['x-smithproxy-archive-sha256']).toBe(archiveHash);
-    published = true;
-    await route.fulfill({json: {
-      state: 'written', content_hash: `sha256:${'b'.repeat(64)}`, restart_required: true,
-    }});
-  });
-  await page.goto('/');
-  await page.getByRole('button', {name: 'System', exact: true}).click();
-  await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
-  const gui = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'GUI service'}),
-  });
-  await expect(gui.getByRole('button', {name: 'Add or rotate administrator'})).toBeDisabled();
-  await expect(gui.getByRole('button', {name: 'Add or rotate administrator'}))
-    .toHaveAttribute('title', /Create GUI startup settings before enrolling/i);
-  await gui.getByRole('button', {name: 'Configure GUI service'}).click();
-  await gui.getByRole('button', {name: 'Create GUI startup settings'}).click();
-  await expect.poll(() => published).toBe(true);
-  await expect(gui).toContainText('Configured');
-  await expect(gui.getByRole('button', {name: 'Add or rotate administrator'})).toBeEnabled();
-});
-
 test('blocks initial enrollment until the core publication preflight is ready', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', gatewayMode: 'standalone', gatewayAuthenticated: false,
@@ -7258,68 +7206,82 @@ test('blocks initial enrollment until the core publication preflight is ready', 
   state.initialEnrollmentReady = true;
   await page.getByRole('button', {name: 'Retry readiness'}).click();
   await expect(page.getByRole('heading', {name: 'Administrator enrollment'})).toBeVisible();
-  await expect(page.getByText('execute gui enrollment issue <administrator>')).toBeVisible();
+  await expect(page.getByText('execute admin enrollment issue <administrator>')).toBeVisible();
   await expect(page.getByLabel('Enrollment token')).toBeVisible();
 });
 
-test('adds a standalone administrator with a single-use core enrollment capability', async ({page}) => {
+test('manages Core-owned administrators independently from GUI service settings', async ({page}) => {
   const revision = `sha256:${'2'.repeat(64)}`;
   const archiveHash = `sha256:${'a'.repeat(64)}`;
-  const token = 'e'.repeat(64);
-  let administrators = ['security-admin'];
-  let enrollmentRequest: Record<string, unknown> | undefined;
+  let administrators = [
+    {name: 'security-admin', enabled: true},
+    {name: 'operations-admin', enabled: true},
+  ];
+  const mutations: Array<{path: string; body: unknown}> = [];
   await mockSystemApi(page, {
     smithproxy: 'ready', configSaveReady: true,
     configRevision: revision, savedConfigRevision: revision,
     gatewayMode: 'standalone', gatewayAuthenticated: true,
     gatewayAdministrator: 'security-admin', administratorsConfigured: true,
   }, true);
-  await page.route('**/api/v1/config/archive', async route => route.fulfill({json: {
-    state: 'ready', content_hash: archiveHash,
-    resources: [{path: 'gui.cfg', size: 768, executable: false}],
-  }}));
   await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
-    state: 'ready', schema_version: 2, restart_required: true, administrators,
+    state: 'ready', schema_version: 1, restart_required: true,
     backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'},
     smithproxy: null, gateway: null,
   }}));
-  await page.route('**/api/v1/auth/enroll', async route => {
-    enrollmentRequest = route.request().postDataJSON() as Record<string, unknown>;
-    administrators = [...administrators, 'operations-admin'];
-    await route.fulfill({json: {administrator: 'operations-admin', operation: 'created'}});
-  });
-  await page.route('**/api/v1/config/gui/administrators/remove', async route => {
-    const request = route.request().postDataJSON() as {administrator?: string};
-    expect(request).toEqual({administrator: 'operations-admin'});
-    administrators = administrators.filter(item => item !== 'operations-admin');
-    await route.fulfill({json: {administrator: 'operations-admin', operation: 'removed'}});
+  await page.route('**/api/v1/admin/administrators', async route => route.fulfill({json: {
+    state: 'ready', revision, content_hash: archiveHash,
+    restart_required: false, administrators,
+  }}));
+  await page.route('**/api/v1/admin/administrators/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    const body = route.request().postDataJSON() as {name: string; enabled?: boolean};
+    mutations.push({path, body});
+    expect(route.request().headers()['x-smithproxy-expected-revision']).toBe(revision);
+    expect(route.request().headers()['x-smithproxy-archive-sha256']).toBe(archiveHash);
+    if (path.endsWith('/enabled')) {
+      administrators = administrators.map(item => item.name === body.name
+        ? {...item, enabled: body.enabled ?? item.enabled} : item);
+      await route.fulfill({json: {
+        state: 'enabled_changed', administrator: body.name, changed: true,
+        revision, content_hash: archiveHash, restart_required: false,
+      }});
+      return;
+    }
+    if (path.endsWith('/remove')) {
+      administrators = administrators.filter(item => item.name !== body.name);
+      await route.fulfill({json: {
+        state: 'removed', administrator: body.name, changed: true,
+        revision, content_hash: archiveHash, restart_required: false,
+      }});
+      return;
+    }
+    await route.fulfill({status: 404, body: '{}'});
   });
 
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
   await page.getByRole('button', {name: 'Access & integrations', exact: true}).click();
-  const gui = page.getByRole('article').filter({
-    has: page.getByRole('heading', {name: 'GUI service'}),
+  const card = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Administrators'}),
   });
-  await expect(gui).toContainText('security-admin');
-  await gui.getByRole('button', {name: 'Add or rotate administrator'}).click();
-  await gui.getByLabel('Single-use CLI enrollment token').fill(token);
-  await gui.getByLabel('New administrator password').fill('another strong administrator password');
-  await gui.getByLabel('Confirm password').fill('another strong administrator password');
-  await gui.locator('form').getByRole('button', {name: 'Add or rotate administrator'}).click();
-
-  await expect.poll(() => enrollmentRequest).toEqual({
-    token, password: 'another strong administrator password',
+  await expect(card).toContainText('Core-owned management identities from admin.cfg');
+  await expect(card).toContainText('security-admin');
+  await card.getByRole('button', {name: 'Disable operations-admin'}).click();
+  await card.getByRole('button', {name: 'Confirm disable operations-admin'}).click();
+  await expect.poll(() => mutations.at(-1)).toEqual({
+    path: '/api/v1/admin/administrators/enabled',
+    body: {name: 'operations-admin', enabled: false},
   });
-  await expect(gui).toContainText('security-admin');
-  await expect(gui).toContainText('operations-admin');
-  await expect(gui.locator('.metrics-message.success')).toContainText('is available now');
-  await gui.getByRole('button', {name: 'Remove operations-admin'}).click();
-  await gui.getByRole('button', {name: 'Confirm remove operations-admin'}).click();
-  await expect(gui.locator('.administrator-list')).not.toContainText('operations-admin');
-  await expect(gui.locator('.metrics-message.success')).toContainText('was removed from gui.cfg');
-  await expect(gui.locator('.metrics-message.success')).toContainText('Existing sessions were revoked');
-  await expect(gui.getByRole('button', {name: /Remove security-admin/u})).toHaveCount(0);
+  await expect(card).toContainText('disabled');
+  await card.getByRole('button', {name: 'Remove operations-admin'}).click();
+  await card.getByRole('button', {name: 'Confirm remove operations-admin'}).click();
+  await expect.poll(() => mutations.at(-1)).toEqual({
+    path: '/api/v1/admin/administrators/remove',
+    body: {name: 'operations-admin'},
+  });
+  await expect(card.getByRole('list', {name: 'Configured administrators'}))
+    .not.toContainText('operations-admin');
 });
 
 test('exposes network, object, and system vertical slices', async ({page}) => {
