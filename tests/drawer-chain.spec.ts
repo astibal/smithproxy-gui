@@ -7159,6 +7159,42 @@ test('persists the exact running revision with one explicit save action', async 
   }]);
 });
 
+test('reloads the running revision after a concurrent startup save conflict', async ({page}) => {
+  const initialRevision = `sha256:${'2'.repeat(64)}`;
+  const currentRevision = `sha256:${'3'.repeat(64)}`;
+  let saveRequests = 0;
+  const state: MockState = {
+    smithproxy: 'ready', configSaveReady: true, unsavedConfig: true,
+    configRevision: initialRevision, savedConfigRevision: `sha256:${'1'.repeat(64)}`,
+  };
+  await mockSystemApi(page, state, true);
+  await page.route('**/api/v1/config/save', async route => {
+    saveRequests += 1;
+    expect(route.request().postDataJSON()).toEqual({expected_revision: initialRevision});
+    state.configRevision = currentRevision;
+    state.savedConfigRevision = `sha256:${'1'.repeat(64)}`;
+    await route.fulfill({status: 409, json: {error: {code: 'revision_conflict'}}});
+  });
+
+  await page.goto('/');
+  const configFetchesBeforeSave = state.configFetches ?? 0;
+  await page.getByRole('button', {name: 'Save startup'}).click();
+  await expect(page.getByRole('alert').filter({hasText: 'Save failed'}))
+    .toHaveAttribute('title', /Running configuration changed concurrently/u);
+  await expect.poll(() => state.configFetches ?? 0).toBeGreaterThan(configFetchesBeforeSave);
+  expect(saveRequests).toBe(1);
+
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Startup & backups', exact: true}).click();
+  const running = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Running configuration'}),
+  });
+  await expect(running.getByRole('alert')).toContainText(
+    'Current state was reloaded; review it before saving startup configuration',
+  );
+  await expect(running.getByTitle(currentRevision)).toHaveText('sha256:33333333…');
+});
+
 test('edits gui.cfg through the core archive API without exposing boot credentials', async ({page}) => {
   const revision = `sha256:${'2'.repeat(64)}`;
   const archiveHash = `sha256:${'a'.repeat(64)}`;

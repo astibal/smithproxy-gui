@@ -2245,6 +2245,40 @@ export class SmithproxyApp extends LitElement {
     if (this.configReadAvailable) await this.refreshConfiguration(true);
   }
 
+  private adoptAuthoritativeConfigurationSnapshot(snapshot: ConfigSnapshot): void {
+    this.snapshot = snapshot;
+    this.configError = undefined;
+    this.configRefreshDeferred = false;
+    const draftBaseRevision = this.workspaceDraft?.baseRevision;
+    this.configRevisionDrift = this.draftChangeCount > 0 && draftBaseRevision !== null &&
+      draftBaseRevision !== undefined && snapshot.revision !== null &&
+      snapshot.revision !== draftBaseRevision;
+    if (this.configRevisionDrift) this.draftValidation = undefined;
+  }
+
+  /** Reloads the revision Core refused to overwrite without replaying the save. */
+  private async reconcileRunningConfigurationSaveConflict(
+    error: unknown, accessEpoch: number,
+  ): Promise<boolean> {
+    if (!isHttpStatusError(error, 409) || !this.configClient) return false;
+
+    try {
+      const snapshot = await this.configClient.loadSnapshot();
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return true;
+      if (snapshot.state !== 'ready') throw new Error(snapshot.detail);
+      this.adoptAuthoritativeConfigurationSnapshot(snapshot);
+      this.configSaveError =
+        'Running configuration changed concurrently. Current state was reloaded; review it before saving startup configuration.';
+    } catch (reloadError) {
+      if (!this.configurationAccessIsCurrent(accessEpoch)) return true;
+      const detail = reloadError instanceof Error
+        ? reloadError.message : 'authoritative state is unavailable';
+      this.configSaveError =
+        `Running configuration changed concurrently, but current state could not be reloaded: ${detail}`;
+    }
+    return true;
+  }
+
   private async saveRunningConfiguration(): Promise<void> {
     const snapshot = this.snapshot;
     if (!this.configSaveAvailable || !this.configClient || !snapshot?.revision ||
@@ -2261,7 +2295,13 @@ export class SmithproxyApp extends LitElement {
       await this.refreshConfiguration(true);
     } catch (error) {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return;
-      this.configSaveError = error instanceof Error ? error.message : 'Running configuration could not be saved.';
+      const conflictReconciled = await this.reconcileRunningConfigurationSaveConflict(
+        error, accessEpoch,
+      );
+      if (!conflictReconciled) {
+        this.configSaveError = error instanceof Error
+          ? error.message : 'Running configuration could not be saved.';
+      }
       this.nextCapabilityRefreshAt = 0;
     } finally {
       if (accessEpoch === this.configurationAccessEpoch) this.configSaving = false;
@@ -2512,17 +2552,10 @@ export class SmithproxyApp extends LitElement {
       if (!this.configurationAccessIsCurrent(accessEpoch)) return true;
       if (snapshot.state !== 'ready') throw new Error(snapshot.detail);
 
-      this.snapshot = snapshot;
+      this.adoptAuthoritativeConfigurationSnapshot(snapshot);
       this.archiveInventory = archiveInventory;
       this.guiConfiguration = guiConfiguration;
-      this.configError = undefined;
       this.archiveError = undefined;
-      this.configRefreshDeferred = false;
-      const draftBaseRevision = this.workspaceDraft?.baseRevision;
-      this.configRevisionDrift = this.draftChangeCount > 0 && draftBaseRevision !== null &&
-        draftBaseRevision !== undefined && snapshot.revision !== null &&
-        snapshot.revision !== draftBaseRevision;
-      if (this.configRevisionDrift) this.draftValidation = undefined;
       this.guiConfigurationError =
         'GUI startup configuration changed concurrently. Current state was reloaded; review your pending values before publishing again.';
     } catch (reloadError) {
@@ -13176,6 +13209,9 @@ export class SmithproxyApp extends LitElement {
               <p class="metric-note">
                 Save the running revision to startup configuration from the configuration controls in the top bar.
               </p>
+            ` : nothing}
+            ${this.configSaveError ? html`
+              <div class="metrics-message danger" role="alert">${this.configSaveError}</div>
             ` : nothing}
           </article>
           ${(this.snapshot?.unmappedSections.length || this.snapshot?.unmappedPaths.length) ? html`
