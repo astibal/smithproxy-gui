@@ -611,7 +611,6 @@ export class SmithproxyApp extends LitElement {
   @state() private guiConfigurationDraft: EditableGuiConfiguration | undefined;
   @state() private guiConfigurationBusy = false;
   @state() private guiConfigurationError: string | undefined;
-  @state() private guiConfigurationSaveArmed = false;
   @state() private consoleAvailable = false;
   @state() private consoleExpanded = false;
   @state() private drawerConsoleKey: string | undefined;
@@ -2205,7 +2204,6 @@ export class SmithproxyApp extends LitElement {
       },
       gateway: current?.gateway ? {...current.gateway} : undefined,
     };
-    this.guiConfigurationSaveArmed = false;
     this.guiConfigurationError = undefined;
   }
 
@@ -2213,8 +2211,7 @@ export class SmithproxyApp extends LitElement {
     const revision = this.snapshot?.revision;
     const archiveHash = this.archiveInventory?.contentHash;
     const draft = this.guiConfigurationDraft;
-    if (!this.systemClient || !draft || !revision || !archiveHash ||
-        this.guiConfigurationBusy || !this.guiConfigurationSaveArmed) return;
+    if (!this.systemClient || !draft || !revision || !archiveHash || this.guiConfigurationBusy) return;
     this.guiConfigurationBusy = true;
     this.guiConfigurationError = undefined;
     try {
@@ -2232,7 +2229,6 @@ export class SmithproxyApp extends LitElement {
         ...(draft.gateway ? {gateway: {...draft.gateway}} : {}),
       };
       this.guiConfigurationDraft = undefined;
-      this.guiConfigurationSaveArmed = false;
       await this.loadArchiveInventory();
     } catch (error) {
       this.guiConfigurationError = error instanceof Error
@@ -11923,7 +11919,7 @@ export class SmithproxyApp extends LitElement {
       @input=${(event: Event) => {
         const input = event.currentTarget;
         if (input instanceof HTMLInputElement) {
-          update(input.value); this.guiConfigurationSaveArmed = false;
+          update(input.value);
         }
       }}></label>`;
     return html`<article class="domain-card job-card" data-system-section="backend">
@@ -11947,7 +11943,6 @@ export class SmithproxyApp extends LitElement {
                     this.guiConfigurationDraft = {
                       ...draft, backend: {...draft.backend, port: Number(input.value)},
                     };
-                    this.guiConfigurationSaveArmed = false;
                   }
                 }}></label>
               ${textField('Public frontend base path', draft.backend.basePath, next => {
@@ -11965,7 +11960,6 @@ export class SmithproxyApp extends LitElement {
                   this.guiConfigurationDraft = {...draft, frontend: input.checked ? {
                     assetRoot: '/usr/share/smithproxy-gui',
                   } : undefined};
-                  this.guiConfigurationSaveArmed = false;
                 }}><span>Override the packaged frontend asset directory</span></label>
               ${draft.frontend ? html`${textField('Frontend asset root', draft.frontend.assetRoot, next => {
                 this.guiConfigurationDraft = {...draft, frontend: {assetRoot: next}};
@@ -11986,7 +11980,6 @@ export class SmithproxyApp extends LitElement {
                     apiTokenFile: '/run/credentials/smithproxy-gui.api-token',
                     cliEndpoint: '127.0.0.1:50000',
                   } : undefined};
-                  this.guiConfigurationSaveArmed = false;
                 }}><span>Enable authenticated Smithproxy management and configuration access</span></label>
               ${draft.smithproxy ? html`
                 ${textField('Smithproxy API URL', draft.smithproxy.apiUrl, next => {
@@ -12015,7 +12008,6 @@ export class SmithproxyApp extends LitElement {
                     secretFile: '/run/credentials/smithproxy-gui.gateway',
                     previousSecretFile: '',
                   } : undefined};
-                  this.guiConfigurationSaveArmed = false;
                 }}><span>Require a trusted frontend gateway for browser access</span></label>
               ${draft.gateway ? html`
                 ${textField('Gateway credential file', draft.gateway.secretFile, next => {
@@ -12036,15 +12028,12 @@ export class SmithproxyApp extends LitElement {
           ${validationError}
         </div>` : nothing}
         <div class="archive-actions">
-          <button class=${this.guiConfigurationSaveArmed ? 'danger' : 'primary'} type="button"
+          <button class="primary" type="button"
             ?disabled=${!valid || this.guiConfigurationBusy || !this.configSaveAvailable ||
               !this.archiveInventory || !this.snapshot?.revision}
-            @click=${() => {
-              if (this.guiConfigurationSaveArmed) void this.saveGuiConfiguration();
-              else this.guiConfigurationSaveArmed = true;
-            }}>${this.guiConfigurationSaveArmed ? 'Confirm publish & restart later' : 'Publish GUI startup settings'}</button>
+            @click=${() => { void this.saveGuiConfiguration(); }}>Publish GUI startup settings</button>
           <button class="secondary" type="button" ?disabled=${this.guiConfigurationBusy}
-            @click=${() => { this.guiConfigurationDraft = undefined; this.guiConfigurationSaveArmed = false; }}>
+            @click=${() => { this.guiConfigurationDraft = undefined; }}>
             Cancel
           </button>
         </div>

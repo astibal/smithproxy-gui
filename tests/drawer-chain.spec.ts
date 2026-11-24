@@ -7073,7 +7073,6 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await gui.getByLabel('Bind address').fill('127.0.0.1');
   await gui.getByLabel('Backend port').fill('19082');
   await gui.getByRole('button', {name: 'Publish GUI startup settings'}).click();
-  await gui.getByRole('button', {name: 'Confirm publish & restart later'}).click();
   await expect.poll(() => published).toContain('"port":19082');
   expect(published).toContain('"api_token_file":"/run/credentials/gui.api-token"');
   expect(published).toContain('"frontend":{"asset_root":"/srv/smithproxy-gui/assets"}');
