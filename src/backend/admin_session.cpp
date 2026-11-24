@@ -76,6 +76,14 @@ void AdminSessionStore::revoke(const std::string_view token) {
     if(found != sessions_.end()) sessions_.erase(found);
 }
 
+void AdminSessionStore::revoke_administrator(const std::string_view administrator) {
+    if(administrator.empty()) return;
+    auto lock = std::scoped_lock(mutex_);
+    std::erase_if(sessions_, [&](const auto& entry) {
+        return entry.second.administrator == administrator;
+    });
+}
+
 void AdminSessionStore::clear() {
     auto lock = std::scoped_lock(mutex_);
     sessions_.clear();

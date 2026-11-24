@@ -151,6 +151,7 @@ def main() -> None:
         "/api/v1/config/save": "config_save",
         "/api/v1/config/gui": "config_read",
         "/api/v1/config/gui/publish": "config_save",
+        "/api/v1/config/gui/administrators/remove": "config_save",
         "/api/v1/config/archive": "config_read",
         "/api/v1/config/archive/download": "config_read",
         "/api/v1/config/archive/resource": "config_read",

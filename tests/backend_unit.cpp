@@ -71,6 +71,14 @@ int main() {
     assert(revoked_session);
     admin_sessions.revoke(revoked_session->token);
     assert(!admin_sessions.authenticate(revoked_session->token, 2001));
+    const auto first_peer_session = admin_sessions.issue("peer", 3000);
+    const auto second_peer_session = admin_sessions.issue("peer", 3000);
+    const auto survivor_session = admin_sessions.issue("survivor", 3000);
+    assert(first_peer_session && second_peer_session && survivor_session);
+    admin_sessions.revoke_administrator("peer");
+    assert(!admin_sessions.authenticate(first_peer_session->token, 3001));
+    assert(!admin_sessions.authenticate(second_peer_session->token, 3001));
+    assert(admin_sessions.authenticate(survivor_session->token, 3001) == "survivor");
 
     assert(websocket_accept("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
     assert(websocket_accept("not-a-websocket-key") == "");

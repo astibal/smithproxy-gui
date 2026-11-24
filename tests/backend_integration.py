@@ -837,6 +837,23 @@ def main() -> int:
                 'name = "operations-admin"') == 1
 
             status, _, body = request(
+                enrollment_port, "/api/v1/config/gui/administrators/remove",
+                "POST", peer_headers, json.dumps({"administrator": "operations-admin"}))
+            assert status == 200, body
+            assert json.loads(body) == {
+                "administrator": "operations-admin", "operation": "removed"}
+            assert 'name = "operations-admin"' not in FakeSmithproxy.published_gui_resource
+            assert 'name = "security-admin"' in FakeSmithproxy.published_gui_resource
+
+            retained_resource = FakeSmithproxy.published_gui_resource
+            status, _, body = request(
+                enrollment_port, "/api/v1/config/gui/administrators/remove",
+                "POST", peer_headers, json.dumps({"administrator": "security-admin"}))
+            assert status == 409
+            assert b"cannot remove the active administrator" in body
+            assert FakeSmithproxy.published_gui_resource == retained_resource
+
+            status, _, body = request(
                 enrollment_port, "/api/v1/auth/session",
                 headers={"Cookie": enrollment_cookie})
             assert status == 200

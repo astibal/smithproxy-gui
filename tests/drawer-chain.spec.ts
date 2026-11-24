@@ -7073,6 +7073,12 @@ test('adds a standalone administrator with a single-use core enrollment capabili
     administrators = [...administrators, 'operations-admin'];
     await route.fulfill({json: {administrator: 'operations-admin', operation: 'created'}});
   });
+  await page.route('**/api/v1/config/gui/administrators/remove', async route => {
+    const request = route.request().postDataJSON() as {administrator?: string};
+    expect(request).toEqual({administrator: 'operations-admin'});
+    administrators = administrators.filter(item => item !== 'operations-admin');
+    await route.fulfill({json: {administrator: 'operations-admin', operation: 'removed'}});
+  });
 
   await page.goto('/');
   await page.getByRole('button', {name: 'System', exact: true}).click();
@@ -7090,8 +7096,15 @@ test('adds a standalone administrator with a single-use core enrollment capabili
   await expect.poll(() => enrollmentRequest).toEqual({
     token, password: 'another strong administrator password',
   });
-  await expect(gui).toContainText('security-admin, operations-admin');
+  await expect(gui).toContainText('security-admin');
+  await expect(gui).toContainText('operations-admin');
   await expect(gui.locator('.metrics-message.success')).toContainText('Restart the GUI service');
+  await gui.getByRole('button', {name: 'Remove operations-admin'}).click();
+  await gui.getByRole('button', {name: 'Confirm remove operations-admin'}).click();
+  await expect(gui.locator('.administrator-list')).not.toContainText('operations-admin');
+  await expect(gui.locator('.metrics-message.success')).toContainText('was removed from gui.cfg');
+  await expect(gui.locator('.metrics-message.success')).toContainText('Existing sessions were revoked');
+  await expect(gui.getByRole('button', {name: /Remove security-admin/u})).toHaveCount(0);
 });
 
 test('exposes network, object, and system vertical slices', async ({page}) => {

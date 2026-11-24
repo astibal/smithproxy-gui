@@ -31,6 +31,8 @@ public:
         std::string_view token,
         std::int64_t now = unix_seconds());
     void revoke(std::string_view token);
+    // Revokes every live browser session owned by one administrator.
+    void revoke_administrator(std::string_view administrator);
     void clear();
     [[nodiscard]] std::size_t size(std::int64_t now = unix_seconds());
 

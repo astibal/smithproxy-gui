@@ -85,6 +85,12 @@ existing password with a separately issued CLI token. The token supplies the
 administrator identity, so the browser cannot select a different account. The
 response does not replace the current administrator's cookie, and the change
 becomes active only after a controlled GUI restart.
+Peer removal is available only to a standalone administrator session. The
+active account and the last persistent account are protected from removal, and
+publication remains guarded by the current runtime revision and archive hash.
+After successful publication, all sessions belonging to the removed peer are
+revoked and that identity cannot log in again during the current boot. Restart
+only reconciles the in-memory verifier set with the already-published archive.
 
 Best-effort DNS evaluation uses the same authenticated management boundary. It
 accepts only bounded ASCII DNS host names, rejects IP literals, returns at most

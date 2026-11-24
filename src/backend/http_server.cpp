@@ -765,6 +765,7 @@ private:
             *relative != "/api/v1/config/archive/resource/write" &&
             *relative != "/api/v1/config/archive/resource/delete" &&
             *relative != "/api/v1/config/gui/publish" &&
+            *relative != "/api/v1/config/gui/administrators/remove" &&
             *relative != "/api/v1/auth/logout") {
             return relative->starts_with("/api/")
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
@@ -785,6 +786,9 @@ private:
         if(*relative == "/api/v1/auth/logout") return logout(connection);
         if(*relative == "/api/v1/config/gui/publish") {
             return publish_gui_configuration(connection, body);
+        }
+        if(*relative == "/api/v1/config/gui/administrators/remove") {
+            return remove_gui_administrator(connection, body);
         }
         if(archive_upload) {
             std::vector<std::string> headers;
@@ -1837,6 +1841,12 @@ private:
             return {502, "application/json; charset=utf-8",
                     "{\"error\":\"Smithproxy rejected GUI configuration publication\"}"};
         }
+        // A successful replacement or recreation re-enables the identity in
+        // this boot without weakening the persistent core-owned write path.
+        {
+            auto lock = std::scoped_lock(administrator_state_mutex_);
+            disabled_administrators_.erase(*enrollment.administrator);
+        }
         // An already authenticated administrator is adding a peer. Keep the
         // current browser identity instead of silently replacing its session.
         if(current_administrator) {
@@ -1901,8 +1911,12 @@ private:
             .parallelism = 1U,
         };
         const auto& verifier = found == config_.administrators.end() ? dummy : *found;
-        const bool accepted = verify_password(verifier, password) &&
-                              found != config_.administrators.end();
+        const bool password_matches = verify_password(verifier, password) &&
+                                      found != config_.administrators.end();
+        auto administrator_lock = std::scoped_lock(administrator_state_mutex_);
+        const bool removed_during_this_boot =
+            disabled_administrators_.contains(administrator_name);
+        const bool accepted = password_matches && !removed_during_this_boot;
         if(!accepted) {
             return {403, "application/json; charset=utf-8",
                     "{\"error\":\"invalid administrator credentials\"}"};
@@ -1918,6 +1932,104 @@ private:
         return {200, "application/json; charset=utf-8",
                 nlohmann::json{{"administrator", found->name}}.dump(), "no-store",
                 {{"Set-Cookie", cookie}}};
+    }
+
+    Response remove_gui_administrator(
+        MHD_Connection* connection, const std::string_view body) const {
+        const auto current_administrator = session_administrator(connection);
+        if(!current_administrator) {
+            return {403, "application/json; charset=utf-8",
+                    "{\"error\":\"standalone administrator session required\"}"};
+        }
+        const auto request = nlohmann::json::parse(body, nullptr, false);
+        if(request.is_discarded() || !request.is_object() || request.size() != 1U ||
+           !request.contains("administrator") || !request["administrator"].is_string()) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid administrator removal request\"}"};
+        }
+        const auto administrator_name = request["administrator"].get<std::string>();
+        const bool valid_administrator = !administrator_name.empty() &&
+            administrator_name.size() <= 64U &&
+            std::all_of(administrator_name.begin(), administrator_name.end(),
+                [](const unsigned char character) {
+                    return (character >= 'a' && character <= 'z') ||
+                           (character >= 'A' && character <= 'Z') ||
+                           (character >= '0' && character <= '9') || character == '.' ||
+                           character == '_' || character == '-' || character == '@';
+                });
+        if(!valid_administrator) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid administrator name\"}"};
+        }
+        if(administrator_name == *current_administrator) {
+            return {409, "application/json; charset=utf-8",
+                    "{\"error\":\"cannot remove the active administrator\"}"};
+        }
+        const auto resource = monitor_.archive_api(
+            "GET", "/api/config/archive/resource?path=gui.cfg");
+        const auto inventory = monitor_.archive_api("GET", "/api/config/archive/resources");
+        const auto status = monitor_.status();
+        if(!resource.transport_ok || resource.status != 200L || !inventory.transport_ok ||
+           inventory.status != 200L || !status.config_snapshot.revision) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration is unavailable\"}"};
+        }
+        auto persistent = parse_gui_bootstrap(resource.body);
+        const auto inventory_document = nlohmann::json::parse(inventory.body, nullptr, false);
+        if(!persistent.config || inventory_document.is_discarded() ||
+           !inventory_document.is_object() ||
+           !inventory_document.contains("content_hash") ||
+           !inventory_document["content_hash"].is_string()) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration is invalid\"}"};
+        }
+        const auto found = std::find_if(
+            persistent.config->administrators.begin(), persistent.config->administrators.end(),
+            [&](const auto& administrator) { return administrator.name == administrator_name; });
+        if(found == persistent.config->administrators.end()) {
+            return {404, "application/json; charset=utf-8",
+                    "{\"error\":\"administrator does not exist\"}"};
+        }
+        if(persistent.config->administrators.size() <= 1U) {
+            return {409, "application/json; charset=utf-8",
+                    "{\"error\":\"cannot remove the last administrator\"}"};
+        }
+        persistent.config->administrators.erase(found);
+        const auto replacement = serialize_gui_bootstrap(*persistent.config);
+        const auto archive_hash = inventory_document["content_hash"].get<std::string>();
+        if(!replacement || !is_content_hash(archive_hash)) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration is invalid\"}"};
+        }
+        const auto publication = monitor_.archive_api(
+            "PUT", "/api/config/archive/resource?path=gui.cfg", *replacement,
+            {"X-Smithproxy-Expected-Revision: " + *status.config_snapshot.revision,
+             "X-Smithproxy-Archive-SHA256: " + archive_hash,
+             "X-Smithproxy-Executable: false"});
+        if(!publication.transport_ok) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration publication unavailable\"}"};
+        }
+        if(publication.status == 409L) {
+            return {409, "application/json; charset=utf-8",
+                    "{\"error\":\"configuration changed during administrator removal\"}"};
+        }
+        if(publication.status < 200L || publication.status >= 300L) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy rejected GUI configuration publication\"}"};
+        }
+        // Removal must take effect now, not merely after the next service
+        // restart. Serialize this boundary with login so a concurrent login
+        // is either rejected or issued before all peer sessions are revoked.
+        {
+            auto lock = std::scoped_lock(administrator_state_mutex_);
+            disabled_administrators_.insert(administrator_name);
+            admin_sessions_.revoke_administrator(administrator_name);
+        }
+        return {200, "application/json; charset=utf-8",
+                nlohmann::json{
+                    {"administrator", administrator_name}, {"operation", "removed"},
+                }.dump(), "no-store"};
     }
 
     Response logout(MHD_Connection* connection) {
@@ -3167,6 +3279,8 @@ private:
     OperationalEventStore operational_events_;
     AuditStore audit_;
     mutable AdminSessionStore admin_sessions_;
+    mutable std::mutex administrator_state_mutex_;
+    mutable std::set<std::string, std::less<>> disabled_administrators_;
     std::mutex login_mutex_;
     std::chrono::steady_clock::time_point next_login_attempt_{};
 };

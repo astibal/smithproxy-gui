@@ -485,6 +485,8 @@ export class SmithproxyApp extends LitElement {
   @state() private enrollmentSuccess: string | undefined;
   @state() private enrollmentBusy = false;
   @state() private administratorEnrollmentOpen = false;
+  @state() private administratorRemovalArmed: string | undefined;
+  @state() private administratorRemovalBusy = false;
   @state() private loginAdministratorName = '';
   @state() private loginPassword = '';
   @state() private loginError: string | undefined;
@@ -1042,6 +1044,11 @@ export class SmithproxyApp extends LitElement {
     .gui-config-editor { grid-template-columns: repeat(2, minmax(240px, 1fr)); align-items: end; }
     .gui-config-editor label { display: grid; gap: 6px; min-width: 0; }
     .gui-config-editor input { width: 100%; min-width: 0; }
+    .administrator-list { display: grid; gap: 6px; text-align: left !important; }
+    .administrator-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+    .administrator-row code { overflow-wrap: anywhere; }
+    .administrator-row small { color: var(--app-muted); }
+    .administrator-row button { min-height: 28px; padding: 3px 8px; }
     .job-list { display: grid; gap: 8px; margin-top: 16px; }
     .job-row { display: grid; grid-template-columns: minmax(145px, .8fr) minmax(170px, 1fr) minmax(120px, .7fr) 64px; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--app-border); background: var(--app-canvas); }
     .job-row small { overflow: hidden; color: var(--app-muted); text-overflow: ellipsis; white-space: nowrap; }
@@ -2154,7 +2161,12 @@ export class SmithproxyApp extends LitElement {
     this.guiConfigurationBusy = true;
     this.guiConfigurationError = undefined;
     try {
-      this.guiConfiguration = await this.systemClient.guiConfiguration();
+      const loaded = await this.systemClient.guiConfiguration();
+      this.guiConfiguration = loaded;
+      if (this.administratorRemovalArmed &&
+          !loaded.administrators.includes(this.administratorRemovalArmed)) {
+        this.administratorRemovalArmed = undefined;
+      }
     } catch (error) {
       this.guiConfiguration = undefined;
       this.guiConfigurationError = error instanceof Error
@@ -2424,6 +2436,24 @@ export class SmithproxyApp extends LitElement {
       this.enrollmentError = error instanceof Error ? error.message : 'Administrator enrollment failed.';
     } finally {
       this.enrollmentBusy = false;
+    }
+  }
+
+  /** Removes a peer from persistent gui.cfg without revoking the active admin. */
+  private async removeGuiAdministrator(administrator: string): Promise<void> {
+    if (!this.systemClient || this.administratorRemovalBusy) return;
+    this.administratorRemovalBusy = true;
+    this.enrollmentError = undefined;
+    this.enrollmentSuccess = undefined;
+    try {
+      const removed = await this.systemClient.removeGuiAdministrator(administrator);
+      this.administratorRemovalArmed = undefined;
+      this.enrollmentSuccess = `${removed.administrator} was removed from gui.cfg. Existing sessions were revoked; restart the GUI service to finalize startup configuration.`;
+      await this.loadGuiConfiguration();
+    } catch (error) {
+      this.enrollmentError = error instanceof Error ? error.message : 'Administrator removal failed.';
+    } finally {
+      this.administratorRemovalBusy = false;
     }
   }
 
@@ -11771,8 +11801,26 @@ export class SmithproxyApp extends LitElement {
           <dt>API credential</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
           <dt>CLI broker</dt><dd>${value?.smithproxy?.cliEndpoint || 'Disabled'}</dd>
           <dt>Browser gateway</dt><dd>${value?.gateway?.secretFile ?? 'Not configured'}</dd>
-          <dt>Administrators</dt><dd>${value?.administrators.length
-            ? value.administrators.join(', ') : 'None configured'}</dd>
+          <dt>Administrators</dt><dd class="administrator-list">${value?.administrators.length
+            ? value.administrators.map(administrator => {
+              const current = administrator === this.gatewaySession?.administrator;
+              const removable = this.gatewaySession?.mode === 'standalone' && !current &&
+                value.administrators.length > 1;
+              const armed = this.administratorRemovalArmed === administrator;
+              return html`<span class="administrator-row">
+                <code>${administrator}</code>${current ? html`<small>current</small>` : nothing}
+                ${removable ? html`<button class=${armed ? 'danger' : 'secondary'} type="button"
+                  ?disabled=${this.administratorRemovalBusy}
+                  @click=${() => {
+                    if (armed) void this.removeGuiAdministrator(administrator);
+                    else {
+                      this.administratorRemovalArmed = administrator;
+                      this.enrollmentError = undefined;
+                      this.enrollmentSuccess = undefined;
+                    }
+                  }}>${armed ? `Confirm remove ${administrator}` : `Remove ${administrator}`}</button>` : nothing}
+              </span>`;
+            }) : 'None configured'}</dd>
           <dt>Activation</dt><dd>Controlled service restart required</dd>
         </dl>
         ${this.gatewaySession?.mode === 'standalone' ? html`

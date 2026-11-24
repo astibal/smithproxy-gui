@@ -236,6 +236,23 @@ describe('SystemClient', () => {
     }));
   });
 
+  it('removes a peer administrator through the typed GUI configuration API', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      administrator: 'operations-admin', operation: 'removed',
+    }));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+    await expect(client.removeGuiAdministrator('operations-admin'))
+      .resolves.toEqual({administrator: 'operations-admin'});
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/config/gui/administrators/remove', expect.objectContaining({
+        method: 'POST', body: JSON.stringify({administrator: 'operations-admin'}),
+        credentials: 'same-origin',
+        headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
+      }));
+    await expect(client.removeGuiAdministrator('../invalid'))
+      .rejects.toThrow('Invalid administrator name');
+  });
+
   it('loads and validates the monitoring snapshot', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
       service: 'smithproxy-gui', uptime_ms: 1234,

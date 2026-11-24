@@ -276,6 +276,7 @@ Native CFtar administration is exposed through the same authenticated management
 ```http
 GET  /api/v1/config/gui
 POST /api/v1/config/gui/publish
+POST /api/v1/config/gui/administrators/remove
 GET  /api/v1/config/archive
 GET  /api/v1/config/archive/download?version=current|previous
 GET  /api/v1/config/archive/resource?path=...

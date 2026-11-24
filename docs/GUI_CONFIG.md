@@ -98,3 +98,9 @@ a peer or rotate an existing peer's password. The token's administrator identity
 selects create or rotation; arbitrary browser-supplied names are never trusted.
 This preserves the current browser identity, publishes the new verifier, and
 requires a controlled GUI restart before the change becomes active.
+The service card also supports a confirmed removal of a peer administrator.
+The active account and the final remaining account cannot be removed; this
+prevents both immediate self-lockout and an administrator-free next boot.
+Successful removal immediately revokes that identity's runtime sessions and
+blocks new logins for the rest of the current boot. A controlled restart then
+loads the reduced persistent administrator set from `gui.cfg`.
