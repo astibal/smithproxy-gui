@@ -38,7 +38,9 @@ cross the browser boundary or enter logs, diagnostics, or audit records.
 
 ### GUI bootstrap resource
 
-The persistent `gui.cfg` resource is configuration, not a credential store. The
+The persistent `gui.cfg` resource is configuration and may contain salted,
+memory-hard administrator password verifiers, but never passwords, enrollment
+tokens, sessions, or API-key values. The
 GUI backend may read an exposed copy at startup, but never writes that file or
 the CFtar archive. Changes are submitted through the authenticated Smithproxy
 CFG transaction API so Smithproxy remains the sole writer.
@@ -66,16 +68,27 @@ Capability discovery reports those feature flags as unavailable unless the
 current request passed the same boundary. The minimal health endpoint remains
 available for orchestration. A non-loopback listener is rejected at startup
 unless gateway authentication is configured. Configuration reads and mutations
-always require an authenticated gateway, including on loopback.
+require either an authenticated gateway or a standalone administrator session;
+loopback without either credential fails closed.
 
-Best-effort DNS evaluation uses the same authenticated gateway boundary. It
+Standalone enrollment is available only on the loopback-only deployment mode.
+A privilege-15 Smithproxy CLI session issues a 256-bit single-use token whose
+verifier lives in core memory for at most ten minutes. Enrollment sends that
+token and the new password over the same origin, core consumes the token
+atomically, and the GUI publishes only a salted scrypt verifier through the
+revision- and archive-hash-guarded core API. Login derivations are globally
+rate-limited and return one generic credential error. Successful enrollment or
+login issues an eight-hour `Secure`, `HttpOnly`, `SameSite=Strict` cookie;
+logout revokes it in memory and expires it in the browser.
+
+Best-effort DNS evaluation uses the same authenticated management boundary. It
 accepts only bounded ASCII DNS host names, rejects IP literals, returns at most
 16 unique addresses, and never connects to a resolved target. The lookup is an
 operator aid from the GUI-core host, not evidence of Smithproxy runtime DNS
 visibility, and it never changes the workspace draft.
 
-The bounded session diagnostic reveals only whether gateway mode is configured
-and whether the current request passed it. Browser code cross-checks that result
+The bounded session diagnostic reveals whether gateway mode is configured and
+whether the request has a gateway or standalone administrator session. Browser code cross-checks that result
 with every privileged configuration capability refresh and disables all config
 and draft actions on a missing, malformed, or contradictory response. It polls
 at a bounded interval and rechecks immediately after connectivity or visibility

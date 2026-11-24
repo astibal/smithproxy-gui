@@ -177,12 +177,12 @@ describe('SystemClient', () => {
 
   it('loads and validates the trusted gateway session', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
-      mode: 'gateway', authenticated: true, administrator: null,
+      mode: 'gateway', authenticated: true, administrator: null, administrators_configured: false,
     }));
     const client = new SystemClient('/ws001/smithproxy-gui/api/v1', '/ws001/smithproxy-gui', fetcher);
 
     await expect(client.authSession()).resolves.toEqual({
-      mode: 'gateway', authenticated: true, administrator: null,
+      mode: 'gateway', authenticated: true, administrator: null, administratorsConfigured: false,
     });
     expect(fetcher).toHaveBeenCalledWith(
       '/ws001/smithproxy-gui/api/v1/auth/session', expect.objectContaining({redirect: 'error'}),
@@ -191,7 +191,8 @@ describe('SystemClient', () => {
 
   it('rejects contradictory or malformed gateway sessions', async () => {
     const client = new SystemClient('/api/v1', '/', async () =>
-      jsonResponse({mode: 'standalone', authenticated: true, administrator: null}));
+      jsonResponse({mode: 'standalone', authenticated: true, administrator: null,
+        administrators_configured: true}));
     await expect(client.authSession()).rejects.toThrow('Invalid gateway session response');
 
     const malformed = new SystemClient('/api/v1', '/', async () =>
@@ -204,12 +205,33 @@ describe('SystemClient', () => {
     const client = new SystemClient('/api/v1', '/', fetcher);
     const token = 'a'.repeat(64);
 
-    await expect(client.enrollAdministrator(token)).resolves.toEqual({administrator: 'security-admin'});
+    await expect(client.enrollAdministrator(token, 'correct horse battery staple'))
+      .resolves.toEqual({administrator: 'security-admin'});
     expect(fetcher).toHaveBeenCalledWith('/api/v1/auth/enroll', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({token}), credentials: 'same-origin',
+      method: 'POST', body: JSON.stringify({token, password: 'correct horse battery staple'}),
+      credentials: 'same-origin',
       headers: expect.objectContaining({'X-Smithproxy-GUI-CSRF': '1'}),
     }));
-    await expect(client.enrollAdministrator('short')).rejects.toThrow('Invalid enrollment token');
+    await expect(client.enrollAdministrator('short', 'correct horse battery staple'))
+      .rejects.toThrow('Invalid enrollment token');
+  });
+
+  it('creates and revokes a persistent standalone administrator session', async () => {
+    const fetcher = vi.fn(async (input: URL | RequestInfo) => String(input).endsWith('/auth/login')
+      ? jsonResponse({administrator: 'security-admin'})
+      : jsonResponse({state: 'logged-out'}));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+    await expect(client.loginAdministrator('security-admin', 'correct horse battery staple'))
+      .resolves.toEqual({administrator: 'security-admin'});
+    await expect(client.logoutAdministrator()).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenNthCalledWith(1, '/api/v1/auth/login', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({
+        administrator: 'security-admin', password: 'correct horse battery staple',
+      }), credentials: 'same-origin',
+    }));
+    expect(fetcher).toHaveBeenNthCalledWith(2, '/api/v1/auth/logout', expect.objectContaining({
+      method: 'POST', credentials: 'same-origin',
+    }));
   });
 
   it('loads and validates the monitoring snapshot', async () => {
@@ -1042,7 +1064,7 @@ describe('SystemClient', () => {
 
   it('loads and serializes typed GUI bootstrap configuration without credential values', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
-      state: 'ready', schema_version: 1, restart_required: true,
+      state: 'ready', schema_version: 1, restart_required: true, administrators: [],
       backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       smithproxy: {
         api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
@@ -1065,20 +1087,41 @@ describe('SystemClient', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/v1/config/gui', expect.any(Object));
   });
 
+  it('publishes GUI boot settings through the administrator-preserving typed endpoint', async () => {
+    const archiveHash = `sha256:${'a'.repeat(64)}`;
+    const fetcher = vi.fn(async () => jsonResponse({
+      state: 'written', content_hash: archiveHash, restart_required: true,
+    }));
+    const client = new SystemClient('/api/v1', '/', fetcher);
+    await expect(client.publishGuiConfiguration({
+      backend: {bindAddress: '127.0.0.1', port: 18082, basePath: '/'},
+      smithproxy: undefined, gateway: undefined,
+    }, 'b'.repeat(32), archiveHash)).resolves.toEqual({
+      state: 'written', contentHash: archiveHash, restartRequired: true,
+    });
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/config/gui/publish', expect.objectContaining({
+      method: 'POST', credentials: 'same-origin',
+      headers: expect.objectContaining({
+        'X-Smithproxy-Expected-Revision': 'b'.repeat(32),
+        'X-Smithproxy-Archive-SHA256': archiveHash,
+      }),
+    }));
+  });
+
   it('accepts an absent GUI resource and rejects malformed bootstrap metadata', async () => {
     const absent = new SystemClient('/api/v1', '/', async () =>
       jsonResponse({state: 'absent', restart_required: true}));
     await expect(absent.guiConfiguration()).resolves.toEqual({
-      state: 'absent', restartRequired: true,
+      state: 'absent', restartRequired: true, administrators: [],
     });
     const malformed = new SystemClient('/api/v1', '/', async () => jsonResponse({
-      state: 'ready', schema_version: 1, restart_required: true,
+      state: 'ready', schema_version: 1, restart_required: true, administrators: [],
       backend: {bind_address: '127.0.0.1', port: 0, base_path: '/'},
       smithproxy: null, gateway: null,
     }));
     await expect(malformed.guiConfiguration()).rejects.toThrow('backend configuration');
     const future = new SystemClient('/api/v1', '/', async () => jsonResponse({
-      state: 'ready', schema_version: 2, restart_required: true,
+      state: 'ready', schema_version: 3, restart_required: true, administrators: [],
     }));
     await expect(future.guiConfiguration()).rejects.toThrow('Unsupported GUI configuration schema');
   });

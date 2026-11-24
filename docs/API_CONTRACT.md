@@ -90,6 +90,9 @@ without the endpoint remain readable but cannot produce a revision-bound draft.
 
 ```text
 GET /api/v1/auth/session
+POST /api/v1/auth/enroll
+POST /api/v1/auth/login
+POST /api/v1/auth/logout
 GET /api/v1/config/snapshot
 ```
 
@@ -99,13 +102,17 @@ GET /api/v1/config/snapshot
 GET /api/v1/tools/dns/resolve?name=<dns-host-name>
 ```
 
-The trusted-gateway endpoint validates a DNS host name and resolves at most 16
+The authenticated management endpoint validates a DNS host name and resolves at most 16
 unique IPv4 or IPv6 addresses from the GUI core host. It never connects to the
 returned addresses and never mutates the configuration. The result is an
 operator aid only; Smithproxy may observe different DNS data at runtime.
 
-The session endpoint reveals only whether trusted gateway authentication is
-enabled and valid for the current request. The snapshot endpoint requires the
+The session endpoint reports gateway or standalone mode, authentication state,
+and the current standalone administrator name. Enrollment atomically consumes a
+ten-minute CLI token in Smithproxy, publishes only a salted scrypt verifier to
+`gui.cfg`, and issues an eight-hour HttpOnly runtime session. Login verifies that
+persistent verifier under a global derivation rate limit; logout revokes the
+session immediately. The snapshot endpoint requires either this session or the
 trusted gateway handoff described in `SECURITY.md`; missing or invalid
 credentials return HTTP 401. The response contains a bounded and validated
 runtime view of policies and address, port, and protocol objects. It does not
@@ -226,7 +233,8 @@ canonical base revision are available. A batch carries one expected version and 
 bounded `changes` array; it is rejected without partial application when any
 path or value is invalid. Supported foundation values are booleans, finite
 numbers, strings, and bounded homogeneous string or integer arrays. Every
-mutation requires the trusted gateway handoff, an exact same-origin `Origin`,
+mutation requires an authenticated gateway or standalone administrator session,
+an exact same-origin `Origin`,
 `Sec-Fetch-Site: same-origin` when the browser supplies it, JSON content type,
 and `X-Smithproxy-GUI-CSRF: 1`. The
 custom header and absent CORS support prevent cross-origin form submission.
@@ -258,15 +266,16 @@ Explicit running-config persistence is a separate capability-gated operation.
 The browser sends only the currently displayed canonical revision to
 `POST /api/v1/config/save`; the GUI core forwards it to the reviewed Smithproxy
 save endpoint while holding the same local single-writer reservation used by
-commit. The action requires a second operator click, the trusted gateway and
-same-origin CSRF boundary. It never includes workspace draft changes. Smithproxy
+commit. The action requires a second operator click, an authenticated management
+session and the same-origin CSRF boundary. It never includes workspace draft changes. Smithproxy
 must explicitly advertise support; absence of that flag keeps the control
 disabled and the GUI never discovers support by attempting a mutating request.
 
-Native CFtar administration is exposed through the same trusted gateway:
+Native CFtar administration is exposed through the same authenticated management boundary:
 
 ```http
 GET  /api/v1/config/gui
+POST /api/v1/config/gui/publish
 GET  /api/v1/config/archive
 GET  /api/v1/config/archive/download?version=current|previous
 GET  /api/v1/config/archive/resource?path=...
@@ -277,8 +286,10 @@ POST /api/v1/config/archive/resource/delete?path=...
 ```
 
 `GET /api/v1/config/gui` parses the saved `gui.cfg` resource into bounded,
-typed non-secret boot settings. A replacement is serialized by the browser,
-validated again by the GUI core, and published through Smithproxy's resource
+typed boot settings and administrator names; password verifiers never cross the
+browser boundary. The typed publish endpoint merges edited boot settings with
+the opaque current administrator verifiers inside GUI core, validates the
+complete replacement, and publishes it through Smithproxy's resource
 API with the same revision and archive-hash preconditions. The GUI process
 never opens CFtar for writing. Credential values are boot-scoped and remain
 outside both the archive and browser response.

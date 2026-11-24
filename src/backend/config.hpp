@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace smithproxy::gui {
 
@@ -21,8 +22,19 @@ struct SmithproxyCliConfig {
     std::uint16_t port{};
 };
 
-// Persistent, non-secret values stored in gui.cfg. Credential paths are
-// visible configuration; the credential contents remain boot-scoped files.
+// Persistent administrator verifier. gui.cfg never contains the original
+// password; the bounded scrypt parameters are validated before use.
+struct GuiAdministratorConfig {
+    std::string name;
+    std::string salt;
+    std::string verifier;
+    std::uint64_t cost{32768U};
+    std::uint32_t block_size{8U};
+    std::uint32_t parallelism{1U};
+};
+
+// Persistent bootstrap values stored in gui.cfg. Credential paths are visible;
+// password verifiers remain sensitive archive data and never cross to browsers.
 struct GuiBootstrapConfig {
     std::uint16_t schema_version{1};
     std::string bind_address{"127.0.0.1"};
@@ -34,6 +46,7 @@ struct GuiBootstrapConfig {
     std::optional<std::string> cli_endpoint;
     std::optional<std::string> gateway_secret_file;
     std::optional<std::string> gateway_previous_secret_file;
+    std::vector<GuiAdministratorConfig> administrators;
 };
 
 struct GuiBootstrapParseResult {
@@ -51,6 +64,7 @@ struct AppConfig {
     std::optional<std::string> gateway_secret;
     std::optional<std::string> previous_gateway_secret;
     std::optional<std::filesystem::path> gui_config_path;
+    std::vector<GuiAdministratorConfig> administrators;
 };
 
 struct ParseResult {
@@ -67,6 +81,9 @@ ParseResult parse_gui_config_file(
 // Parses archive content without opening referenced credentials. The CFG API
 // uses this validation before publishing a replacement gui.cfg resource.
 GuiBootstrapParseResult parse_gui_bootstrap(std::string_view source);
+// Emits the complete validated resource, including opaque administrator
+// verifiers, for publication through Smithproxy's atomic archive API.
+std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& config);
 std::filesystem::path resolve_default_asset_root(
     const std::filesystem::path& executable,
     const std::filesystem::path& build_asset_root,

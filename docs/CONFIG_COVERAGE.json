@@ -82,9 +82,12 @@
       "tracked_fields": [
         "schema_version", "backend.bind_address", "backend.port", "backend.base_path",
         "smithproxy.api_url", "smithproxy.ca_cert", "smithproxy.api_token_file",
-        "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file"
+        "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file",
+        "administrators.name", "administrators.algorithm", "administrators.salt",
+        "administrators.verifier", "administrators.cost", "administrators.block_size",
+        "administrators.parallelism"
       ],
-      "notes": "The complete persistent gui.cfg schema is visible and typed. The browser publishes it only through the authenticated Smithproxy core archive API with running-revision and archive-hash preconditions. CFtar stores credential paths, never token or gateway-secret values; those are protected boot-time files. Publication applies the same validation as service bootstrap and activation requires a controlled restart."
+      "notes": "The persistent gui.cfg schema includes bounded salted scrypt administrator verifiers. Passwords and enrollment tokens never enter CFtar. The browser publishes configuration only through the authenticated Smithproxy core archive API with running-revision and archive-hash preconditions. CFtar stores boot credential paths, never token or gateway-secret values; those are protected boot-time files. Publication applies the same validation as service bootstrap and activation requires a controlled restart."
     },
     {
       "name": "address_objects",

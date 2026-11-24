@@ -38,7 +38,6 @@ import type {
 } from './api/models';
 import {
   SystemClient,
-  serializeGuiConfiguration,
   validateGuiBootstrapConfiguration,
   type ArchiveInventory,
   type ArchiveRestore,
@@ -480,8 +479,14 @@ export class SmithproxyApp extends LitElement {
   @state() private gatewaySession: GatewaySession | undefined;
   @state() private gatewaySessionError: string | undefined;
   @state() private enrollmentToken = '';
+  @state() private enrollmentPassword = '';
+  @state() private enrollmentPasswordConfirmation = '';
   @state() private enrollmentError: string | undefined;
   @state() private enrollmentBusy = false;
+  @state() private loginAdministratorName = '';
+  @state() private loginPassword = '';
+  @state() private loginError: string | undefined;
+  @state() private loginBusy = false;
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
   @state() private liveSessions: LiveSessionSnapshot = initialLiveSessions;
@@ -2186,11 +2191,11 @@ export class SmithproxyApp extends LitElement {
     this.guiConfigurationBusy = true;
     this.guiConfigurationError = undefined;
     try {
-      await this.systemClient.writeArchiveResource(
-        'gui.cfg', serializeGuiConfiguration(draft), revision, archiveHash, false,
-      );
+      await this.systemClient.publishGuiConfiguration(draft, revision, archiveHash);
       this.guiConfiguration = {
-        state: 'ready', restartRequired: true, schemaVersion: 1, backend: {...draft.backend},
+        state: 'ready', restartRequired: true,
+        schemaVersion: this.guiConfiguration?.schemaVersion ?? 1,
+        administrators: this.guiConfiguration?.administrators ?? [], backend: {...draft.backend},
         ...(draft.smithproxy ? {smithproxy: {...draft.smithproxy}} : {}),
         ...(draft.gateway ? {gateway: {...draft.gateway}} : {}),
       };
@@ -2397,13 +2402,47 @@ export class SmithproxyApp extends LitElement {
     this.enrollmentBusy = true;
     this.enrollmentError = undefined;
     try {
-      await this.systemClient.enrollAdministrator(this.enrollmentToken.trim());
+      await this.systemClient.enrollAdministrator(
+        this.enrollmentToken.trim(), this.enrollmentPassword,
+      );
       this.enrollmentToken = '';
+      this.enrollmentPassword = '';
+      this.enrollmentPasswordConfirmation = '';
       await this.refreshCapabilities();
     } catch (error) {
       this.enrollmentError = error instanceof Error ? error.message : 'Administrator enrollment failed.';
     } finally {
       this.enrollmentBusy = false;
+    }
+  }
+
+  /** Opens a standalone runtime session from a persistent gui.cfg verifier. */
+  private async loginAdministrator(): Promise<void> {
+    if (!this.systemClient || this.loginBusy) return;
+    this.loginBusy = true;
+    this.loginError = undefined;
+    try {
+      await this.systemClient.loginAdministrator(
+        this.loginAdministratorName.trim(), this.loginPassword,
+      );
+      this.loginPassword = '';
+      await this.refreshCapabilities();
+    } catch (error) {
+      this.loginPassword = '';
+      this.loginError = error instanceof Error ? error.message : 'Administrator login failed.';
+    } finally {
+      this.loginBusy = false;
+    }
+  }
+
+  /** Revokes the current standalone session and returns to the login surface. */
+  private async logoutAdministrator(): Promise<void> {
+    if (!this.systemClient) return;
+    try {
+      await this.systemClient.logoutAdministrator();
+    } finally {
+      this.clearPrivilegedConfigurationState();
+      await this.refreshCapabilities();
     }
   }
 
@@ -11717,6 +11756,8 @@ export class SmithproxyApp extends LitElement {
           <dt>API credential</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
           <dt>CLI broker</dt><dd>${value?.smithproxy?.cliEndpoint || 'Disabled'}</dd>
           <dt>Browser gateway</dt><dd>${value?.gateway?.secretFile ?? 'Not configured'}</dd>
+          <dt>Administrators</dt><dd>${value?.administrators.length
+            ? value.administrators.join(', ') : 'None configured'}</dd>
           <dt>Activation</dt><dd>Controlled service restart required</dd>
         </dl>
         <div class="archive-actions">
@@ -15949,7 +15990,44 @@ export class SmithproxyApp extends LitElement {
   protected render() {
     if (this.loadingError) return html`<div class="error" role="alert">${this.loadingError}</div>`;
     if (this.gatewaySession?.mode === 'standalone' && !this.gatewaySession.authenticated) {
+      if (this.gatewaySession.administratorsConfigured) {
+        const validName = /^[A-Za-z0-9._@-]{1,64}$/u.test(this.loginAdministratorName.trim());
+        return html`<main class="enrollment-shell">
+          <form class="enrollment-card" @submit=${(event: SubmitEvent) => {
+            event.preventDefault();
+            void this.loginAdministrator();
+          }}>
+            <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
+            <h1>Administrator login</h1>
+            <p>Authenticate to manage this Smithproxy instance.</p>
+            <label>Administrator
+              <input type="text" autocomplete="username" maxlength="64"
+                .value=${this.loginAdministratorName}
+                @input=${(event: Event) => {
+                  const input = event.currentTarget;
+                  if (input instanceof HTMLInputElement) this.loginAdministratorName = input.value;
+                }}>
+            </label>
+            <label>Password
+              <input type="password" autocomplete="current-password" maxlength="1024"
+                .value=${this.loginPassword}
+                @input=${(event: Event) => {
+                  const input = event.currentTarget;
+                  if (input instanceof HTMLInputElement) this.loginPassword = input.value;
+                }}>
+            </label>
+            ${this.loginError ? html`<p class="error" role="alert">${this.loginError}</p>` : nothing}
+            <button class="primary" type="submit"
+              ?disabled=${this.loginBusy || !validName || this.loginPassword.length < 14}>
+              ${this.loginBusy ? 'Signing in…' : 'Sign in'}
+            </button>
+          </form>
+        </main>`;
+      }
       const validToken = /^[0-9a-f]{64}$/u.test(this.enrollmentToken.trim());
+      const validPassword = this.enrollmentPassword.length >= 14 &&
+        this.enrollmentPassword.length <= 1024 &&
+        this.enrollmentPassword === this.enrollmentPasswordConfirmation;
       return html`<main class="enrollment-shell">
         <form class="enrollment-card" @submit=${(event: SubmitEvent) => {
           event.preventDefault();
@@ -15967,11 +16045,32 @@ export class SmithproxyApp extends LitElement {
                 if (input instanceof HTMLInputElement) this.enrollmentToken = input.value;
               }}>
           </label>
+          <label>Administrator password
+            <input type="password" autocomplete="new-password" maxlength="1024"
+              .value=${this.enrollmentPassword}
+              @input=${(event: Event) => {
+                const input = event.currentTarget;
+                if (input instanceof HTMLInputElement) this.enrollmentPassword = input.value;
+              }}>
+          </label>
+          <label>Confirm administrator password
+            <input type="password" autocomplete="new-password" maxlength="1024"
+              .value=${this.enrollmentPasswordConfirmation}
+              @input=${(event: Event) => {
+                const input = event.currentTarget;
+                if (input instanceof HTMLInputElement) this.enrollmentPasswordConfirmation = input.value;
+              }}>
+          </label>
+          ${this.enrollmentPasswordConfirmation &&
+            this.enrollmentPassword !== this.enrollmentPasswordConfirmation
+            ? html`<p class="error" role="alert">Passwords do not match.</p>` : nothing}
           ${this.enrollmentError ? html`<p class="error" role="alert">${this.enrollmentError}</p>` : nothing}
-          <button class="primary" type="submit" ?disabled=${this.enrollmentBusy || !validToken}>
+          <button class="primary" type="submit"
+            ?disabled=${this.enrollmentBusy || !validToken || !validPassword}>
             ${this.enrollmentBusy ? 'Enrolling…' : 'Enroll securely'}
           </button>
-          <p>The token expires after ten minutes and can be used once. Smithproxy validates it directly; the browser receives only an HttpOnly runtime session.</p>
+          <p>The token expires after ten minutes and can be used once. Smithproxy stores only a salted,
+            memory-hard password verifier in CFtar; the browser receives an HttpOnly runtime session.</p>
         </form>
       </main>`;
     }
@@ -16324,6 +16423,10 @@ export class SmithproxyApp extends LitElement {
             <input class="search" type="search" aria-label="Search" maxlength="128"
               placeholder="Search configuration" .value=${this.searchQuery}
               @input=${(event: InputEvent) => this.updateSearch((event.currentTarget as HTMLInputElement).value)} />
+            ${this.gatewaySession?.mode === 'standalone' && this.gatewaySession.authenticated ? html`
+              <button class="secondary" type="button" title="End administrator session"
+                @click=${() => { void this.logoutAdministrator(); }}>Sign out</button>
+            ` : nothing}
           </header>
           <div class="workspace">
             <div class="content-layer" ?inert=${this.drawers.length > 0}>${this.renderContent()}</div>

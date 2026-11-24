@@ -2,6 +2,7 @@
 
 import http.client
 import http.server
+import hashlib
 import json
 import os
 import re
@@ -55,6 +56,14 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     csrf_token = "b" * 32
     response_status = 200
     config_revision = "c" * 32
+    archive_hash = "sha256:" + "d" * 64
+    gui_resource = '''gui = {
+  schema_version = 1;
+  backend = { bind_address = "127.0.0.1"; port = 18082; base_path = "/"; };
+};
+'''
+    published_gui_resource = None
+    enrollment_token = "e" * 64
     revision_requests = 0
     state_requests = 0
     state_status = 200
@@ -202,6 +211,24 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
     }
 
     def do_GET(self):
+        if self.path == "/api/config/archive/resources":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "state": "ready", "content_hash": FakeSmithproxy.archive_hash,
+                "resources": [{"path": "gui.cfg", "size": len(FakeSmithproxy.gui_resource),
+                               "executable": False}],
+            }).encode())
+            return
+        if self.path == "/api/config/archive/resource?path=gui.cfg":
+            FakeSmithproxy.api_key = self.headers.get("X-API-Key")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.end_headers()
+            self.wfile.write(FakeSmithproxy.gui_resource.encode())
+            return
         if self.path == "/api/status/ping":
             FakeSmithproxy.api_key = self.headers.get("X-API-Key")
             self.send_response(FakeSmithproxy.response_status)
@@ -376,6 +403,23 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
                 "csrf_token": FakeSmithproxy.csrf_token,
             }).encode())
             return
+        if self.path == "/api/gui/enrollment/consume":
+            expected_cookie = (
+                f"__sx_api={FakeSmithproxy.auth_token}; "
+                f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
+            if (self.headers.get("Cookie") != expected_cookie or
+                    self.headers.get("csrf_token") != FakeSmithproxy.csrf_token):
+                self.send_error(401)
+                return
+            document = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            if document != {"enrollment_token": FakeSmithproxy.enrollment_token}:
+                self.send_error(403)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"administrator":"security-admin"}')
+            return
         if self.path != "/api/config/uni/get":
             self.send_error(404)
             return
@@ -399,6 +443,29 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps({"success": {section: value}}).encode())
+
+    def do_PUT(self):
+        if self.path != "/api/config/archive/resource?path=gui.cfg":
+            self.send_error(404)
+            return
+        expected_cookie = (
+            f"__sx_api={FakeSmithproxy.auth_token}; "
+            f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
+        if (self.headers.get("Cookie") != expected_cookie or
+                self.headers.get("csrf_token") != FakeSmithproxy.csrf_token or
+                self.headers.get("X-Smithproxy-Expected-Revision") != FakeSmithproxy.config_revision or
+                self.headers.get("X-Smithproxy-Archive-SHA256") != FakeSmithproxy.archive_hash):
+            self.send_error(409)
+            return
+        FakeSmithproxy.published_gui_resource = self.rfile.read(
+            int(self.headers.get("Content-Length", "0"))).decode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({
+            "state": "written", "content_hash": "sha256:" + "f" * 64,
+            "restart_required": True,
+        }).encode())
 
     def log_message(self, *_args):
         return
@@ -555,7 +622,8 @@ def main() -> int:
         status, _, body = request(port, "/ws001/smithproxy-gui/api/v1/auth/session")
         assert status == 200
         assert json.loads(body) == {
-            "mode": "standalone", "authenticated": False, "administrator": None}
+            "mode": "standalone", "authenticated": False, "administrator": None,
+            "administrators_configured": False}
         assert request(port, "/ws001/smithproxy-gui/api/v1/config/snapshot")[0] == 401
 
         status, headers, body = request(port, "/ws001/smithproxy-gui/")
@@ -580,6 +648,77 @@ def main() -> int:
             process.wait(timeout=2)
     assert process.returncode == 0, process.stderr.read()
 
+    # A standalone deployment loads only the scrypt verifier from gui.cfg,
+    # issues an HttpOnly runtime cookie, throttles failures, and revokes it.
+    with tempfile.TemporaryDirectory() as standalone_root:
+        standalone_port = free_port()
+        salt = bytes.fromhex("0123456789abcdef0123456789abcdef")
+        password = "correct horse battery staple"
+        verifier = hashlib.scrypt(
+            password.encode(), salt=salt, n=32768, r=8, p=1, dklen=32,
+            maxmem=64 * 1024 * 1024).hex()
+        config_path = os.path.join(standalone_root, "gui.cfg")
+        with open(config_path, "w", encoding="utf-8") as config_file:
+            config_file.write(f'''gui = {{
+  schema_version = 2;
+  backend = {{ bind_address = "127.0.0.1"; port = {standalone_port}; base_path = "/"; }};
+  administrators = ({{ name = "security-admin"; algorithm = "scrypt";
+    salt = "{salt.hex()}"; verifier = "{verifier}";
+    cost = 32768L; block_size = 8; parallelism = 1; }});
+}};
+''')
+        os.chmod(config_path, 0o600)
+        standalone = subprocess.Popen(
+            [binary, "--config", config_path, "--assets", assets],
+            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            for _ in range(50):
+                try:
+                    if request(standalone_port, "/healthz")[0] == 200:
+                        break
+                except OSError:
+                    time.sleep(0.05)
+            status, _, body = request(standalone_port, "/api/v1/auth/session")
+            assert status == 200
+            assert json.loads(body) == {
+                "mode": "standalone", "authenticated": False,
+                "administrators_configured": True, "administrator": None}
+            mutation_headers = {
+                "Host": f"127.0.0.1:{standalone_port}",
+                "Origin": f"http://127.0.0.1:{standalone_port}",
+                "Content-Type": "application/json", "X-Smithproxy-GUI-CSRF": "1",
+                "Sec-Fetch-Site": "same-origin",
+            }
+            status, _, _ = request(
+                standalone_port, "/api/v1/auth/login", "POST", mutation_headers,
+                json.dumps({"administrator": "security-admin", "password": "wrong password value"}))
+            assert status == 403
+            assert request(
+                standalone_port, "/api/v1/auth/login", "POST", mutation_headers,
+                json.dumps({"administrator": "security-admin", "password": password}))[0] == 429
+            time.sleep(0.8)
+            status, login_headers, body = request(
+                standalone_port, "/api/v1/auth/login", "POST", mutation_headers,
+                json.dumps({"administrator": "security-admin", "password": password}))
+            assert status == 200
+            assert json.loads(body) == {"administrator": "security-admin"}
+            cookie = login_headers["Set-Cookie"].split(";", 1)[0]
+            assert "HttpOnly" in login_headers["Set-Cookie"]
+            assert "Secure" in login_headers["Set-Cookie"]
+            assert "SameSite=Strict" in login_headers["Set-Cookie"]
+            assert request(
+                standalone_port, "/api/v1/status", headers={"Cookie": cookie})[0] == 200
+            logout_headers = dict(mutation_headers)
+            logout_headers["Cookie"] = cookie
+            assert request(
+                standalone_port, "/api/v1/auth/logout", "POST", logout_headers, "{}")[0] == 200
+            assert request(
+                standalone_port, "/api/v1/status", headers={"Cookie": cookie})[0] == 401
+        finally:
+            standalone.send_signal(signal.SIGTERM)
+            standalone.wait(timeout=4)
+        assert standalone.returncode == 0, standalone.stderr.read()
+
     fake_port = free_port()
     FakeSmithproxy.authorization_access_key = None
     FakeSmithproxy.authorization_requests = 0
@@ -590,6 +729,76 @@ def main() -> int:
     gateway_secret = "gateway-secret-used-only-by-integration-tests"
     previous_gateway_secret = "previous-gateway-secret-used-by-tests"
     with tempfile.NamedTemporaryFile() as certificate:
+        # Initial administrator enrollment consumes the one-time core token and
+        # asks Smithproxy core to publish gui.cfg. The GUI never writes CFtar.
+        enrollment_port = free_port()
+        enrollment_environment = environment.copy()
+        enrollment_environment.update({
+            "SMITHPROXY_API_URL": f"http://127.0.0.1:{fake_port}/",
+            "SMITHPROXY_API_KEY": secret,
+            "SMITHPROXY_CA_CERT": certificate.name,
+            "HTTP_PROXY": "http://127.0.0.1:1",
+        })
+        FakeSmithproxy.published_gui_resource = None
+        enrollment_state_requests = FakeSmithproxy.state_requests
+        enrollment = subprocess.Popen(
+            [binary, "--port", str(enrollment_port), "--assets", assets],
+            env=enrollment_environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            wait_for_state(enrollment_port, "ready")
+            for _ in range(50):
+                if FakeSmithproxy.state_requests > enrollment_state_requests:
+                    break
+                time.sleep(0.05)
+            assert FakeSmithproxy.state_requests > enrollment_state_requests
+            enrollment_password = "one strong enrollment password"
+            mutation_headers = {
+                "Host": f"127.0.0.1:{enrollment_port}",
+                "Origin": f"http://127.0.0.1:{enrollment_port}",
+                "Content-Type": "application/json",
+                "X-Smithproxy-GUI-CSRF": "1",
+                "Sec-Fetch-Site": "same-origin",
+            }
+            status, enrollment_headers, body = request(
+                enrollment_port, "/api/v1/auth/enroll", "POST", mutation_headers,
+                json.dumps({
+                    "token": FakeSmithproxy.enrollment_token,
+                    "password": enrollment_password,
+                }))
+            assert status == 200, body
+            assert json.loads(body) == {"administrator": "security-admin"}
+            assert "HttpOnly" in enrollment_headers["Set-Cookie"]
+            assert "Secure" in enrollment_headers["Set-Cookie"]
+            assert "SameSite=Strict" in enrollment_headers["Set-Cookie"]
+            enrollment_cookie = enrollment_headers["Set-Cookie"].split(";", 1)[0]
+            status, _, body = request(
+                enrollment_port, "/api/v1/auth/session",
+                headers={"Cookie": enrollment_cookie})
+            assert status == 200
+            assert json.loads(body) == {
+                "mode": "standalone", "authenticated": True,
+                "administrators_configured": False,
+                "administrator": "security-admin",
+            }
+
+            published = FakeSmithproxy.published_gui_resource
+            assert published is not None
+            assert "schema_version = 2" in published
+            assert 'name = "security-admin"' in published
+            assert 'algorithm = "scrypt"' in published
+            assert re.search(r'salt = "[0-9a-f]{32}"', published)
+            assert re.search(r'verifier = "[0-9a-f]{64}"', published)
+            assert enrollment_password not in published
+            assert FakeSmithproxy.enrollment_token not in published
+        finally:
+            enrollment.send_signal(signal.SIGTERM)
+            enrollment.wait(timeout=4)
+        assert enrollment.returncode == 0, enrollment.stderr.read()
+
         configured_port = free_port()
         configured_environment = environment.copy()
         configured_environment.update({
@@ -1020,12 +1229,14 @@ def main() -> int:
             status, _, body = request(configured_port, "/api/v1/auth/session")
             assert status == 200
             assert json.loads(body) == {
-                "mode": "gateway", "authenticated": False, "administrator": None}
+                "mode": "gateway", "authenticated": False, "administrator": None,
+                "administrators_configured": False}
             status, _, body = request(
                 configured_port, "/api/v1/auth/session", headers=gateway_headers)
             assert status == 200
             assert json.loads(body) == {
-                "mode": "gateway", "authenticated": True, "administrator": None}
+                "mode": "gateway", "authenticated": True, "administrator": None,
+                "administrators_configured": False}
             assert request(configured_port, "/api/v1/tools/dns/resolve?name=localhost")[0] == 401
             status, _, body = request(
                 configured_port, "/api/v1/tools/dns/resolve?name=localhost",

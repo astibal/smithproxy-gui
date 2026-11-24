@@ -91,7 +91,7 @@ async function setReferenceList(
 
 type MockState = {
   smithproxy: 'ready' | 'unreachable';
-  gatewayMode?: 'gateway' | 'disabled';
+  gatewayMode?: 'gateway' | 'standalone';
   gatewayAuthenticated?: boolean;
   forceManagementCapabilities?: boolean;
   consoleReady?: boolean;
@@ -237,13 +237,13 @@ async function mockSystemApi(
     const capabilityPath = new URL(route.request().url()).pathname;
     const capabilitySuffix = '/api/v1/capabilities';
     const advertisedBasePath = capabilityPath.slice(0, -capabilitySuffix.length) || '/';
-    const gatewayMode = state.gatewayMode ?? (configRead ? 'gateway' : 'disabled');
-    const gatewayAuthenticated = state.gatewayAuthenticated ?? configRead;
+    const gatewayMode = state.gatewayMode ?? 'gateway';
+    const gatewayAuthenticated = state.gatewayAuthenticated ?? true;
     const management = state.forceManagementCapabilities ??
-      (gatewayMode === 'disabled' || gatewayAuthenticated);
+      gatewayAuthenticated;
     const monitoringFeature = (name: NonNullable<MockState['disabledMonitoringFeatures']>[number]): boolean =>
       management && !state.disabledMonitoringFeatures?.includes(name);
-    const configuration = configRead && gatewayMode === 'gateway' && gatewayAuthenticated;
+    const configuration = configRead && gatewayAuthenticated;
     const configurationFeature = (
       name: NonNullable<MockState['disabledConfigurationFeatures']>[number],
     ): boolean => configuration && !state.disabledConfigurationFeatures?.includes(name);
@@ -310,8 +310,10 @@ async function mockSystemApi(
   await page.route('**/api/v1/auth/session', async route => {
     state.authSessionRequests = (state.authSessionRequests ?? 0) + 1;
     await route.fulfill({json: {
-      mode: state.gatewayMode ?? (configRead ? 'gateway' : 'disabled'),
-      authenticated: state.gatewayAuthenticated ?? configRead,
+      mode: state.gatewayMode ?? 'gateway',
+      authenticated: state.gatewayAuthenticated ?? true,
+      administrator: null,
+      administrators_configured: false,
     }});
   });
   await page.route('**/api/v1/tools/dns/resolve?*', async route => {
@@ -7004,7 +7006,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     resources: [{path: 'gui.cfg', size: 512, executable: false}],
   }}));
   await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
-    state: 'ready', schema_version: 1, restart_required: true,
+    state: 'ready', schema_version: 1, restart_required: true, administrators: [],
     backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
     smithproxy: {
       api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
@@ -7012,7 +7014,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     },
     gateway: {secret_file: '/run/credentials/gui.gateway', previous_secret_file: ''},
   }}));
-  await page.route('**/api/v1/config/archive/resource/write?path=gui.cfg', async route => {
+  await page.route('**/api/v1/config/gui/publish', async route => {
     published = route.request().postData() ?? '';
     expect(route.request().headers()['x-smithproxy-expected-revision']).toBe(revision);
     expect(route.request().headers()['x-smithproxy-archive-sha256']).toBe(archiveHash);
@@ -7037,9 +7039,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await gui.getByLabel('Backend port').fill('19082');
   await gui.getByRole('button', {name: 'Publish GUI startup settings'}).click();
   await gui.getByRole('button', {name: 'Confirm publish & restart later'}).click();
-  await expect.poll(() => published).toContain('port = 19082;');
-  expect(published).toContain('schema_version = 1;');
-  expect(published).toContain('api_token_file = "/run/credentials/gui.api-token";');
+  await expect.poll(() => published).toContain('"port":19082');
+  expect(published).toContain('"api_token_file":"/run/credentials/gui.api-token"');
   expect(published).not.toContain('boot-token-value');
   await expect(gui).toContainText('Controlled service restart required');
 });

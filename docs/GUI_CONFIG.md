@@ -19,7 +19,7 @@ the new boot settings take effect only after a controlled service restart.
 
 ```libconfig
 gui = {
-  schema_version = 1;
+  schema_version = 2;
 
   backend = {
     bind_address = "127.0.0.1";
@@ -39,10 +39,26 @@ gui = {
     # Optional bounded overlap while a trusted gateway rotates its credential.
     previous_secret_file = "/run/credentials/smithproxy-gui.gateway.previous";
   };
+
+  # Passwords are never stored. Each entry contains only a bounded scrypt
+  # verifier created after a one-time CLI enrollment token is accepted.
+  administrators = (
+    {
+      name = "security-admin";
+      algorithm = "scrypt";
+      salt = "0123456789abcdef0123456789abcdef";
+      verifier = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+      cost = 32768L;
+      block_size = 8;
+      parallelism = 1;
+    }
+  );
 };
 ```
 
-Unknown settings and unsupported schema versions are rejected. This prevents
+Version 1 remains readable for installations without persistent administrators;
+the administrator list requires version 2. Unknown settings and unsupported
+schema versions are rejected. This prevents
 an older GUI from publishing a replacement that silently drops fields owned by
 a newer GUI schema. A legacy file without `schema_version` is read as version 1;
 the next typed publication writes the version explicitly.
@@ -71,9 +87,9 @@ Command-line options remain explicit deployment overrides. Existing environment
 variables remain available for compatibility, but a native installation should
 prefer `gui.cfg` plus protected runtime credential files.
 
-Administrator identities and initial-token enrollment are intentionally not
-represented as plaintext secrets here. Their final schema must be coupled to the
-Smithproxy CLI issuer and the GUI session verifier: the CLI creates a single-use,
-short-lived enrollment token, Smithproxy stores only its verifier through CFG
-API, and the GUI exchanges it for an HttpOnly, Secure, SameSite=Strict session.
-Until that complete path exists, `gui.cfg` must not contain administrator tokens.
+Administrator passwords and enrollment tokens are never represented here. The
+CLI creates a single-use token valid for ten minutes. After Smithproxy consumes
+it atomically, the GUI derives and publishes only the salted scrypt verifier
+through the core archive API. Successful authentication produces an eight-hour
+HttpOnly, Secure, SameSite=Strict runtime session; it never turns the password or
+enrollment token into a persistent API key.

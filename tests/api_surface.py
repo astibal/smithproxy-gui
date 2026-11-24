@@ -60,7 +60,7 @@ def main() -> None:
     endpoints = manifest.get("endpoints")
     require(isinstance(endpoints, list), "endpoints must be an array")
 
-    allowed_authentication = {"public", "management", "gateway"}
+    allowed_authentication = {"public", "management"}
     allowed_media_types = {
         "application/json", "text/event-stream", "application/octet-stream",
         "application/vnd.smithproxy.cftar", "application/websocket",
@@ -85,8 +85,10 @@ def main() -> None:
                 f"mutation CSRF policy drifted for {path}")
         # Enrollment is intentionally the only unauthenticated mutation. Its
         # one-time capability is validated atomically by Smithproxy core.
-        if methods == ["POST"] and path != "/api/v1/auth/enroll":
-            require(endpoint["authentication"] == "gateway",
+        if methods == ["POST"] and path not in {
+            "/api/v1/auth/enroll", "/api/v1/auth/login", "/api/v1/auth/logout",
+        }:
+            require(endpoint["authentication"] == "management",
                     f"mutation authentication weakened for {path}")
         require(endpoint["feature"] is None or
                 re.fullmatch(r"[a-z][a-z0-9_]{0,63}", endpoint["feature"]),
@@ -105,38 +107,13 @@ def main() -> None:
         if endpoint["authentication"] == "public"
     }
     require(public_paths == {
-        "/healthz", "/api/v1/capabilities", "/api/v1/auth/session", "/api/v1/auth/enroll",
+        "/healthz", "/api/v1/capabilities", "/api/v1/auth/session",
+        "/api/v1/auth/enroll", "/api/v1/auth/login",
     },
             "public endpoint boundary drifted")
-    gateway_paths = {
-        item["path"] for item in endpoints if item["authentication"] == "gateway"
-    }
-    require(gateway_paths == {
-        "/api/v1/config/snapshot",
-        "/api/v1/tools/dns/resolve",
-        "/api/v1/config/draft",
-        "/api/v1/config/draft/preflight",
-        "/api/v1/config/draft/changes",
-        "/api/v1/config/draft/changes/remove",
-        "/api/v1/config/draft/operations",
-        "/api/v1/config/draft/operations/batch",
-        "/api/v1/config/draft/operations/remove",
-        "/api/v1/config/draft/validate",
-        "/api/v1/config/draft/commit",
-        "/api/v1/config/save",
-        "/api/v1/config/gui",
-        "/api/v1/config/archive",
-        "/api/v1/config/archive/download",
-        "/api/v1/config/archive/resource",
-        "/api/v1/config/archive/validate",
-        "/api/v1/config/archive/restore",
-        "/api/v1/config/archive/resource/write",
-        "/api/v1/config/archive/resource/delete",
-        "/api/v1/config/draft/clear",
-    }, "trusted-gateway endpoint boundary drifted")
     require(all(item["authentication"] == "management" for item in endpoints
-                if item["path"] not in public_paths | gateway_paths),
-            "monitoring endpoint boundary drifted")
+                if item["path"] not in public_paths),
+            "management endpoint boundary drifted")
 
     features = {item["path"]: item["feature"] for item in endpoints}
     require(features == {
@@ -144,6 +121,8 @@ def main() -> None:
         "/api/v1/capabilities": None,
         "/api/v1/auth/session": None,
         "/api/v1/auth/enroll": None,
+        "/api/v1/auth/login": None,
+        "/api/v1/auth/logout": None,
         "/api/v1/console": "console",
         "/api/v1/status": None,
         "/api/v1/metrics/summary": "metrics",
@@ -171,6 +150,7 @@ def main() -> None:
         "/api/v1/config/draft/commit": "config_write",
         "/api/v1/config/save": "config_save",
         "/api/v1/config/gui": "config_read",
+        "/api/v1/config/gui/publish": "config_save",
         "/api/v1/config/archive": "config_read",
         "/api/v1/config/archive/download": "config_read",
         "/api/v1/config/archive/resource": "config_read",

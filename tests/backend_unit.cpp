@@ -17,6 +17,7 @@
 #include "operational_alerts.hpp"
 #include "operational_event_store.hpp"
 #include "path.hpp"
+#include "password.hpp"
 #include "runtime_metrics.hpp"
 #include "revision.hpp"
 #include "smithproxy_client.hpp"
@@ -53,6 +54,15 @@ int main() {
     assert(admin_session);
     assert(admin_session->token.size() == 64U);
     assert(admin_sessions.authenticate(admin_session->token, 1001) == "security-admin");
+
+    const auto password_verifier = create_password_verifier(
+        "security-admin", "correct horse battery staple");
+    assert(password_verifier);
+    assert(password_verifier->salt.size() == 32U);
+    assert(password_verifier->verifier.size() == 64U);
+    assert(verify_password(*password_verifier, "correct horse battery staple"));
+    assert(!verify_password(*password_verifier, "wrong horse battery staple"));
+    assert(!create_password_verifier("security-admin", "too-short"));
     assert(!admin_sessions.authenticate(std::string(64U, 'f'), 1001));
     assert(!admin_sessions.authenticate(admin_session->token,
                                         1000 + AdminSessionStore::ttl_seconds));
@@ -2466,7 +2476,32 @@ int main() {
     assert(archive_bootstrap.config->base_path == "/gui");
     assert(archive_bootstrap.config->api_token_file == "/run/gui/token");
     assert(archive_bootstrap.config->schema_version == 1U);
-    assert(!parse_gui_bootstrap("gui = { schema_version = 2; };\n").config);
+    // Schema two introduces persistent administrator verifiers.
+    const auto administrator_bootstrap = parse_gui_bootstrap(
+        "gui = { schema_version = 2; administrators = ("
+        "{ name = \"security-admin\"; algorithm = \"scrypt\"; "
+        "salt = \"0123456789abcdef0123456789abcdef\"; "
+        "verifier = \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"; "
+        "cost = 32768L; block_size = 8; parallelism = 1; }); };\n");
+    assert(administrator_bootstrap.config);
+    assert(administrator_bootstrap.config->schema_version == 2U);
+    assert(administrator_bootstrap.config->administrators.size() == 1U);
+    assert(administrator_bootstrap.config->administrators.front().name == "security-admin");
+    const auto serialized_administrator_bootstrap =
+        serialize_gui_bootstrap(*administrator_bootstrap.config);
+    assert(serialized_administrator_bootstrap);
+    const auto reparsed_administrator_bootstrap =
+        parse_gui_bootstrap(*serialized_administrator_bootstrap);
+    assert(reparsed_administrator_bootstrap.config);
+    assert(reparsed_administrator_bootstrap.config->administrators.size() == 1U);
+    assert(reparsed_administrator_bootstrap.config->administrators.front().verifier ==
+           administrator_bootstrap.config->administrators.front().verifier);
+    assert(!parse_gui_bootstrap(
+        "gui = { schema_version = 1; administrators = (); };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { schema_version = 2; administrators = ("
+        "{ name = \"bad name\"; algorithm = \"scrypt\"; salt = \"00\"; "
+        "verifier = \"00\"; cost = 32768L; block_size = 8; parallelism = 1; }); };\n").config);
     assert(!parse_gui_bootstrap("gui = { future_setting = true; };\n").config);
     assert(!parse_gui_bootstrap(
         "gui = { backend = { port = 18082; future_setting = true; }; };\n").config);

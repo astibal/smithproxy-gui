@@ -44,8 +44,9 @@ int main(int argc, char** argv) {
 
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
+    const bool config_api_configured = parsed.config->smithproxy.has_value();
     smithproxy::gui::SmithproxyMonitor monitor(
-        parsed.config->smithproxy, parsed.config->gateway_secret.has_value());
+        parsed.config->smithproxy, config_api_configured);
     monitor.start();
     smithproxy::gui::write_log(
         smithproxy::gui::LogLevel::Info,

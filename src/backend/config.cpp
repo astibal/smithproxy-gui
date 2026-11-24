@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <initializer_list>
+#include <set>
 #include <string_view>
 #include <utility>
 
@@ -39,6 +40,24 @@ struct ProtectedFileResult {
 };
 
 bool valid_header_value(std::string_view value);
+
+bool valid_administrator_name(const std::string_view value) {
+    return !value.empty() && value.size() <= 64U &&
+        std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+            return (character >= 'a' && character <= 'z') ||
+                   (character >= 'A' && character <= 'Z') ||
+                   (character >= '0' && character <= '9') || character == '.' ||
+                   character == '_' || character == '-' || character == '@';
+        });
+}
+
+bool lowercase_hexadecimal(const std::string_view value, const std::size_t length) {
+    return value.size() == length &&
+        std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+            return (character >= '0' && character <= '9') ||
+                   (character >= 'a' && character <= 'f');
+        });
+}
 
 bool valid_bootstrap_path(const std::optional<std::string>& value) {
     if (!value || value->empty() || value->size() > 4096U || value->front() != '/') return false;
@@ -328,6 +347,7 @@ ParseResult parse_gui_config_file(
     config.base_path = persistent.base_path;
     config.asset_root = default_asset_root;
     config.gui_config_path = path;
+    config.administrators = persistent.administrators;
 
     if (persistent.api_url) {
         const auto certificate = read_protected_file(
@@ -388,14 +408,15 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
     GuiBootstrapConfig config;
     try {
         if (const auto member = unknown_member(
-                gui, {"schema_version", "backend", "smithproxy", "gateway"})) {
+                gui, {"schema_version", "backend", "smithproxy", "gateway", "administrators"})) {
             return bootstrap_failure("gui.cfg contains unsupported gui setting: " + *member);
         }
         int schema_version = config.schema_version;
         gui.lookupValue("schema_version", schema_version);
-        if (schema_version != 1) {
+        if (schema_version != 1 && schema_version != 2) {
             return bootstrap_failure("gui.schema_version is unsupported");
         }
+        config.schema_version = static_cast<std::uint16_t>(schema_version);
         if (gui.exists("backend")) {
             const auto& backend = gui["backend"];
             if (backend.getType() != libconfig::Setting::TypeGroup) {
@@ -487,6 +508,54 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
                 }
             }
         }
+        if(gui.exists("administrators")) {
+            if(schema_version < 2) {
+                return bootstrap_failure("gui.administrators requires schema_version 2");
+            }
+            const auto& administrators = gui["administrators"];
+            if(administrators.getType() != libconfig::Setting::TypeList ||
+               administrators.getLength() > 64) {
+                return bootstrap_failure("gui.administrators must be a list with at most 64 entries");
+            }
+            std::set<std::string> names;
+            for(int index = 0; index < administrators.getLength(); ++index) {
+                const auto& entry = administrators[index];
+                if(entry.getType() != libconfig::Setting::TypeGroup) {
+                    return bootstrap_failure("gui.administrators entries must be groups");
+                }
+                if(const auto member = unknown_member(
+                       entry, {"name", "algorithm", "salt", "verifier", "cost", "block_size", "parallelism"})) {
+                    return bootstrap_failure("gui.administrators contains unsupported setting: " + *member);
+                }
+                GuiAdministratorConfig administrator;
+                std::string algorithm;
+                long long cost = 0;
+                int block_size = 0;
+                int parallelism = 0;
+                if(!entry.lookupValue("name", administrator.name) ||
+                   !entry.lookupValue("algorithm", algorithm) ||
+                   !entry.lookupValue("salt", administrator.salt) ||
+                   !entry.lookupValue("verifier", administrator.verifier) ||
+                   !entry.lookupValue("cost", cost) ||
+                   !entry.lookupValue("block_size", block_size) ||
+                   !entry.lookupValue("parallelism", parallelism)) {
+                    return bootstrap_failure("gui.administrators entry is incomplete");
+                }
+                const bool valid_cost = cost >= 16384 && cost <= 1048576 &&
+                    (static_cast<std::uint64_t>(cost) & (static_cast<std::uint64_t>(cost) - 1U)) == 0U;
+                if(!valid_administrator_name(administrator.name) || algorithm != "scrypt" ||
+                   !lowercase_hexadecimal(administrator.salt, 32U) ||
+                   !lowercase_hexadecimal(administrator.verifier, 64U) || !valid_cost ||
+                   block_size < 8 || block_size > 32 || parallelism < 1 || parallelism > 16 ||
+                   !names.insert(administrator.name).second) {
+                    return bootstrap_failure("gui.administrators entry is invalid");
+                }
+                administrator.cost = static_cast<std::uint64_t>(cost);
+                administrator.block_size = static_cast<std::uint32_t>(block_size);
+                administrator.parallelism = static_cast<std::uint32_t>(parallelism);
+                config.administrators.push_back(std::move(administrator));
+            }
+        }
     } catch (const libconfig::SettingTypeException&) {
         return bootstrap_failure("gui.cfg contains a value with the wrong type");
     }
@@ -498,6 +567,57 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
             "gui.backend non-loopback bind requires gui.gateway.secret_file");
     }
     return {std::move(config), {}};
+}
+
+std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& config) {
+    const auto quote = [](const std::string_view value) {
+        std::string output{"\""};
+        output.reserve(value.size() + 2U);
+        for(const char character : value) {
+            if(character == '\\' || character == '"') output.push_back('\\');
+            output.push_back(character);
+        }
+        output.push_back('"');
+        return output;
+    };
+    std::string source = "gui = {\n  schema_version = " +
+        std::to_string(config.administrators.empty() ? config.schema_version : 2U) + ";\n\n";
+    source += "  backend = {\n    bind_address = " + quote(config.bind_address) +
+        ";\n    port = " + std::to_string(config.port) +
+        ";\n    base_path = " + quote(config.base_path) + ";\n  };\n";
+    if(config.api_url) {
+        if(!config.ca_cert || !config.api_token_file) return std::nullopt;
+        source += "\n  smithproxy = {\n    api_url = " + quote(*config.api_url) +
+            ";\n    ca_cert = " + quote(*config.ca_cert) +
+            ";\n    api_token_file = " + quote(*config.api_token_file) + ";\n";
+        if(config.cli_endpoint && !config.cli_endpoint->empty())
+            source += "    cli_endpoint = " + quote(*config.cli_endpoint) + ";\n";
+        source += "  };\n";
+    }
+    if(config.gateway_secret_file) {
+        source += "\n  gateway = {\n    secret_file = " + quote(*config.gateway_secret_file) + ";\n";
+        if(config.gateway_previous_secret_file && !config.gateway_previous_secret_file->empty())
+            source += "    previous_secret_file = " + quote(*config.gateway_previous_secret_file) + ";\n";
+        source += "  };\n";
+    }
+    if(!config.administrators.empty()) {
+        source += "\n  administrators = (\n";
+        for(std::size_t index = 0U; index < config.administrators.size(); ++index) {
+            const auto& administrator = config.administrators[index];
+            source += "    { name = " + quote(administrator.name) +
+                "; algorithm = \"scrypt\"; salt = " + quote(administrator.salt) +
+                "; verifier = " + quote(administrator.verifier) +
+                "; cost = " + std::to_string(administrator.cost) +
+                "L; block_size = " + std::to_string(administrator.block_size) +
+                "; parallelism = " + std::to_string(administrator.parallelism) + "; }";
+            source += index + 1U == config.administrators.size() ? "\n" : ",\n";
+        }
+        source += "  );\n";
+    }
+    source += "};\n";
+    const auto reparsed = parse_gui_bootstrap(source);
+    if(!reparsed.config) return std::nullopt;
+    return source;
 }
 
 std::string usage() {

@@ -116,6 +116,9 @@ FULL_TYPED_FIELDS = {
         "schema_version", "backend.bind_address", "backend.port", "backend.base_path",
         "smithproxy.api_url", "smithproxy.ca_cert", "smithproxy.api_token_file",
         "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file",
+        "administrators.name", "administrators.algorithm", "administrators.salt",
+        "administrators.verifier", "administrators.cost", "administrators.block_size",
+        "administrators.parallelism",
     },
 }
 

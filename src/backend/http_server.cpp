@@ -12,6 +12,7 @@
 #include "json.hpp"
 #include "operational_alerts.hpp"
 #include "operational_event_store.hpp"
+#include "password.hpp"
 #include "path.hpp"
 #include "revision.hpp"
 
@@ -31,6 +32,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <random>
 #include <set>
 #include <sstream>
@@ -745,6 +747,7 @@ private:
             return {421, "application/json; charset=utf-8", "{\"error\":\"invalid request host\"}"};
         }
         if(*relative == "/api/v1/auth/enroll") return enroll(connection, body);
+        if(*relative == "/api/v1/auth/login") return login(connection, body);
         if (relative->starts_with("/api/") && !management_authenticated(connection)) {
             return {401, "application/json; charset=utf-8", "{\"error\":\"authentication required\"}"};
         }
@@ -760,7 +763,9 @@ private:
             *relative != "/api/v1/config/archive/validate" &&
             *relative != "/api/v1/config/archive/restore" &&
             *relative != "/api/v1/config/archive/resource/write" &&
-            *relative != "/api/v1/config/archive/resource/delete") {
+            *relative != "/api/v1/config/archive/resource/delete" &&
+            *relative != "/api/v1/config/gui/publish" &&
+            *relative != "/api/v1/auth/logout") {
             return relative->starts_with("/api/")
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
                 : Response{405, "application/json; charset=utf-8", "{\"error\":\"method not allowed\"}"};
@@ -776,6 +781,10 @@ private:
         if (!(archive_upload ? same_origin_binary_mutation(connection)
                              : same_origin_mutation(connection))) {
             return {403, "application/json; charset=utf-8", "{\"error\":\"same-origin CSRF check failed\"}"};
+        }
+        if(*relative == "/api/v1/auth/logout") return logout(connection);
+        if(*relative == "/api/v1/config/gui/publish") {
+            return publish_gui_configuration(connection, body);
         }
         if(archive_upload) {
             std::vector<std::string> headers;
@@ -1484,7 +1493,105 @@ private:
             ? nlohmann::json{{"secret_file", *value.gateway_secret_file},
                 {"previous_secret_file", value.gateway_previous_secret_file.value_or("")}}
             : nlohmann::json(nullptr);
+        document["administrators"] = nlohmann::json::array();
+        for(const auto& administrator : value.administrators) {
+            document["administrators"].push_back(administrator.name);
+        }
         return {200, "application/json; charset=utf-8", document.dump()};
+    }
+
+    Response publish_gui_configuration(
+        MHD_Connection* connection, const std::string_view body) const {
+        const auto* revision = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "X-Smithproxy-Expected-Revision");
+        const auto* archive_hash = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "X-Smithproxy-Archive-SHA256");
+        if(!revision || !archive_hash || !is_config_revision(revision) ||
+           !is_content_hash(archive_hash)) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid GUI publication precondition\"}"};
+        }
+        const auto document = nlohmann::json::parse(body, nullptr, false);
+        const auto exact_keys = [](const nlohmann::json& value,
+                                   const std::initializer_list<std::string_view> keys) {
+            if(!value.is_object() || value.size() != keys.size()) return false;
+            return std::all_of(keys.begin(), keys.end(), [&](const auto key) {
+                return value.contains(std::string(key));
+            });
+        };
+        if(document.is_discarded() || !exact_keys(document, {"backend", "smithproxy", "gateway"}) ||
+           !exact_keys(document["backend"], {"bind_address", "port", "base_path"}) ||
+           !document["backend"]["bind_address"].is_string() ||
+           !document["backend"]["port"].is_number_integer() ||
+           !document["backend"]["base_path"].is_string()) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid GUI configuration request\"}"};
+        }
+        const auto current_resource = monitor_.archive_api(
+            "GET", "/api/config/archive/resource?path=gui.cfg");
+        if(!current_resource.transport_ok || current_resource.status != 200L) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"current GUI configuration is unavailable\"}"};
+        }
+        auto current = parse_gui_bootstrap(current_resource.body);
+        if(!current.config) {
+            return {422, "application/json; charset=utf-8",
+                    "{\"error\":\"current GUI configuration is invalid\"}"};
+        }
+        GuiBootstrapConfig replacement;
+        replacement.schema_version = current.config->administrators.empty() ? 1U : 2U;
+        replacement.administrators = current.config->administrators;
+        replacement.bind_address = document["backend"]["bind_address"].get<std::string>();
+        const auto port = document["backend"]["port"].get<long long>();
+        if(port < 1 || port > 65535) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid GUI backend port\"}"};
+        }
+        replacement.port = static_cast<std::uint16_t>(port);
+        replacement.base_path = document["backend"]["base_path"].get<std::string>();
+        if(!document["smithproxy"].is_null()) {
+            const auto& upstream = document["smithproxy"];
+            if(!exact_keys(upstream, {"api_url", "ca_cert", "api_token_file", "cli_endpoint"}) ||
+               !std::all_of(upstream.begin(), upstream.end(), [](const auto& value) {
+                   return value.is_string();
+               })) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid GUI Smithproxy configuration\"}"};
+            }
+            replacement.api_url = upstream["api_url"].get<std::string>();
+            replacement.ca_cert = upstream["ca_cert"].get<std::string>();
+            replacement.api_token_file = upstream["api_token_file"].get<std::string>();
+            const auto cli_endpoint = upstream["cli_endpoint"].get<std::string>();
+            if(!cli_endpoint.empty()) replacement.cli_endpoint = cli_endpoint;
+        }
+        if(!document["gateway"].is_null()) {
+            const auto& gateway = document["gateway"];
+            if(!exact_keys(gateway, {"secret_file", "previous_secret_file"}) ||
+               !gateway["secret_file"].is_string() ||
+               !gateway["previous_secret_file"].is_string()) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid GUI gateway configuration\"}"};
+            }
+            replacement.gateway_secret_file = gateway["secret_file"].get<std::string>();
+            const auto previous = gateway["previous_secret_file"].get<std::string>();
+            if(!previous.empty()) replacement.gateway_previous_secret_file = previous;
+        }
+        const auto serialized = serialize_gui_bootstrap(replacement);
+        if(!serialized) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid GUI configuration\"}"};
+        }
+        const auto upstream = monitor_.archive_api(
+            "PUT", "/api/config/archive/resource?path=gui.cfg", *serialized,
+            {"X-Smithproxy-Expected-Revision: " + std::string(revision),
+             "X-Smithproxy-Archive-SHA256: " + std::string(archive_hash),
+             "X-Smithproxy-Executable: false"});
+        if(!upstream.transport_ok) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy archive API unavailable\"}"};
+        }
+        return {static_cast<unsigned>(upstream.status),
+                "application/json; charset=utf-8", upstream.body};
     }
 
     Response capabilities(MHD_Connection* connection) {
@@ -1630,20 +1737,31 @@ private:
         return {200, "application/json; charset=utf-8",
                 "{\"mode\":" + json_string(gateway ? "gateway" : "standalone") +
                     ",\"authenticated\":" + (authenticated ? "true" : "false") +
+                    ",\"administrators_configured\":" +
+                    (!config_.administrators.empty() ? "true" : "false") +
                     ",\"administrator\":" +
                     (administrator ? json_string(*administrator) : "null") + "}"};
     }
 
     Response enroll(MHD_Connection* connection, const std::string_view body) {
+        if(config_.gateway_secret) {
+            return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
+        }
         if(!same_origin_mutation(connection)) {
             return {403, "application/json; charset=utf-8",
                     "{\"error\":\"same-origin CSRF check failed\"}"};
         }
         const auto request = nlohmann::json::parse(body, nullptr, false);
-        if(request.is_discarded() || !request.is_object() || request.size() != 1U ||
-           !request.contains("token") || !request["token"].is_string()) {
+        if(request.is_discarded() || !request.is_object() || request.size() != 2U ||
+           !request.contains("token") || !request["token"].is_string() ||
+           !request.contains("password") || !request["password"].is_string()) {
             return {400, "application/json; charset=utf-8",
                     "{\"error\":\"invalid enrollment request\"}"};
+        }
+        const auto password = request["password"].get<std::string>();
+        if(password.size() < 14U || password.size() > 1024U) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"administrator password must contain 14..1024 characters\"}"};
         }
         const auto enrollment = monitor_.consume_gui_enrollment(
             request["token"].get<std::string>());
@@ -1654,6 +1772,67 @@ private:
                     status == 403U
                         ? "{\"error\":\"invalid or expired enrollment token\"}"
                         : "{\"error\":\"Smithproxy enrollment service unavailable\"}"};
+        }
+        const auto resource = monitor_.archive_api(
+            "GET", "/api/config/archive/resource?path=gui.cfg");
+        const auto inventory = monitor_.archive_api("GET", "/api/config/archive/resources");
+        const auto status = monitor_.status();
+        if(!resource.transport_ok || resource.status != 200L || !inventory.transport_ok ||
+           inventory.status != 200L || !status.config_snapshot.revision) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration is unavailable\"}"};
+        }
+        auto persistent = parse_gui_bootstrap(resource.body);
+        const auto inventory_document = nlohmann::json::parse(inventory.body, nullptr, false);
+        if(!persistent.config || inventory_document.is_discarded() ||
+           !inventory_document.is_object() ||
+           !inventory_document.contains("content_hash") ||
+           !inventory_document["content_hash"].is_string()) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration is invalid\"}"};
+        }
+        const auto duplicate = std::any_of(
+            persistent.config->administrators.begin(), persistent.config->administrators.end(),
+            [&](const auto& administrator) {
+                return administrator.name == *enrollment.administrator;
+            });
+        if(duplicate) {
+            return {409, "application/json; charset=utf-8",
+                    "{\"error\":\"administrator already exists\"}"};
+        }
+        auto verifier = create_password_verifier(*enrollment.administrator, password);
+        if(!verifier) {
+            return {503, "application/json; charset=utf-8",
+                    "{\"error\":\"administrator verifier unavailable\"}"};
+        }
+        persistent.config->schema_version = 2U;
+        persistent.config->administrators.push_back(std::move(*verifier));
+        const auto replacement = serialize_gui_bootstrap(*persistent.config);
+        if(!replacement) {
+            return {500, "application/json; charset=utf-8",
+                    "{\"error\":\"GUI configuration serialization failed\"}"};
+        }
+        const auto archive_hash = inventory_document["content_hash"].get<std::string>();
+        if(!is_content_hash(archive_hash)) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy archive precondition is invalid\"}"};
+        }
+        const auto publication = monitor_.archive_api(
+            "PUT", "/api/config/archive/resource?path=gui.cfg", *replacement,
+            {"X-Smithproxy-Expected-Revision: " + *status.config_snapshot.revision,
+             "X-Smithproxy-Archive-SHA256: " + archive_hash,
+             "X-Smithproxy-Executable: false"});
+        if(!publication.transport_ok) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy GUI configuration publication unavailable\"}"};
+        }
+        if(publication.status == 409L) {
+            return {409, "application/json; charset=utf-8",
+                    "{\"error\":\"configuration changed during enrollment\"}"};
+        }
+        if(publication.status < 200L || publication.status >= 300L) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy rejected GUI configuration publication\"}"};
         }
         auto session = admin_sessions_.issue(*enrollment.administrator);
         if(!session) {
@@ -1666,6 +1845,74 @@ private:
         return {200, "application/json; charset=utf-8",
                 nlohmann::json{{"administrator", *enrollment.administrator}}.dump(), "no-store",
                 {{"Set-Cookie", cookie}}};
+    }
+
+    Response login(MHD_Connection* connection, const std::string_view body) {
+        if(config_.gateway_secret) {
+            return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
+        }
+        if(!same_origin_mutation(connection)) {
+            return {403, "application/json; charset=utf-8",
+                    "{\"error\":\"same-origin CSRF check failed\"}"};
+        }
+        const auto request = nlohmann::json::parse(body, nullptr, false);
+        if(request.is_discarded() || !request.is_object() || request.size() != 2U ||
+           !request.contains("administrator") || !request["administrator"].is_string() ||
+           !request.contains("password") || !request["password"].is_string()) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid login request\"}"};
+        }
+        const auto administrator_name = request["administrator"].get<std::string>();
+        const auto password = request["password"].get<std::string>();
+        const auto now = std::chrono::steady_clock::now();
+        {
+            std::scoped_lock lock(login_mutex_);
+            if(now < next_login_attempt_) {
+                return {429, "application/json; charset=utf-8",
+                        "{\"error\":\"login rate limit exceeded\"}"};
+            }
+            next_login_attempt_ = now + std::chrono::milliseconds(750);
+        }
+        const auto found = std::find_if(
+            config_.administrators.begin(), config_.administrators.end(),
+            [&](const auto& administrator) { return administrator.name == administrator_name; });
+        const GuiAdministratorConfig dummy{
+            .name = "unavailable",
+            .salt = "00000000000000000000000000000000",
+            .verifier = "0000000000000000000000000000000000000000000000000000000000000000",
+            .cost = 32768U,
+            .block_size = 8U,
+            .parallelism = 1U,
+        };
+        const auto& verifier = found == config_.administrators.end() ? dummy : *found;
+        const bool accepted = verify_password(verifier, password) &&
+                              found != config_.administrators.end();
+        if(!accepted) {
+            return {403, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid administrator credentials\"}"};
+        }
+        auto session = admin_sessions_.issue(found->name);
+        if(!session) {
+            return {503, "application/json; charset=utf-8",
+                    "{\"error\":\"administrator session unavailable\"}"};
+        }
+        const auto cookie = std::string(admin_session_cookie) + "=" + session->token +
+            "; Max-Age=" + std::to_string(AdminSessionStore::ttl_seconds) +
+            "; Path=/; Secure; HttpOnly; SameSite=Strict";
+        return {200, "application/json; charset=utf-8",
+                nlohmann::json{{"administrator", found->name}}.dump(), "no-store",
+                {{"Set-Cookie", cookie}}};
+    }
+
+    Response logout(MHD_Connection* connection) {
+        if(const auto* supplied = MHD_lookup_connection_value(
+               connection, MHD_COOKIE_KIND, admin_session_cookie.data())) {
+            admin_sessions_.revoke(supplied);
+        }
+        const auto cookie = std::string(admin_session_cookie) +
+            "=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict";
+        return {200, "application/json; charset=utf-8", "{\"state\":\"logged-out\"}",
+                "no-store", {{"Set-Cookie", cookie}}};
     }
 
     void bind_empty_draft_revision() {
@@ -2904,6 +3151,8 @@ private:
     OperationalEventStore operational_events_;
     AuditStore audit_;
     mutable AdminSessionStore admin_sessions_;
+    std::mutex login_mutex_;
+    std::chrono::steady_clock::time_point next_login_attempt_{};
 };
 
 } // namespace

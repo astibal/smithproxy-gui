@@ -70,6 +70,7 @@ export interface GatewaySession {
   mode: 'gateway' | 'standalone';
   authenticated: boolean;
   administrator: string | null;
+  administratorsConfigured: boolean;
 }
 
 export interface ArchiveEntry {
@@ -109,7 +110,8 @@ export interface ArchiveResourceWrite {
 export interface GuiConfiguration {
   state: 'ready' | 'absent';
   restartRequired: true;
-  schemaVersion?: 1;
+  schemaVersion?: 1 | 2;
+  administrators: ReadonlyArray<string>;
   backend?: {
     bindAddress: string;
     port: number;
@@ -394,7 +396,7 @@ export interface AlertSnapshot {
 }
 
 export type AuditOutcome = 'succeeded' | 'conflict' | 'rejected';
-export type AuditAuthentication = 'gateway' | 'disabled' | 'none';
+export type AuditAuthentication = 'gateway' | 'session' | 'none';
 
 export interface AuditEntry {
   id: string;
@@ -638,6 +640,7 @@ function parseCapabilities(value: unknown): SystemCapabilities {
 function parseGatewaySession(value: unknown): GatewaySession {
   if (!isObject(value) || (value.mode !== 'gateway' && value.mode !== 'standalone') ||
       typeof value.authenticated !== 'boolean' ||
+      typeof value.administrators_configured !== 'boolean' ||
       (value.administrator !== null &&
        (typeof value.administrator !== 'string' || value.administrator.length === 0 ||
         value.administrator.length > 64)) ||
@@ -645,7 +648,11 @@ function parseGatewaySession(value: unknown): GatewaySession {
       (value.mode === 'standalone' && value.authenticated !== (value.administrator !== null))) {
     throw new Error('Invalid gateway session response.');
   }
-  return {mode: value.mode, authenticated: value.authenticated, administrator: value.administrator};
+  return {
+    mode: value.mode, authenticated: value.authenticated,
+    administrator: value.administrator,
+    administratorsConfigured: value.administrators_configured,
+  };
 }
 
 function parseStatus(value: unknown): SystemSnapshot {
@@ -1169,7 +1176,7 @@ function parseAudit(value: unknown): AuditSnapshot {
           'config.draft.commit', 'api.mutation']
           .includes(String(item.operation)) ||
         !['succeeded', 'conflict', 'rejected'].includes(String(item.outcome)) ||
-        !['gateway', 'disabled', 'none'].includes(String(item.authentication)) || item.actor !== null ||
+        !['gateway', 'session', 'none'].includes(String(item.authentication)) || item.actor !== null ||
         !isNonNegativeInteger(item.target_count) || item.target_count > 4096 ||
         !Array.isArray(item.targets) || item.targets.length > 32 ||
         !item.targets.every(target => typeof target === 'string' && target.length > 0 && target.length <= 512 &&
@@ -1386,9 +1393,16 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
       (value.state !== 'ready' && value.state !== 'absent')) {
     throw new Error('Invalid GUI configuration response.');
   }
-  if (value.state === 'absent') return {state: 'absent', restartRequired: true};
-  if (value.schema_version !== 1) {
+  if (value.state === 'absent') return {
+    state: 'absent', restartRequired: true, administrators: [],
+  };
+  if (value.schema_version !== 1 && value.schema_version !== 2) {
     throw new Error('Unsupported GUI configuration schema.');
+  }
+  if (!Array.isArray(value.administrators) || value.administrators.length > 64 ||
+      value.administrators.some(item => typeof item !== 'string' ||
+        !/^[A-Za-z0-9._@-]{1,64}$/u.test(item))) {
+    throw new Error('Invalid GUI administrator configuration.');
   }
   if (!isObject(value.backend) || typeof value.backend.bind_address !== 'string' ||
       !Number.isSafeInteger(value.backend.port) || (value.backend.port as number) < 1 ||
@@ -1409,7 +1423,8 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
   const parsed: GuiConfiguration = {
     state: 'ready',
     restartRequired: true,
-    schemaVersion: 1,
+    schemaVersion: value.schema_version,
+    administrators: value.administrators as string[],
     backend: {
       bindAddress: value.backend.bind_address,
       port: value.backend.port as number,
@@ -1580,15 +1595,18 @@ export class SystemClient {
     return parseGatewaySession(await this.#request(joinedPath(this.#apiBase, '/auth/session')));
   }
 
-  async enrollAdministrator(token: string): Promise<{administrator: string}> {
+  async enrollAdministrator(token: string, password: string): Promise<{administrator: string}> {
     if (!/^[0-9a-f]{64}$/u.test(token)) throw new Error('Invalid enrollment token.');
+    if (password.length < 14 || password.length > 1024) {
+      throw new Error('Administrator password must contain 14 through 1024 characters.');
+    }
     const controller = new AbortController();
     this.#pendingRequests.add(controller);
     const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
     try {
       const response = await this.#fetch(joinedPath(this.#apiBase, '/auth/enroll'), {
         method: 'POST',
-        body: JSON.stringify({token}),
+        body: JSON.stringify({token, password}),
         cache: 'no-store',
         credentials: 'same-origin',
         headers: {
@@ -1612,6 +1630,25 @@ export class SystemClient {
     }
   }
 
+  async loginAdministrator(administrator: string, password: string): Promise<{administrator: string}> {
+    if (!/^[A-Za-z0-9._@-]{1,64}$/u.test(administrator) ||
+        password.length < 14 || password.length > 1024) {
+      throw new Error('Invalid administrator credentials.');
+    }
+    const value = await this.#jsonMutation('/auth/login', {administrator, password}, 'Administrator login');
+    if (!isObject(value) || value.administrator !== administrator) {
+      throw new Error('Invalid administrator login response.');
+    }
+    return {administrator};
+  }
+
+  async logoutAdministrator(): Promise<void> {
+    const value = await this.#jsonMutation('/auth/logout', {}, 'Administrator logout');
+    if (!isObject(value) || value.state !== 'logged-out') {
+      throw new Error('Invalid administrator logout response.');
+    }
+  }
+
   async archiveInventory(): Promise<ArchiveInventory> {
     return parseArchiveInventory(
       await this.#request(joinedPath(this.#apiBase, '/config/archive')),
@@ -1622,6 +1659,55 @@ export class SystemClient {
     return parseGuiConfiguration(
       await this.#request(joinedPath(this.#apiBase, '/config/gui')),
     );
+  }
+
+  async publishGuiConfiguration(
+    value: GuiBootstrapConfiguration, expectedRevision: string, archiveHash: string,
+  ): Promise<ArchiveResourceWrite> {
+    const validationError = validateGuiBootstrapConfiguration(value);
+    if (validationError) throw new Error(validationError);
+    if (expectedRevision.length === 0 || expectedRevision.length > 256 || /[\r\n]/u.test(expectedRevision)) {
+      throw new Error('Invalid expected configuration revision.');
+    }
+    parseArchiveHash(archiveHash);
+    const payload = {
+      backend: {
+        bind_address: value.backend.bindAddress,
+        port: value.backend.port,
+        base_path: value.backend.basePath,
+      },
+      smithproxy: value.smithproxy ? {
+        api_url: value.smithproxy.apiUrl,
+        ca_cert: value.smithproxy.caCert,
+        api_token_file: value.smithproxy.apiTokenFile,
+        cli_endpoint: value.smithproxy.cliEndpoint,
+      } : null,
+      gateway: value.gateway ? {
+        secret_file: value.gateway.secretFile,
+        previous_secret_file: value.gateway.previousSecretFile,
+      } : null,
+    };
+    const controller = new AbortController();
+    this.#pendingRequests.add(controller);
+    const timeout = globalThis.setTimeout(() => controller.abort(), ARCHIVE_REQUEST_TIMEOUT_MS);
+    try {
+      const response = await this.#fetch(joinedPath(this.#apiBase, '/config/gui/publish'), {
+        method: 'POST', body: JSON.stringify(payload), cache: 'no-store',
+        credentials: 'same-origin', redirect: 'error', signal: controller.signal,
+        headers: {
+          Accept: 'application/json', 'Content-Type': 'application/json',
+          'X-Smithproxy-GUI-CSRF': '1',
+          'X-Smithproxy-Expected-Revision': expectedRevision,
+          'X-Smithproxy-Archive-SHA256': archiveHash,
+        },
+      });
+      if (!response.ok) throw httpStatusError(response, 'GUI configuration publication');
+      return parseArchiveResourceWrite(await boundedJson(
+        response, MAX_SYSTEM_RESPONSE_BYTES, 'GUI configuration publication'));
+    } finally {
+      globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
+    }
   }
 
   archiveDownloadUrl(version: 'current' | 'previous'): string {
@@ -1791,6 +1877,29 @@ export class SystemClient {
   cancelPendingRequests(): void {
     for (const controller of this.#pendingRequests) controller.abort();
     this.#pendingRequests.clear();
+  }
+
+  async #jsonMutation(
+    suffix: string, body: Readonly<Record<string, string>>, label: string,
+  ): Promise<unknown> {
+    const controller = new AbortController();
+    this.#pendingRequests.add(controller);
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.#timeoutMs);
+    try {
+      const response = await this.#fetch(joinedPath(this.#apiBase, suffix), {
+        method: 'POST', body: JSON.stringify(body), cache: 'no-store',
+        credentials: 'same-origin', redirect: 'error', signal: controller.signal,
+        headers: {
+          Accept: 'application/json', 'Content-Type': 'application/json',
+          'X-Smithproxy-GUI-CSRF': '1',
+        },
+      });
+      if (!response.ok) throw httpStatusError(response, label);
+      return await boundedJson(response, MAX_SYSTEM_RESPONSE_BYTES, label);
+    } finally {
+      globalThis.clearTimeout(timeout);
+      this.#pendingRequests.delete(controller);
+    }
   }
 
   async #request(path: string): Promise<unknown> {
