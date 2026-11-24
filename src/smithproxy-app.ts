@@ -12785,7 +12785,7 @@ export class SmithproxyApp extends LitElement {
               <span class="runtime-state ${administrator.enabled ? 'success' : 'warning'}">
                 ● ${administrator.enabled ? 'Enabled' : 'Disabled'}
               </span>
-              ${current ? html`<small>current session</small>` : nothing}
+              ${current ? html`<small>current session · protected from lockout</small>` : nothing}
               <button class="secondary" type="button"
                 aria-label=${`Change password for ${administrator.name}`}
                 ?disabled=${this.administratorInventoryBusy}
@@ -12798,7 +12798,10 @@ export class SmithproxyApp extends LitElement {
                     ? `Confirm disable ${administrator.name}`
                     : `Disable ${administrator.name}`
                   : `Enable ${administrator.name}`}
-                type="button" ?disabled=${this.administratorInventoryBusy}
+                title=${current
+                  ? 'Sign in as a different administrator before changing this account state.'
+                  : nothing}
+                type="button" ?disabled=${this.administratorInventoryBusy || current}
                 @click=${() => {
                   void this.setCoreAdministratorEnabled(administrator.name, !administrator.enabled);
                 }}>${administrator.enabled
@@ -12808,7 +12811,10 @@ export class SmithproxyApp extends LitElement {
                 aria-label=${this.administratorActionArmed === removeKey
                   ? `Confirm remove ${administrator.name}`
                   : `Remove ${administrator.name}`}
-                type="button" ?disabled=${this.administratorInventoryBusy}
+                title=${current
+                  ? 'Sign in as a different administrator before removing this account.'
+                  : nothing}
+                type="button" ?disabled=${this.administratorInventoryBusy || current}
                 @click=${() => { void this.removeCoreAdministrator(administrator.name); }}>
                 ${this.administratorActionArmed === removeKey ? 'Confirm remove' : 'Remove'}
               </button>

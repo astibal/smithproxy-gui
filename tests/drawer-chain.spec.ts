@@ -7267,6 +7267,9 @@ test('manages Core-owned administrators independently from GUI service settings'
   });
   await expect(card).toContainText('Core-owned management identities from admin.cfg');
   await expect(card).toContainText('security-admin');
+  await expect(card.getByRole('button', {name: 'Disable security-admin'})).toBeDisabled();
+  await expect(card.getByRole('button', {name: 'Remove security-admin'})).toBeDisabled();
+  await expect(card).toContainText('current session · protected from lockout');
   await card.getByRole('button', {name: 'Disable operations-admin'}).click();
   await card.getByRole('button', {name: 'Confirm disable operations-admin'}).click();
   await expect.poll(() => mutations.at(-1)).toEqual({
