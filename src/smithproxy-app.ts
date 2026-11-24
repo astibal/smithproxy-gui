@@ -127,6 +127,8 @@ type SettingsGroup = 'interfaces' | 'traffic' | 'workers' | 'listeners' | 'loggi
   'management-api' | 'webhook' | 'debug';
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
 type SettingsResolutionList = 'nameservers' | 'udp-quick-ports';
+type NetworkingList = 'interfaces' | 'tcp-ports' | 'tls-ports' | 'udp-ports' |
+  'dtls-ports' | 'drop-udp-ports' | 'redirect-exempt-uids';
 type StatusTone = 'success' | 'warning' | 'danger';
 type EditableGuiConfiguration = {
   backend: NonNullable<GuiConfiguration['backend']>;
@@ -587,6 +589,7 @@ export class SmithproxyApp extends LitElement {
   private settingsApiKeyDraft: string[] | undefined;
   private settingsApiAllowedIpDraft: string[] | undefined;
   private readonly settingsResolutionDrafts = new Map<SettingsResolutionList, string[]>();
+  private readonly networkingListDrafts = new Map<NetworkingList, string[]>();
   private readonly tlsSniBypassDrafts = new Map<string, string[]>();
   @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
@@ -1819,6 +1822,7 @@ export class SmithproxyApp extends LitElement {
     this.settingsApiKeyDraft = undefined;
     this.settingsApiAllowedIpDraft = undefined;
     this.settingsResolutionDrafts.clear();
+    this.networkingListDrafts.clear();
     this.tlsSniBypassDrafts.clear();
     this.pendingCloseIndex = undefined;
     this.pendingReturnFocus = undefined;
@@ -4846,6 +4850,25 @@ export class SmithproxyApp extends LitElement {
         'settings.udp_quick_ports', this.snapshot.settings.auxiliary.udpQuickPorts, 'string',
       )]);
     }
+    if (entry.kind === 'networking' && this.snapshot?.networking) {
+      const networking = this.snapshot.networking;
+      const values: ReadonlyArray<readonly [NetworkingList, ReadonlyArray<string | number>]> = [
+        ['interfaces', this.persistentListValue('networking.interfaces', networking.interfaces, 'string')],
+        ['tcp-ports', this.persistentListValue('networking.tcp_ports', networking.tcpPorts, 'number')],
+        ['tls-ports', this.persistentListValue('networking.tls_ports', networking.tlsPorts, 'number')],
+        ['udp-ports', this.persistentListValue('networking.udp_ports', networking.udpPorts, 'number')],
+        ['dtls-ports', this.persistentListValue('networking.dtls_ports', networking.dtlsPorts, 'number')],
+        ['drop-udp-ports', this.persistentListValue(
+          'networking.drop_udp_ports', networking.dropUdpPorts, 'number',
+        )],
+        ['redirect-exempt-uids', this.persistentListValue(
+          'networking.redirect_exempt_uids', networking.redirectExemptUids, 'number',
+        )],
+      ];
+      for (const [list, items] of values) {
+        this.networkingListDrafts.set(list, items.map(String));
+      }
+    }
     if (entry.kind === 'profile') {
       const profile = this.snapshot?.profiles.find(candidate => candidate.id === entry.id)?.tls;
       if (profile) {
@@ -5043,6 +5066,7 @@ export class SmithproxyApp extends LitElement {
       this.settingsApiAllowedIpDraft = undefined;
       this.settingsResolutionDrafts.clear();
     }
+    if (closingEntries.some(entry => entry.kind === 'networking')) this.networkingListDrafts.clear();
     if (closingEntries.some(entry => this.drawerKey(entry) === this.drawerConsoleKey)) {
       this.drawerConsoleKey = undefined;
     }
@@ -7543,14 +7567,14 @@ export class SmithproxyApp extends LitElement {
       const value = input?.valueAsNumber ?? Number.NaN;
       return input && Number.isSafeInteger(value) && value >= minimum && value <= maximum ? value : undefined;
     };
-    const strings = (id: string): string[] | undefined => {
-      const input = text(id);
-      if (!input) return undefined;
-      const values = input.value.split(',').map(item => item.trim()).filter(Boolean);
+    const strings = (id: NetworkingList): string[] | undefined => {
+      const values = this.networkingListDrafts.get(id)?.map(item => item.trim());
+      if (!values) return undefined;
       return values.length <= 256 && new Set(values).size === values.length &&
-        values.every(value => value.length <= 128 && !/[\u0000-\u001f\u007f]/u.test(value)) ? values : undefined;
+        values.every(value => value.length > 0 && value.length <= 128 &&
+          !/[\u0000-\u001f\u007f]/u.test(value)) ? values : undefined;
     };
-    const ports = (id: string, allowZero = false): number[] | undefined => {
+    const ports = (id: NetworkingList, allowZero = false): number[] | undefined => {
       const values = strings(id);
       if (!values) return undefined;
       const parsed = values.map(value => Number(value));
@@ -7777,6 +7801,74 @@ export class SmithproxyApp extends LitElement {
       <button class="secondary" type="button" data-edit-control="true"
         ?disabled=${readOnly || values.length >= 256}
         @click=${() => this.addSettingsResolutionValue(list)}>Add ${itemLabel.toLowerCase()}</button>
+    </div>`;
+  }
+
+  /** Marks repeatable Networkd fields dirty after a structural row change. */
+  private markNetworkingListsDirty(): void {
+    const key = this.drawerKey({kind: 'networking', id: 'networking'});
+    if (!this.dirtyDrawerKeys.has(key)) this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
+  }
+
+  /** Preserves one edited Networkd list value across Lit rerenders. */
+  private updateNetworkingListValue(list: NetworkingList, index: number, value: string): void {
+    const values = this.networkingListDrafts.get(list);
+    if (!values || index < 0 || index >= values.length) return;
+    values[index] = value;
+  }
+
+  /** Replaces a complete temporary Networkd list and refreshes its editor. */
+  private setNetworkingList(list: NetworkingList, values: ReadonlyArray<string>): void {
+    this.networkingListDrafts.set(list, [...values]);
+    this.markNetworkingListsDirty();
+    this.requestUpdate();
+  }
+
+  /** Appends and focuses a blank value row in a Networkd list editor. */
+  private addNetworkingListValue(list: NetworkingList): void {
+    const values = this.networkingListDrafts.get(list);
+    if (!values || values.length >= 256) return;
+    this.setNetworkingList(list, [...values, '']);
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLInputElement>(`#networking-${list}-${values.length}`)?.focus();
+    });
+  }
+
+  /** Removes one value row from a temporary Networkd list. */
+  private removeNetworkingListValue(list: NetworkingList, index: number): void {
+    const values = this.networkingListDrafts.get(list);
+    if (!values || index < 0 || index >= values.length) return;
+    this.setNetworkingList(list, values.filter((_, candidate) => candidate !== index));
+  }
+
+  /** Renders a Networkd array as explicit values instead of comma-authored text. */
+  private renderNetworkingList(
+      list: NetworkingList, label: string, fallback: ReadonlyArray<string | number>) {
+    const values = this.networkingListDrafts.get(list) ?? fallback.map(String);
+    if (!this.networkingListDrafts.has(list)) this.networkingListDrafts.set(list, values);
+    const interfaces = list === 'interfaces';
+    const singular = interfaces ? 'interface selector' : list === 'redirect-exempt-uids' ? 'user ID' : 'port';
+    return html`<div class="reference-list-editor" role="group" aria-label=${label}>
+      <div class="reference-list-values">
+        ${values.length === 0 ? html`<span class="reference-list-empty">None configured</span>` : values.map(
+          (value, index) => html`<div class="reference-list-row">
+            <input id=${`networking-${list}-${index}`} maxlength="128" autocomplete="off"
+              inputmode=${interfaces ? nothing : 'numeric'} aria-label=${`${label} value ${index + 1}`}
+              .value=${value}
+              @input=${(event: Event) => {
+                const input = event.currentTarget;
+                if (input instanceof HTMLInputElement) this.updateNetworkingListValue(list, index, input.value);
+              }} />
+            <button class="reference-list-remove" type="button" data-edit-control="true"
+              aria-label=${`Remove ${singular} ${index + 1} from ${label}`}
+              @click=${() => this.removeNetworkingListValue(list, index)}>×</button>
+          </div>`,
+        )}
+      </div>
+      <button class="secondary" type="button" data-edit-control="true"
+        ?disabled=${values.length >= 256} @click=${() => this.addNetworkingListValue(list)}>
+        Add ${singular}
+      </button>
     </div>`;
   }
 
@@ -14804,13 +14896,8 @@ export class SmithproxyApp extends LitElement {
       minimum: number, maximum: number) => html`
       <label for="networking-${id}">${label}</label><input id="networking-${id}" type="number"
         min=${String(minimum)} max=${String(maximum)} step="1" .value=${String(scalar(path, fallback))} />`;
-    const listField = <T extends string | number>(path: string, id: string, label: string,
-      fallback: ReadonlyArray<T>, placeholder: string) => html`
-      <label for="networking-${id}">${label}</label><input id="networking-${id}" maxlength="4096"
-        .value=${list(path, fallback).join(', ')} placeholder=${placeholder} />`;
     const chooseInterfaceSelector = (selector: '*' | '+' | '-') => {
-      const input = this.renderRoot.querySelector<HTMLInputElement>('#networking-interfaces');
-      if (input) input.value = selector;
+      this.setNetworkingList('interfaces', [selector]);
     };
     return html`<div class="editor-stack">
       <fieldset class="editor-group"><legend>Firewall ownership</legend>
@@ -14827,16 +14914,19 @@ export class SmithproxyApp extends LitElement {
             <option value="before" ?selected=${scalar('placement', networking.placement) === 'before'}>Before existing rules</option>
             <option value="after" ?selected=${scalar('placement', networking.placement) === 'after'}>After existing rules</option>
           </select>
-          <label for="networking-interfaces">Interface selectors</label>
-          <span><input id="networking-interfaces" maxlength="4096"
-            .value=${list('interfaces', networking.interfaces).join(', ')} placeholder="eth0, eth1" />
+          <span class="form-label">Interface selectors</span>
+          <div>${this.renderNetworkingList('interfaces', 'Interface selectors',
+            list('interfaces', networking.interfaces))}
             <span class="inline-actions section">
-              <button class="secondary" type="button" @click=${() => chooseInterfaceSelector('-')}>Internal routes (−)</button>
-              <button class="secondary" type="button" @click=${() => chooseInterfaceSelector('+')}>Default routes (+)</button>
-              <button class="secondary" type="button" @click=${() => chooseInterfaceSelector('*')}>All addressed (*)</button>
+              <button class="secondary" type="button" data-edit-control="true"
+                @click=${() => chooseInterfaceSelector('-')}>Internal routes (−)</button>
+              <button class="secondary" type="button" data-edit-control="true"
+                @click=${() => chooseInterfaceSelector('+')}>Default routes (+)</button>
+              <button class="secondary" type="button" data-edit-control="true"
+                @click=${() => chooseInterfaceSelector('*')}>All addressed (*)</button>
             </span>
-            <small class="muted">A topology selector stands alone. Otherwise enter explicit interface names separated by commas.</small>
-          </span>
+            <small class="muted">A topology selector stands alone. Otherwise add each explicit interface separately.</small>
+          </div>
         </div>
       </fieldset>
       <fieldset class="editor-group"><legend>Interception scope</legend>
@@ -14844,19 +14934,26 @@ export class SmithproxyApp extends LitElement {
           ${booleanField('tcp_all', 'tcp-all', 'Intercept all TCP', networking.tcpAll)}
           ${booleanField('udp_all', 'udp-all', 'Intercept all UDP', networking.udpAll)}
           ${booleanField('ipv6_udp', 'ipv6-udp', 'Intercept IPv6 UDP', networking.ipv6Udp)}
-          ${listField('tcp_ports', 'tcp-ports', 'Plain TCP ports', networking.tcpPorts, '80, 8080')}
-          ${listField('tls_ports', 'tls-ports', 'TLS ports', networking.tlsPorts, '443, 8443')}
-          ${listField('udp_ports', 'udp-ports', 'UDP ports', networking.udpPorts, '53, 123')}
-          ${listField('dtls_ports', 'dtls-ports', 'DTLS ports', networking.dtlsPorts, '4433')}
-          ${listField('drop_udp_ports', 'drop-udp-ports', 'Dropped UDP ports', networking.dropUdpPorts, '443')}
+          <span class="form-label">Plain TCP ports</span>
+          ${this.renderNetworkingList('tcp-ports', 'Plain TCP ports', list('tcp_ports', networking.tcpPorts))}
+          <span class="form-label">TLS ports</span>
+          ${this.renderNetworkingList('tls-ports', 'TLS ports', list('tls_ports', networking.tlsPorts))}
+          <span class="form-label">UDP ports</span>
+          ${this.renderNetworkingList('udp-ports', 'UDP ports', list('udp_ports', networking.udpPorts))}
+          <span class="form-label">DTLS ports</span>
+          ${this.renderNetworkingList('dtls-ports', 'DTLS ports', list('dtls_ports', networking.dtlsPorts))}
+          <span class="form-label">Dropped UDP ports</span>
+          ${this.renderNetworkingList('drop-udp-ports', 'Dropped UDP ports',
+            list('drop_udp_ports', networking.dropUdpPorts))}
         </div>
       </fieldset>
       <fieldset class="editor-group"><legend>Redirect targets and exemptions</legend><div class="form-grid">
         ${numberField('redirect_tcp_port', 'redirect-tcp-port', 'TCP proxy port', networking.redirectTcpPort, 1, 65535)}
         ${numberField('redirect_tls_port', 'redirect-tls-port', 'TLS proxy port', networking.redirectTlsPort, 1, 65535)}
         ${numberField('redirect_dns_port', 'redirect-dns-port', 'DNS proxy port', networking.redirectDnsPort, 1, 65535)}
-        ${listField('redirect_exempt_uids', 'redirect-exempt-uids', 'Exempt user IDs',
-          networking.redirectExemptUids, '0, 1000')}
+        <span class="form-label">Exempt user IDs</span>
+        ${this.renderNetworkingList('redirect-exempt-uids', 'Exempt user IDs',
+          list('redirect_exempt_uids', networking.redirectExemptUids))}
         ${booleanField('redirect_exempt_lan', 'redirect-exempt-lan', 'Exempt local networks', networking.redirectExemptLan)}
       </div></fieldset>
       <fieldset class="editor-group"><legend>Routing and host tuning</legend>

@@ -7556,10 +7556,16 @@ test('edits Networkd policy without pretending restart identity is live-editable
   await expect(editor.locator('#networking-tenant-index')).toHaveCount(0);
   await expect(editor.locator('#networking-tenant-ranges')).toHaveCount(0);
   await editor.getByRole('button', {name: 'Default routes (+)', exact: true}).click();
-  await expect(editor.getByLabel('Interface selectors')).toHaveValue('+');
+  const interfaces = editor.getByRole('group', {name: 'Interface selectors'});
+  await expect(interfaces.getByRole('textbox')).toHaveValue('+');
 
   await editor.getByLabel('Rule placement').selectOption('after');
-  await editor.getByLabel('Interface selectors').fill('lan0, wan0');
+  await interfaces.getByRole('textbox').fill('lan0');
+  await interfaces.getByRole('button', {name: 'Add interface selector'}).click();
+  await interfaces.getByRole('textbox').nth(1).fill('wan0');
+  const tcpPorts = editor.getByRole('group', {name: 'Plain TCP ports'});
+  await tcpPorts.getByRole('button', {name: 'Add port'}).click();
+  await tcpPorts.getByRole('textbox').nth(1).fill('8080');
   await editor.getByLabel('Routing table').fill('1000');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
 
@@ -7567,6 +7573,7 @@ test('edits Networkd policy without pretending restart identity is live-editable
   expect(state.draftMutationBatches![0]).toEqual(expect.arrayContaining([
     {path: 'networking.placement', value: 'after'},
     {path: 'networking.interfaces', value: ['lan0', 'wan0']},
+    {path: 'networking.tcp_ports', value: [80, 8080]},
     {path: 'networking.routing_table', value: 1000},
   ]));
   expect(state.draftMutationBatches![0].some(change => [
