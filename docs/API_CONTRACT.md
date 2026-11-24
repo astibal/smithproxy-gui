@@ -304,6 +304,10 @@ creates the first bounded bootstrap configuration with no administrator
 identities; a privilege-15 CLI enrollment token can add the first persistent
 administrator only after that core-owned publication succeeds. Credential
 values are boot-scoped and remain outside both the archive and browser response.
+In the native lifecycle Smithproxy core materializes the read-only resource,
+issues and registers the runtime-only GUI API credential, and starts the GUI
+backend. The GUI does not generate its own Smithproxy credential and cannot
+turn a boot credential into persistent API configuration.
 
 The browser never receives the Smithproxy API key and never fetches resource
 contents while building the inventory. Archive validation precedes restore;

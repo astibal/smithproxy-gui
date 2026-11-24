@@ -1,8 +1,9 @@
 # GUI bootstrap configuration
 
 `gui.cfg` uses the GUI bootstrap schema but remains a Smithproxy-core-owned
-resource in the active CFtar. Smithproxy (or its service launcher) exposes a
-read-only copy for the GUI backend and starts it with:
+resource in the active CFtar. In a native deployment Smithproxy reads the
+resource, exposes a read-only runtime copy for the GUI backend, and starts it
+with:
 
 ```text
 smithproxy-gui --config /run/smithproxy-gui/gui.cfg
@@ -20,7 +21,7 @@ other boot settings take effect only after a controlled service restart.
 The Smithproxy connection and trusted browser-gateway groups are independently
 optional and can be explicitly enabled or removed. Opening the editor preserves
 an absent group instead of silently materializing deployment credentials.
-When `gui.cfg` does not exist yet, a launcher-bootstrapped GUI can create the
+When `gui.cfg` does not exist yet, a core-bootstrapped loopback GUI can create the
 first resource through this same core API. The initial document contains no
 administrator verifier; the first privilege-15 CLI enrollment is enabled only
 after the resource is published and can be read back authoritatively.
@@ -82,15 +83,14 @@ GUI service account, and must have mode `0600`. A trailing newline is accepted.
 The persistent archive contains only their locations. This layout permits a
 dedicated GUI API token to be replaced for every boot without rewriting CFtar.
 
-A deployment that rotates the credential per boot generates one high-entropy
-token before starting either process and writes the same value into two
-separately owned `0600` runtime files. Smithproxy receives the path to its copy through
-`SMITHPROXY_GUI_API_KEY_FILE`; the GUI receives the path to its copy through the
-`smithproxy.api_token_file` setting above. Smithproxy loads this credential as
-an archive-capable API key because the GUI publishes `gui.cfg`, removes the
-environment variable immediately, and never adds the value to persistent API
-key snapshots. The files are replaced on the next coordinated start, so a token
-from an earlier boot no longer authorizes the new Smithproxy process.
+At native startup Smithproxy generates one high-entropy credential, registers
+it as a runtime-only archive-capable API key, and writes the same value into two
+separately owned `0600` runtime files. It resolves the GUI file location from
+`smithproxy.api_token_file`, loads its own copy without adding the value to a
+persistent API-key snapshot, and only then starts the GUI backend. Both files
+are replaced at the next Smithproxy start and the old credential is absent from
+the new runtime authorization set. A token from an earlier boot therefore
+cannot authorize a new Smithproxy process.
 
 The two-file handoff is intentional: Smithproxy and the GUI may run under
 different service accounts, and neither process needs permission to read the
@@ -101,9 +101,11 @@ distinct. They authenticate different trust boundaries and are rejected when a
 single configured path attempts to collapse those identities.
 
 Command-line options remain explicit deployment overrides. Existing environment
-variables remain available for compatibility and their secret values are removed
-from the process environment immediately after bootstrap. A native installation
-should prefer `gui.cfg` plus protected runtime credential files.
+variables and an external service launcher remain available for compatibility;
+their secret values are removed from the process environment immediately after
+bootstrap. The native owner is Smithproxy core: it materializes `gui.cfg`, issues
+the boot credential, and starts the GUI. The GUI is never a sibling service that
+independently owns persistent startup state.
 
 Administrator passwords and enrollment tokens are never represented here. The
 CLI creates a single-use token valid for ten minutes. After Smithproxy consumes

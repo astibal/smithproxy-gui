@@ -41,7 +41,8 @@ cross the browser boundary or enter logs, diagnostics, or audit records.
 The persistent `gui.cfg` resource is configuration and may contain salted,
 memory-hard administrator password verifiers, but never passwords, enrollment
 tokens, sessions, or API-key values. The
-GUI backend may read an exposed copy at startup, but never writes that file or
+GUI backend reads the read-only runtime copy exposed by Smithproxy core at
+startup, but never writes that file or
 the CFtar archive. Changes are submitted through the authenticated Smithproxy
 CFG transaction API so Smithproxy remains the sole writer.
 
@@ -52,6 +53,12 @@ content only in process memory. The token itself must not appear in `gui.cfg`,
 service arguments, environment variables, logs, diagnostics, or archive backups.
 Legacy environment-secret inputs are consumed and removed during bootstrap;
 native deployments use the protected runtime files instead.
+Smithproxy core generates and registers the native GUI API credential for one
+boot, materializes separately owned copies for core and GUI, and starts the GUI
+only after both the configuration and credential handoff are ready. Restarting
+Smithproxy replaces the credential and removes the previous value from the new
+runtime authorization set. External launchers remain compatibility plumbing,
+not an additional configuration owner.
 The upstream API token and current or previous gateway secret must reference
 different files. Reusing one credential across those trust boundaries is
 rejected before the service starts or publishes a replacement configuration.
