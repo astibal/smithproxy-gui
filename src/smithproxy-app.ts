@@ -7439,14 +7439,50 @@ export class SmithproxyApp extends LitElement {
       this.persistentListValue('settings.udp_quick_ports', settings.auxiliary.udpQuickPorts, 'string');
     const allowedIps = this.settingsApiAllowedIpDraft ??
       this.persistentListValue('settings.http_api.allowed_ips', settings.httpApi.allowedIps, 'string');
-    if (nameservers.length > 256 || new Set(nameservers).size !== nameservers.length ||
-        nameservers.some(item => !/^[A-Za-z0-9:._-]{1,128}$/u.test(item)) ||
-        quickPorts.length > 256 || new Set(quickPorts).size !== quickPorts.length ||
-        quickPorts.some(item => !/^\d{1,5}$/u.test(item) || Number(item) > 65535) ||
-        allowedIps.length > 256 || new Set(allowedIps).size !== allowedIps.length ||
-        allowedIps.some(item => !/^[A-Za-z0-9:._/-]{1,128}$/u.test(item))) {
-      this.draftError = 'Nameservers, API allowlists, and UDP quick ports must be unique, bounded values.';
+    const duplicateIndex = (values: ReadonlyArray<string>) =>
+      values.findIndex((value, index) => values.indexOf(value) !== index);
+    const invalidNameserver = nameservers.findIndex(item => !/^[A-Za-z0-9:._-]{1,128}$/u.test(item));
+    const duplicateNameserver = duplicateIndex(nameservers);
+    const invalidQuickPort = quickPorts.findIndex(item =>
+      !/^\d{1,5}$/u.test(item) || Number(item) > 65535);
+    const duplicateQuickPort = duplicateIndex(quickPorts);
+    const invalidAllowedIp = allowedIps.findIndex(item => !/^[A-Za-z0-9:._/-]{1,128}$/u.test(item));
+    const duplicateAllowedIp = duplicateIndex(allowedIps);
+    if (nameservers.length > 256) {
+      this.draftError = 'Nameservers may contain at most 256 entries.';
       return undefined;
+    }
+    if (invalidNameserver >= 0 || duplicateNameserver >= 0) {
+      const index = invalidNameserver >= 0 ? invalidNameserver : duplicateNameserver;
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-nameservers-${index}`);
+      return this.rejectConfigurationInput(
+        input, `Nameserver ${index + 1}`,
+        invalidNameserver >= 0 ? 'must be a bounded host or address' : 'duplicates an earlier entry',
+      );
+    }
+    if (quickPorts.length > 256) {
+      this.draftError = 'UDP quick ports may contain at most 256 entries.';
+      return undefined;
+    }
+    if (invalidQuickPort >= 0 || duplicateQuickPort >= 0) {
+      const index = invalidQuickPort >= 0 ? invalidQuickPort : duplicateQuickPort;
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-udp-quick-ports-${index}`);
+      return this.rejectConfigurationInput(
+        input, `UDP quick port ${index + 1}`,
+        invalidQuickPort >= 0 ? 'must be a whole number from 0 through 65535' : 'duplicates an earlier entry',
+      );
+    }
+    if (allowedIps.length > 256) {
+      this.draftError = 'HTTP API allowed clients may contain at most 256 entries.';
+      return undefined;
+    }
+    if (invalidAllowedIp >= 0 || duplicateAllowedIp >= 0) {
+      const index = invalidAllowedIp >= 0 ? invalidAllowedIp : duplicateAllowedIp;
+      const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-api-allowed-ip-${index}`);
+      return this.rejectConfigurationInput(
+        input, `HTTP API allowed client ${index + 1}`,
+        invalidAllowedIp >= 0 ? 'must be a bounded host, address, or network' : 'duplicates an earlier entry',
+      );
     }
     changes.push({path: 'settings.nameservers', value: nameservers});
     changes.push({path: 'settings.udp_quick_ports', value: quickPorts});

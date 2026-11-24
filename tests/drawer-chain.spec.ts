@@ -7926,6 +7926,10 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await settingsEditor.getByLabel('Require HTTP CONNECT authentication').selectOption('true');
   const nameservers = settingsEditor.getByRole('group', {name: 'Nameservers'});
   await nameservers.getByRole('button', {name: 'Add nameserver'}).click();
+  await nameservers.getByLabel('Nameserver 3', {exact: true}).fill('bad resolver');
+  await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect(settingsEditor.getByText(/Nameserver 3 must be a bounded host or address/i)).toBeVisible();
+  await expect(nameservers.getByLabel('Nameserver 3', {exact: true})).toBeFocused();
   await nameservers.getByLabel('Nameserver 3', {exact: true}).fill('resolver.example');
   const quickPorts = settingsEditor.getByRole('group', {name: 'UDP quick ports'});
   await quickPorts.getByRole('button', {name: 'Add udp quick port'}).click();
