@@ -126,6 +126,7 @@ type SettingsGroup = 'interfaces' | 'traffic' | 'workers' | 'listeners' | 'loggi
   'administration' | 'resolution' | 'certificates' | 'assets' | 'tuning' |
   'management-api' | 'webhook' | 'debug';
 type ObjectUsageFilter = 'all' | 'used' | 'unused';
+type SettingsResolutionList = 'nameservers' | 'udp-quick-ports';
 type StatusTone = 'success' | 'warning' | 'danger';
 type EditableGuiConfiguration = {
   backend: NonNullable<GuiConfiguration['backend']>;
@@ -585,6 +586,7 @@ export class SmithproxyApp extends LitElement {
   @state() private editingDrawerKeys = new Set<string>();
   private settingsApiKeyDraft: string[] | undefined;
   private settingsApiAllowedIpDraft: string[] | undefined;
+  private readonly settingsResolutionDrafts = new Map<SettingsResolutionList, string[]>();
   private readonly tlsSniBypassDrafts = new Map<string, string[]>();
   @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
@@ -1816,6 +1818,7 @@ export class SmithproxyApp extends LitElement {
     this.editingDrawerKeys = new Set<string>();
     this.settingsApiKeyDraft = undefined;
     this.settingsApiAllowedIpDraft = undefined;
+    this.settingsResolutionDrafts.clear();
     this.tlsSniBypassDrafts.clear();
     this.pendingCloseIndex = undefined;
     this.pendingReturnFocus = undefined;
@@ -4836,6 +4839,12 @@ export class SmithproxyApp extends LitElement {
       this.settingsApiAllowedIpDraft = [...this.persistentListValue(
         'settings.http_api.allowed_ips', this.snapshot.settings.httpApi.allowedIps, 'string',
       )];
+      this.settingsResolutionDrafts.set('nameservers', [...this.persistentListValue(
+        'settings.nameservers', this.snapshot.settings.nameservers, 'string',
+      )]);
+      this.settingsResolutionDrafts.set('udp-quick-ports', [...this.persistentListValue(
+        'settings.udp_quick_ports', this.snapshot.settings.auxiliary.udpQuickPorts, 'string',
+      )]);
     }
     if (entry.kind === 'profile') {
       const profile = this.snapshot?.profiles.find(candidate => candidate.id === entry.id)?.tls;
@@ -5032,6 +5041,7 @@ export class SmithproxyApp extends LitElement {
     if (closingEntries.some(entry => entry.kind === 'settings')) {
       this.settingsApiKeyDraft = undefined;
       this.settingsApiAllowedIpDraft = undefined;
+      this.settingsResolutionDrafts.clear();
     }
     if (closingEntries.some(entry => this.drawerKey(entry) === this.drawerConsoleKey)) {
       this.drawerConsoleKey = undefined;
@@ -7376,12 +7386,10 @@ export class SmithproxyApp extends LitElement {
     const syslogFamily = this.renderRoot.querySelector<HTMLSelectElement>('#settings-logging-syslog-family');
     if (!syslogFamily || (syslogFamily.value !== '4' && syslogFamily.value !== '6')) return undefined;
     changes.push({path: 'settings.syslog_family', value: Number(syslogFamily.value)});
-    const nameserversInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-nameservers');
-    const quickPortsInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-udp-quick-ports');
-    if (!nameserversInput || !quickPortsInput) return undefined;
-    const splitList = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
-    const nameservers = splitList(nameserversInput.value);
-    const quickPorts = splitList(quickPortsInput.value);
+    const nameservers = this.settingsResolutionDrafts.get('nameservers') ??
+      this.persistentListValue('settings.nameservers', settings.nameservers, 'string');
+    const quickPorts = this.settingsResolutionDrafts.get('udp-quick-ports') ??
+      this.persistentListValue('settings.udp_quick_ports', settings.auxiliary.udpQuickPorts, 'string');
     const allowedIps = this.settingsApiAllowedIpDraft ??
       this.persistentListValue('settings.http_api.allowed_ips', settings.httpApi.allowedIps, 'string');
     if (nameservers.length > 256 || new Set(nameservers).size !== nameservers.length ||
@@ -7667,7 +7675,7 @@ export class SmithproxyApp extends LitElement {
   private addSettingsApiKey(): void {
     if (!this.settingsApiKeyDraft) return;
     this.settingsApiKeyDraft = [...this.settingsApiKeyDraft, ''];
-    this.markSettingsManagementApiDirty();
+    this.markSettingsListDirty();
     this.requestUpdate();
     void this.updateComplete.then(() => {
       const index = this.settingsApiKeyDraft?.length ?? 0;
@@ -7679,11 +7687,11 @@ export class SmithproxyApp extends LitElement {
   private removeSettingsApiKey(index: number): void {
     if (!this.settingsApiKeyDraft || index < 0 || index >= this.settingsApiKeyDraft.length) return;
     this.settingsApiKeyDraft = this.settingsApiKeyDraft.filter((_, candidate) => candidate !== index);
-    this.markSettingsManagementApiDirty();
+    this.markSettingsListDirty();
     this.requestUpdate();
   }
 
-  private markSettingsManagementApiDirty(): void {
+  private markSettingsListDirty(): void {
     const key = this.drawerKey({kind: 'settings', id: 'settings'});
     if (!this.dirtyDrawerKeys.has(key)) {
       this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
@@ -7698,7 +7706,7 @@ export class SmithproxyApp extends LitElement {
   private addSettingsApiAllowedIp(): void {
     if (!this.settingsApiAllowedIpDraft || this.settingsApiAllowedIpDraft.length >= 256) return;
     this.settingsApiAllowedIpDraft = [...this.settingsApiAllowedIpDraft, ''];
-    this.markSettingsManagementApiDirty();
+    this.markSettingsListDirty();
     this.requestUpdate();
     void this.updateComplete.then(() => {
       const index = this.settingsApiAllowedIpDraft?.length ?? 0;
@@ -7711,8 +7719,65 @@ export class SmithproxyApp extends LitElement {
     this.settingsApiAllowedIpDraft = this.settingsApiAllowedIpDraft.filter(
       (_, candidate) => candidate !== index,
     );
-    this.markSettingsManagementApiDirty();
+    this.markSettingsListDirty();
     this.requestUpdate();
+  }
+
+  private updateSettingsResolutionValue(
+    list: SettingsResolutionList, index: number, value: string,
+  ): void {
+    const values = this.settingsResolutionDrafts.get(list);
+    if (!values || index < 0 || index >= values.length) return;
+    values[index] = value;
+  }
+
+  private addSettingsResolutionValue(list: SettingsResolutionList): void {
+    const values = this.settingsResolutionDrafts.get(list);
+    if (!values || values.length >= 256) return;
+    this.settingsResolutionDrafts.set(list, [...values, '']);
+    this.markSettingsListDirty();
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLInputElement>(`#settings-${list}-${values.length}`)?.focus();
+    });
+  }
+
+  private removeSettingsResolutionValue(list: SettingsResolutionList, index: number): void {
+    const values = this.settingsResolutionDrafts.get(list);
+    if (!values || index < 0 || index >= values.length) return;
+    this.settingsResolutionDrafts.set(list, values.filter((_, candidate) => candidate !== index));
+    this.markSettingsListDirty();
+    this.requestUpdate();
+  }
+
+  private renderSettingsResolutionList(
+      list: SettingsResolutionList, label: string, fallback: ReadonlyArray<string>, readOnly: boolean) {
+    const values = this.settingsResolutionDrafts.get(list) ?? [...fallback];
+    if (!this.settingsResolutionDrafts.has(list)) this.settingsResolutionDrafts.set(list, values);
+    const itemLabel = list === 'nameservers' ? 'Nameserver' : 'UDP quick port';
+    return html`<div class="reference-list-editor" role="group" aria-label=${label}>
+      <div class="reference-list-values">
+        ${values.length === 0 ? html`<span class="reference-list-empty">System defaults</span>` : values.map(
+          (value, index) => html`<div class="reference-list-row">
+            <input id=${`settings-${list}-${index}`} maxlength="128" autocomplete="off"
+              inputmode=${list === 'udp-quick-ports' ? 'numeric' : nothing}
+              aria-label=${`${itemLabel} ${index + 1}`} .value=${value} .readOnly=${readOnly}
+              @input=${(event: Event) => {
+                const input = event.currentTarget;
+                if (input instanceof HTMLInputElement) {
+                  this.updateSettingsResolutionValue(list, index, input.value);
+                }
+              }} />
+            <button class="reference-list-remove" type="button" data-edit-control="true"
+              aria-label=${`Remove ${itemLabel.toLowerCase()} ${index + 1}`} ?disabled=${readOnly}
+              @click=${() => this.removeSettingsResolutionValue(list, index)}>×</button>
+          </div>`,
+        )}
+      </div>
+      <button class="secondary" type="button" data-edit-control="true"
+        ?disabled=${readOnly || values.length >= 256}
+        @click=${() => this.addSettingsResolutionValue(list)}>Add ${itemLabel.toLowerCase()}</button>
+    </div>`;
   }
 
   /** Returns the editable SNI-bypass rows while preserving unsaved input across rerenders. */
@@ -15139,14 +15204,17 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('aux-socks-async-dns', 'SOCKS asynchronous DNS', settings.auxiliary.socksAsyncDns)}
         ${booleanField('aux-socks-ipver-mixing', 'SOCKS IP-version mixing', settings.auxiliary.socksIpVersionMixing)}
         ${booleanField('aux-socks-prefer-ipv6', 'SOCKS prefer IPv6', settings.auxiliary.socksPreferIpv6)}
-        <label for="settings-udp-quick-ports">UDP quick ports</label>
-        <input id="settings-udp-quick-ports"
-          .value=${strings('settings.udp_quick_ports', settings.auxiliary.udpQuickPorts).join(', ')}
-          placeholder="0, 53, 443" .readOnly=${locked('settings.udp_quick_ports')} />
-        <label for="settings-nameservers">Nameservers</label>
-        <input id="settings-nameservers"
-          .value=${strings('settings.nameservers', settings.nameservers).join(', ')}
-          placeholder="192.0.2.53, resolver.example" .readOnly=${locked('settings.nameservers')} />
+        <span class="form-label">UDP quick ports</span>
+        ${this.renderSettingsResolutionList(
+          'udp-quick-ports', 'UDP quick ports', strings(
+            'settings.udp_quick_ports', settings.auxiliary.udpQuickPorts,
+          ), locked('settings.udp_quick_ports'),
+        )}
+        <span class="form-label">Nameservers</span>
+        ${this.renderSettingsResolutionList(
+          'nameservers', 'Nameservers', strings('settings.nameservers', settings.nameservers),
+          locked('settings.nameservers'),
+        )}
           </div>
         </fieldset>
         <fieldset class="editor-group" data-settings-group="certificates">
