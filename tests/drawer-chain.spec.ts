@@ -7262,6 +7262,42 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('differs from running');
 });
 
+test('keeps pending GUI startup activation visible in the global workflow', async ({page}) => {
+  const revision = `sha256:${'2'.repeat(64)}`;
+  await mockSystemApi(page, {
+    smithproxy: 'ready', configSaveReady: true,
+    configRevision: revision, savedConfigRevision: revision,
+  }, true);
+  await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
+    state: 'ready', schema_version: 3, restart_required: true,
+    active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+    active_runtime: {
+      smithproxy_api_credential_loaded: true,
+      browser_gateway_credential_loaded: false,
+      previous_browser_gateway_credential_loaded: false,
+      cli_broker_configured: true,
+    },
+    backend: {bind_address: '127.0.0.1', port: 19083, base_path: '/smithproxy-gui'},
+    frontend: null,
+    smithproxy: {
+      api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
+      api_token_file: '/run/credentials/gui.api-token', cli_endpoint: '127.0.0.1:50000',
+    },
+    gateway: null,
+  }}));
+
+  await page.goto('/');
+  const activation = page.getByRole('button', {name: 'GUI restart pending'});
+  await expect(activation).toBeVisible();
+  await activation.click();
+  await expect(page.getByRole('heading', {name: 'System'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Access & integrations'}))
+    .toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'GUI service'}),
+  })).toContainText('Restart pending');
+});
+
 test('blocks initial enrollment until the core publication preflight is ready', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', gatewayMode: 'standalone', gatewayAuthenticated: false,

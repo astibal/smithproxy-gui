@@ -786,6 +786,7 @@ export class SmithproxyApp extends LitElement {
     .config-workflow { display: flex; flex: 0 0 auto; gap: 7px; align-items: center; }
     .config-workflow button { min-height: 38px; white-space: nowrap; }
     .config-workflow .save-required { border-color: var(--app-warning); background: var(--app-warning); color: #17120a; }
+    .config-workflow .restart-required { border-color: var(--app-warning); color: var(--app-warning); }
     .config-workflow-error { max-width: 180px; overflow: hidden; color: var(--app-danger); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .config-state { color: var(--app-muted); font-size: 12px; white-space: nowrap; }
     .config-state.danger { color: var(--app-danger); font-weight: 700; }
@@ -2063,6 +2064,10 @@ export class SmithproxyApp extends LitElement {
       }
       if (capabilities.features.configRead && this.snapshot?.source !== 'live') {
         void this.refreshConfiguration(true);
+      }
+      if (!configReadWasAvailable && this.configReadAvailable &&
+          !this.guiConfiguration && !this.guiConfigurationBusy) {
+        void this.loadGuiConfiguration();
       }
       if (this.draftAvailable && configurationCapabilitiesChanged) void this.loadDraft();
       const completedAt = Date.now();
@@ -17520,6 +17525,7 @@ export class SmithproxyApp extends LitElement {
       ? [...navigation.slice(0, 4), 'Draft', ...navigation.slice(4)]
       : navigation;
     const sectionTitle = this.activeSection === 'Objects' ? this.objectViewLabel() : this.activeSection;
+    const guiRestartPending = this.guiConfiguration?.restartRequired === true;
     return html`
       <div class="shell ${this.consoleAvailable ? 'console-available' : ''} ${
         this.consoleExpanded ? 'console-expanded' : ''}" @keydown=${this.handleKeydown}>
@@ -17765,6 +17771,17 @@ export class SmithproxyApp extends LitElement {
                       : 'Saving startup configuration is unavailable with the connected Smithproxy version.'}
                     @click=${() => { void this.saveRunningConfiguration(); }}>
                     ${this.configSaving ? 'Saving startup…' : 'Save startup'}
+                  </button>
+                ` : nothing}
+                ${guiRestartPending ? html`
+                  <button class="secondary restart-required" type="button"
+                    title="Saved GUI service settings require a controlled restart to become active."
+                    @click=${() => {
+                      this.activeSection = 'System';
+                      this.systemView = 'backend';
+                      this.systemNavigationExpanded = true;
+                    }}>
+                    GUI restart pending
                   </button>
                 ` : nothing}
                 ${this.configSaveError ? html`
