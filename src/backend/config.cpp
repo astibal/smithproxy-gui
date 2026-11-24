@@ -374,6 +374,7 @@ ParseResult parse_gui_config_file(
     config.base_path = persistent.base_path;
     config.asset_root = persistent.asset_root.value_or(default_asset_root.string());
     config.gui_config_path = path;
+    config.startup_bootstrap = persistent;
 
     if (persistent.api_url) {
         const auto certificate = read_protected_file(
@@ -615,6 +616,23 @@ std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& con
     const auto reparsed = parse_gui_bootstrap(source);
     if(!reparsed.config) return std::nullopt;
     return source;
+}
+
+bool gui_bootstrap_restart_required(
+    const AppConfig& active, const std::optional<GuiBootstrapConfig>& saved) {
+    if(!active.startup_bootstrap) return saved.has_value();
+    if(!saved) return true;
+
+    const auto& boot = *active.startup_bootstrap;
+    const auto& next = *saved;
+    return boot.schema_version != next.schema_version ||
+        boot.bind_address != next.bind_address || boot.port != next.port ||
+        boot.base_path != next.base_path || boot.asset_root != next.asset_root ||
+        boot.api_url != next.api_url || boot.ca_cert != next.ca_cert ||
+        boot.api_token_file != next.api_token_file ||
+        boot.cli_endpoint != next.cli_endpoint ||
+        boot.gateway_secret_file != next.gateway_secret_file ||
+        boot.gateway_previous_secret_file != next.gateway_previous_secret_file;
 }
 
 std::string usage() {

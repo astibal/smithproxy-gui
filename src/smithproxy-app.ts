@@ -12670,8 +12670,10 @@ export class SmithproxyApp extends LitElement {
     return html`<article class="domain-card job-card" data-system-section="backend">
       <header>
         <div><h3>GUI service</h3><p>Boot settings published with the Smithproxy configuration archive</p></div>
-        <span class="runtime-state ${value?.state === 'ready' ? 'success' : 'warning'}">
-          ● ${this.guiConfigurationBusy ? 'Loading' : value?.state === 'ready' ? 'Configured' : 'Not configured'}
+        <span class="runtime-state ${value?.state === 'ready' && !value.restartRequired ? 'success' : 'warning'}">
+          ● ${this.guiConfigurationBusy ? 'Loading' : value?.state === 'ready'
+            ? value.restartRequired ? 'Restart pending' : 'Active'
+            : value?.restartRequired ? 'Removal pending restart' : 'Not configured'}
         </span>
       </header>
       ${draft ? html`
@@ -12789,9 +12791,10 @@ export class SmithproxyApp extends LitElement {
         </div>
       ` : html`
         <dl>
+          <dt>Configuration schema</dt><dd>${value?.schemaVersion ?? 'Not configured'}</dd>
           <dt>Running listener</dt><dd>${activeBackend ? backendEndpoint(activeBackend) : 'Not reported'}</dd>
           <dt>Saved startup listener</dt><dd>${savedBackend ? backendEndpoint(savedBackend) : 'Not configured'}
-            ${backendRestartPending ? html` <span class="runtime-state warning">● restart pending</span>` :
+            ${backendRestartPending ? html` <span class="runtime-state warning">● differs from running</span>` :
               activeBackend && savedBackend ? html` <span class="runtime-state success">● active</span>` : nothing}</dd>
           <dt>Frontend assets</dt><dd>${value?.frontend?.assetRoot ?? 'Packaged default'}</dd>
           <dt>Smithproxy API</dt><dd>${value?.smithproxy?.apiUrl ?? 'Not configured'}</dd>
@@ -12816,7 +12819,9 @@ export class SmithproxyApp extends LitElement {
           <dt>Previous gateway credential</dt><dd>${activeRuntime
             ? activeRuntime.previousBrowserGatewayCredentialLoaded ? 'Loaded for rotation overlap' : 'Disabled'
             : 'Not reported'}</dd>
-          <dt>Activation</dt><dd>Service settings activate after a controlled restart.</dd>
+          <dt>Activation</dt><dd>${value?.restartRequired
+            ? 'Saved startup settings activate after a controlled restart.'
+            : 'The running process was started from this saved GUI configuration.'}</dd>
         </dl>
         <div class="archive-actions">
           <button class="primary" type="button"

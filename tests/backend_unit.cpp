@@ -2617,6 +2617,16 @@ int main() {
     assert(gui_bootstrap.config->smithproxy->api_key == "boot-api-token-0123456789abcdef0");
     assert(gui_bootstrap.config->smithproxy_cli);
     assert(gui_bootstrap.config->gateway_secret);
+    assert(gui_bootstrap.config->startup_bootstrap);
+    assert(!gui_bootstrap_restart_required(
+        *gui_bootstrap.config, gui_bootstrap.config->startup_bootstrap));
+    auto changed_gui_bootstrap = *gui_bootstrap.config->startup_bootstrap;
+    changed_gui_bootstrap.port += 1U;
+    assert(gui_bootstrap_restart_required(*gui_bootstrap.config, changed_gui_bootstrap));
+    assert(gui_bootstrap_restart_required(*gui_bootstrap.config, std::nullopt));
+    AppConfig command_line_bootstrap;
+    assert(!gui_bootstrap_restart_required(command_line_bootstrap, std::nullopt));
+    assert(gui_bootstrap_restart_required(command_line_bootstrap, changed_gui_bootstrap));
     {
         std::ofstream token(api_token_path, std::ios::trunc);
         token << "too-short";

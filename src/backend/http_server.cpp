@@ -1497,7 +1497,7 @@ private:
         if(upstream.status == 404L) {
             return {200, "application/json; charset=utf-8", nlohmann::json{
                 {"state", "absent"},
-                {"restart_required", true},
+                {"restart_required", gui_bootstrap_restart_required(config_, std::nullopt)},
                 {"active_backend", active_backend},
                 {"active_runtime", active_runtime},
             }.dump()};
@@ -1515,7 +1515,7 @@ private:
         nlohmann::json document{
             {"state", "ready"},
             {"schema_version", value.schema_version},
-            {"restart_required", true},
+            {"restart_required", gui_bootstrap_restart_required(config_, value)},
             {"active_backend", active_backend},
             {"active_runtime", active_runtime},
             {"backend", {

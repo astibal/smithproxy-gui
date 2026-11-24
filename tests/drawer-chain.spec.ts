@@ -7169,7 +7169,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     const confirmed = guiConfigurationReads > 1;
     await route.fulfill({json: {
       state: 'ready', schema_version: confirmed ? 3 : 1,
-      restart_required: true,
+      restart_required: confirmed,
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       active_runtime: {
         smithproxy_api_credential_loaded: true,
@@ -7215,6 +7215,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('Running listener');
   await expect(gui).toContainText('Saved startup listener');
   await expect(gui).toContainText('active');
+  await expect(gui).toContainText('Configuration schema');
+  await expect(gui).toContainText('Active');
   await expect(gui).not.toContainText('boot-token-value');
   await gui.getByRole('button', {name: 'Edit GUI startup settings'}).click();
   await gui.getByLabel('Override the packaged frontend asset directory').check();
@@ -7256,7 +7258,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect.poll(() => guiConfigurationReads).toBeGreaterThanOrEqual(2);
   await expect(gui).toContainText('127.0.0.1:19083/smithproxy-gui');
   await expect(gui).toContainText('/srv/smithproxy-gui/canonical-assets');
-  await expect(gui).toContainText('restart pending');
+  await expect(gui).toContainText('Restart pending');
+  await expect(gui).toContainText('differs from running');
 });
 
 test('blocks initial enrollment until the core publication preflight is ready', async ({page}) => {

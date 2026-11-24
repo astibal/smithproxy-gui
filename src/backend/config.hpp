@@ -52,6 +52,10 @@ struct AppConfig {
     std::optional<std::string> gateway_secret;
     std::optional<std::string> previous_gateway_secret;
     std::optional<std::filesystem::path> gui_config_path;
+    // Exact persistent bootstrap loaded for this process. Keep credential
+    // references, never credential contents, so the management API can tell
+    // whether the current archive has changed since this boot.
+    std::optional<GuiBootstrapConfig> startup_bootstrap;
 };
 
 struct ParseResult {
@@ -72,6 +76,11 @@ GuiBootstrapParseResult parse_gui_bootstrap(std::string_view source);
 // Emits the complete validated service bootstrap resource for publication
 // through Smithproxy's atomic archive API.
 std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& config);
+// True when the saved bootstrap would change the next process start. A process
+// started without gui.cfg has no persistent baseline, so any saved resource is
+// necessarily pending activation.
+bool gui_bootstrap_restart_required(
+    const AppConfig& active, const std::optional<GuiBootstrapConfig>& saved);
 std::filesystem::path resolve_default_asset_root(
     const std::filesystem::path& executable,
     const std::filesystem::path& build_asset_root,

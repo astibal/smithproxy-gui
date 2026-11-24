@@ -111,7 +111,7 @@ export interface ArchiveResourceWrite {
 
 export interface GuiConfiguration {
   state: 'ready' | 'absent';
-  restartRequired: true;
+  restartRequired: boolean;
   activeBackend?: {
     bindAddress: string;
     port: number;
@@ -1499,7 +1499,7 @@ function parseArchiveResourceWrite(value: unknown): ArchiveResourceWrite {
 }
 
 function parseGuiConfiguration(value: unknown): GuiConfiguration {
-  if (!isObject(value) || value.restart_required !== true ||
+  if (!isObject(value) || typeof value.restart_required !== 'boolean' ||
       (value.state !== 'ready' && value.state !== 'absent')) {
     throw new Error('Invalid GUI configuration response.');
   }
@@ -1535,7 +1535,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     };
   })();
   if (value.state === 'absent') return {
-    state: 'absent', restartRequired: true,
+    state: 'absent', restartRequired: value.restart_required,
     ...(activeBackend ? {activeBackend} : {}),
     ...(activeRuntime ? {activeRuntime} : {}),
   };
@@ -1557,7 +1557,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
   const frontend = optionalGroup(value.frontend, ['asset_root']);
   const parsed: GuiConfiguration = {
     state: 'ready',
-    restartRequired: true,
+    restartRequired: value.restart_required,
     ...(activeBackend ? {activeBackend} : {}),
     ...(activeRuntime ? {activeRuntime} : {}),
     schemaVersion: value.schema_version,
