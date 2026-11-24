@@ -403,7 +403,40 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             return
         self.send_error(404)
 
+    def administrator_mutation(self, expected_document, state):
+        expected_cookie = (
+            f"__sx_api={FakeSmithproxy.auth_token}; "
+            f"__Host-csrf_token={FakeSmithproxy.csrf_token}")
+        if (self.headers.get("Cookie") != expected_cookie or
+                self.headers.get("csrf_token") != FakeSmithproxy.csrf_token or
+                self.headers.get("X-Smithproxy-Expected-Revision") !=
+                FakeSmithproxy.config_revision or
+                self.headers.get("X-Smithproxy-Archive-SHA256") !=
+                FakeSmithproxy.archive_hash or
+                self.headers.get("X-API-Key") is not None):
+            self.send_error(401)
+            return
+        document = json.loads(
+            self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+        if document != expected_document:
+            self.send_error(400)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({
+            "state": state, "administrator": document["name"],
+            "revision": FakeSmithproxy.config_revision,
+            "content_hash": FakeSmithproxy.archive_hash,
+            "changed": True, "restart_required": False,
+        }).encode())
+
     def do_POST(self):
+        if self.path == "/api/admin/administrators":
+            self.administrator_mutation(
+                {"name": "operations-admin", "password": "new secure password"},
+                "created")
+            return
         if self.path == "/api/authorize":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -468,6 +501,11 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({"success": {section: value}}).encode())
 
     def do_PUT(self):
+        if self.path == "/api/admin/administrators/password":
+            self.administrator_mutation(
+                {"name": "operations-admin", "password": "rotated secure password"},
+                "password_changed")
+            return
         if self.path != "/api/config/archive/resource?path=gui.cfg":
             self.send_error(404)
             return
@@ -490,6 +528,21 @@ class FakeSmithproxy(http.server.BaseHTTPRequestHandler):
             "state": "written", "content_hash": "sha256:" + "f" * 64,
             "restart_required": True,
         }).encode())
+
+    def do_PATCH(self):
+        if self.path == "/api/admin/administrators/enabled":
+            self.administrator_mutation(
+                {"name": "operations-admin", "enabled": False},
+                "enabled_changed")
+            return
+        self.send_error(404)
+
+    def do_DELETE(self):
+        if self.path == "/api/admin/administrators":
+            self.administrator_mutation(
+                {"name": "operations-admin"}, "removed")
+            return
+        self.send_error(404)
 
     def log_message(self, *_args):
         return
@@ -1438,6 +1491,37 @@ def main() -> int:
                 ],
             }
             assert FakeSmithproxy.api_key == secret
+
+            administrator_headers = {
+                **gateway_headers,
+                "Host": f"127.0.0.1:{configured_port}",
+                "Origin": f"http://127.0.0.1:{configured_port}",
+                "Sec-Fetch-Site": "same-origin",
+                "X-Smithproxy-GUI-CSRF": "1",
+                "X-Smithproxy-Expected-Revision": FakeSmithproxy.config_revision,
+                "X-Smithproxy-Archive-SHA256": FakeSmithproxy.archive_hash,
+                "Content-Type": "application/json",
+            }
+            administrator_mutations = (
+                ("create", {"name": "operations-admin",
+                            "password": "new secure password"}, "created"),
+                ("password", {"name": "operations-admin",
+                              "password": "rotated secure password"},
+                 "password_changed"),
+                ("enabled", {"name": "operations-admin", "enabled": False},
+                 "enabled_changed"),
+                ("remove", {"name": "operations-admin"}, "removed"),
+            )
+            for operation, payload, expected_state in administrator_mutations:
+                status, _, body = request(
+                    configured_port,
+                    f"/api/v1/admin/administrators/{operation}", "POST",
+                    administrator_headers, json.dumps(payload))
+                assert status == 200
+                response = json.loads(body)
+                assert response["state"] == expected_state
+                assert response["administrator"] == "operations-admin"
+                assert response["changed"] is True
 
             # A launcher-bootstrapped GUI can create its first persistent
             # gui.cfg through Smithproxy core. Absence is not treated as an

@@ -766,6 +766,10 @@ private:
             *relative != "/api/v1/config/archive/resource/delete" &&
             *relative != "/api/v1/config/gui/publish" &&
             *relative != "/api/v1/config/gui/administrators/remove" &&
+            *relative != "/api/v1/admin/administrators/create" &&
+            *relative != "/api/v1/admin/administrators/password" &&
+            *relative != "/api/v1/admin/administrators/enabled" &&
+            *relative != "/api/v1/admin/administrators/remove" &&
             *relative != "/api/v1/auth/logout") {
             return relative->starts_with("/api/")
                 ? Response{404, "application/json; charset=utf-8", "{\"error\":\"API endpoint not found\"}"}
@@ -789,6 +793,9 @@ private:
         }
         if(*relative == "/api/v1/config/gui/administrators/remove") {
             return remove_gui_administrator(connection, body);
+        }
+        if(relative->starts_with("/api/v1/admin/administrators/")) {
+            return mutate_administrator(connection, *relative, body);
         }
         if(archive_upload) {
             std::vector<std::string> headers;
@@ -1647,6 +1654,93 @@ private:
         if(!upstream.transport_ok) {
             return {502, "application/json; charset=utf-8",
                     "{\"error\":\"Smithproxy archive API unavailable\"}"};
+        }
+        return {static_cast<unsigned>(upstream.status),
+                "application/json; charset=utf-8", upstream.body};
+    }
+
+    Response mutate_administrator(
+        MHD_Connection* connection,
+        const std::string_view route,
+        const std::string_view body) const {
+        const auto* revision = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "X-Smithproxy-Expected-Revision");
+        const auto* archive_hash = MHD_lookup_connection_value(
+            connection, MHD_HEADER_KIND, "X-Smithproxy-Archive-SHA256");
+        if(!revision || !archive_hash || !is_config_revision(revision) ||
+           !is_content_hash(archive_hash)) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid administrator mutation precondition\"}"};
+        }
+
+        const auto document = nlohmann::json::parse(body, nullptr, false);
+        const bool has_name = document.is_object() &&
+            document.contains("name") && document["name"].is_string();
+        const auto name = has_name
+            ? document["name"].get<std::string>()
+            : std::string{};
+        const bool valid_name = !name.empty() && name.size() <= 64U &&
+            std::all_of(name.begin(), name.end(), [](const unsigned char value) {
+                const bool digit = value >= '0' && value <= '9';
+                const bool lowercase = value >= 'a' && value <= 'z';
+                const bool uppercase = value >= 'A' && value <= 'Z';
+                const bool separator = value == '.' || value == '_' ||
+                                       value == '-' || value == '@';
+                return digit || lowercase || uppercase || separator;
+            });
+        if(!valid_name) {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid administrator name\"}"};
+        }
+
+        std::string method;
+        std::string path;
+        nlohmann::json request;
+        if(route == "/api/v1/admin/administrators/create" ||
+           route == "/api/v1/admin/administrators/password") {
+            const bool valid_password = document.size() == 2U &&
+                document.contains("password") && document["password"].is_string() &&
+                !document["password"].get_ref<const std::string&>().empty() &&
+                document["password"].get_ref<const std::string&>().size() <= 1024U;
+            if(!valid_password) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid administrator password\"}"};
+            }
+            method = route.ends_with("/create") ? "POST" : "PUT";
+            path = route.ends_with("/create")
+                ? "/api/admin/administrators"
+                : "/api/admin/administrators/password";
+            request = {{"name", name}, {"password", document["password"]}};
+        }
+        else if(route == "/api/v1/admin/administrators/enabled") {
+            const bool valid_enabled = document.size() == 2U &&
+                document.contains("enabled") && document["enabled"].is_boolean();
+            if(!valid_enabled) {
+                return {400, "application/json; charset=utf-8",
+                        "{\"error\":\"invalid administrator enabled state\"}"};
+            }
+            method = "PATCH";
+            path = "/api/admin/administrators/enabled";
+            request = {{"name", name}, {"enabled", document["enabled"]}};
+        }
+        else if(route == "/api/v1/admin/administrators/remove" &&
+                document.size() == 1U) {
+            method = "DELETE";
+            path = "/api/admin/administrators";
+            request = {{"name", name}};
+        }
+        else {
+            return {400, "application/json; charset=utf-8",
+                    "{\"error\":\"invalid administrator mutation request\"}"};
+        }
+
+        const auto upstream = monitor_.administrator_api(
+            method, path, request.dump(),
+            {"X-Smithproxy-Expected-Revision: " + std::string(revision),
+             "X-Smithproxy-Archive-SHA256: " + std::string(archive_hash)});
+        if(!upstream.transport_ok) {
+            return {502, "application/json; charset=utf-8",
+                    "{\"error\":\"Smithproxy administrator API unavailable\"}"};
         }
         return {static_cast<unsigned>(upstream.status),
                 "application/json; charset=utf-8", upstream.body};
