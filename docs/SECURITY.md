@@ -38,9 +38,9 @@ cross the browser boundary or enter logs, diagnostics, or audit records.
 
 ### GUI bootstrap resource
 
-The persistent `gui.cfg` resource is configuration and may contain salted,
-memory-hard administrator password verifiers, but never passwords, enrollment
-tokens, sessions, or API-key values. The
+The persistent `gui.cfg` resource contains only GUI service bootstrap
+configuration. It never contains administrator identities, password verifiers,
+passwords, enrollment tokens, sessions, or API-key values. The
 GUI backend reads the read-only runtime copy exposed by Smithproxy core at
 startup, but never writes that file or
 the CFtar archive. Changes are submitted through the authenticated Smithproxy
@@ -87,21 +87,22 @@ Standalone enrollment is available only on the loopback-only deployment mode.
 A privilege-15 Smithproxy CLI session issues a 256-bit single-use token whose
 verifier lives in core memory for at most ten minutes. Enrollment sends that
 token and the new password over the same origin, core consumes the token
-atomically, and the GUI publishes only a salted scrypt verifier through the
-revision- and archive-hash-guarded core API. Login derivations are globally
+atomically, derives the verifier, and publishes it to `admin.cfg` through the
+typed, revision- and archive-hash-guarded administrator API. The GUI never
+derives or serializes password verifiers. Login derivations are globally
 rate-limited and return one generic credential error. Successful enrollment or
 login issues an eight-hour `Secure`, `HttpOnly`, `SameSite=Strict` cookie;
 logout revokes it in memory and expires it in the browser.
 An authenticated standalone administrator may enroll a peer or rotate an
 existing password with a separately issued CLI token. The token supplies the
 administrator identity, so the browser cannot select a different account. The
-response does not replace the current administrator's cookie. The published
+response does not replace the current administrator's cookie. Core's published
 verifier becomes active immediately and all older sessions for the target
 identity are revoked. Self-rotation instead returns exactly one replacement
 cookie for the same identity. Restart only reloads the persistent verifier.
 Peer removal is available only to a standalone administrator session. The
 active account and the last persistent account are protected from removal, and
-publication remains guarded by the current runtime revision and archive hash.
+publication to `admin.cfg` remains guarded by the current runtime revision and archive hash.
 After successful publication, all sessions belonging to the removed peer are
 revoked and that identity cannot log in again during the current boot. Restart
 only reconciles the in-memory verifier set with the already-published archive.

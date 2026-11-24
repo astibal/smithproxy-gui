@@ -16,15 +16,16 @@ new archive atomically.
 The **System → Access & integrations → GUI service** editor reads this resource
 through the authenticated Smithproxy archive API. Publishing from that editor
 uses the running revision and current archive SHA-256 as atomic preconditions;
-administrator verifier changes are activated in the running GUI immediately;
-other boot settings take effect only after a controlled service restart.
+boot settings take effect only after a controlled service restart. Administrator
+identities are not part of this resource; they are managed through Smithproxy's
+typed administrator API and persisted by Core in `admin.cfg`.
 The Smithproxy connection and trusted browser-gateway groups are independently
 optional and can be explicitly enabled or removed. Opening the editor preserves
 an absent group instead of silently materializing deployment credentials.
 When `gui.cfg` does not exist yet, a core-bootstrapped loopback GUI can create the
 first resource through this same core API. The initial document contains no
-administrator verifier; the first privilege-15 CLI enrollment is enabled only
-after the resource is published and can be read back authoritatively.
+administrator state; the first privilege-15 CLI enrollment is enabled only after
+the GUI can read Core's authoritative `admin.cfg` inventory and revision.
 
 ```libconfig
 gui = {
@@ -54,25 +55,11 @@ gui = {
     previous_secret_file = "/run/credentials/smithproxy-gui.gateway.previous";
   };
 
-  # Passwords are never stored. Each entry contains only a bounded scrypt
-  # verifier created after a one-time CLI enrollment token is accepted.
-  administrators = (
-    {
-      name = "security-admin";
-      algorithm = "scrypt";
-      salt = "0123456789abcdef0123456789abcdef";
-      verifier = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-      cost = 32768L;
-      block_size = 8;
-      parallelism = 1;
-    }
-  );
 };
 ```
 
-Version 1 remains readable for installations without persistent administrators;
-the administrator list requires version 2 and the optional frontend asset override
-requires version 3. Unknown settings and unsupported
+Versions 1 and 2 remain readable for existing bootstrap resources; the optional
+frontend asset override requires version 3. Unknown settings and unsupported
 schema versions are rejected. This prevents
 an older GUI from publishing a replacement that silently drops fields owned by
 a newer GUI schema. A legacy file without `schema_version` is read as version 1;
@@ -109,28 +96,29 @@ independently owns persistent startup state.
 
 Administrator passwords and enrollment tokens are never represented here. The
 CLI creates a single-use token valid for ten minutes. After Smithproxy consumes
-it atomically, the GUI derives and publishes only the salted scrypt verifier
-through the core archive API. Successful authentication produces an eight-hour
+it atomically, Core derives and publishes the bounded password verifier to
+`admin.cfg` through its typed administrator transaction. The GUI never derives,
+serializes, or publishes a verifier. Successful authentication produces an eight-hour
 HttpOnly, Secure, SameSite=Strict runtime session; it never turns the password or
 enrollment token into a persistent API key. A logged-in standalone administrator
 may consume another named CLI enrollment token from the GUI service card to add
 a peer or rotate an existing peer's password. The token's administrator identity
 selects create or rotation; arbitrary browser-supplied names are never trusted.
-This publishes and activates the new verifier immediately, then revokes every
+Core publishes and activates the new verifier immediately, then revokes every
 older session for that identity. A self-rotation receives one replacement
 browser session; a peer rotation leaves the acting administrator's session
 unchanged. Restart only reconciles the already-active verifier with persistent
-startup state.
+`admin.cfg` state.
 The service card also supports a confirmed removal of a peer administrator.
 The active account and the final remaining account cannot be removed; this
 prevents both immediate self-lockout and an administrator-free next boot.
 Successful removal immediately revokes that identity's runtime sessions and
 blocks new logins for the rest of the current boot. A controlled restart then
-loads the reduced persistent administrator set from `gui.cfg`.
+loads the reduced persistent administrator set from `admin.cfg`.
 
-Before consuming an enrollment token, the GUI verifies that `gui.cfg`, the
-archive inventory, and the running configuration revision are all available.
+Before consuming an enrollment token, the GUI verifies that the typed
+administrator inventory, its `admin.cfg` content hash, and the running
+configuration revision are all available.
 A failed readiness check therefore leaves the one-time token usable. Failures
-after consumption require a new token; making consumption and publication one
-cross-process atomic operation requires a future reserve/commit capability in
-the Smithproxy core API.
+after consumption are handled by the single Core transaction; the GUI performs
+no second archive publication step.
