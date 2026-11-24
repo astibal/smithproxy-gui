@@ -12639,6 +12639,7 @@ export class SmithproxyApp extends LitElement {
               activeBackend && savedBackend ? html` <span class="runtime-state success">● active</span>` : nothing}</dd>
           <dt>Frontend assets</dt><dd>${value?.frontend?.assetRoot ?? 'Packaged default'}</dd>
           <dt>Smithproxy API</dt><dd>${value?.smithproxy?.apiUrl ?? 'Not configured'}</dd>
+          <dt>Smithproxy API CA certificate</dt><dd>${value?.smithproxy?.caCert || 'System trust store'}</dd>
           <dt>Saved API credential reference</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
           <dt>API credential this boot</dt><dd>${activeRuntime
             ? html`<span class="runtime-state ${activeRuntime.smithproxyApiCredentialLoaded ? 'success' : ''}">
@@ -12650,6 +12651,7 @@ export class SmithproxyApp extends LitElement {
             ? activeRuntime.cliBrokerConfigured ? 'Configured' : 'Disabled'
             : 'Not reported'}</dd>
           <dt>Saved browser gateway</dt><dd>${value?.gateway?.secretFile ?? 'Not configured'}</dd>
+          <dt>Saved previous gateway credential</dt><dd>${value?.gateway?.previousSecretFile || 'Not configured'}</dd>
           <dt>Gateway credential this boot</dt><dd>${activeRuntime
             ? html`<span class="runtime-state ${activeRuntime.browserGatewayCredentialLoaded ? 'success' : ''}">
                 ● ${activeRuntime.browserGatewayCredentialLoaded ? 'Loaded' : 'Disabled'}

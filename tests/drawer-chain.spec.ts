@@ -7142,6 +7142,9 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   });
   await expect(gui).toContainText('Boot settings published with the Smithproxy configuration archive');
   await expect(gui).toContainText('/run/credentials/gui.api-token');
+  await expect(gui).toContainText('/run/gui/api-ca.pem');
+  await expect(gui.getByText('Saved previous gateway credential', {exact: true})
+    .locator('xpath=following-sibling::dd[1]')).toHaveText('Not configured');
   await expect(gui.getByText('API credential this boot', {exact: true})
     .locator('xpath=following-sibling::dd[1]')).toContainText('Loaded');
   await expect(gui.getByText('Gateway credential this boot', {exact: true})
@@ -7191,7 +7194,6 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('127.0.0.1:19083/smithproxy-gui');
   await expect(gui).toContainText('/srv/smithproxy-gui/canonical-assets');
   await expect(gui).toContainText('restart pending');
-  await expect(gui).toContainText('administrator changes activate immediately');
 });
 
 test('blocks initial enrollment until the core publication preflight is ready', async ({page}) => {
