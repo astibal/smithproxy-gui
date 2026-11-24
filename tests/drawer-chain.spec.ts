@@ -7730,7 +7730,14 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await settingsEditor.getByLabel('Require HTTP CONNECT authentication').selectOption('true');
   await settingsEditor.getByLabel('Nameservers').fill('192.0.2.53, 2001:db8::53, resolver.example');
   await settingsEditor.getByLabel('UDP quick ports').fill('0, 53, 443');
-  await settingsEditor.getByLabel('HTTP API allowed IPs').fill('127.0.0.1, 192.0.2.0/24');
+  const apiAllowedClients = settingsEditor.getByRole('group', {name: 'HTTP API allowed clients'});
+  await apiAllowedClients.getByLabel('HTTP API allowed client 1', {exact: true}).fill('127.0.0.1');
+  await apiAllowedClients.getByRole('button', {name: 'Add allowed client'}).click();
+  await apiAllowedClients.getByLabel('HTTP API allowed client 2', {exact: true}).fill('192.0.2.0/24');
+  await apiAllowedClients.getByRole('button', {name: 'Add allowed client'}).click();
+  await apiAllowedClients.getByLabel('HTTP API allowed client 3', {exact: true}).fill('198.51.100.8');
+  await apiAllowedClients.getByRole('button', {name: 'Remove HTTP API allowed client 3'}).click();
+  await expect(apiAllowedClients.getByLabel('HTTP API allowed client 3', {exact: true})).toHaveCount(0);
   await settingsEditor.getByLabel('Webhook URL').fill('https://hooks.example.test/smithproxy');
   await settingsEditor.getByLabel('Sift payload limit per direction').fill('524288');
   await settingsEditor.getByLabel('Synchronous webhook delivery').selectOption('true');

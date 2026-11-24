@@ -584,6 +584,7 @@ export class SmithproxyApp extends LitElement {
   @state() private dirtyDrawerKeys = new Set<string>();
   @state() private editingDrawerKeys = new Set<string>();
   private settingsApiKeyDraft: string[] | undefined;
+  private settingsApiAllowedIpDraft: string[] | undefined;
   private readonly tlsSniBypassDrafts = new Map<string, string[]>();
   @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
@@ -1815,6 +1816,8 @@ export class SmithproxyApp extends LitElement {
     this.dirtyDrawerKeys = new Set<string>();
     this.editingDrawerKeys = new Set<string>();
     this.settingsApiKeyDraft = undefined;
+    this.settingsApiAllowedIpDraft = undefined;
+    this.tlsSniBypassDrafts.clear();
     this.pendingCloseIndex = undefined;
     this.pendingReturnFocus = undefined;
     this.drawerHistoryDepth = 0;
@@ -4834,6 +4837,9 @@ export class SmithproxyApp extends LitElement {
       this.settingsApiKeyDraft = [...this.persistentListValue(
         'settings.http_api.keys', this.snapshot.settings.httpApi.keys, 'string',
       )];
+      this.settingsApiAllowedIpDraft = [...this.persistentListValue(
+        'settings.http_api.allowed_ips', this.snapshot.settings.httpApi.allowedIps, 'string',
+      )];
     }
     if (entry.kind === 'profile') {
       const profile = this.snapshot?.profiles.find(candidate => candidate.id === entry.id)?.tls;
@@ -5028,8 +5034,8 @@ export class SmithproxyApp extends LitElement {
     const remainingEditors = new Set(this.editingDrawerKeys);
     const closingEntries = this.drawerStore.entries.slice(index);
     if (closingEntries.some(entry => entry.kind === 'settings')) {
-    this.settingsApiKeyDraft = undefined;
-    this.tlsSniBypassDrafts.clear();
+      this.settingsApiKeyDraft = undefined;
+      this.settingsApiAllowedIpDraft = undefined;
     }
     if (closingEntries.some(entry => this.drawerKey(entry) === this.drawerConsoleKey)) {
       this.drawerConsoleKey = undefined;
@@ -7376,12 +7382,12 @@ export class SmithproxyApp extends LitElement {
     changes.push({path: 'settings.syslog_family', value: Number(syslogFamily.value)});
     const nameserversInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-nameservers');
     const quickPortsInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-udp-quick-ports');
-    const allowedIpsInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-allowed-ips');
-    if (!nameserversInput || !quickPortsInput || !allowedIpsInput) return undefined;
+    if (!nameserversInput || !quickPortsInput) return undefined;
     const splitList = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
     const nameservers = splitList(nameserversInput.value);
     const quickPorts = splitList(quickPortsInput.value);
-    const allowedIps = splitList(allowedIpsInput.value);
+    const allowedIps = this.settingsApiAllowedIpDraft ??
+      this.persistentListValue('settings.http_api.allowed_ips', settings.httpApi.allowedIps, 'string');
     if (nameservers.length > 256 || new Set(nameservers).size !== nameservers.length ||
         nameservers.some(item => !/^[A-Za-z0-9:._-]{1,128}$/u.test(item)) ||
         quickPorts.length > 256 || new Set(quickPorts).size !== quickPorts.length ||
@@ -7393,7 +7399,7 @@ export class SmithproxyApp extends LitElement {
     }
     changes.push({path: 'settings.nameservers', value: nameservers});
     changes.push({path: 'settings.udp_quick_ports', value: quickPorts});
-    changes.push({path: 'settings.http_api.allowed_ips', value: allowedIps});
+    changes.push({path: 'settings.http_api.allowed_ips', value: [...allowedIps]});
     const apiKeyTimeout = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-key-timeout');
     const apiPort = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-port');
     const apiKeyTimeoutValue = apiKeyTimeout?.valueAsNumber ?? Number.NaN;
@@ -7665,7 +7671,7 @@ export class SmithproxyApp extends LitElement {
   private addSettingsApiKey(): void {
     if (!this.settingsApiKeyDraft) return;
     this.settingsApiKeyDraft = [...this.settingsApiKeyDraft, ''];
-    this.markSettingsApiKeysDirty();
+    this.markSettingsManagementApiDirty();
     this.requestUpdate();
     void this.updateComplete.then(() => {
       const index = this.settingsApiKeyDraft?.length ?? 0;
@@ -7677,15 +7683,40 @@ export class SmithproxyApp extends LitElement {
   private removeSettingsApiKey(index: number): void {
     if (!this.settingsApiKeyDraft || index < 0 || index >= this.settingsApiKeyDraft.length) return;
     this.settingsApiKeyDraft = this.settingsApiKeyDraft.filter((_, candidate) => candidate !== index);
-    this.markSettingsApiKeysDirty();
+    this.markSettingsManagementApiDirty();
     this.requestUpdate();
   }
 
-  private markSettingsApiKeysDirty(): void {
+  private markSettingsManagementApiDirty(): void {
     const key = this.drawerKey({kind: 'settings', id: 'settings'});
     if (!this.dirtyDrawerKeys.has(key)) {
       this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
     }
+  }
+
+  private updateSettingsApiAllowedIp(index: number, value: string): void {
+    if (!this.settingsApiAllowedIpDraft || index < 0 || index >= this.settingsApiAllowedIpDraft.length) return;
+    this.settingsApiAllowedIpDraft[index] = value;
+  }
+
+  private addSettingsApiAllowedIp(): void {
+    if (!this.settingsApiAllowedIpDraft || this.settingsApiAllowedIpDraft.length >= 256) return;
+    this.settingsApiAllowedIpDraft = [...this.settingsApiAllowedIpDraft, ''];
+    this.markSettingsManagementApiDirty();
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      const index = this.settingsApiAllowedIpDraft?.length ?? 0;
+      this.renderRoot.querySelector<HTMLInputElement>(`#settings-api-allowed-ip-${index - 1}`)?.focus();
+    });
+  }
+
+  private removeSettingsApiAllowedIp(index: number): void {
+    if (!this.settingsApiAllowedIpDraft || index < 0 || index >= this.settingsApiAllowedIpDraft.length) return;
+    this.settingsApiAllowedIpDraft = this.settingsApiAllowedIpDraft.filter(
+      (_, candidate) => candidate !== index,
+    );
+    this.markSettingsManagementApiDirty();
+    this.requestUpdate();
   }
 
   /** Returns the editable SNI-bypass rows while preserving unsaved input across rerenders. */
@@ -14930,6 +14961,8 @@ export class SmithproxyApp extends LitElement {
     const interfaceRoleStructural = this.collectionTransactionsAvailable('settings.interfaces');
     const apiKeys = this.settingsApiKeyDraft ??
       strings('settings.http_api.keys', settings.httpApi.keys);
+    const apiAllowedIps = this.settingsApiAllowedIpDraft ??
+      strings('settings.http_api.allowed_ips', settings.httpApi.allowedIps);
     return html`
       <div class="scope-note section">
         <span>All running configuration values are available to the authenticated administrator.</span>
@@ -15186,11 +15219,31 @@ export class SmithproxyApp extends LitElement {
             ?disabled=${locked('settings.http_api.keys') || apiKeys.length >= 256}
             @click=${() => this.addSettingsApiKey()}>Add API key</button>
         </div>
-        <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
-        <input id="settings-api-allowed-ips"
-          .value=${strings('settings.http_api.allowed_ips', settings.httpApi.allowedIps).join(', ')}
-          placeholder="127.0.0.1, 192.0.2.0/24"
-          .readOnly=${locked('settings.http_api.allowed_ips')} />
+        <label>HTTP API allowed clients</label>
+        <div class="reference-list-editor" role="group" aria-label="HTTP API allowed clients">
+          <div class="reference-list-values">
+            ${apiAllowedIps.length === 0 ? html`
+              <span class="reference-list-empty">No management clients allowed</span>
+            ` : apiAllowedIps.map((address, index) => html`
+              <div class="reference-list-row">
+                <input id=${`settings-api-allowed-ip-${index}`} maxlength="128" autocomplete="off"
+                  aria-label=${`HTTP API allowed client ${index + 1}`} placeholder="192.0.2.0/24"
+                  .value=${address} .readOnly=${locked('settings.http_api.allowed_ips')}
+                  @input=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.updateSettingsApiAllowedIp(index, input.value);
+                  }} />
+                <button class="reference-list-remove" type="button" data-edit-control="true"
+                  aria-label=${`Remove HTTP API allowed client ${index + 1}`}
+                  ?disabled=${locked('settings.http_api.allowed_ips')}
+                  @click=${() => this.removeSettingsApiAllowedIp(index)}>×</button>
+              </div>
+            `)}
+          </div>
+          <button class="secondary" type="button" data-edit-control="true"
+            ?disabled=${locked('settings.http_api.allowed_ips') || apiAllowedIps.length >= 256}
+            @click=${() => this.addSettingsApiAllowedIp()}>Add allowed client</button>
+        </div>
           </div>
         </fieldset>
         <fieldset class="editor-group" data-settings-group="webhook">
