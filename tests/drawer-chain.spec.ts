@@ -7218,12 +7218,18 @@ test('manages Core-owned administrators independently from GUI service settings'
     {name: 'operations-admin', enabled: true},
   ];
   const mutations: Array<{path: string; body: unknown}> = [];
-  await mockSystemApi(page, {
+  const state: MockState = {
     smithproxy: 'ready', configSaveReady: true,
     configRevision: revision, savedConfigRevision: revision,
     gatewayMode: 'standalone', gatewayAuthenticated: true,
     gatewayAdministrator: 'security-admin', administratorsConfigured: true,
-  }, true);
+  };
+  await mockSystemApi(page, state, true);
+  await page.route('**/api/v1/auth/logout', async route => {
+    state.gatewayAuthenticated = false;
+    state.gatewayAdministrator = undefined;
+    await route.fulfill({json: {state: 'logged-out'}});
+  });
   await page.route('**/api/v1/config/gui', async route => route.fulfill({json: {
     state: 'ready', schema_version: 1, restart_required: true,
     backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'},
@@ -7252,6 +7258,13 @@ test('manages Core-owned administrators independently from GUI service settings'
       administrators = administrators.filter(item => item.name !== body.name);
       await route.fulfill({json: {
         state: 'removed', administrator: body.name, changed: true,
+        revision, content_hash: archiveHash, restart_required: false,
+      }});
+      return;
+    }
+    if (path.endsWith('/password')) {
+      await route.fulfill({json: {
+        state: 'password_changed', administrator: body.name, changed: true,
         revision, content_hash: archiveHash, restart_required: false,
       }});
       return;
@@ -7285,6 +7298,18 @@ test('manages Core-owned administrators independently from GUI service settings'
   });
   await expect(card.getByRole('list', {name: 'Configured administrators'}))
     .not.toContainText('operations-admin');
+
+  await card.getByRole('button', {name: 'Change password for security-admin'}).click();
+  await card.getByLabel('New password').fill('replacement-security-password');
+  await card.getByLabel('Confirm password').fill('replacement-security-password');
+  await card.getByRole('button', {name: 'Change password'}).click();
+  await expect.poll(() => mutations.at(-1)).toEqual({
+    path: '/api/v1/admin/administrators/password',
+    body: {name: 'security-admin', password: 'replacement-security-password'},
+  });
+  await expect(page.getByRole('heading', {name: 'Administrator login'})).toBeVisible();
+  await expect(page.getByRole('status'))
+    .toContainText('Password changed. Sign in again with the new password.');
 });
 
 test('exposes network, object, and system vertical slices', async ({page}) => {

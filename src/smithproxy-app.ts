@@ -506,6 +506,7 @@ export class SmithproxyApp extends LitElement {
   @state() private loginAdministratorName = '';
   @state() private loginPassword = '';
   @state() private loginError: string | undefined;
+  @state() private loginNotice: string | undefined;
   @state() private loginBusy = false;
   @state() private runtimeMetrics: RuntimeMetricsSnapshot = initialRuntimeMetrics;
   @state() private sessionActivity: SessionActivitySnapshot = initialSessionActivity;
@@ -2254,6 +2255,7 @@ export class SmithproxyApp extends LitElement {
     this.administratorError = undefined;
     this.administratorSuccess = undefined;
     let reload = false;
+    let reauthenticate = false;
     try {
       const result = editor.mode === 'create'
         ? await this.systemClient.createAdministrator(
@@ -2264,12 +2266,18 @@ export class SmithproxyApp extends LitElement {
       this.administratorSuccess = editor.mode === 'create'
         ? `${result.administrator} is available immediately.`
         : `${result.administrator} password changed; previous sessions were revoked.`;
-      reload = true;
+      reauthenticate = editor.mode === 'password' &&
+        result.administrator === this.gatewaySession?.administrator;
+      reload = !reauthenticate;
     } catch (error) {
       this.administratorError = error instanceof Error
         ? error.message : 'Administrator change failed.';
     } finally {
       this.administratorInventoryBusy = false;
+    }
+    if (reauthenticate) {
+      await this.logoutAdministrator('Password changed. Sign in again with the new password.');
+      return;
     }
     if (reload) await this.loadAdministratorInventory();
   }
@@ -2590,6 +2598,7 @@ export class SmithproxyApp extends LitElement {
     if (!this.systemClient || this.loginBusy) return;
     this.loginBusy = true;
     this.loginError = undefined;
+    this.loginNotice = undefined;
     try {
       await this.systemClient.loginAdministrator(
         this.loginAdministratorName.trim(), this.loginPassword,
@@ -2605,12 +2614,13 @@ export class SmithproxyApp extends LitElement {
   }
 
   /** Revokes the current standalone session and returns to the login surface. */
-  private async logoutAdministrator(): Promise<void> {
+  private async logoutAdministrator(loginNotice?: string): Promise<void> {
     if (!this.systemClient) return;
     try {
       await this.systemClient.logoutAdministrator();
     } finally {
       this.clearPrivilegedConfigurationState();
+      this.loginNotice = loginNotice;
       await this.refreshCapabilities();
     }
   }
@@ -17206,6 +17216,9 @@ export class SmithproxyApp extends LitElement {
                   if (input instanceof HTMLInputElement) this.loginPassword = input.value;
                 }}>
             </label>
+            ${this.loginNotice ? html`<p class="metrics-message success" role="status">
+              ${this.loginNotice}
+            </p>` : nothing}
             ${this.loginError ? html`<p class="error" role="alert">${this.loginError}</p>` : nothing}
             <button class="primary" type="submit"
               ?disabled=${this.loginBusy || !validName || this.loginPassword.length < 14}>
