@@ -1,5 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
-import {SystemClient, serializeGuiConfiguration} from './system-client';
+import {
+  SystemClient, serializeGuiConfiguration, validateGuiBootstrapConfiguration,
+} from './system-client';
 
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {status, headers: {'Content-Type': 'application/json'}});
@@ -1062,6 +1064,30 @@ describe('SystemClient', () => {
       state: 'ready', schema_version: 2, restart_required: true,
     }));
     await expect(future.guiConfiguration()).rejects.toThrow('Unsupported GUI configuration schema');
+  });
+
+  it('rejects GUI startup settings that would fail only after a service restart', () => {
+    const valid = {
+      backend: {bindAddress: '127.0.0.1', port: 18082, basePath: '/smithproxy-gui'},
+      smithproxy: {
+        apiUrl: 'https://127.0.0.1:55555', caCert: '/run/gui/api-ca.pem',
+        apiTokenFile: '/run/credentials/gui.api-token', cliEndpoint: '127.0.0.1:50000',
+      },
+      gateway: {secretFile: '/run/credentials/gui.gateway', previousSecretFile: ''},
+    };
+    expect(validateGuiBootstrapConfiguration(valid)).toBeUndefined();
+    expect(validateGuiBootstrapConfiguration({
+      ...valid, backend: {...valid.backend, bindAddress: '999.1.1.1'},
+    })).toContain('IPv4');
+    expect(validateGuiBootstrapConfiguration({
+      ...valid, smithproxy: {...valid.smithproxy, apiTokenFile: 'relative-token'},
+    })).toContain('absolute safe paths');
+    expect(validateGuiBootstrapConfiguration({
+      ...valid, backend: {...valid.backend, bindAddress: '0.0.0.0'}, gateway: undefined,
+    })).toContain('gateway credential');
+    expect(() => serializeGuiConfiguration({
+      ...valid, gateway: {...valid.gateway, previousSecretFile: valid.gateway.secretFile},
+    })).toThrow('must differ');
   });
 
   it('rejects malformed responses and unsafe endpoint configuration', async () => {

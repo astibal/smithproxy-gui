@@ -39,6 +39,7 @@ import type {
 import {
   SystemClient,
   serializeGuiConfiguration,
+  validateGuiBootstrapConfiguration,
   type ArchiveInventory,
   type ArchiveRestore,
   type ArchiveValidation,
@@ -11603,11 +11604,8 @@ export class SmithproxyApp extends LitElement {
   private renderGuiConfigurationCard() {
     const value = this.guiConfiguration;
     const draft = this.guiConfigurationDraft;
-    const valid = draft && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(draft.backend.bindAddress) &&
-      Number.isSafeInteger(draft.backend.port) && draft.backend.port >= 1 && draft.backend.port <= 65535 &&
-      draft.backend.basePath.startsWith('/') && Boolean(draft.smithproxy?.apiUrl) &&
-      Boolean(draft.smithproxy?.caCert) && Boolean(draft.smithproxy?.apiTokenFile) &&
-      Boolean(draft.gateway?.secretFile);
+    const validationError = draft ? validateGuiBootstrapConfiguration(draft) : undefined;
+    const valid = draft !== undefined && validationError === undefined;
     const textField = (
       label: string, current: string, update: (next: string) => void, placeholder = '',
     ) => html`<label><span>${label}</span><input type="text" maxlength="4096"
@@ -11666,6 +11664,9 @@ export class SmithproxyApp extends LitElement {
           Paths are persistent configuration. Smithproxy creates the referenced credentials for each boot;
           their values are never stored in CFtar or returned to the browser.
         </div>
+        ${validationError ? html`<div class="metrics-message danger" role="alert">
+          ${validationError}
+        </div>` : nothing}
         <div class="archive-actions">
           <button class=${this.guiConfigurationSaveArmed ? 'danger' : 'primary'} type="button"
             ?disabled=${!valid || this.guiConfigurationBusy || !this.configSaveAvailable ||

@@ -40,6 +40,11 @@ struct ProtectedFileResult {
 
 bool valid_header_value(std::string_view value);
 
+bool valid_bootstrap_path(const std::optional<std::string>& value) {
+    if (!value || value->empty() || value->size() > 4096U || value->front() != '/') return false;
+    return valid_header_value(*value);
+}
+
 // Rejects fields that this binary cannot preserve. An older GUI must fail
 // closed instead of silently erasing configuration introduced by a newer one.
 std::optional<std::string> unknown_member(
@@ -325,13 +330,9 @@ ParseResult parse_gui_config_file(
     config.gui_config_path = path;
 
     if (persistent.api_url) {
-        std::error_code filesystem_error;
-        if (!std::filesystem::is_regular_file(*persistent.ca_cert, filesystem_error) ||
-            filesystem_error) {
-            return failure("gui.smithproxy.ca_cert is not a readable regular file");
-        }
-        std::ifstream certificate(*persistent.ca_cert);
-        if (!certificate) return failure("gui.smithproxy.ca_cert is not readable");
+        const auto certificate = read_protected_file(
+            *persistent.ca_cert, "GUI Smithproxy CA certificate", 1024U * 1024U, false);
+        if (!certificate.value) return failure(certificate.error);
         const auto token = read_protected_file(
             *persistent.api_token_file, "GUI Smithproxy API token");
         if (!token.value) return failure(token.error);
@@ -443,6 +444,11 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
             config.api_url = std::move(api_url);
             config.ca_cert = std::move(ca_cert);
             config.api_token_file = std::move(api_token_file);
+            if (!valid_bootstrap_path(config.ca_cert) ||
+                !valid_bootstrap_path(config.api_token_file)) {
+                return bootstrap_failure(
+                    "gui.smithproxy credential files must use absolute safe paths");
+            }
             std::string cli_endpoint;
             if (upstream.lookupValue("cli_endpoint", cli_endpoint)) {
                 if (!parse_cli_endpoint(cli_endpoint)) {
@@ -465,9 +471,20 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
                 return bootstrap_failure("gui.gateway requires secret_file");
             }
             config.gateway_secret_file = std::move(secret_file);
+            if (!valid_bootstrap_path(config.gateway_secret_file)) {
+                return bootstrap_failure("gui.gateway.secret_file must use an absolute safe path");
+            }
             std::string previous_file;
             if (gateway.lookupValue("previous_secret_file", previous_file)) {
                 config.gateway_previous_secret_file = std::move(previous_file);
+                if (!valid_bootstrap_path(config.gateway_previous_secret_file)) {
+                    return bootstrap_failure(
+                        "gui.gateway.previous_secret_file must use an absolute safe path");
+                }
+                if (config.gateway_previous_secret_file == config.gateway_secret_file) {
+                    return bootstrap_failure(
+                        "gui.gateway current and previous credential files must differ");
+                }
             }
         }
     } catch (const libconfig::SettingTypeException&) {
@@ -475,6 +492,10 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
     }
     if (!valid_bind_address(config.bind_address)) {
         return bootstrap_failure("gui.backend.bind_address must be an IPv4 literal");
+    }
+    if (!is_loopback_bind(config.bind_address) && !config.gateway_secret_file) {
+        return bootstrap_failure(
+            "gui.backend non-loopback bind requires gui.gateway.secret_file");
     }
     return {std::move(config), {}};
 }

@@ -126,6 +126,12 @@ export interface GuiConfiguration {
   };
 }
 
+export type GuiBootstrapConfiguration = {
+  backend: NonNullable<GuiConfiguration['backend']>;
+  smithproxy: GuiConfiguration['smithproxy'];
+  gateway: GuiConfiguration['gateway'];
+};
+
 export interface ProbeSample {
   state: SmithproxyState;
   checkedAtUnixMs: number;
@@ -1395,7 +1401,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
   const smithproxy = optionalGroup(
     value.smithproxy, ['api_url', 'ca_cert', 'api_token_file', 'cli_endpoint']);
   const gateway = optionalGroup(value.gateway, ['secret_file', 'previous_secret_file']);
-  return {
+  const parsed: GuiConfiguration = {
     state: 'ready',
     restartRequired: true,
     schemaVersion: 1,
@@ -1415,17 +1421,88 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
       previousSecretFile: gateway.previous_secret_file!,
     }} : {}),
   };
+  const validationError = validateGuiBootstrapConfiguration({
+    backend: parsed.backend!, smithproxy: parsed.smithproxy, gateway: parsed.gateway,
+  });
+  if (validationError) throw new Error(validationError);
+  return parsed;
 }
 
 function libconfigString(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
-export function serializeGuiConfiguration(value: {
-  backend: NonNullable<GuiConfiguration['backend']>;
-  smithproxy: GuiConfiguration['smithproxy'];
-  gateway: GuiConfiguration['gateway'];
-}): ArrayBuffer {
+function validIpv4Address(value: string): boolean {
+  const parts = value.split('.');
+  return parts.length === 4 && parts.every(part => /^\d{1,3}$/u.test(part) && Number(part) <= 255);
+}
+
+function validBasePath(value: string): boolean {
+  if (!value.startsWith('/') || /[?#\\]/u.test(value)) return false;
+  const normalized = value.length > 1 ? value.replace(/\/+$/u, '') : value;
+  return normalized === '/' || normalized.slice(1).split('/').every(part =>
+    part.length !== 0 && part !== '.' && part !== '..');
+}
+
+function validApiUrl(value: string): boolean {
+  const loopbackHttp = /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):/u.test(value);
+  if ((!value.startsWith('https://') && !loopbackHttp) || /[\s?#@]/u.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return (url.pathname === '/' || url.pathname === '') && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+function validAbsolutePath(value: string): boolean {
+  return value.startsWith('/') && value.length <= 4096 && !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+function validCliEndpoint(value: string): boolean {
+  if (value === '') return true;
+  const match = value.match(/^([^:\s/\\?#@\[\]]+):(\d{1,5})$/u) ??
+    value.match(/^\[([^\s/\\?#@\[\]]+)\]:(\d{1,5})$/u);
+  return match !== null && Number(match[2]) >= 1 && Number(match[2]) <= 65535;
+}
+
+export function validateGuiBootstrapConfiguration(value: GuiBootstrapConfiguration): string | undefined {
+  if (!validIpv4Address(value.backend.bindAddress)) return 'Bind address must be a valid IPv4 literal.';
+  if (!Number.isSafeInteger(value.backend.port) || value.backend.port < 1 || value.backend.port > 65535) {
+    return 'Backend port must use 1 through 65535.';
+  }
+  if (!validBasePath(value.backend.basePath)) return 'Public base path is invalid.';
+  if (value.smithproxy) {
+    if (!validApiUrl(value.smithproxy.apiUrl)) {
+      return 'Smithproxy API must use HTTPS, or HTTP on a loopback address.';
+    }
+    if (!validAbsolutePath(value.smithproxy.caCert) ||
+        !validAbsolutePath(value.smithproxy.apiTokenFile)) {
+      return 'Smithproxy credential files must use absolute safe paths.';
+    }
+    if (!validCliEndpoint(value.smithproxy.cliEndpoint)) return 'CLI broker endpoint is invalid.';
+  }
+  if (value.gateway) {
+    if (!validAbsolutePath(value.gateway.secretFile)) {
+      return 'Gateway credential file must use an absolute safe path.';
+    }
+    if (value.gateway.previousSecretFile &&
+        !validAbsolutePath(value.gateway.previousSecretFile)) {
+      return 'Previous gateway credential file must use an absolute safe path.';
+    }
+    if (value.gateway.previousSecretFile === value.gateway.secretFile) {
+      return 'Current and previous gateway credential files must differ.';
+    }
+  }
+  if (!value.backend.bindAddress.startsWith('127.') && !value.gateway) {
+    return 'A non-loopback bind requires a gateway credential.';
+  }
+  return undefined;
+}
+
+export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): ArrayBuffer {
+  const validationError = validateGuiBootstrapConfiguration(value);
+  if (validationError) throw new Error(validationError);
   const lines = [
     'gui = {',
     '  schema_version = 1;',

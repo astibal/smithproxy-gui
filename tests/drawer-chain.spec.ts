@@ -7030,6 +7030,10 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('/run/credentials/gui.api-token');
   await expect(gui).not.toContainText('boot-token-value');
   await gui.getByRole('button', {name: 'Edit GUI startup settings'}).click();
+  await gui.getByLabel('Bind address').fill('999.1.1.1');
+  await expect(gui.getByRole('alert')).toContainText('valid IPv4 literal');
+  await expect(gui.getByRole('button', {name: 'Publish GUI startup settings'})).toBeDisabled();
+  await gui.getByLabel('Bind address').fill('127.0.0.1');
   await gui.getByLabel('Backend port').fill('19082');
   await gui.getByRole('button', {name: 'Publish GUI startup settings'}).click();
   await gui.getByRole('button', {name: 'Confirm publish & restart later'}).click();

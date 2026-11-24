@@ -2431,6 +2431,7 @@ int main() {
     const auto owner_only = std::filesystem::perms::owner_read | std::filesystem::perms::owner_write;
     std::filesystem::permissions(api_token_path, owner_only, std::filesystem::perm_options::replace);
     std::filesystem::permissions(gateway_secret_path, owner_only, std::filesystem::perm_options::replace);
+    std::filesystem::permissions(ca_path, owner_only, std::filesystem::perm_options::replace);
     std::filesystem::permissions(gui_config_path, owner_only, std::filesystem::perm_options::replace);
     const auto gui_bootstrap = parse_gui_config_file(gui_config_path, "/srv/gui");
     assert(gui_bootstrap.config);
@@ -2456,6 +2457,16 @@ int main() {
         "gui = { backend = { port = 18082; future_setting = true; }; };\n").config);
     assert(!parse_gui_bootstrap("gui = { backend = { port = 0; }; };\n").config);
     assert(!parse_gui_bootstrap("gui = { smithproxy = { api_url = \"http://remote:1\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { backend = { bind_address = \"0.0.0.0\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { smithproxy = { api_url = \"https://127.0.0.1:55555\"; "
+        "ca_cert = \"relative-ca.pem\"; api_token_file = \"/run/gui/token\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { gateway = { secret_file = \"relative-secret\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { gateway = { secret_file = \"/run/gui/secret\"; "
+        "previous_secret_file = \"/run/gui/secret\"; }; };\n").config);
     std::filesystem::permissions(
         api_token_path, owner_only | std::filesystem::perms::group_read,
         std::filesystem::perm_options::replace);
