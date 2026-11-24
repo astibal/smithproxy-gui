@@ -103,13 +103,11 @@ bool header_contains_token(const char* value, const std::string_view expected) {
 }
 
 bool gateway_authenticated(MHD_Connection* connection, const AppConfig& config) {
-    if (!config.gateway_secret) return true;
+    if (!config.gateway_credential) return true;
     const auto* supplied = MHD_lookup_connection_value(
         connection, MHD_HEADER_KIND, "X-Smithproxy-GUI-Gateway");
     if (supplied == nullptr) return false;
-    return constant_time_equal(supplied, *config.gateway_secret) ||
-           (config.previous_gateway_secret &&
-            constant_time_equal(supplied, *config.previous_gateway_secret));
+    return config.gateway_credential->accepts(supplied);
 }
 
 bool same_origin(MHD_Connection* connection) {

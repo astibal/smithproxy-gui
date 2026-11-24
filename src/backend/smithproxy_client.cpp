@@ -38,6 +38,11 @@ struct ResponseBuffer {
 
 constexpr std::size_t transaction_response_limit = 1024U * 1024U;
 
+std::string runtime_api_key(const SmithproxyConfig& config) {
+    if(!config.api_credential) return {};
+    return config.api_credential->current().value_or("");
+}
+
 std::size_t collect_body(char* data, const std::size_t size, const std::size_t count, void* context) {
     auto& response = *static_cast<ResponseBuffer*>(context);
     if (count != 0U && size > std::numeric_limits<std::size_t>::max() / count) {
@@ -267,6 +272,15 @@ SmithproxyMonitor::UpstreamSessionResult SmithproxyMonitor::upstream_session(
     }
     upstream_session_.reset();
 
+    if(!config_->api_credential) {
+        return {std::nullopt, "Smithproxy runtime API credential is disabled"};
+    }
+    config_->api_credential->refresh(rejected_auth_token.has_value());
+    const auto api_key = config_->api_credential->current();
+    if(!api_key) {
+        return {std::nullopt, "Smithproxy runtime API credential is not available yet"};
+    }
+
     std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
     if (!curl) {
         return {std::nullopt, "Cannot initialize the Smithproxy authorization client"};
@@ -281,7 +295,7 @@ SmithproxyMonitor::UpstreamSessionResult SmithproxyMonitor::upstream_session(
         return {std::nullopt, "Cannot prepare the Smithproxy authorization request"};
     }
     std::unique_ptr<curl_slist, HeaderCleanup> headers(updated_headers);
-    const auto request = nlohmann::json{{"access_key", config_->api_key}}.dump();
+    const auto request = nlohmann::json{{"access_key", *api_key}}.dump();
     ResponseBuffer response{.limit = 4096U, .body = {}, .exceeded = false};
     configure_request(curl.get(), *config_, config_->api_url + "/api/authorize", headers.get());
     curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
@@ -484,7 +498,7 @@ ArchiveApiResponse SmithproxyMonitor::archive_api(
         std::optional<UpstreamSession> session;
         if(method == "GET") {
             raw_headers = curl_slist_append(
-                nullptr, ("X-API-Key: " + config_->api_key).c_str());
+                nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str());
         }
         else {
             const auto session_result = upstream_session(rejected_auth_token);
@@ -584,7 +598,7 @@ AdministratorApiResponse SmithproxyMonitor::administrator_api(
         std::optional<UpstreamSession> session;
         if(inventory) {
             raw_headers = curl_slist_append(
-                nullptr, ("X-API-Key: " + config_->api_key).c_str());
+                nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str());
         }
         else if(!enrollment) {
             const auto session_result = upstream_session(rejected_auth_token);
@@ -1329,7 +1343,7 @@ SmithproxyStatus SmithproxyMonitor::ping() const {
 
     const std::string endpoint = config_->api_url + "/api/status/ping";
     std::unique_ptr<curl_slist, HeaderCleanup> headers;
-    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str()));
     if (!headers) return probe_result("error", "Cannot prepare Smithproxy authentication", started_at);
 
     configure_request(curl.get(), *config_, endpoint, headers.get());
@@ -1367,7 +1381,7 @@ RuntimeMetrics SmithproxyMonitor::fetch_runtime_metrics() const {
         return metrics;
     }
     std::unique_ptr<curl_slist, HeaderCleanup> headers;
-    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str()));
     if (!headers) {
         metrics.detail = "Cannot prepare Smithproxy metrics authentication";
         return metrics;
@@ -1414,7 +1428,7 @@ TlsCacheMetrics SmithproxyMonitor::fetch_tls_cache_metrics() const {
         return metrics;
     }
     std::unique_ptr<curl_slist, HeaderCleanup> headers;
-    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str()));
     if (!headers) {
         metrics.detail = "Cannot prepare Smithproxy TLS cache authentication";
         return metrics;
@@ -1462,7 +1476,7 @@ NeighborMetrics SmithproxyMonitor::fetch_neighbor_metrics() const {
         return metrics;
     }
     std::unique_ptr<curl_slist, HeaderCleanup> headers;
-    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str()));
     if (!headers) {
         metrics.detail = "Cannot prepare Smithproxy neighborhood authentication";
         return metrics;
@@ -1515,7 +1529,7 @@ InterfaceMetrics SmithproxyMonitor::fetch_interface_metrics() const {
         return metrics;
     }
     std::unique_ptr<curl_slist, HeaderCleanup> headers;
-    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str()));
     if (!headers) {
         metrics.detail = "Cannot prepare Smithproxy interface authentication";
         return metrics;
@@ -1580,7 +1594,7 @@ LiveSessions SmithproxyMonitor::fetch_live_sessions() const {
         return sessions;
     }
     std::unique_ptr<curl_slist, HeaderCleanup> headers;
-    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str()));
     if (!headers) {
         sessions.detail = "Cannot prepare Smithproxy session activity authentication";
         return sessions;
@@ -1631,7 +1645,7 @@ TransactionCapabilities SmithproxyMonitor::fetch_transaction_capabilities() cons
     if (!curl) return capabilities;
 
     std::unique_ptr<curl_slist, HeaderCleanup> headers;
-    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + config_->api_key).c_str()));
+    headers.reset(curl_slist_append(nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str()));
     if (!headers) return capabilities;
 
     const std::string endpoint = config_->api_url + "/api/config/v2/capabilities";
@@ -1733,7 +1747,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
         if (curl) {
             auto* raw_headers = curl_slist_append(
-                nullptr, ("X-API-Key: " + config_->api_key).c_str());
+                nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str());
             if (raw_headers) {
                 auto* updated_headers = curl_slist_append(raw_headers, "Accept: application/json");
                 if (updated_headers) {
@@ -1790,7 +1804,7 @@ ConfigSnapshot SmithproxyMonitor::fetch_config_snapshot() const {
         std::unique_ptr<CURL, CurlCleanup> curl(curl_easy_init());
         if (!curl) return {};
         auto* raw_headers = curl_slist_append(
-            nullptr, ("X-API-Key: " + config_->api_key).c_str());
+            nullptr, ("X-API-Key: " + runtime_api_key(*config_)).c_str());
         if (!raw_headers) return {};
         auto* updated_headers = curl_slist_append(raw_headers, "Accept: application/json");
         if (!updated_headers) {

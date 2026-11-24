@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, handle_signal);
     smithproxy::gui::SmithproxyMonitor monitor(
         parsed.config->smithproxy,
-        parsed.config->gateway_secret.has_value(),
+        parsed.config->gateway_credential != nullptr,
         {{"policy", "sha256:" + std::string(64U, 'a')}});
     monitor.start();
     const auto result = smithproxy::gui::run_http_server(

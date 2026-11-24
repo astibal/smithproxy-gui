@@ -1,16 +1,49 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 
 namespace smithproxy::gui {
 
+class RuntimeCredentialPair {
+public:
+    enum class Source { Files };
+
+    RuntimeCredentialPair(
+        std::filesystem::path current_path,
+        std::optional<std::filesystem::path> previous_path,
+        Source source);
+    RuntimeCredentialPair(
+        std::string current,
+        std::optional<std::string> previous = std::nullopt);
+
+    // Polling is intentionally cheap and bounded. Authentication failures use
+    // force=true so rotation convergence never waits for the normal interval.
+    bool refresh(bool force = false) const;
+    [[nodiscard]] std::optional<std::string> current() const;
+    [[nodiscard]] bool accepts(std::string_view supplied) const;
+    [[nodiscard]] bool loaded() const;
+    [[nodiscard]] bool previous_loaded() const;
+
+private:
+    std::filesystem::path current_path_;
+    std::optional<std::filesystem::path> previous_path_;
+    mutable std::mutex mutex_;
+    mutable std::optional<std::string> current_;
+    mutable std::optional<std::string> previous_;
+    mutable std::chrono::steady_clock::time_point checked_at_{};
+    mutable std::chrono::steady_clock::time_point rejected_checked_at_{};
+};
+
 struct SmithproxyConfig {
     std::string api_url;
-    std::string api_key;
+    std::shared_ptr<RuntimeCredentialPair> api_credential;
     std::filesystem::path ca_cert;
 };
 
@@ -32,9 +65,18 @@ struct GuiBootstrapConfig {
     std::optional<std::string> api_url;
     std::optional<std::string> ca_cert;
     std::optional<std::string> api_token_file;
+    std::optional<std::string> previous_api_token_file;
+    bool api_credential_enabled{true};
+    std::uint32_t api_credential_bootstrap_freshness_seconds{300};
+    std::uint32_t api_credential_rotation_seconds{86400};
+    std::uint32_t api_credential_overlap_seconds{3600};
     std::optional<std::string> cli_endpoint;
     std::optional<std::string> gateway_secret_file;
     std::optional<std::string> gateway_previous_secret_file;
+    bool gateway_credential_enabled{true};
+    std::uint32_t gateway_credential_bootstrap_freshness_seconds{300};
+    std::uint32_t gateway_credential_rotation_seconds{86400};
+    std::uint32_t gateway_credential_overlap_seconds{3600};
 };
 
 struct GuiBootstrapParseResult {
@@ -49,8 +91,7 @@ struct AppConfig {
     std::filesystem::path asset_root;
     std::optional<SmithproxyConfig> smithproxy;
     std::optional<SmithproxyCliConfig> smithproxy_cli;
-    std::optional<std::string> gateway_secret;
-    std::optional<std::string> previous_gateway_secret;
+    std::shared_ptr<RuntimeCredentialPair> gateway_credential;
     std::optional<std::filesystem::path> gui_config_path;
     // Exact persistent bootstrap loaded for this process. Keep credential
     // references, never credential contents, so the management API can tell

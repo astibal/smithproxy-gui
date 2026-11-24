@@ -1888,7 +1888,8 @@ int main() {
     assert(!unconfigured_monitor.note_config_committed(canonical_revision_b));
     SmithproxyMonitor undiscovered_monitor{SmithproxyConfig{
         .api_url = "https://127.0.0.1:1",
-        .api_key = "not-sent-before-capability-readiness",
+        .api_credential = std::make_shared<RuntimeCredentialPair>(
+            "not-sent-before-capability-readiness"),
         .ca_cert = "/nonexistent",
     }, true};
     assert(undiscovered_monitor.validate_transaction(transaction_draft).state == "unavailable");
@@ -2542,7 +2543,8 @@ int main() {
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
     const auto authenticated = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
     assert(authenticated.config);
-    assert(authenticated.config->gateway_secret == "0123456789abcdef0123456789abcdef");
+    assert(authenticated.config->gateway_credential->accepts(
+        "0123456789abcdef0123456789abcdef"));
     assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET") == nullptr);
 
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS", "previous-0123456789abcdef01234567", 1);
@@ -2554,7 +2556,8 @@ int main() {
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS", "previous-0123456789abcdef01234567", 1);
     const auto rotating = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
     assert(rotating.config);
-    assert(rotating.config->previous_gateway_secret == "previous-0123456789abcdef01234567");
+    assert(rotating.config->gateway_credential->accepts(
+        "previous-0123456789abcdef01234567"));
     assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET") == nullptr);
     assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS") == nullptr);
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
@@ -2580,7 +2583,9 @@ int main() {
     std::filesystem::remove_all(gui_config_root);
     std::filesystem::create_directories(gui_config_root);
     const auto api_token_path = gui_config_root / "api.token";
+    const auto previous_api_token_path = gui_config_root / "api.previous.token";
     const auto gateway_secret_path = gui_config_root / "gateway.secret";
+    const auto previous_gateway_secret_path = gui_config_root / "gateway.previous.secret";
     const auto ca_path = gui_config_root / "ca.pem";
     const auto gui_config_path = gui_config_root / "gui.cfg";
     {
@@ -2597,8 +2602,11 @@ int main() {
                "  frontend = { asset_root = \"" << gui_config_root.string() << "\"; };\n"
                "  smithproxy = { api_url = \"https://127.0.0.1:55555/\"; ca_cert = \""
             << ca_path.string() << "\"; api_token_file = \"" << api_token_path.string()
+            << "\"; previous_api_token_file = \"" << previous_api_token_path.string()
             << "\"; cli_endpoint = \"127.0.0.1:50000\"; };\n"
-               "  gateway = { secret_file = \"" << gateway_secret_path.string() << "\"; };\n"
+               "  gateway = { secret_file = \"" << gateway_secret_path.string()
+            << "\"; previous_secret_file = \"" << previous_gateway_secret_path.string()
+            << "\"; };\n"
                "};\n";
     }
     const auto owner_only = std::filesystem::perms::owner_read | std::filesystem::perms::owner_write;
@@ -2614,9 +2622,31 @@ int main() {
     assert(gui_bootstrap.config->asset_root == gui_config_root.string());
     assert(gui_bootstrap.config->smithproxy);
     assert(gui_bootstrap.config->smithproxy->api_url == "https://127.0.0.1:55555");
-    assert(gui_bootstrap.config->smithproxy->api_key == "boot-api-token-0123456789abcdef0");
+    assert(gui_bootstrap.config->smithproxy->api_credential->current() ==
+        "boot-api-token-0123456789abcdef0");
     assert(gui_bootstrap.config->smithproxy_cli);
-    assert(gui_bootstrap.config->gateway_secret);
+    assert(gui_bootstrap.config->gateway_credential->loaded());
+    {
+        const std::string rotated = "rotated-api-token-0123456789abcdef";
+        const std::string previous = "boot-api-token-0123456789abcdef0";
+        std::ofstream current(api_token_path, std::ios::trunc);
+        current << rotated;
+        current.close();
+        std::ofstream old(previous_api_token_path);
+        old << previous;
+        old.close();
+        std::filesystem::permissions(
+            previous_api_token_path, owner_only,
+            std::filesystem::perm_options::replace);
+        assert(gui_bootstrap.config->smithproxy->api_credential->refresh(true));
+        assert(gui_bootstrap.config->smithproxy->api_credential->current() == rotated);
+        assert(gui_bootstrap.config->smithproxy->api_credential->accepts(previous));
+        const std::string next = "next-api-token-0123456789abcdef012";
+        std::ofstream next_current(api_token_path, std::ios::trunc);
+        next_current << next;
+        next_current.close();
+        assert(gui_bootstrap.config->smithproxy->api_credential->accepts(next));
+    }
     assert(gui_bootstrap.config->startup_bootstrap);
     assert(!gui_bootstrap_restart_required(
         *gui_bootstrap.config, gui_bootstrap.config->startup_bootstrap));
@@ -2631,7 +2661,10 @@ int main() {
         std::ofstream token(api_token_path, std::ios::trunc);
         token << "too-short";
     }
-    assert(!parse_gui_config_file(gui_config_path, "/srv/gui").config);
+    const auto invalid_runtime_credential =
+        parse_gui_config_file(gui_config_path, "/srv/gui");
+    assert(invalid_runtime_credential.config);
+    assert(!invalid_runtime_credential.config->smithproxy->api_credential->loaded());
     {
         std::ofstream token(api_token_path, std::ios::trunc);
         token << "boot-api-token-0123456789abcdef0";
@@ -2651,7 +2684,7 @@ int main() {
     assert(frontend_bootstrap.config->asset_root == "/usr/share/smithproxy-gui");
     const auto serialized_frontend_bootstrap = serialize_gui_bootstrap(*frontend_bootstrap.config);
     assert(serialized_frontend_bootstrap);
-    assert(serialized_frontend_bootstrap->find("schema_version = 3") != std::string::npos);
+    assert(serialized_frontend_bootstrap->find("schema_version = 4") != std::string::npos);
     assert(!parse_gui_bootstrap(
         "gui = { schema_version = 2; frontend = { asset_root = \"/srv/gui\"; }; };\n").config);
     assert(!parse_gui_bootstrap(
@@ -2697,7 +2730,7 @@ int main() {
     std::filesystem::permissions(
         api_token_path, owner_only | std::filesystem::perms::group_read,
         std::filesystem::perm_options::replace);
-    assert(!parse_gui_config_file(gui_config_path, "/srv/gui").config);
+    assert(parse_gui_config_file(gui_config_path, "/srv/gui").config);
     std::filesystem::permissions(api_token_path, owner_only, std::filesystem::perm_options::replace);
     std::vector<std::string> file_arguments{
         "smithproxy-gui", "--config", gui_config_path.string(), "--port", "19443",

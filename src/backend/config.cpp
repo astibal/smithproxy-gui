@@ -5,7 +5,9 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <libconfig.h++>
+#include <openssl/crypto.h>
 #include <sys/stat.h>
+#include <grp.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -16,9 +18,18 @@
 #include <initializer_list>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace smithproxy::gui {
 namespace {
+
+constexpr std::string_view default_api_token_file = "/run/smithproxy/gui-api.key";
+constexpr std::string_view default_previous_api_token_file =
+    "/run/smithproxy/gui-api.previous.key";
+constexpr std::string_view default_gateway_secret_file =
+    "/run/smithproxy/gui-gateway.key";
+constexpr std::string_view default_previous_gateway_secret_file =
+    "/run/smithproxy/gui-gateway.previous.key";
 
 ParseResult failure(std::string error) {
     return {std::nullopt, std::move(error), false};
@@ -49,6 +60,15 @@ struct ProtectedFileResult {
 };
 
 bool valid_header_value(std::string_view value);
+
+bool trusted_group(const gid_t group) {
+    if(group == ::getegid()) return true;
+    const int count = ::getgroups(0, nullptr);
+    if(count <= 0) return false;
+    std::vector<gid_t> groups(static_cast<std::size_t>(count));
+    if(::getgroups(count, groups.data()) != count) return false;
+    return std::find(groups.begin(), groups.end(), group) != groups.end();
+}
 
 bool valid_bootstrap_path(const std::optional<std::string>& value) {
     if (!value || value->empty() || value->size() > 4096U || value->front() != '/') return false;
@@ -87,13 +107,14 @@ ProtectedFileResult read_protected_file(
         ::close(descriptor);
         return {std::nullopt, std::string(label) + " metadata is not readable"};
     }
-    const bool trusted_owner = metadata.st_uid == ::geteuid() || (!secret && metadata.st_uid == 0U);
-    const bool unsafe_mode = secret ? (metadata.st_mode & 0077) != 0 : (metadata.st_mode & 0022) != 0;
+    const bool trusted_owner = metadata.st_uid == ::geteuid() ||
+        (!secret && metadata.st_uid == 0U) || (secret && trusted_group(metadata.st_gid));
+    const bool unsafe_mode = secret ? (metadata.st_mode & 0027) != 0 : (metadata.st_mode & 0022) != 0;
     if (!S_ISREG(metadata.st_mode) || !trusted_owner || unsafe_mode ||
         metadata.st_size <= 0 || static_cast<std::uintmax_t>(metadata.st_size) > maximum_size) {
         ::close(descriptor);
         return {std::nullopt, std::string(label) +
-            (secret ? " must be an owned 0600 regular file" : " must be a trusted non-writable regular file")};
+            (secret ? " must be a trusted 0600/0640 regular file" : " must be a trusted non-writable regular file")};
     }
     std::string value(static_cast<std::size_t>(metadata.st_size), '\0');
     std::size_t offset = 0U;
@@ -228,7 +249,7 @@ bool validate_final_config(const AppConfig& config, std::string& error) {
         error = "asset root cannot be empty";
         return false;
     }
-    if (!is_loopback_bind(config.bind_address) && !config.gateway_secret) {
+    if (!is_loopback_bind(config.bind_address) && !config.gateway_credential) {
         error = "non-loopback bind requires SMITHPROXY_GUI_GATEWAY_SECRET";
         return false;
     }
@@ -236,6 +257,89 @@ bool validate_final_config(const AppConfig& config, std::string& error) {
 }
 
 } // namespace
+
+RuntimeCredentialPair::RuntimeCredentialPair(
+    std::filesystem::path current_path,
+    std::optional<std::filesystem::path> previous_path,
+    const Source source)
+    : current_path_(std::move(current_path)), previous_path_(std::move(previous_path)) {
+    (void)source;
+    refresh(true);
+}
+
+RuntimeCredentialPair::RuntimeCredentialPair(
+    std::string current, std::optional<std::string> previous)
+    : current_(std::move(current)), previous_(std::move(previous)),
+      checked_at_(std::chrono::steady_clock::now()) {}
+
+bool RuntimeCredentialPair::refresh(const bool force) const {
+    auto lock = std::scoped_lock(mutex_);
+    if(current_path_.empty()) return current_.has_value();
+    const auto now = std::chrono::steady_clock::now();
+    if(!force && checked_at_ != std::chrono::steady_clock::time_point{} &&
+       now - checked_at_ < std::chrono::seconds(5)) return current_.has_value();
+    checked_at_ = now;
+
+    const auto load_credential = [](const std::filesystem::path& path,
+                                    const std::string_view label) {
+        auto loaded = read_protected_file(path, label, 258U);
+        const bool valid_size = loaded.value && loaded.value->size() >= 32U &&
+            loaded.value->size() <= 256U;
+        if(!valid_size) loaded.value.reset();
+        return loaded.value;
+    };
+    current_ = load_credential(current_path_, "GUI Smithproxy runtime credential");
+    previous_.reset();
+    if(previous_path_) {
+        previous_ = load_credential(
+            *previous_path_, "Previous GUI Smithproxy runtime credential");
+    }
+    if(previous_ && current_ && *previous_ == *current_) previous_.reset();
+    return current_.has_value();
+}
+
+std::optional<std::string> RuntimeCredentialPair::current() const {
+    refresh();
+    auto lock = std::scoped_lock(mutex_);
+    return current_;
+}
+
+bool RuntimeCredentialPair::accepts(const std::string_view supplied) const {
+    refresh();
+    const auto matches = [supplied](const std::optional<std::string>& expected) {
+        return expected && supplied.size() == expected->size() &&
+            CRYPTO_memcmp(supplied.data(), expected->data(), supplied.size()) == 0;
+    };
+    {
+        auto lock = std::scoped_lock(mutex_);
+        if(matches(current_) || matches(previous_)) return true;
+        const auto now = std::chrono::steady_clock::now();
+        const bool recently_rechecked = rejected_checked_at_ !=
+                std::chrono::steady_clock::time_point{} &&
+            now - rejected_checked_at_ < std::chrono::seconds(1);
+        if(recently_rechecked || current_path_.empty()) return false;
+        rejected_checked_at_ = now;
+    }
+
+    // A rotation can occur between ordinary polls. Re-read once immediately
+    // after rejection, rate-limited above so invalid public requests cannot
+    // turn credential validation into unbounded filesystem I/O.
+    refresh(true);
+    auto lock = std::scoped_lock(mutex_);
+    return matches(current_) || matches(previous_);
+}
+
+bool RuntimeCredentialPair::loaded() const {
+    refresh();
+    auto lock = std::scoped_lock(mutex_);
+    return current_.has_value();
+}
+
+bool RuntimeCredentialPair::previous_loaded() const {
+    refresh();
+    auto lock = std::scoped_lock(mutex_);
+    return previous_.has_value();
+}
 
 std::filesystem::path resolve_default_asset_root(
     const std::filesystem::path& executable,
@@ -326,7 +430,10 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
         if (!certificate) return failure("SMITHPROXY_CA_CERT is not readable");
         std::string normalized_url = *url;
         while (normalized_url.ends_with('/')) normalized_url.pop_back();
-        config.smithproxy = SmithproxyConfig{std::move(normalized_url), *api_key, *ca};
+        config.smithproxy = SmithproxyConfig{
+            std::move(normalized_url),
+            std::make_shared<RuntimeCredentialPair>(*api_key),
+            *ca};
     }
     if (const auto cli = environment("SMITHPROXY_CLI")) {
         config.smithproxy_cli = parse_cli_endpoint(*cli);
@@ -339,21 +446,20 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
             !valid_header_value(*gateway_secret)) {
             return failure("SMITHPROXY_GUI_GATEWAY_SECRET must contain 32..256 safe header characters");
         }
-        config.gateway_secret = std::move(*gateway_secret);
-    }
-    if (previous_gateway_secret) {
-        if (!config.gateway_secret) {
-            return failure("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS requires the current secret");
-        }
-        if (previous_gateway_secret->size() < 32U || previous_gateway_secret->size() > 256U ||
-            !valid_header_value(*previous_gateway_secret)) {
+        if (previous_gateway_secret &&
+            (previous_gateway_secret->size() < 32U ||
+             previous_gateway_secret->size() > 256U ||
+             !valid_header_value(*previous_gateway_secret))) {
             return failure(
                 "SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS must contain 32..256 safe header characters");
         }
-        if (*previous_gateway_secret == *config.gateway_secret) {
+        if(previous_gateway_secret && *previous_gateway_secret == *gateway_secret)
             return failure("current and previous gateway secrets must differ");
-        }
-        config.previous_gateway_secret = std::move(*previous_gateway_secret);
+        config.gateway_credential = std::make_shared<RuntimeCredentialPair>(
+            std::move(*gateway_secret), std::move(previous_gateway_secret));
+    }
+    else if(previous_gateway_secret) {
+        return failure("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS requires the current secret");
     }
     std::string validation_error;
     if (!validate_final_config(config, validation_error)) return failure(std::move(validation_error));
@@ -380,38 +486,31 @@ ParseResult parse_gui_config_file(
         const auto certificate = read_protected_file(
             *persistent.ca_cert, "GUI Smithproxy CA certificate", 1024U * 1024U, false);
         if (!certificate.value) return failure(certificate.error);
-        const auto token = read_protected_file(
-            *persistent.api_token_file, "GUI Smithproxy API token");
-        if (!token.value) return failure(token.error);
-        if (token.value->size() < 32U || token.value->size() > 256U) {
-            return failure("GUI Smithproxy API token must contain 32..256 characters");
-        }
         config.smithproxy = SmithproxyConfig{
-            *persistent.api_url, *token.value, *persistent.ca_cert};
+            *persistent.api_url,
+            persistent.api_credential_enabled
+                ? std::make_shared<RuntimeCredentialPair>(
+                    *persistent.api_token_file,
+                    persistent.previous_api_token_file
+                        ? std::optional<std::filesystem::path>{
+                            *persistent.previous_api_token_file}
+                        : std::nullopt,
+                    RuntimeCredentialPair::Source::Files)
+                : nullptr,
+            *persistent.ca_cert};
         if (persistent.cli_endpoint) {
             config.smithproxy_cli = parse_cli_endpoint(*persistent.cli_endpoint);
         }
     }
     if (persistent.gateway_secret_file) {
-        const auto secret = read_protected_file(
-            *persistent.gateway_secret_file, "GUI gateway secret");
-        if (!secret.value || secret.value->size() < 32U || secret.value->size() > 256U) {
-            return failure(secret.error.empty()
-                ? "GUI gateway secret must contain 32..256 characters" : secret.error);
-        }
-        config.gateway_secret = *secret.value;
-        if (persistent.gateway_previous_secret_file) {
-            const auto previous = read_protected_file(
-                *persistent.gateway_previous_secret_file, "Previous GUI gateway secret");
-            if (!previous.value || previous.value->size() < 32U || previous.value->size() > 256U) {
-                return failure(previous.error.empty()
-                    ? "previous GUI gateway secret must contain 32..256 characters"
-                    : previous.error);
-            }
-            if (*previous.value == *config.gateway_secret) {
-                return failure("current and previous GUI gateway secrets must differ");
-            }
-            config.previous_gateway_secret = *previous.value;
+        if(persistent.gateway_credential_enabled) {
+            config.gateway_credential = std::make_shared<RuntimeCredentialPair>(
+                *persistent.gateway_secret_file,
+                persistent.gateway_previous_secret_file
+                    ? std::optional<std::filesystem::path>{
+                        *persistent.gateway_previous_secret_file}
+                    : std::nullopt,
+                RuntimeCredentialPair::Source::Files);
         }
     }
     std::string validation_error;
@@ -443,7 +542,7 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
         }
         int schema_version = config.schema_version;
         gui.lookupValue("schema_version", schema_version);
-        if (schema_version != 1 && schema_version != 2 && schema_version != 3) {
+        if (schema_version < 1 || schema_version > 4) {
             return bootstrap_failure("gui.schema_version is unsupported");
         }
         config.schema_version = static_cast<std::uint16_t>(schema_version);
@@ -492,19 +591,24 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
                 return bootstrap_failure("gui.smithproxy must be a group");
             }
             if (const auto member = unknown_member(
-                    upstream, {"api_url", "ca_cert", "api_token_file", "cli_endpoint"})) {
+                    upstream, {"api_url", "ca_cert", "api_token_file",
+                               "previous_api_token_file", "cli_endpoint",
+                               "credential_enabled",
+                               "credential_bootstrap_freshness_seconds",
+                               "credential_rotation_seconds",
+                               "credential_overlap_seconds"})) {
                 return bootstrap_failure(
                     "gui.smithproxy contains unsupported setting: " + *member);
             }
             std::string api_url;
             std::string ca_cert;
-            std::string api_token_file;
+            std::string api_token_file(default_api_token_file);
             if (!upstream.lookupValue("api_url", api_url) ||
-                !upstream.lookupValue("ca_cert", ca_cert) ||
-                !upstream.lookupValue("api_token_file", api_token_file)) {
+                !upstream.lookupValue("ca_cert", ca_cert)) {
                 return bootstrap_failure(
-                    "gui.smithproxy requires api_url, ca_cert, and api_token_file");
+                    "gui.smithproxy requires api_url and ca_cert");
             }
+            upstream.lookupValue("api_token_file", api_token_file);
             if (!valid_api_url(api_url)) {
                 return bootstrap_failure(
                     "gui.smithproxy.api_url must use HTTPS or loopback HTTP");
@@ -513,8 +617,25 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
             config.api_url = std::move(api_url);
             config.ca_cert = std::move(ca_cert);
             config.api_token_file = std::move(api_token_file);
+            std::string previous_api_token_file(default_previous_api_token_file);
+            upstream.lookupValue("previous_api_token_file", previous_api_token_file);
+            config.previous_api_token_file = std::move(previous_api_token_file);
+            upstream.lookupValue("credential_enabled", config.api_credential_enabled);
+            const auto read_seconds = [&upstream](const char* name, std::uint32_t& destination) {
+                long long value = destination;
+                if(upstream.lookupValue(name, value)) {
+                    if(value <= 0 || value > 31536000LL)
+                        throw std::out_of_range(name);
+                    destination = static_cast<std::uint32_t>(value);
+                }
+            };
+            read_seconds("credential_bootstrap_freshness_seconds",
+                         config.api_credential_bootstrap_freshness_seconds);
+            read_seconds("credential_rotation_seconds", config.api_credential_rotation_seconds);
+            read_seconds("credential_overlap_seconds", config.api_credential_overlap_seconds);
             if (!valid_bootstrap_path(config.ca_cert) ||
-                !valid_bootstrap_path(config.api_token_file)) {
+                !valid_bootstrap_path(config.api_token_file) ||
+                !valid_bootstrap_path(config.previous_api_token_file)) {
                 return bootstrap_failure(
                     "gui.smithproxy credential files must use absolute safe paths");
             }
@@ -532,19 +653,21 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
                 return bootstrap_failure("gui.gateway must be a group");
             }
             if (const auto member = unknown_member(
-                    gateway, {"secret_file", "previous_secret_file"})) {
+                    gateway, {"secret_file", "previous_secret_file", "credential_enabled",
+                              "credential_bootstrap_freshness_seconds",
+                              "credential_rotation_seconds", "credential_overlap_seconds"})) {
                 return bootstrap_failure("gui.gateway contains unsupported setting: " + *member);
             }
-            std::string secret_file;
-            if (!gateway.lookupValue("secret_file", secret_file)) {
-                return bootstrap_failure("gui.gateway requires secret_file");
-            }
+            std::string secret_file(default_gateway_secret_file);
+            gateway.lookupValue("secret_file", secret_file);
             config.gateway_secret_file = std::move(secret_file);
+            gateway.lookupValue("credential_enabled", config.gateway_credential_enabled);
             if (!valid_bootstrap_path(config.gateway_secret_file)) {
                 return bootstrap_failure("gui.gateway.secret_file must use an absolute safe path");
             }
-            std::string previous_file;
-            if (gateway.lookupValue("previous_secret_file", previous_file)) {
+            std::string previous_file(default_previous_gateway_secret_file);
+            gateway.lookupValue("previous_secret_file", previous_file);
+            {
                 config.gateway_previous_secret_file = std::move(previous_file);
                 if (!valid_bootstrap_path(config.gateway_previous_secret_file)) {
                     return bootstrap_failure(
@@ -555,21 +678,41 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
                         "gui.gateway current and previous credential files must differ");
                 }
             }
+
+            const auto read_seconds = [&gateway](const char* name, std::uint32_t& destination) {
+                long long value = destination;
+                if(gateway.lookupValue(name, value)) {
+                    if(value <= 0 || value > 31536000LL)
+                        throw std::out_of_range(name);
+                    destination = static_cast<std::uint32_t>(value);
+                }
+            };
+            read_seconds("credential_bootstrap_freshness_seconds",
+                         config.gateway_credential_bootstrap_freshness_seconds);
+            read_seconds("credential_rotation_seconds", config.gateway_credential_rotation_seconds);
+            read_seconds("credential_overlap_seconds", config.gateway_credential_overlap_seconds);
         }
     } catch (const libconfig::SettingTypeException&) {
         return bootstrap_failure("gui.cfg contains a value with the wrong type");
+    } catch (const std::out_of_range&) {
+        return bootstrap_failure("GUI credential timing must use 1..31536000 seconds");
     }
     if (!valid_bind_address(config.bind_address)) {
         return bootstrap_failure("gui.backend.bind_address must be an IPv4 literal");
     }
-    if (!is_loopback_bind(config.bind_address) && !config.gateway_secret_file) {
+    if (!is_loopback_bind(config.bind_address) &&
+        (!config.gateway_secret_file || !config.gateway_credential_enabled)) {
         return bootstrap_failure(
             "gui.backend non-loopback bind requires gui.gateway.secret_file");
     }
     if(config.api_token_file && config.gateway_secret_file &&
        (*config.api_token_file == *config.gateway_secret_file ||
+        (config.previous_api_token_file &&
+         *config.previous_api_token_file == *config.gateway_secret_file) ||
         (config.gateway_previous_secret_file &&
-         *config.api_token_file == *config.gateway_previous_secret_file))) {
+         (*config.api_token_file == *config.gateway_previous_secret_file ||
+          (config.previous_api_token_file &&
+           *config.previous_api_token_file == *config.gateway_previous_secret_file))))) {
         return bootstrap_failure(
             "GUI API token and gateway credentials must use separate files");
     }
@@ -587,8 +730,7 @@ std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& con
         output.push_back('"');
         return output;
     };
-    const auto schema_version = config.asset_root ? 3U :
-        std::min<std::uint16_t>(config.schema_version, 2U);
+    const auto schema_version = 4U;
     std::string source = "gui = {\n  schema_version = " +
         std::to_string(schema_version) + ";\n\n";
     source += "  backend = {\n    bind_address = " + quote(config.bind_address) +
@@ -601,16 +743,34 @@ std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& con
         if(!config.ca_cert || !config.api_token_file) return std::nullopt;
         source += "\n  smithproxy = {\n    api_url = " + quote(*config.api_url) +
             ";\n    ca_cert = " + quote(*config.ca_cert) +
+            ";\n    credential_enabled = " +
+            std::string(config.api_credential_enabled ? "true" : "false") +
             ";\n    api_token_file = " + quote(*config.api_token_file) + ";\n";
+        if(config.previous_api_token_file)
+            source += "    previous_api_token_file = " +
+                quote(*config.previous_api_token_file) + ";\n";
+        source += "    credential_bootstrap_freshness_seconds = " +
+            std::to_string(config.api_credential_bootstrap_freshness_seconds) + "L;\n";
+        source += "    credential_rotation_seconds = " +
+            std::to_string(config.api_credential_rotation_seconds) + "L;\n";
+        source += "    credential_overlap_seconds = " +
+            std::to_string(config.api_credential_overlap_seconds) + "L;\n";
         if(config.cli_endpoint && !config.cli_endpoint->empty())
             source += "    cli_endpoint = " + quote(*config.cli_endpoint) + ";\n";
         source += "  };\n";
     }
     if(config.gateway_secret_file) {
-        source += "\n  gateway = {\n    secret_file = " + quote(*config.gateway_secret_file) + ";\n";
+        source += "\n  gateway = {\n    credential_enabled = " +
+            std::string(config.gateway_credential_enabled ? "true" : "false") +
+            ";\n    secret_file = " + quote(*config.gateway_secret_file) + ";\n";
         if(config.gateway_previous_secret_file && !config.gateway_previous_secret_file->empty())
             source += "    previous_secret_file = " + quote(*config.gateway_previous_secret_file) + ";\n";
-        source += "  };\n";
+        source += "    credential_bootstrap_freshness_seconds = " +
+            std::to_string(config.gateway_credential_bootstrap_freshness_seconds) + "L;\n";
+        source += "    credential_rotation_seconds = " +
+            std::to_string(config.gateway_credential_rotation_seconds) + "L;\n";
+        source += "    credential_overlap_seconds = " +
+            std::to_string(config.gateway_credential_overlap_seconds) + "L;\n  };\n";
     }
     source += "};\n";
     const auto reparsed = parse_gui_bootstrap(source);
@@ -630,9 +790,20 @@ bool gui_bootstrap_restart_required(
         boot.base_path != next.base_path || boot.asset_root != next.asset_root ||
         boot.api_url != next.api_url || boot.ca_cert != next.ca_cert ||
         boot.api_token_file != next.api_token_file ||
+        boot.previous_api_token_file != next.previous_api_token_file ||
+        boot.api_credential_enabled != next.api_credential_enabled ||
+        boot.api_credential_bootstrap_freshness_seconds !=
+            next.api_credential_bootstrap_freshness_seconds ||
+        boot.api_credential_rotation_seconds != next.api_credential_rotation_seconds ||
+        boot.api_credential_overlap_seconds != next.api_credential_overlap_seconds ||
         boot.cli_endpoint != next.cli_endpoint ||
         boot.gateway_secret_file != next.gateway_secret_file ||
-        boot.gateway_previous_secret_file != next.gateway_previous_secret_file;
+        boot.gateway_previous_secret_file != next.gateway_previous_secret_file ||
+        boot.gateway_credential_enabled != next.gateway_credential_enabled ||
+        boot.gateway_credential_bootstrap_freshness_seconds !=
+            next.gateway_credential_bootstrap_freshness_seconds ||
+        boot.gateway_credential_rotation_seconds != next.gateway_credential_rotation_seconds ||
+        boot.gateway_credential_overlap_seconds != next.gateway_credential_overlap_seconds;
 }
 
 std::string usage() {

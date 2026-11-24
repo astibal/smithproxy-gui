@@ -1497,10 +1497,13 @@ private:
         // Report only whether boot credentials were loaded. Secret values and
         // their runtime-file contents must never cross the browser boundary.
         const nlohmann::json active_runtime{
-            {"smithproxy_api_credential_loaded", config_.smithproxy.has_value()},
-            {"browser_gateway_credential_loaded", config_.gateway_secret.has_value()},
+            {"smithproxy_api_credential_loaded",
+             config_.smithproxy && config_.smithproxy->api_credential &&
+                 config_.smithproxy->api_credential->loaded()},
+            {"browser_gateway_credential_loaded",
+             config_.gateway_credential && config_.gateway_credential->loaded()},
             {"previous_browser_gateway_credential_loaded",
-             config_.previous_gateway_secret.has_value()},
+             config_.gateway_credential && config_.gateway_credential->previous_loaded()},
             {"cli_broker_configured", config_.smithproxy_cli.has_value()},
         };
         const auto upstream = monitor_.archive_api(
@@ -1545,11 +1548,22 @@ private:
         document["smithproxy"] = value.api_url
             ? nlohmann::json{{"api_url", *value.api_url}, {"ca_cert", *value.ca_cert},
                 {"api_token_file", *value.api_token_file},
+                {"previous_api_token_file", value.previous_api_token_file.value_or("")},
+                {"credential_enabled", value.api_credential_enabled},
+                {"credential_bootstrap_freshness_seconds",
+                 value.api_credential_bootstrap_freshness_seconds},
+                {"credential_rotation_seconds", value.api_credential_rotation_seconds},
+                {"credential_overlap_seconds", value.api_credential_overlap_seconds},
                 {"cli_endpoint", value.cli_endpoint.value_or("")}}
             : nlohmann::json(nullptr);
         document["gateway"] = value.gateway_secret_file
             ? nlohmann::json{{"secret_file", *value.gateway_secret_file},
-                {"previous_secret_file", value.gateway_previous_secret_file.value_or("")}}
+                {"previous_secret_file", value.gateway_previous_secret_file.value_or("")},
+                {"credential_enabled", value.gateway_credential_enabled},
+                {"credential_bootstrap_freshness_seconds",
+                 value.gateway_credential_bootstrap_freshness_seconds},
+                {"credential_rotation_seconds", value.gateway_credential_rotation_seconds},
+                {"credential_overlap_seconds", value.gateway_credential_overlap_seconds}}
             : nlohmann::json(nullptr);
         return {200, "application/json; charset=utf-8", document.dump()};
     }
@@ -1572,6 +1586,11 @@ private:
             return std::all_of(keys.begin(), keys.end(), [&](const auto key) {
                 return value.contains(std::string(key));
             });
+        };
+        const auto valid_seconds = [](const nlohmann::json& value) {
+            return value.is_number_unsigned() &&
+                value.get<std::uint64_t>() >= 1U &&
+                value.get<std::uint64_t>() <= 31536000U;
         };
         if(document.is_discarded() || !exact_keys(document, {"backend", "frontend", "smithproxy", "gateway"}) ||
            !exact_keys(document["backend"], {"bind_address", "port", "base_path"}) ||
@@ -1599,9 +1618,8 @@ private:
             return {502, "application/json; charset=utf-8",
                     "{\"error\":\"current GUI configuration is unavailable\"}"};
         }
-        GuiBootstrapConfig replacement;
-        const bool custom_frontend = !document["frontend"].is_null();
-        replacement.schema_version = custom_frontend ? 3U : 1U;
+        GuiBootstrapConfig replacement = current;
+        replacement.schema_version = 4U;
         replacement.bind_address = document["backend"]["bind_address"].get<std::string>();
         const auto port = document["backend"]["port"].get<long long>();
         if(port < 1 || port > 65535) {
@@ -1620,30 +1638,78 @@ private:
         }
         if(!document["smithproxy"].is_null()) {
             const auto& upstream = document["smithproxy"];
-            if(!exact_keys(upstream, {"api_url", "ca_cert", "api_token_file", "cli_endpoint"}) ||
-               !std::all_of(upstream.begin(), upstream.end(), [](const auto& value) {
-                   return value.is_string();
-               })) {
+            if(!exact_keys(upstream, {"api_url", "ca_cert", "api_token_file",
+                                     "previous_api_token_file", "cli_endpoint",
+                                     "credential_enabled",
+                                     "credential_bootstrap_freshness_seconds",
+                                     "credential_rotation_seconds",
+                                     "credential_overlap_seconds"}) ||
+               !upstream["api_url"].is_string() || !upstream["ca_cert"].is_string() ||
+               !upstream["api_token_file"].is_string() ||
+               !upstream["previous_api_token_file"].is_string() ||
+               !upstream["cli_endpoint"].is_string() ||
+               !upstream["credential_enabled"].is_boolean() ||
+               !valid_seconds(upstream["credential_bootstrap_freshness_seconds"]) ||
+               !valid_seconds(upstream["credential_rotation_seconds"]) ||
+               !valid_seconds(upstream["credential_overlap_seconds"])) {
                 return {400, "application/json; charset=utf-8",
                         "{\"error\":\"invalid GUI Smithproxy configuration\"}"};
             }
             replacement.api_url = upstream["api_url"].get<std::string>();
             replacement.ca_cert = upstream["ca_cert"].get<std::string>();
             replacement.api_token_file = upstream["api_token_file"].get<std::string>();
+            const auto previous_api = upstream["previous_api_token_file"].get<std::string>();
+            replacement.previous_api_token_file = previous_api.empty()
+                ? std::nullopt : std::optional<std::string>{previous_api};
+            replacement.api_credential_enabled = upstream["credential_enabled"].get<bool>();
+            replacement.api_credential_bootstrap_freshness_seconds =
+                upstream["credential_bootstrap_freshness_seconds"].get<std::uint32_t>();
+            replacement.api_credential_rotation_seconds =
+                upstream["credential_rotation_seconds"].get<std::uint32_t>();
+            replacement.api_credential_overlap_seconds =
+                upstream["credential_overlap_seconds"].get<std::uint32_t>();
             const auto cli_endpoint = upstream["cli_endpoint"].get<std::string>();
-            if(!cli_endpoint.empty()) replacement.cli_endpoint = cli_endpoint;
+            replacement.cli_endpoint = cli_endpoint.empty()
+                ? std::nullopt : std::optional<std::string>{cli_endpoint};
+        }
+        else {
+            replacement.api_url.reset();
+            replacement.ca_cert.reset();
+            replacement.api_token_file.reset();
+            replacement.previous_api_token_file.reset();
+            replacement.cli_endpoint.reset();
         }
         if(!document["gateway"].is_null()) {
             const auto& gateway = document["gateway"];
-            if(!exact_keys(gateway, {"secret_file", "previous_secret_file"}) ||
+            if(!exact_keys(gateway, {"secret_file", "previous_secret_file",
+                                    "credential_enabled",
+                                    "credential_bootstrap_freshness_seconds",
+                                    "credential_rotation_seconds",
+                                    "credential_overlap_seconds"}) ||
                !gateway["secret_file"].is_string() ||
-               !gateway["previous_secret_file"].is_string()) {
+               !gateway["previous_secret_file"].is_string() ||
+               !gateway["credential_enabled"].is_boolean() ||
+               !valid_seconds(gateway["credential_bootstrap_freshness_seconds"]) ||
+               !valid_seconds(gateway["credential_rotation_seconds"]) ||
+               !valid_seconds(gateway["credential_overlap_seconds"])) {
                 return {400, "application/json; charset=utf-8",
                         "{\"error\":\"invalid GUI gateway configuration\"}"};
             }
             replacement.gateway_secret_file = gateway["secret_file"].get<std::string>();
             const auto previous = gateway["previous_secret_file"].get<std::string>();
-            if(!previous.empty()) replacement.gateway_previous_secret_file = previous;
+            replacement.gateway_previous_secret_file = previous.empty()
+                ? std::nullopt : std::optional<std::string>{previous};
+            replacement.gateway_credential_enabled = gateway["credential_enabled"].get<bool>();
+            replacement.gateway_credential_bootstrap_freshness_seconds =
+                gateway["credential_bootstrap_freshness_seconds"].get<std::uint32_t>();
+            replacement.gateway_credential_rotation_seconds =
+                gateway["credential_rotation_seconds"].get<std::uint32_t>();
+            replacement.gateway_credential_overlap_seconds =
+                gateway["credential_overlap_seconds"].get<std::uint32_t>();
+        }
+        else {
+            replacement.gateway_secret_file.reset();
+            replacement.gateway_previous_secret_file.reset();
         }
         const auto serialized = serialize_gui_bootstrap(replacement);
         if(!serialized) {
@@ -1851,14 +1917,11 @@ private:
     }
 
     bool gateway_authenticated(MHD_Connection* connection) const {
-        if (!config_.gateway_secret) return false;
+        if (!config_.gateway_credential) return false;
         const auto* supplied = MHD_lookup_connection_value(
             connection, MHD_HEADER_KIND, "X-Smithproxy-GUI-Gateway");
         if (supplied == nullptr) return false;
-        const bool current = constant_time_equal(supplied, *config_.gateway_secret);
-        const bool previous = config_.previous_gateway_secret &&
-                              constant_time_equal(supplied, *config_.previous_gateway_secret);
-        return current || previous;
+        return config_.gateway_credential->accepts(supplied);
     }
 
     std::optional<std::string> session_administrator(MHD_Connection* connection) const {
@@ -1881,7 +1944,7 @@ private:
     }
 
     bool request_host_allowed(MHD_Connection* connection) const {
-        if (config_.gateway_secret) return true;
+        if (config_.gateway_credential) return true;
         const auto* host = MHD_lookup_connection_value(
             connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_HOST);
         return host != nullptr && loopback_authority(host);
@@ -1916,7 +1979,7 @@ private:
     }
 
     Response auth_session(MHD_Connection* connection) const {
-        const bool gateway = config_.gateway_secret.has_value();
+        const bool gateway = config_.gateway_credential != nullptr;
         const bool gateway_request = gateway_authenticated(connection);
         const auto administrator = gateway_request
             ? std::optional<std::string>{}
@@ -1937,7 +2000,7 @@ private:
     }
 
     Response enroll(MHD_Connection* connection, const std::string_view body) {
-        if(config_.gateway_secret) {
+        if(config_.gateway_credential) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
         }
         const auto current_administrator = session_administrator(connection);
@@ -2016,7 +2079,7 @@ private:
     }
 
     Response login(MHD_Connection* connection, const std::string_view body) {
-        if(config_.gateway_secret) {
+        if(config_.gateway_credential) {
             return {404, "application/json; charset=utf-8", "{\"error\":\"not found\"}"};
         }
         if(!same_origin_mutation(connection)) {

@@ -1507,11 +1507,21 @@ def main() -> int:
                     "api_url": f"http://127.0.0.1:{fake_port}",
                     "ca_cert": "/run/smithproxy-gui/api-ca.pem",
                     "api_token_file": "/run/credentials/smithproxy-gui.api-token",
+                    "previous_api_token_file":
+                        "/run/credentials/smithproxy-gui.api-token.previous",
+                    "credential_enabled": True,
+                    "credential_bootstrap_freshness_seconds": 300,
+                    "credential_rotation_seconds": 86400,
+                    "credential_overlap_seconds": 3600,
                     "cli_endpoint": "127.0.0.1:50000",
                 },
                 "gateway": {
                     "secret_file": "/run/credentials/smithproxy-gui.gateway",
                     "previous_secret_file": "",
+                    "credential_enabled": True,
+                    "credential_bootstrap_freshness_seconds": 300,
+                    "credential_rotation_seconds": 86400,
+                    "credential_overlap_seconds": 3600,
                 },
             }
             status, _, body = request(
