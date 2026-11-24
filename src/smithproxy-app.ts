@@ -7414,8 +7414,9 @@ export class SmithproxyApp extends LitElement {
       const current = this.persistentValue(`settings.${path}`, liveWorkerValues.get(id)!);
       const canonical = Number.isInteger(value) && value >= minimum && value <= maximum;
       if (!input || (!canonical && value !== current)) {
-        this.draftError = 'Worker counts must use 0 or more; QUIC accepts -1, 0, or 1.';
-        return undefined;
+        return this.rejectConfigurationInput(
+          input, path, `must be a whole number from ${minimum} through ${maximum}`,
+        );
       }
       changes.push({path: `settings.${path}`, value});
     }
@@ -7423,8 +7424,9 @@ export class SmithproxyApp extends LitElement {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
       if (!input || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
-        this.draftError = 'System numeric values must be integers within their documented ranges.';
-        return undefined;
+        return this.rejectConfigurationInput(
+          input, path, `must be a whole number from ${minimum} through ${maximum}`,
+        );
       }
       changes.push({path: `settings.${path}`, value});
     }
@@ -7453,11 +7455,16 @@ export class SmithproxyApp extends LitElement {
     const apiPort = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-port');
     const apiKeyTimeoutValue = apiKeyTimeout?.valueAsNumber ?? Number.NaN;
     const apiPortValue = apiPort?.valueAsNumber ?? Number.NaN;
-    if (!apiKeyTimeout || !apiPort || !Number.isInteger(apiKeyTimeoutValue) ||
-        apiKeyTimeoutValue < 1 || apiKeyTimeoutValue > 4294967295 ||
-        !Number.isInteger(apiPortValue) || apiPortValue < 1024 || apiPortValue > 65535) {
-      this.draftError = 'API token TTL and listener port are outside their supported ranges.';
-      return undefined;
+    if (!apiKeyTimeout || !Number.isInteger(apiKeyTimeoutValue) ||
+        apiKeyTimeoutValue < 1 || apiKeyTimeoutValue > 4294967295) {
+      return this.rejectConfigurationInput(
+        apiKeyTimeout, 'API token TTL', 'must be a whole number from 1 through 4294967295',
+      );
+    }
+    if (!apiPort || !Number.isInteger(apiPortValue) || apiPortValue < 1024 || apiPortValue > 65535) {
+      return this.rejectConfigurationInput(
+        apiPort, 'API port', 'must be a whole number from 1024 through 65535',
+      );
     }
     changes.push({path: 'settings.http_api.key_timeout', value: apiKeyTimeoutValue});
     changes.push({path: 'settings.http_api.port', value: apiPortValue});
@@ -7465,8 +7472,9 @@ export class SmithproxyApp extends LitElement {
       const input = this.renderRoot.querySelector<HTMLInputElement>(`#settings-tuning-${id}`);
       const value = input?.valueAsNumber ?? Number.NaN;
       if (!input || !Number.isInteger(value) || value < minimum || value > maximum) {
-        this.draftError = 'Performance tuning values are outside their supported ranges.';
-        return undefined;
+        return this.rejectConfigurationInput(
+          input, path, `must be a whole number from ${minimum} through ${maximum}`,
+        );
       }
       changes.push({path: `settings.tuning.${path}`, value});
     }
@@ -7474,8 +7482,10 @@ export class SmithproxyApp extends LitElement {
     const siftPayloadLimitValue = siftPayloadLimit?.valueAsNumber ?? Number.NaN;
     if (!siftPayloadLimit || !Number.isInteger(siftPayloadLimitValue) ||
         siftPayloadLimitValue < 1 || siftPayloadLimitValue > 1073741824) {
-      this.draftError = 'Sift payload limit must be an integer from 1 to 1073741824 bytes.';
-      return undefined;
+      return this.rejectConfigurationInput(
+        siftPayloadLimit, 'Sift payload limit',
+        'must be a whole number from 1 through 1073741824 bytes',
+      );
     }
     changes.push({path: 'settings.webhook.sift_payload_limit_per_direction', value: siftPayloadLimitValue});
     const loredMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-webhook-sift-lored-mode');
@@ -7732,6 +7742,16 @@ export class SmithproxyApp extends LitElement {
     )) {
       input.type = reveal ? 'text' : 'password';
     }
+  }
+
+  /** Reports one invalid configuration control and moves the administrator to it. */
+  private rejectConfigurationInput(
+    input: HTMLInputElement | null | undefined, fallbackLabel: string, requirement: string,
+  ): undefined {
+    const label = input?.labels?.[0]?.textContent?.trim() || fallbackLabel;
+    this.draftError = `${label} ${requirement}.`;
+    input?.focus();
+    return undefined;
   }
 
   /** Updates the temporary API-key list without exposing JSON syntax to administrators. */

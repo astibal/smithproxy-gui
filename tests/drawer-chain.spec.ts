@@ -7899,8 +7899,9 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(settingsEditor.getByLabel('Certificate password')).toHaveValue('unsaved-private-password');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('1023');
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
-  await expect(settingsEditor.getByText(/numeric values must be integers within their documented ranges/i))
+  await expect(settingsEditor.getByText(/TLS port must be a whole number from 1024 through 65535/i))
     .toBeVisible();
+  await expect(settingsEditor.getByLabel('TLS port', {exact: true})).toBeFocused();
   await settingsEditor.getByLabel('Policy failure').selectOption('true');
   await settingsEditor.getByLabel('TLS workers', {exact: true}).fill('8');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('5443');
