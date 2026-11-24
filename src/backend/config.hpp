@@ -75,8 +75,9 @@ struct ParseResult {
 };
 
 ParseResult parse_config(int argc, char** argv, const std::filesystem::path& default_asset_root);
-// Loads the GUI-owned libconfig section exposed from the active CFtar. Secret
-// values remain in protected runtime files referenced by this configuration.
+// Loads the Smithproxy-core-owned libconfig section exposed read-only from the
+// active CFtar. Secret values remain in protected runtime files referenced by
+// this configuration.
 ParseResult parse_gui_config_file(
     const std::filesystem::path& path, const std::filesystem::path& default_asset_root);
 // Parses archive content without opening referenced credentials. The CFG API

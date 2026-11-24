@@ -7064,6 +7064,12 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
       state: 'ready', schema_version: confirmed ? 3 : 1,
       restart_required: true, administrators: [],
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+      active_runtime: {
+        smithproxy_api_credential_loaded: true,
+        browser_gateway_credential_loaded: true,
+        previous_browser_gateway_credential_loaded: false,
+        cli_broker_configured: true,
+      },
       backend: {
         bind_address: '127.0.0.1', port: confirmed ? 19083 : 18082,
         base_path: '/smithproxy-gui',
@@ -7092,6 +7098,10 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   });
   await expect(gui).toContainText('Boot settings published with the Smithproxy configuration archive');
   await expect(gui).toContainText('/run/credentials/gui.api-token');
+  await expect(gui.getByText('API credential this boot', {exact: true})
+    .locator('xpath=following-sibling::dd[1]')).toContainText('Loaded');
+  await expect(gui.getByText('Gateway credential this boot', {exact: true})
+    .locator('xpath=following-sibling::dd[1]')).toContainText('Loaded');
   await expect(gui).toContainText('Running listener');
   await expect(gui).toContainText('Saved startup listener');
   await expect(gui).toContainText('active');

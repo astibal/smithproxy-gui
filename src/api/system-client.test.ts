@@ -1087,6 +1087,12 @@ describe('SystemClient', () => {
     const fetcher = vi.fn(async () => jsonResponse({
       state: 'ready', schema_version: 3, restart_required: true, administrators: [],
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
+      active_runtime: {
+        smithproxy_api_credential_loaded: true,
+        browser_gateway_credential_loaded: true,
+        previous_browser_gateway_credential_loaded: false,
+        cli_broker_configured: true,
+      },
       backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       frontend: {asset_root: '/usr/share/smithproxy-gui'},
       smithproxy: {
@@ -1100,6 +1106,12 @@ describe('SystemClient', () => {
     expect(value).toMatchObject({
       state: 'ready', backend: {port: 18082},
       activeBackend: {port: 18082},
+      activeRuntime: {
+        smithproxyApiCredentialLoaded: true,
+        browserGatewayCredentialLoaded: true,
+        previousBrowserGatewayCredentialLoaded: false,
+        cliBrokerConfigured: true,
+      },
       frontend: {assetRoot: '/usr/share/smithproxy-gui'},
       smithproxy: {apiTokenFile: '/run/credentials/gui.api-token'},
     });
@@ -1154,6 +1166,11 @@ describe('SystemClient', () => {
       state: 'ready', schema_version: 4, restart_required: true, administrators: [],
     }));
     await expect(future.guiConfiguration()).rejects.toThrow('Unsupported GUI configuration schema');
+    const malformedRuntime = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'absent', restart_required: true,
+      active_runtime: {smithproxy_api_credential_loaded: 'yes'},
+    }));
+    await expect(malformedRuntime.guiConfiguration()).rejects.toThrow('active runtime');
   });
 
   it('rejects GUI startup settings that would fail only after a service restart', () => {

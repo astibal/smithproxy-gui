@@ -116,6 +116,12 @@ export interface GuiConfiguration {
     port: number;
     basePath: string;
   };
+  activeRuntime?: {
+    smithproxyApiCredentialLoaded: boolean;
+    browserGatewayCredentialLoaded: boolean;
+    previousBrowserGatewayCredentialLoaded: boolean;
+    cliBrokerConfigured: boolean;
+  };
   schemaVersion?: 1 | 2 | 3;
   administrators: ReadonlyArray<string>;
   backend?: {
@@ -1420,9 +1426,26 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
   };
   const activeBackend = value.active_backend === undefined
     ? undefined : parseBackend(value.active_backend, 'active backend');
+  const activeRuntime = value.active_runtime === undefined ? undefined : (() => {
+    const runtime = value.active_runtime;
+    if (!isObject(runtime) ||
+        typeof runtime.smithproxy_api_credential_loaded !== 'boolean' ||
+        typeof runtime.browser_gateway_credential_loaded !== 'boolean' ||
+        typeof runtime.previous_browser_gateway_credential_loaded !== 'boolean' ||
+        typeof runtime.cli_broker_configured !== 'boolean') {
+      throw new Error('Invalid GUI active runtime configuration.');
+    }
+    return {
+      smithproxyApiCredentialLoaded: runtime.smithproxy_api_credential_loaded,
+      browserGatewayCredentialLoaded: runtime.browser_gateway_credential_loaded,
+      previousBrowserGatewayCredentialLoaded: runtime.previous_browser_gateway_credential_loaded,
+      cliBrokerConfigured: runtime.cli_broker_configured,
+    };
+  })();
   if (value.state === 'absent') return {
     state: 'absent', restartRequired: true, administrators: [],
     ...(activeBackend ? {activeBackend} : {}),
+    ...(activeRuntime ? {activeRuntime} : {}),
   };
   if (value.schema_version !== 1 && value.schema_version !== 2 && value.schema_version !== 3) {
     throw new Error('Unsupported GUI configuration schema.');
@@ -1449,6 +1472,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     state: 'ready',
     restartRequired: true,
     ...(activeBackend ? {activeBackend} : {}),
+    ...(activeRuntime ? {activeRuntime} : {}),
     schemaVersion: value.schema_version,
     administrators: value.administrators as string[],
     backend,

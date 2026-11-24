@@ -1463,6 +1463,15 @@ private:
             {"port", config_.port},
             {"base_path", config_.base_path},
         };
+        // Report only whether boot credentials were loaded. Secret values and
+        // their runtime-file contents must never cross the browser boundary.
+        const nlohmann::json active_runtime{
+            {"smithproxy_api_credential_loaded", config_.smithproxy.has_value()},
+            {"browser_gateway_credential_loaded", config_.gateway_secret.has_value()},
+            {"previous_browser_gateway_credential_loaded",
+             config_.previous_gateway_secret.has_value()},
+            {"cli_broker_configured", config_.smithproxy_cli.has_value()},
+        };
         const auto upstream = monitor_.archive_api(
             "GET", "/api/config/archive/resource?path=gui.cfg");
         if(!upstream.transport_ok) {
@@ -1474,6 +1483,7 @@ private:
                 {"state", "absent"},
                 {"restart_required", true},
                 {"active_backend", active_backend},
+                {"active_runtime", active_runtime},
             }.dump()};
         }
         if(upstream.status != 200L) {
@@ -1491,6 +1501,7 @@ private:
             {"schema_version", value.schema_version},
             {"restart_required", true},
             {"active_backend", active_backend},
+            {"active_runtime", active_runtime},
             {"backend", {
                 {"bind_address", value.bind_address},
                 {"port", value.port},

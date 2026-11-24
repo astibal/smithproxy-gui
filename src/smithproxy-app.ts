@@ -12123,6 +12123,7 @@ export class SmithproxyApp extends LitElement {
     const value = this.guiConfiguration;
     const draft = this.guiConfigurationDraft;
     const activeBackend = value?.activeBackend;
+    const activeRuntime = value?.activeRuntime;
     const savedBackend = value?.backend;
     const backendRestartPending = activeBackend !== undefined && savedBackend !== undefined &&
       (activeBackend.bindAddress !== savedBackend.bindAddress ||
@@ -12268,9 +12269,25 @@ export class SmithproxyApp extends LitElement {
               activeBackend && savedBackend ? html` <span class="runtime-state success">● active</span>` : nothing}</dd>
           <dt>Frontend assets</dt><dd>${value?.frontend?.assetRoot ?? 'Packaged default'}</dd>
           <dt>Smithproxy API</dt><dd>${value?.smithproxy?.apiUrl ?? 'Not configured'}</dd>
-          <dt>API credential</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
-          <dt>CLI broker</dt><dd>${value?.smithproxy?.cliEndpoint || 'Disabled'}</dd>
-          <dt>Browser gateway</dt><dd>${value?.gateway?.secretFile ?? 'Not configured'}</dd>
+          <dt>Saved API credential reference</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
+          <dt>API credential this boot</dt><dd>${activeRuntime
+            ? html`<span class="runtime-state ${activeRuntime.smithproxyApiCredentialLoaded ? 'success' : ''}">
+                ● ${activeRuntime.smithproxyApiCredentialLoaded ? 'Loaded' : 'Disabled'}
+              </span>`
+            : 'Not reported'}</dd>
+          <dt>Saved CLI broker</dt><dd>${value?.smithproxy?.cliEndpoint || 'Disabled'}</dd>
+          <dt>CLI broker this boot</dt><dd>${activeRuntime
+            ? activeRuntime.cliBrokerConfigured ? 'Configured' : 'Disabled'
+            : 'Not reported'}</dd>
+          <dt>Saved browser gateway</dt><dd>${value?.gateway?.secretFile ?? 'Not configured'}</dd>
+          <dt>Gateway credential this boot</dt><dd>${activeRuntime
+            ? html`<span class="runtime-state ${activeRuntime.browserGatewayCredentialLoaded ? 'success' : ''}">
+                ● ${activeRuntime.browserGatewayCredentialLoaded ? 'Loaded' : 'Disabled'}
+              </span>`
+            : 'Not reported'}</dd>
+          <dt>Previous gateway credential</dt><dd>${activeRuntime
+            ? activeRuntime.previousBrowserGatewayCredentialLoaded ? 'Loaded for rotation overlap' : 'Disabled'
+            : 'Not reported'}</dd>
           <dt>Administrators</dt><dd class="administrator-list">${value?.administrators.length
             ? value.administrators.map(administrator => {
               const current = administrator === this.gatewaySession?.administrator;

@@ -3,9 +3,9 @@
 Modern administration and monitoring interface for Smithproxy.
 
 The browser communicates exclusively with the same-origin GUI backend. The
-backend may bootstrap from the GUI-owned `gui.cfg` resource exposed from the
-active CFtar, while all configuration writes and runtime data continue to flow
-through Smithproxy's versioned API.
+backend may bootstrap from the Smithproxy-core-owned `gui.cfg` resource exposed
+read-only from the active CFtar, while all configuration writes and runtime data
+continue to flow through Smithproxy's versioned API.
 
 [Czech version](README_CZ.md)
 

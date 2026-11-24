@@ -289,9 +289,11 @@ POST /api/v1/config/archive/resource/delete?path=...
 
 `GET /api/v1/config/gui` parses the saved `gui.cfg` resource into bounded,
 typed boot settings and administrator names; password verifiers never cross the
-browser boundary. It also reports the active listener separately, allowing the
-GUI to distinguish saved startup settings from the endpoint serving the current
-process. An optional schema-version-three frontend group selects an absolute
+browser boundary. It reports the active listener separately and exposes only
+boolean loaded/configured states for the current process's API, gateway, and CLI
+boot integrations. Credential contents never cross this boundary. This allows
+the GUI to distinguish saved startup settings from the endpoint and credentials
+serving the current process. An optional schema-version-three frontend group selects an absolute
 asset root; omission retains the executable's packaged asset directory. The
 typed publish endpoint merges edited boot settings with
 the opaque current administrator verifiers inside GUI core, validates the
