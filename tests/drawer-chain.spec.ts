@@ -7034,6 +7034,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('/run/credentials/gui.api-token');
   await expect(gui).not.toContainText('boot-token-value');
   await gui.getByRole('button', {name: 'Edit GUI startup settings'}).click();
+  await gui.getByLabel('Require a trusted frontend gateway for browser access').uncheck();
+  await expect(gui.getByText('Direct standalone browser authentication is used')).toBeVisible();
   await gui.getByLabel('Bind address').fill('999.1.1.1');
   await expect(gui.getByRole('alert')).toContainText('valid IPv4 literal');
   await expect(gui.getByRole('button', {name: 'Publish GUI startup settings'})).toBeDisabled();
@@ -7043,6 +7045,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await gui.getByRole('button', {name: 'Confirm publish & restart later'}).click();
   await expect.poll(() => published).toContain('"port":19082');
   expect(published).toContain('"api_token_file":"/run/credentials/gui.api-token"');
+  expect(published).toContain('"gateway":null');
   expect(published).not.toContain('boot-token-value');
   await expect(gui).toContainText('Controlled service restart required');
 });

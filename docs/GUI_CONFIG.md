@@ -16,6 +16,9 @@ The **System → Access & integrations → GUI service** editor reads this resou
 through the authenticated Smithproxy archive API. Publishing from that editor
 uses the running revision and current archive SHA-256 as atomic preconditions;
 the new boot settings take effect only after a controlled service restart.
+The Smithproxy connection and trusted browser-gateway groups are independently
+optional and can be explicitly enabled or removed. Opening the editor preserves
+an absent group instead of silently materializing deployment credentials.
 
 ```libconfig
 gui = {

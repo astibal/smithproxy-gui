@@ -1044,6 +1044,12 @@ export class SmithproxyApp extends LitElement {
     .gui-config-editor { grid-template-columns: repeat(2, minmax(240px, 1fr)); align-items: end; }
     .gui-config-editor label { display: grid; gap: 6px; min-width: 0; }
     .gui-config-editor input { width: 100%; min-width: 0; }
+    .gui-config-section { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--app-border); }
+    .gui-config-section legend { padding: 0 6px; font-weight: 650; }
+    .gui-config-fields { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; align-items: end; }
+    .gui-config-fields > p { grid-column: 1 / -1; margin: 0; }
+    .gui-config-toggle { display: flex !important; grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr) !important; gap: 8px !important; align-items: start; color: var(--app-muted); }
+    .gui-config-toggle input { width: auto; margin-top: 2px; }
     .administrator-list { display: grid; gap: 6px; text-align: left !important; }
     .administrator-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
     .administrator-row code { overflow-wrap: anywhere; }
@@ -1257,6 +1263,7 @@ export class SmithproxyApp extends LitElement {
       .system-grid { grid-template-columns: 1fr; }
       .management-diagnostics-grid { grid-template-columns: 1fr; }
       .gui-config-editor { grid-template-columns: 1fr; }
+      .gui-config-fields { grid-template-columns: 1fr; }
       .form-grid.wide-form-grid { grid-template-columns: minmax(120px, .35fr) minmax(220px, 1fr); max-width: 920px; }
       .identity-row { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
       .status-tertiary { display: none; }
@@ -2182,15 +2189,13 @@ export class SmithproxyApp extends LitElement {
       backend: current?.backend ? {...current.backend} : {
         bindAddress: '127.0.0.1', port: 18082, basePath: '/smithproxy-gui',
       },
-      smithproxy: current?.smithproxy ? {...current.smithproxy} : {
+      smithproxy: current ? (current.smithproxy ? {...current.smithproxy} : undefined) : {
         apiUrl: 'https://127.0.0.1:55555',
         caCert: '/run/smithproxy-gui/api-ca.pem',
         apiTokenFile: '/run/credentials/smithproxy-gui.api-token',
         cliEndpoint: '127.0.0.1:50000',
       },
-      gateway: current?.gateway ? {...current.gateway} : {
-        secretFile: '/run/credentials/smithproxy-gui.gateway', previousSecretFile: '',
-      },
+      gateway: current?.gateway ? {...current.gateway} : undefined,
     };
     this.guiConfigurationSaveArmed = false;
     this.guiConfigurationError = undefined;
@@ -11738,40 +11743,80 @@ export class SmithproxyApp extends LitElement {
       </header>
       ${draft ? html`
         <div class="archive-resource-editor gui-config-editor">
-          ${textField('Bind address', draft.backend.bindAddress, next => {
-            this.guiConfigurationDraft = {...draft, backend: {...draft.backend, bindAddress: next}};
-          })}
-          <label><span>Backend port</span><input type="number" min="1" max="65535"
-            .value=${String(draft.backend.port)} @input=${(event: Event) => {
-              const input = event.currentTarget;
-              if (input instanceof HTMLInputElement) {
-                this.guiConfigurationDraft = {
-                  ...draft, backend: {...draft.backend, port: Number(input.value)},
-                };
-                this.guiConfigurationSaveArmed = false;
-              }
-            }}></label>
-          ${textField('Public base path', draft.backend.basePath, next => {
-            this.guiConfigurationDraft = {...draft, backend: {...draft.backend, basePath: next}};
-          }, '/smithproxy-gui')}
-          ${textField('Smithproxy API URL', draft.smithproxy?.apiUrl ?? '', next => {
-            this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiUrl: next}};
-          }, 'https://127.0.0.1:55555')}
-          ${textField('Smithproxy API CA certificate', draft.smithproxy?.caCert ?? '', next => {
-            this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, caCert: next}};
-          }, '/run/smithproxy-gui/api-ca.pem')}
-          ${textField('Boot-time API token file', draft.smithproxy?.apiTokenFile ?? '', next => {
-            this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiTokenFile: next}};
-          }, '/run/credentials/smithproxy-gui.api-token')}
-          ${textField('CLI broker endpoint', draft.smithproxy?.cliEndpoint ?? '', next => {
-            this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, cliEndpoint: next}};
-          }, '127.0.0.1:50000')}
-          ${textField('Gateway credential file', draft.gateway?.secretFile ?? '', next => {
-            this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, secretFile: next}};
-          }, '/run/credentials/smithproxy-gui.gateway')}
-          ${textField('Previous gateway credential file', draft.gateway?.previousSecretFile ?? '', next => {
-            this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, previousSecretFile: next}};
-          }, 'Optional during rotation')}
+          <fieldset class="gui-config-section"><legend>GUI listener and frontend</legend>
+            <div class="gui-config-fields">
+              ${textField('Bind address', draft.backend.bindAddress, next => {
+                this.guiConfigurationDraft = {...draft, backend: {...draft.backend, bindAddress: next}};
+              })}
+              <label><span>Backend port</span><input type="number" min="1" max="65535"
+                .value=${String(draft.backend.port)} @input=${(event: Event) => {
+                  const input = event.currentTarget;
+                  if (input instanceof HTMLInputElement) {
+                    this.guiConfigurationDraft = {
+                      ...draft, backend: {...draft.backend, port: Number(input.value)},
+                    };
+                    this.guiConfigurationSaveArmed = false;
+                  }
+                }}></label>
+              ${textField('Public frontend base path', draft.backend.basePath, next => {
+                this.guiConfigurationDraft = {...draft, backend: {...draft.backend, basePath: next}};
+              }, '/smithproxy-gui')}
+            </div>
+          </fieldset>
+          <fieldset class="gui-config-section"><legend>Smithproxy core connection</legend>
+            <div class="gui-config-fields">
+              <label class="gui-config-toggle"><input type="checkbox"
+                .checked=${draft.smithproxy !== undefined}
+                @change=${(event: Event) => {
+                  const input = event.currentTarget;
+                  if (!(input instanceof HTMLInputElement)) return;
+                  this.guiConfigurationDraft = {...draft, smithproxy: input.checked ? {
+                    apiUrl: 'https://127.0.0.1:55555',
+                    caCert: '/run/smithproxy-gui/api-ca.pem',
+                    apiTokenFile: '/run/credentials/smithproxy-gui.api-token',
+                    cliEndpoint: '127.0.0.1:50000',
+                  } : undefined};
+                  this.guiConfigurationSaveArmed = false;
+                }}><span>Enable authenticated Smithproxy management and configuration access</span></label>
+              ${draft.smithproxy ? html`
+                ${textField('Smithproxy API URL', draft.smithproxy.apiUrl, next => {
+                  this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiUrl: next}};
+                }, 'https://127.0.0.1:55555')}
+                ${textField('Smithproxy API CA certificate', draft.smithproxy.caCert, next => {
+                  this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, caCert: next}};
+                }, '/run/smithproxy-gui/api-ca.pem')}
+                ${textField('Boot-time API token file', draft.smithproxy.apiTokenFile, next => {
+                  this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiTokenFile: next}};
+                }, '/run/credentials/smithproxy-gui.api-token')}
+                ${textField('CLI broker endpoint', draft.smithproxy.cliEndpoint, next => {
+                  this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, cliEndpoint: next}};
+                }, '127.0.0.1:50000')}
+              ` : html`<p>After restart this GUI will not connect to Smithproxy core.</p>`}
+            </div>
+          </fieldset>
+          <fieldset class="gui-config-section"><legend>Browser gateway</legend>
+            <div class="gui-config-fields">
+              <label class="gui-config-toggle"><input type="checkbox"
+                .checked=${draft.gateway !== undefined}
+                @change=${(event: Event) => {
+                  const input = event.currentTarget;
+                  if (!(input instanceof HTMLInputElement)) return;
+                  this.guiConfigurationDraft = {...draft, gateway: input.checked ? {
+                    secretFile: '/run/credentials/smithproxy-gui.gateway',
+                    previousSecretFile: '',
+                  } : undefined};
+                  this.guiConfigurationSaveArmed = false;
+                }}><span>Require a trusted frontend gateway for browser access</span></label>
+              ${draft.gateway ? html`
+                ${textField('Gateway credential file', draft.gateway.secretFile, next => {
+                  this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, secretFile: next}};
+                }, '/run/credentials/smithproxy-gui.gateway')}
+                ${textField('Previous gateway credential file', draft.gateway.previousSecretFile, next => {
+                  this.guiConfigurationDraft = {...draft, gateway: {...draft.gateway!, previousSecretFile: next}};
+                }, 'Optional during rotation')}
+              ` : html`<p>Direct standalone browser authentication is used on a loopback listener.</p>`}
+            </div>
+          </fieldset>
         </div>
         <div class="privacy-note">
           Paths are persistent configuration. Smithproxy creates the referenced credentials for each boot;
