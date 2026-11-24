@@ -2448,26 +2448,42 @@ int main() {
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "short", 1);
     const auto invalid_secret = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
     assert(!invalid_secret.config);
+    assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET") == nullptr);
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
     const auto authenticated = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
     assert(authenticated.config);
     assert(authenticated.config->gateway_secret == "0123456789abcdef0123456789abcdef");
-    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
+    assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET") == nullptr);
 
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS", "previous-0123456789abcdef01234567", 1);
     const auto previous_without_current = parse_config(
         static_cast<int>(argv.size()), argv.data(), "/srv/gui");
     assert(!previous_without_current.config);
+    assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS") == nullptr);
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS", "previous-0123456789abcdef01234567", 1);
     const auto rotating = parse_config(static_cast<int>(argv.size()), argv.data(), "/srv/gui");
     assert(rotating.config);
     assert(rotating.config->previous_gateway_secret == "previous-0123456789abcdef01234567");
+    assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET") == nullptr);
+    assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS") == nullptr);
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
     setenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS", "0123456789abcdef0123456789abcdef", 1);
     const auto duplicate_secrets = parse_config(
         static_cast<int>(argv.size()), argv.data(), "/srv/gui");
     assert(!duplicate_secrets.config);
-    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET");
-    unsetenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
+    assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET") == nullptr);
+    assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS") == nullptr);
+
+    setenv("SMITHPROXY_API_KEY", "boot-api-token-0123456789abcdef0", 1);
+    setenv("SMITHPROXY_GUI_GATEWAY_SECRET", "0123456789abcdef0123456789abcdef", 1);
+    std::vector<std::string> invalid_arguments{"smithproxy-gui", "--unknown"};
+    std::vector<char*> invalid_argv;
+    for (auto& argument : invalid_arguments) invalid_argv.push_back(argument.data());
+    assert(!parse_config(
+        static_cast<int>(invalid_argv.size()), invalid_argv.data(), "/srv/gui").config);
+    assert(std::getenv("SMITHPROXY_API_KEY") == nullptr);
+    assert(std::getenv("SMITHPROXY_GUI_GATEWAY_SECRET") == nullptr);
 
     const auto gui_config_root =
         std::filesystem::temp_directory_path() / "smithproxy-gui-bootstrap-config-test";
@@ -2479,7 +2495,7 @@ int main() {
     const auto gui_config_path = gui_config_root / "gui.cfg";
     {
         std::ofstream token(api_token_path);
-        token << "boot-api-token-0123456789abcdef";
+        token << "boot-api-token-0123456789abcdef0";
         std::ofstream gateway(gateway_secret_path);
         gateway << "gateway-secret-0123456789abcdef0123456789";
         std::ofstream ca(ca_path);
@@ -2508,9 +2524,18 @@ int main() {
     assert(gui_bootstrap.config->asset_root == gui_config_root.string());
     assert(gui_bootstrap.config->smithproxy);
     assert(gui_bootstrap.config->smithproxy->api_url == "https://127.0.0.1:55555");
-    assert(gui_bootstrap.config->smithproxy->api_key == "boot-api-token-0123456789abcdef");
+    assert(gui_bootstrap.config->smithproxy->api_key == "boot-api-token-0123456789abcdef0");
     assert(gui_bootstrap.config->smithproxy_cli);
     assert(gui_bootstrap.config->gateway_secret);
+    {
+        std::ofstream token(api_token_path, std::ios::trunc);
+        token << "too-short";
+    }
+    assert(!parse_gui_config_file(gui_config_path, "/srv/gui").config);
+    {
+        std::ofstream token(api_token_path, std::ios::trunc);
+        token << "boot-api-token-0123456789abcdef0";
+    }
     const auto archive_bootstrap = parse_gui_bootstrap(
         "gui = { backend = { bind_address = \"127.0.0.1\"; port = 18082; "
         "base_path = \"/gui\"; }; smithproxy = { api_url = \"https://127.0.0.1:55555\"; "

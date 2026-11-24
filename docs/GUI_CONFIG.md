@@ -98,8 +98,9 @@ other account's credential file. A deployment must not place the token itself
 in `gui.cfg`, a command-line option, or a shared environment file.
 
 Command-line options remain explicit deployment overrides. Existing environment
-variables remain available for compatibility, but a native installation should
-prefer `gui.cfg` plus protected runtime credential files.
+variables remain available for compatibility and their secret values are removed
+from the process environment immediately after bootstrap. A native installation
+should prefer `gui.cfg` plus protected runtime credential files.
 
 Administrator passwords and enrollment tokens are never represented here. The
 CLI creates a single-use token valid for ten minutes. After Smithproxy consumes

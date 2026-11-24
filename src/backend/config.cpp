@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <charconv>
 #include <cstdlib>
 #include <fstream>
@@ -33,6 +34,14 @@ std::optional<std::string> environment(const char* name) {
         return std::string(value);
     }
     return std::nullopt;
+}
+
+// Secrets supplied for compatibility are consumed during bootstrap so child
+// processes and later diagnostics cannot recover them from the environment.
+std::optional<std::string> consume_environment_secret(const char* name) {
+    auto value = environment(name);
+    ::unsetenv(name);
+    return value;
 }
 
 struct ProtectedFileResult {
@@ -109,7 +118,10 @@ ProtectedFileResult read_protected_file(
     std::size_t offset = 0U;
     while (offset < value.size()) {
         const auto count = ::read(descriptor, value.data() + offset, value.size() - offset);
-        if (count <= 0) {
+        const bool interrupted = count < 0 && errno == EINTR;
+        if (interrupted) continue;
+        const bool incomplete_read = count <= 0;
+        if (incomplete_read) {
             ::close(descriptor);
             return {std::nullopt, std::string(label) + " could not be read completely"};
         }
@@ -235,6 +247,10 @@ std::filesystem::path resolve_default_asset_root(
 ParseResult parse_config(const int argc, char** argv, const std::filesystem::path& default_asset_root) {
     AppConfig config;
     config.asset_root = default_asset_root;
+    auto api_key = consume_environment_secret("SMITHPROXY_API_KEY");
+    auto gateway_secret = consume_environment_secret("SMITHPROXY_GUI_GATEWAY_SECRET");
+    auto previous_gateway_secret =
+        consume_environment_secret("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS");
 
     for (int i = 1; i < argc; ++i) {
         if (std::string_view(argv[i]) == "--help") return {std::nullopt, {}, true};
@@ -279,10 +295,9 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
     if (config.asset_root.empty()) return failure("asset root cannot be empty");
 
     const auto url = environment("SMITHPROXY_API_URL");
-    const auto key = environment("SMITHPROXY_API_KEY");
     const auto ca = environment("SMITHPROXY_CA_CERT");
     const auto configured_values = static_cast<unsigned>(url.has_value()) +
-                                   static_cast<unsigned>(key.has_value()) +
+                                   static_cast<unsigned>(api_key.has_value()) +
                                    static_cast<unsigned>(ca.has_value());
     if (configured_values != 0U && configured_values != 3U) {
         return failure("SMITHPROXY_API_URL, SMITHPROXY_API_KEY and SMITHPROXY_CA_CERT must be set together");
@@ -291,7 +306,7 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
         if (!valid_api_url(*url)) {
             return failure("Smithproxy API URL must use HTTPS (HTTP is allowed only on loopback)");
         }
-        if (!valid_header_value(*key)) return failure("SMITHPROXY_API_KEY contains invalid characters");
+        if (!valid_header_value(*api_key)) return failure("SMITHPROXY_API_KEY contains invalid characters");
         std::error_code error;
         if (!std::filesystem::is_regular_file(*ca, error) || error) {
             return failure("SMITHPROXY_CA_CERT is not a readable regular file");
@@ -300,7 +315,7 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
         if (!certificate) return failure("SMITHPROXY_CA_CERT is not readable");
         std::string normalized_url = *url;
         while (normalized_url.ends_with('/')) normalized_url.pop_back();
-        config.smithproxy = SmithproxyConfig{std::move(normalized_url), *key, *ca};
+        config.smithproxy = SmithproxyConfig{std::move(normalized_url), *api_key, *ca};
     }
     if (const auto cli = environment("SMITHPROXY_CLI")) {
         config.smithproxy_cli = parse_cli_endpoint(*cli);
@@ -308,26 +323,26 @@ ParseResult parse_config(const int argc, char** argv, const std::filesystem::pat
             return failure("SMITHPROXY_CLI must use host:port or [IPv6]:port");
         }
     }
-    if (auto gateway_secret = environment("SMITHPROXY_GUI_GATEWAY_SECRET")) {
+    if (gateway_secret) {
         if (gateway_secret->size() < 32U || gateway_secret->size() > 256U ||
             !valid_header_value(*gateway_secret)) {
             return failure("SMITHPROXY_GUI_GATEWAY_SECRET must contain 32..256 safe header characters");
         }
-        config.gateway_secret = std::move(gateway_secret);
+        config.gateway_secret = std::move(*gateway_secret);
     }
-    if (auto previous = environment("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS")) {
+    if (previous_gateway_secret) {
         if (!config.gateway_secret) {
             return failure("SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS requires the current secret");
         }
-        if (previous->size() < 32U || previous->size() > 256U ||
-            !valid_header_value(*previous)) {
+        if (previous_gateway_secret->size() < 32U || previous_gateway_secret->size() > 256U ||
+            !valid_header_value(*previous_gateway_secret)) {
             return failure(
                 "SMITHPROXY_GUI_GATEWAY_SECRET_PREVIOUS must contain 32..256 safe header characters");
         }
-        if (*previous == *config.gateway_secret) {
+        if (*previous_gateway_secret == *config.gateway_secret) {
             return failure("current and previous gateway secrets must differ");
         }
-        config.previous_gateway_secret = std::move(previous);
+        config.previous_gateway_secret = std::move(*previous_gateway_secret);
     }
     std::string validation_error;
     if (!validate_final_config(config, validation_error)) return failure(std::move(validation_error));
@@ -357,6 +372,9 @@ ParseResult parse_gui_config_file(
         const auto token = read_protected_file(
             *persistent.api_token_file, "GUI Smithproxy API token");
         if (!token.value) return failure(token.error);
+        if (token.value->size() < 32U || token.value->size() > 256U) {
+            return failure("GUI Smithproxy API token must contain 32..256 characters");
+        }
         config.smithproxy = SmithproxyConfig{
             *persistent.api_url, *token.value, *persistent.ca_cert};
         if (persistent.cli_endpoint) {

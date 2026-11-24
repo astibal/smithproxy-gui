@@ -50,6 +50,8 @@ runtime credentials. The backend opens them without following symbolic links,
 requires an owned regular file with mode `0600`, bounds its size, and keeps the
 content only in process memory. The token itself must not appear in `gui.cfg`,
 service arguments, environment variables, logs, diagnostics, or archive backups.
+Legacy environment-secret inputs are consumed and removed during bootstrap;
+native deployments use the protected runtime files instead.
 The exposed `gui.cfg` may be owned by root or the service account, but must not
 be writable by its group or by other users.
 
