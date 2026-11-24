@@ -7429,31 +7429,30 @@ export class SmithproxyApp extends LitElement {
       if (!input || !['true', 'false'].includes(input.value)) return undefined;
       changes.push({path: `networking.${path}`, value: input.value === 'true'});
     }
-    const table = text('table');
     const placement = select('placement');
     const interfaces = strings('interfaces');
-    const tenantRanges = strings('tenant-ranges');
     const tcpPorts = ports('tcp-ports');
     const tlsPorts = ports('tls-ports');
     const udpPorts = ports('udp-ports');
     const dtlsPorts = ports('dtls-ports');
     const dropUdpPorts = ports('drop-udp-ports');
     const exemptUids = strings('redirect-exempt-uids')?.map(value => Number(value));
-    const validSelectors = interfaces?.every(value => value === '*' || value === '-' || value === '+' ||
-      /^[A-Za-z0-9:._-]{1,128}$/u.test(value));
-    if (!table || !/^[A-Za-z0-9_-]{1,64}$/u.test(table.value) || !placement ||
-        !['before', 'after'].includes(placement.value) || !interfaces || !validSelectors ||
-        !tenantRanges || !tcpPorts || !tlsPorts || !udpPorts || !dtlsPorts || !dropUdpPorts ||
+    const topologySelectors = interfaces?.filter(value => ['*', '-', '+'].includes(value)) ?? [];
+    const validInterfaces = interfaces?.every(value => ['*', '-', '+'].includes(value) ||
+      /^[A-Za-z0-9:._-]{1,15}$/u.test(value));
+    const validInterfaceSelection = validInterfaces &&
+      (topologySelectors.length === 0 || (interfaces?.length === 1 && topologySelectors.length === 1));
+    if (!placement || !['before', 'after'].includes(placement.value) || !interfaces ||
+        !validInterfaceSelection || !tcpPorts || !tlsPorts || !udpPorts || !dtlsPorts || !dropUdpPorts ||
         !exemptUids || !exemptUids.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 2147483647)) {
-      this.draftError = 'Network interception lists, selectors, ports, or table name are invalid.';
+      this.draftError = 'Network interception lists, interface selectors, or ports are invalid.';
       return undefined;
     }
     const numericFields = [
-      ['tenant_index', 'tenant-index', 0, 65534],
       ['redirect_tcp_port', 'redirect-tcp-port', 1, 65535],
       ['redirect_tls_port', 'redirect-tls-port', 1, 65535],
       ['redirect_dns_port', 'redirect-dns-port', 1, 65535],
-      ['routing_table', 'routing-table', 1, 252],
+      ['routing_table', 'routing-table', 1, 2147483647],
       ['routing_priority', 'routing-priority', 1, 32765],
       ['tcp_syn_retries', 'tcp-syn-retries', 1, 127],
       ['mark', 'mark', 1, 2147483647],
@@ -7470,6 +7469,11 @@ export class SmithproxyApp extends LitElement {
       numericValues.set(path, value);
       changes.push({path: `networking.${path}`, value});
     }
+    const routingTable = numericValues.get('routing_table')!;
+    if (routingTable >= 253 && routingTable <= 255) {
+      this.draftError = 'Routing tables 253 through 255 are reserved by the kernel.';
+      return undefined;
+    }
     const mark = numericValues.get('mark')!;
     const mask = numericValues.get('mask')!;
     if ((mark & mask) !== mark) {
@@ -7477,10 +7481,8 @@ export class SmithproxyApp extends LitElement {
       return undefined;
     }
     changes.push(
-      {path: 'networking.table', value: table.value},
       {path: 'networking.placement', value: placement.value},
       {path: 'networking.interfaces', value: interfaces},
-      {path: 'networking.tenant_ranges', value: tenantRanges},
       {path: 'networking.tcp_ports', value: tcpPorts},
       {path: 'networking.tls_ports', value: tlsPorts},
       {path: 'networking.udp_ports', value: udpPorts},
@@ -14273,19 +14275,19 @@ export class SmithproxyApp extends LitElement {
         .value=${list(path, fallback).join(', ')} placeholder=${placeholder} />`;
     return html`<div class="editor-stack">
       <fieldset class="editor-group"><legend>Firewall ownership</legend>
-        <p>Names the native table and chooses where its hooks sit relative to existing host rules.</p>
+        <p>Chooses where Networkd hooks sit relative to existing host rules. Service identity is shown
+          for review, but changes only through a separately validated restart operation.</p>
         <div class="form-grid">
-          <label for="networking-table">Table name</label><input id="networking-table" maxlength="64"
-            .value=${scalar('table', networking.table)} />
+          <label>Table name</label><span><code>${networking.table}</code> <span class="muted">Restart identity</span></span>
+          <label>Tenant index</label><span><code>${networking.tenantIndex}</code> <span class="muted">Restart identity</span></span>
+          <label>Tenant ranges</label><span>${networking.tenantRanges.join(', ') || 'None'}
+            <span class="muted">Registry-owned</span></span>
           <label for="networking-placement">Rule placement</label><select id="networking-placement">
             <option value="before" ?selected=${scalar('placement', networking.placement) === 'before'}>Before existing rules</option>
             <option value="after" ?selected=${scalar('placement', networking.placement) === 'after'}>After existing rules</option>
           </select>
           ${listField('interfaces', 'interfaces', 'Interface selectors', networking.interfaces,
             '-, +, *, eth0')}
-          ${numberField('tenant_index', 'tenant-index', 'Tenant index', networking.tenantIndex, 0, 65534)}
-          ${listField('tenant_ranges', 'tenant-ranges', 'Tenant ranges', networking.tenantRanges,
-            '10.0.0.0/8, 2001:db8::/32')}
         </div>
       </fieldset>
       <fieldset class="editor-group"><legend>Interception scope</legend>
@@ -14313,7 +14315,7 @@ export class SmithproxyApp extends LitElement {
         <div class="form-grid">
           ${booleanField('manage_routing', 'manage-routing', 'Manage policy routing', networking.manageRouting)}
           ${booleanField('manage_sysctls', 'manage-sysctls', 'Manage kernel settings', networking.manageSysctls)}
-          ${numberField('routing_table', 'routing-table', 'Routing table', networking.routingTable, 1, 252)}
+          ${numberField('routing_table', 'routing-table', 'Routing table', networking.routingTable, 1, 2147483647)}
           ${numberField('routing_priority', 'routing-priority', 'Routing priority', networking.routingPriority, 1, 32765)}
           ${booleanField('forwarding', 'forwarding', 'IP forwarding', networking.forwarding)}
           ${booleanField('nonlocal_bind', 'nonlocal-bind', 'Non-local bind', networking.nonlocalBind)}

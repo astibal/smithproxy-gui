@@ -487,7 +487,6 @@ Result validate_networking(const std::string_view field, const DraftScalar& valu
         std::string_view{"tcp_low_latency"},
     };
     if (one_of(field, booleans)) return valid(boolean(value));
-    if (field == "table") return valid(config_group_name(value));
     if (field == "placement") return valid(enumerated(value, {"before", "after"}));
     if (field == "interfaces") {
         if (!string_list(value, 15U, false)) return Result::InvalidValue;
@@ -497,7 +496,6 @@ Result validate_networking(const std::string_view field, const DraftScalar& valu
         });
         return valid(selectors == 0 || (selectors == 1 && items.size() == 1U));
     }
-    if (field == "tenant_ranges") return valid(string_list(value, 128U));
     if (field == "tcp_ports" || field == "tls_ports" || field == "udp_ports" ||
         field == "dtls_ports" || field == "drop_udp_ports") {
         return valid(integer_list(value, 1, 65535));
@@ -507,7 +505,6 @@ Result validate_networking(const std::string_view field, const DraftScalar& valu
     }
     struct IntegerRule { std::string_view path; std::int64_t minimum; std::int64_t maximum; };
     constexpr std::array integer_rules{
-        IntegerRule{"tenant_index", 0, 65534},
         IntegerRule{"redirect_tcp_port", 1, 65535},
         IntegerRule{"redirect_tls_port", 1, 65535},
         IntegerRule{"redirect_dns_port", 1, 65535},

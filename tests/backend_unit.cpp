@@ -2221,6 +2221,10 @@ int main() {
     assert(!parse_config_networking(
         R"({"success":{"networking":{"interfaces":["*","eth0"]}}})").networking);
     assert(!parse_config_networking(
+        R"({"success":{"networking":{"interfaces":["interface-name-is-too-long"]}}})").networking);
+    assert(!parse_config_networking(
+        R"({"success":{"networking":{"table":"invalid-table"}}})").networking);
+    assert(!parse_config_networking(
         R"({"success":{"networking":{"routing_table":"254"}}})").networking);
     assert(!parse_config_networking(
         R"({"success":{"networking":{"mark":"3","mask":"1"}}})").networking);

@@ -1091,6 +1091,20 @@ async function mockSystemApi(
           task_debug_dump: false,
         },
       },
+      networking: {
+        table: 'smithproxy_networkd', placement: 'before', interfaces: ['-'],
+        tenant_index: 3, tenant_ranges: ['10.0.0.0/8'],
+        tcp_all: true, udp_all: false, ipv6_udp: true,
+        tcp_ports: [80], tls_ports: [443], udp_ports: [53], dtls_ports: [4433],
+        drop_udp_ports: [443], redirect_tcp_port: 51080, redirect_tls_port: 51443,
+        redirect_dns_port: 51053, redirect_exempt_uids: [0], redirect_exempt_lan: false,
+        bypass: [{id: 'network-bypass-0', source: '10.0.0.0/8',
+          destination: '192.0.2.10', port: 443}],
+        manage_routing: true, manage_sysctls: true, routing_table: 100,
+        routing_priority: 10000, forwarding: true, nonlocal_bind: true,
+        tcp_low_latency: true, tcp_syn_retries: 3, mark: 1, mask: 255,
+        blackhole_max_ttl_ms: 86400000,
+      },
       debug: {
         log_data_crc: false, log_sockets: false, log_online_cx_name: false,
         log_srclines: false, log_srclines_always: false, module_override_count: 1,
@@ -7395,6 +7409,40 @@ test('projects pending listener settings into Network and opens their real edito
   await expect(editor.getByLabel('TLS workers', {exact: true})).toHaveValue('8');
   await expect(editor.getByLabel('SOCKS listener')).toHaveValue('true');
   await expect(editor.getByLabel('Require SOCKS authentication')).toHaveValue('true');
+});
+
+test('edits Networkd policy without pretending restart identity is live-editable', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, draftMutationBatches: [],
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('button', {name: 'Interception', exact: true}).click();
+
+  const summary = page.getByRole('region', {name: 'Network interception'});
+  await expect(summary).toContainText('smithproxy_networkd');
+  await summary.getByRole('button', {name: 'Edit interception'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit Network interception'});
+  await expect(editor.getByText('Restart identity', {exact: true})).toHaveCount(2);
+  await expect(editor.locator('#networking-table')).toHaveCount(0);
+  await expect(editor.locator('#networking-tenant-index')).toHaveCount(0);
+  await expect(editor.locator('#networking-tenant-ranges')).toHaveCount(0);
+
+  await editor.getByLabel('Rule placement').selectOption('after');
+  await editor.getByLabel('Interface selectors').fill('lan0, wan0');
+  await editor.getByLabel('Routing table').fill('1000');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+
+  await expect.poll(() => state.draftMutationBatches).toHaveLength(1);
+  expect(state.draftMutationBatches![0]).toEqual(expect.arrayContaining([
+    {path: 'networking.placement', value: 'after'},
+    {path: 'networking.interfaces', value: ['lan0', 'wan0']},
+    {path: 'networking.routing_table', value: 1000},
+  ]));
+  expect(state.draftMutationBatches![0].some(change => [
+    'networking.table', 'networking.tenant_index', 'networking.tenant_ranges',
+  ].includes(change.path))).toBe(false);
 });
 
 test('materializes absent nested settings groups through editable defaults', async ({page}) => {

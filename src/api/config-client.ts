@@ -1024,8 +1024,13 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
     const exemptUids = integerArray(
       value.networking.redirect_exempt_uids, 'Networkd redirect-exempt UID', 2147483647,
     );
-    const selectors = interfaces.filter(item => item === '*' || item === '-' || item === '+');
-    if (interfaces.length === 0 || (selectors.length !== 0 &&
+    const isTopologySelector = (item: string) => item === '*' || item === '-' || item === '+';
+    const selectors = interfaces.filter(isTopologySelector);
+    const validInterfaceNames = interfaces.every(item => isTopologySelector(item) ||
+      /^[A-Za-z0-9_.:-]{1,15}$/u.test(item));
+    const table = safeString(value.networking.table, 'Networkd table', 40);
+    if (!/^[A-Za-z0-9_]+$/u.test(table) || interfaces.length === 0 || !validInterfaceNames ||
+        (selectors.length !== 0 &&
         (selectors.length !== 1 || interfaces.length !== 1)) ||
         [...tcpPorts, ...tlsPorts, ...udpPorts, ...dtlsPorts, ...dropUdpPorts].some(port => port === 0)) {
       throw new Error('Invalid Networkd selectors or port lists.');
@@ -1051,7 +1056,7 @@ export function parseConfigSnapshot(value: unknown): ConfigSnapshot {
       throw new Error('Invalid Networkd routing mark or table.');
     }
     networking = {
-      table: safeString(value.networking.table, 'Networkd table', 40),
+      table,
       placement: allowedString(value.networking.placement, 'Networkd placement', ['before', 'after']) as 'before' | 'after',
       interfaces,
       tenantIndex: safeInteger(value.networking.tenant_index, 'Networkd tenant index', 65534),

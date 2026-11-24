@@ -288,6 +288,14 @@ describe('ApiConfigClient', () => {
       ...liveSnapshot,
       networking: {...liveSnapshot.networking, interfaces: ['*', 'eth0']},
     })).toThrow('Invalid Networkd selectors or port lists.');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      networking: {...liveSnapshot.networking, interfaces: ['interface-name-is-too-long']},
+    })).toThrow('Invalid Networkd selectors or port lists.');
+    expect(() => parseConfigSnapshot({
+      ...liveSnapshot,
+      networking: {...liveSnapshot.networking, table: 'invalid-table'},
+    })).toThrow('Invalid Networkd selectors or port lists.');
     expect(snapshot.addresses.map(item => item.typeEditable)).toEqual([true, false]);
     expect(snapshot.ports[0]).toMatchObject({start: 443, end: 443});
     expect(snapshot.ports[0]?.usedBy).toEqual([

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cctype>
 #include <limits>
 #include <map>
 #include <set>
@@ -1126,6 +1127,12 @@ ConfigNetworkingParseResult parse_config_networking(
     if (*placement != "before" && *placement != "after") {
         return {std::nullopt, "Smithproxy returned invalid Networkd placement"};
     }
+    const bool valid_table = !table->empty() && std::all_of(table->begin(), table->end(), [](const char character) {
+        return std::isalnum(static_cast<unsigned char>(character)) || character == '_';
+    });
+    if (!valid_table) {
+        return {std::nullopt, "Smithproxy returned an invalid Networkd table name"};
+    }
     if (!interfaces_present) interfaces->push_back("-");
     const bool topology_selector = interfaces->size() == 1U &&
         ((*interfaces)[0] == "*" || (*interfaces)[0] == "-" || (*interfaces)[0] == "+");
@@ -1133,6 +1140,17 @@ ConfigNetworkingParseResult parse_config_networking(
             return item == "*" || item == "-" || item == "+";
         })) {
         return {std::nullopt, "Smithproxy returned an invalid Networkd interface selector"};
+    }
+    const bool valid_interface_names = std::all_of(interfaces->begin(), interfaces->end(), [](const auto& item) {
+        if (item == "*" || item == "-" || item == "+") return true;
+        return !item.empty() && item.size() <= 15U && std::all_of(item.begin(), item.end(), [](const char character) {
+            const auto byte = static_cast<unsigned char>(character);
+            return std::isalnum(byte) || character == '_' || character == '.' ||
+                character == ':' || character == '-';
+        });
+    });
+    if (!valid_interface_names) {
+        return {std::nullopt, "Smithproxy returned an invalid Networkd interface name"};
     }
     if (!tcp_ports_present) *tcp_ports = {80U, 25U, 587U, 21U, 143U, 110U, 5222U, 65000U};
     if (!tls_ports_present) *tls_ports = {443U, 465U, 636U, 993U, 995U, 10443U};
