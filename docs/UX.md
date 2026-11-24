@@ -21,6 +21,12 @@
 Navigace je záměrně doménová, ne kopií struktury konfiguračního souboru.
 Konkrétní položky se mohou během coverage mapování změnit.
 
+Networkd interception převádí nativní selektory rozhraní na aktuální názvy z
+API-backed interface inventory. Editor nabízí přímé volby pro rozhraní bez
+default route (`-`), s default route (`+`) a všechna adresovaná rozhraní (`*`),
+ale zachovává i explicitní seznam názvů. Náhled je topologický stav v okamžiku
+posledního API vzorku; autoritativní výběr při aplikaci stále provádí Networkd.
+
 Globální hledání pokrývá všechny čitelné konfigurační entity včetně policy,
 objektů, profilů, content rules, certifikačních autorit, signatur, System a
 Captures. Používá pending hodnoty ze sdíleného draftu a výsledek otevře přímo

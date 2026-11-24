@@ -7498,6 +7498,8 @@ test('edits Networkd policy without pretending restart identity is live-editable
 
   const summary = page.getByRole('region', {name: 'Network interception'});
   await expect(summary).toContainText('smithproxy_networkd');
+  await expect(summary.getByRole('row', {name: /Current interface match/u})).toContainText('lan0');
+  await expect(summary.getByRole('row', {name: /Current interface match/u})).not.toContainText('wan0');
   await summary.getByRole('button', {name: 'Edit interception'}).click();
   const editor = page.getByRole('dialog', {name: 'Edit Network interception'});
   await expect(editor.getByText('Restart identity', {exact: true})).toHaveCount(3);
@@ -7505,6 +7507,8 @@ test('edits Networkd policy without pretending restart identity is live-editable
   await expect(editor.getByText('/run/networkd/control.sock', {exact: true})).toBeVisible();
   await expect(editor.locator('#networking-tenant-index')).toHaveCount(0);
   await expect(editor.locator('#networking-tenant-ranges')).toHaveCount(0);
+  await editor.getByRole('button', {name: 'Default routes (+)', exact: true}).click();
+  await expect(editor.getByLabel('Interface selectors')).toHaveValue('+');
 
   await editor.getByLabel('Rule placement').selectOption('after');
   await editor.getByLabel('Interface selectors').fill('lan0, wan0');

@@ -10458,6 +10458,7 @@ export class SmithproxyApp extends LitElement {
     const enabledProtocols = [networking.tcpAll ? 'All TCP' : `${networking.tcpPorts.length} TCP ports`,
       networking.udpAll ? 'All UDP' : `${networking.udpPorts.length} UDP ports`,
       networking.ipv6Udp ? 'IPv6 UDP' : 'IPv4 UDP only'];
+    const resolvedInterfaces = this.resolveNetworkingInterfaces(networking.interfaces);
     return html`<section class="monitor-panel" aria-label="Network interception">
       <div class="runtime-heading">
         <div><h3>Network interception</h3><p>Effective native firewall and routing ownership</p></div>
@@ -10471,6 +10472,9 @@ export class SmithproxyApp extends LitElement {
         <tbody>
           <tr><th>Firewall table</th><td><code>${networking.table}</code> · ${networking.placement} existing rules</td></tr>
           <tr><th>Interface scope</th><td>${networking.interfaces.join(', ') || 'None'}</td></tr>
+          <tr><th>Current interface match</th><td>${resolvedInterfaces.length > 0
+            ? resolvedInterfaces.join(', ') : this.interfaces.state === 'ready'
+              ? 'No current interface matches' : 'Topology unavailable'}</td></tr>
           <tr><th>Interception</th><td>${enabledProtocols.join(' · ')}</td></tr>
           <tr><th>Redirect ports</th><td>TCP ${networking.redirectTcpPort} · TLS ${networking.redirectTlsPort} · DNS ${networking.redirectDnsPort}</td></tr>
           <tr><th>Routing ownership</th><td>${networking.manageRouting ? `Table ${networking.routingTable}, priority ${networking.routingPriority}` : 'External routing'}</td></tr>
@@ -10480,6 +10484,26 @@ export class SmithproxyApp extends LitElement {
         </tbody>
       </table></div>
     </section>`;
+  }
+
+  /** Resolves Networkd topology selectors against the current API-backed interface inventory. */
+  private resolveNetworkingInterfaces(selectors: ReadonlyArray<string>): ReadonlyArray<string> {
+    if (this.interfaces.state !== 'ready') return [];
+    const loopbackFlag = 0x8;
+    const candidates = this.interfaces.inventory.filter(item => {
+      const loopback = (item.flags & loopbackFlag) !== 0;
+      const addressed = item.addresses.length > 0;
+      return addressed && !loopback;
+    });
+    if (selectors.length === 1 && selectors[0] === '*') return candidates.map(item => item.name);
+    if (selectors.length === 1 && selectors[0] === '+') {
+      return candidates.filter(item => item.uplink).map(item => item.name);
+    }
+    if (selectors.length === 1 && selectors[0] === '-') {
+      return candidates.filter(item => !item.uplink).map(item => item.name);
+    }
+    const configured = new Set(selectors);
+    return this.interfaces.inventory.filter(item => configured.has(item.name)).map(item => item.name);
   }
 
   private renderNetwork() {
@@ -14544,6 +14568,10 @@ export class SmithproxyApp extends LitElement {
       fallback: ReadonlyArray<T>, placeholder: string) => html`
       <label for="networking-${id}">${label}</label><input id="networking-${id}" maxlength="4096"
         .value=${list(path, fallback).join(', ')} placeholder=${placeholder} />`;
+    const chooseInterfaceSelector = (selector: '*' | '+' | '-') => {
+      const input = this.renderRoot.querySelector<HTMLInputElement>('#networking-interfaces');
+      if (input) input.value = selector;
+    };
     return html`<div class="editor-stack">
       <fieldset class="editor-group"><legend>Firewall ownership</legend>
         <p>Chooses where Networkd hooks sit relative to existing host rules. Service identity is shown
@@ -14559,8 +14587,16 @@ export class SmithproxyApp extends LitElement {
             <option value="before" ?selected=${scalar('placement', networking.placement) === 'before'}>Before existing rules</option>
             <option value="after" ?selected=${scalar('placement', networking.placement) === 'after'}>After existing rules</option>
           </select>
-          ${listField('interfaces', 'interfaces', 'Interface selectors', networking.interfaces,
-            '-, +, *, eth0')}
+          <label for="networking-interfaces">Interface selectors</label>
+          <span><input id="networking-interfaces" maxlength="4096"
+            .value=${list('interfaces', networking.interfaces).join(', ')} placeholder="eth0, eth1" />
+            <span class="inline-actions section">
+              <button class="secondary" type="button" @click=${() => chooseInterfaceSelector('-')}>Internal routes (−)</button>
+              <button class="secondary" type="button" @click=${() => chooseInterfaceSelector('+')}>Default routes (+)</button>
+              <button class="secondary" type="button" @click=${() => chooseInterfaceSelector('*')}>All addressed (*)</button>
+            </span>
+            <small class="muted">A topology selector stands alone. Otherwise enter explicit interface names separated by commas.</small>
+          </span>
         </div>
       </fieldset>
       <fieldset class="editor-group"><legend>Interception scope</legend>
@@ -14584,7 +14620,8 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('redirect_exempt_lan', 'redirect-exempt-lan', 'Exempt local networks', networking.redirectExemptLan)}
       </div></fieldset>
       <fieldset class="editor-group"><legend>Routing and host tuning</legend>
-        <p>Ownership switches deliberately separate Smithproxy-managed state from externally managed hosts.</p>
+        <p>Ownership switches deliberately separate Smithproxy-managed state from externally managed hosts.
+          Changing routing ownership, table identity, priority, mark, or mask requires a controlled Networkd restart.</p>
         <div class="form-grid">
           ${booleanField('manage_routing', 'manage-routing', 'Manage policy routing', networking.manageRouting)}
           ${booleanField('manage_sysctls', 'manage-sysctls', 'Manage kernel settings', networking.manageSysctls)}
