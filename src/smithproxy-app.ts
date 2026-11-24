@@ -123,7 +123,8 @@ type SecurityObjectFilter = 'all' | 'trust' | 'signatures' | 'starttls' | 'detec
 type NetworkView = 'overview' | 'neighborhood' | 'interfaces' | 'configuration' | 'networking';
 type MonitoringView = 'overview' | 'traffic' | 'sessions' | 'tls';
 type LogsView = 'events' | 'audit';
-type SystemView = 'configuration' | 'settings' | 'captures' | 'backend' | 'appearance' | 'control-plane';
+type SystemView = 'configuration' | 'settings' | 'captures' | 'administrators' |
+  'gui-service' | 'integrations' | 'operations' | 'appearance' | 'control-plane';
 type SettingsGroup = 'interfaces' | 'traffic' | 'workers' | 'listeners' | 'logging' |
   'administration' | 'resolution' | 'certificates' | 'assets' | 'tuning' |
   'management-api' | 'webhook' | 'debug';
@@ -178,10 +179,55 @@ const systemNavigation: ReadonlyArray<{kind: SystemView; label: string; icon: st
   {kind: 'settings', label: 'System settings', icon: '≡'},
   {kind: 'captures', label: 'Captures', icon: '◉'},
   {kind: 'configuration', label: 'Startup & backups', icon: '◇'},
-  {kind: 'backend', label: 'Access & integrations', icon: '⚙'},
+  {kind: 'administrators', label: 'Administrators', icon: '@'},
+  {kind: 'gui-service', label: 'GUI service', icon: '▣'},
+  {kind: 'integrations', label: 'Integrations', icon: '↗'},
+  {kind: 'operations', label: 'Operations', icon: '⚙'},
   {kind: 'appearance', label: 'Appearance', icon: '◐'},
   {kind: 'control-plane', label: 'Connectivity', icon: '⌘'},
 ];
+
+const systemViewPresentation: Readonly<Record<SystemView, {
+  title: string;
+  description: string;
+}>> = {
+  settings: {
+    title: 'System settings',
+    description: 'Listener, access, TLS, logging, and service behavior',
+  },
+  captures: {
+    title: 'Traffic captures',
+    description: 'Review and control local and remote traffic capture',
+  },
+  configuration: {
+    title: 'Startup configuration & backups',
+    description: 'Save, download, validate, and restore the startup configuration',
+  },
+  administrators: {
+    title: 'Administrators',
+    description: 'Manage identities and authenticated access to Smithproxy',
+  },
+  'gui-service': {
+    title: 'GUI service',
+    description: 'Configure the management frontend and its Smithproxy connection',
+  },
+  integrations: {
+    title: 'Integrations',
+    description: 'Configure external management and enrichment services',
+  },
+  operations: {
+    title: 'Operations',
+    description: 'Inspect background work and advanced management diagnostics',
+  },
+  appearance: {
+    title: 'Appearance',
+    description: 'Choose how this management interface looks',
+  },
+  'control-plane': {
+    title: 'Connectivity',
+    description: 'Inspect management connectivity and control-plane health',
+  },
+};
 
 interface CollectorPresentation {
   label: string;
@@ -1051,7 +1097,10 @@ export class SmithproxyApp extends LitElement {
     .system-grid[data-view='configuration'] > [data-system-section~='configuration'],
     .system-grid[data-view='settings'] > [data-system-section~='settings'],
     .system-grid[data-view='captures'] > [data-system-section~='captures'],
-    .system-grid[data-view='backend'] > [data-system-section~='backend'],
+    .system-grid[data-view='administrators'] > [data-system-section~='administrators'],
+    .system-grid[data-view='gui-service'] > [data-system-section~='gui-service'],
+    .system-grid[data-view='integrations'] > [data-system-section~='integrations'],
+    .system-grid[data-view='operations'] > [data-system-section~='operations'],
     .system-grid[data-view='appearance'] > [data-system-section~='appearance'] { display: block; }
     .archive-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
     .archive-actions input[type='file'] { min-width: min(100%, 280px); color: var(--app-muted); }
@@ -2636,7 +2685,7 @@ export class SmithproxyApp extends LitElement {
   /** Opens the detailed trust diagnostics behind a configuration-access warning. */
   private openManagementDiagnostics(): void {
     this.activeSection = 'System';
-    this.systemView = 'backend';
+    this.systemView = 'operations';
     this.systemNavigationExpanded = true;
     void this.updateComplete.then(() => {
       const diagnostics = this.renderRoot.querySelector<HTMLDetailsElement>('details.management-diagnostics');
@@ -11956,7 +12005,7 @@ export class SmithproxyApp extends LitElement {
       this.networkView = 'interfaces';
     } else if (id.startsWith('configuration-refresh')) {
       this.activeSection = 'System';
-      this.systemView = 'backend';
+      this.systemView = 'operations';
     } else if (id.startsWith('configuration')) {
       this.activeSection = 'System';
       this.systemView = 'configuration';
@@ -12672,7 +12721,7 @@ export class SmithproxyApp extends LitElement {
           update(input.value);
         }
       }}></label>`;
-    return html`<article class="domain-card job-card" data-system-section="backend">
+    return html`<article class="domain-card job-card" data-system-section="gui-service">
       <header>
         <div><h3>GUI service</h3><p>Boot settings published with the Smithproxy configuration archive</p></div>
         <span class="runtime-state ${value?.state === 'ready' && !value.restartRequired ? 'success' : 'warning'}">
@@ -12851,7 +12900,7 @@ export class SmithproxyApp extends LitElement {
       /^[A-Za-z0-9._@-]{1,64}$/u.test(editor.name.trim());
     const editorPasswordValid = editor !== undefined && editor.password.length >= 14 &&
       editor.password.length <= 1024 && editor.password === editor.confirmation;
-    return html`<article class="domain-card job-card" data-system-section="backend">
+    return html`<article class="domain-card job-card" data-system-section="administrators">
       <header>
         <div><h3>Administrators</h3>
           <p>Core-owned management identities from <code>admin.cfg</code></p></div>
@@ -13016,24 +13065,12 @@ export class SmithproxyApp extends LitElement {
     const pendingConfiguration =
       (this.systemView === 'settings' && this.draftObjects.has('settings:settings')) ||
       (this.systemView === 'captures' && this.draftObjects.has('captures:captures'));
-    const systemDescription = this.systemView === 'configuration'
-      ? 'Save, download, validate, and restore the startup configuration'
-      : this.systemView === 'settings'
-        ? 'Listener, access, TLS, logging, and service behavior'
-        : this.systemView === 'captures'
-          ? 'Review and control local and remote traffic capture'
-          : this.systemView === 'backend'
-            ? 'Management access, webhook integrations, background operations, and diagnostics'
-            : 'Choose how this management interface looks';
+    const systemPresentation = systemViewPresentation[this.systemView];
     return html`
       <div class="content dashboard" tabindex="0">
         <div class="section-head">
-          <div><h2>${this.systemView === 'configuration' ? 'Startup configuration & backups' :
-            this.systemView === 'settings' ? 'System settings' :
-            this.systemView === 'captures' ? 'Traffic captures' :
-            this.systemView === 'backend' ? 'Access & integrations' :
-            'Appearance'}</h2>
-            <p>${systemDescription}</p></div>
+          <div><h2>${systemPresentation.title}</h2>
+            <p>${systemPresentation.description}</p></div>
         </div>
         ${pendingConfiguration ? html`<div class="scope-note" role="status">
           Pending draft values are shown in these cards. Running configuration remains unchanged until you commit the draft.
@@ -13218,7 +13255,7 @@ export class SmithproxyApp extends LitElement {
           </article>
           ${this.renderGuiConfigurationCard()}
           ${this.renderAdministratorCard()}
-          <article class="domain-card" data-system-section="backend">
+          <article class="domain-card" data-system-section="gui-service">
             <header><div><h3>Smithproxy connection</h3><p>Authenticated management link</p></div></header>
             <dl>
               <dt>Status</dt><dd>${displayState(this.systemStatus.smithproxy)}</dd>
@@ -13234,7 +13271,7 @@ export class SmithproxyApp extends LitElement {
               Changes apply to Smithproxy automatically.
             </p>
           </article>
-          <details class="domain-card management-diagnostics" data-system-section="backend">
+          <details class="domain-card management-diagnostics" data-system-section="operations">
             <summary>
               <div><h3>Management diagnostics</h3><p>Event delivery, GUI core, capability, trust, and gateway internals</p></div>
               <span class="runtime-state ${this.capabilityBootstrapState === 'ready' && gateway.tone !== 'danger'
@@ -13311,7 +13348,7 @@ export class SmithproxyApp extends LitElement {
               </article>
             </div>
           </details>
-          <article class="domain-card job-card" data-system-section="backend">
+          <article class="domain-card job-card" data-system-section="operations">
             <header>
               <div><h3>Background operations</h3><p>Recent management work that may take time to complete</p></div>
               <span class="runtime-state ${this.jobsError ? 'danger' : this.jobsAvailable ? 'success' : 'warning'}">
@@ -13472,7 +13509,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>Neighbor cache</dt><dd>${setting('tuning.nbr_cache_size', settings.auxiliary.tuning.neighborCacheSize).toLocaleString()} entries</dd>
               </dl>
             </article>
-            <article class="domain-card" data-system-section="backend">
+            <article class="domain-card" data-system-section="administrators">
               <header><div><h3>Management access</h3><p>Listener exposure and authentication posture</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
@@ -13492,7 +13529,7 @@ export class SmithproxyApp extends LitElement {
                 <dt>PAM login</dt><dd>${setting('http_api.pam_login', settings.httpApi.pamLogin) ? 'Enabled' : 'Disabled'}</dd>
               </dl>
             </article>
-            <article class="domain-card" data-system-section="backend">
+            <article class="domain-card" data-system-section="integrations">
               <header><div><h3>Webhook posture</h3><p>Destinations, identity, and delivery behavior</p></div>
                 <button class="secondary" type="button"
                   @click=${(event: Event) => this.openSystemDrawer(
@@ -17713,11 +17750,11 @@ export class SmithproxyApp extends LitElement {
                         if (this.configReadAvailable && !this.archiveInventory && !this.archiveBusy) {
                           void this.loadArchiveInventory();
                         }
-                        if (category.kind === 'backend' && this.configReadAvailable &&
+                        if (category.kind === 'gui-service' && this.configReadAvailable &&
                             !this.guiConfiguration && !this.guiConfigurationBusy) {
                           void this.loadGuiConfiguration();
                         }
-                        if (category.kind === 'backend' && this.configReadAvailable &&
+                        if (category.kind === 'administrators' && this.configReadAvailable &&
                             !this.administratorInventory &&
                             !this.administratorInventoryBusy) {
                           void this.loadAdministratorInventory();
@@ -17778,7 +17815,7 @@ export class SmithproxyApp extends LitElement {
                     title="Saved GUI service settings require a controlled restart to become active."
                     @click=${() => {
                       this.activeSection = 'System';
-                      this.systemView = 'backend';
+                      this.systemView = 'gui-service';
                       this.systemNavigationExpanded = true;
                     }}>
                     GUI restart pending
@@ -17871,12 +17908,12 @@ export class SmithproxyApp extends LitElement {
           </button>
           <button class="status-action status-secondary system-state ${streamTone}" type="button"
             title=${this.eventStreamError ?? this.eventsError ?? 'Open operational event transport health'}
-            @click=${() => { this.activeSection = 'System'; this.systemView = 'backend'; }}>
+            @click=${() => { this.activeSection = 'System'; this.systemView = 'operations'; }}>
             ● Events: ${displayState(this.eventStreamState)}
           </button>
           <button class="status-action status-secondary system-state ${jobTone}" type="button"
             title=${this.jobsError ?? 'Open the bounded background operation queue'}
-            @click=${() => { this.activeSection = 'System'; this.systemView = 'backend'; }}>
+            @click=${() => { this.activeSection = 'System'; this.systemView = 'operations'; }}>
             ● Operations: ${this.jobsError || !this.jobsAvailable
               ? 'Unavailable'
               : failedJobCount > 0 && activeJobCount > 0
