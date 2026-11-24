@@ -7575,12 +7575,13 @@ test('materializes absent nested settings groups through editable defaults', asy
   await expect(editor.getByLabel('CLI port', {exact: true})).not.toHaveAttribute('readonly', '');
   await expect(editor.getByLabel('Initial host buffer (bytes)')).not.toHaveAttribute('readonly', '');
   await expect(editor.getByLabel('API port')).not.toHaveAttribute('readonly', '');
-  await expect(editor.getByLabel('HTTP API keys', {exact: true})).not.toHaveAttribute('readonly', '');
+  const apiKeys = editor.getByRole('group', {name: 'HTTP API keys'});
+  await expect(apiKeys.getByRole('button', {name: 'Add API key'})).toBeEnabled();
   await expect(editor.getByLabel('Webhook', {exact: true})).toBeEnabled();
 
   await editor.getByLabel('Policy failure').selectOption('true');
   await editor.getByLabel('CLI port', {exact: true}).fill('50001');
-  await editor.getByLabel('HTTP API keys', {exact: true}).fill('["first-administrator-key"]');
+  await apiKeys.getByLabel('HTTP API key value 1', {exact: true}).fill('first-administrator-key');
   await editor.getByLabel('Webhook', {exact: true}).selectOption('true');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect.poll(() => state.draftMutationBatches?.length).toBe(1);
@@ -7684,14 +7685,17 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await expect(settingsEditor.getByLabel('Certificate password'))
     .toHaveValue('private-ca-password');
   await expect(settingsEditor.getByLabel('Certificate password')).toHaveAttribute('type', 'password');
-  await expect(settingsEditor.getByLabel('HTTP API keys'))
-    .toHaveValue('["backend-secret-value"]');
+  const apiKeys = settingsEditor.getByRole('group', {name: 'HTTP API keys'});
+  await expect(apiKeys.getByLabel('HTTP API key value 1', {exact: true})).toHaveValue('backend-secret-value');
+  await expect(apiKeys.getByLabel('HTTP API key value 1', {exact: true})).toHaveAttribute('type', 'password');
   await settingsEditor.getByLabel('Certificate password').fill('unsaved-private-password');
   await settingsEditor.getByRole('button', {name: 'Show sensitive values'}).click();
   await expect(settingsEditor.getByLabel('Certificate password')).toHaveAttribute('type', 'text');
+  await expect(apiKeys.getByLabel('HTTP API key value 1', {exact: true})).toHaveAttribute('type', 'text');
   await expect(settingsEditor.getByLabel('Certificate password')).toHaveValue('unsaved-private-password');
   await settingsEditor.getByRole('button', {name: 'Hide sensitive values'}).click();
   await expect(settingsEditor.getByLabel('Certificate password')).toHaveAttribute('type', 'password');
+  await expect(apiKeys.getByLabel('HTTP API key value 1', {exact: true})).toHaveAttribute('type', 'password');
   await expect(settingsEditor.getByLabel('Certificate password')).toHaveValue('unsaved-private-password');
   await settingsEditor.getByLabel('TLS port', {exact: true}).fill('1023');
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
@@ -7744,7 +7748,13 @@ test('shows and saves the complete typed system and capture configuration', asyn
   await settingsEditor.getByLabel('Administration group').fill('private-admins');
   await settingsEditor.getByLabel('Certificate password').fill('new-private-password');
   await settingsEditor.getByLabel('CA bundle path').fill('');
-  await settingsEditor.getByLabel('HTTP API keys').fill('["new-api-key", "overlap-api-key"]');
+  await apiKeys.getByLabel('HTTP API key value 1', {exact: true}).fill('new-api-key');
+  await apiKeys.getByRole('button', {name: 'Add API key'}).click();
+  await apiKeys.getByLabel('HTTP API key value 2', {exact: true}).fill('overlap-api-key');
+  await apiKeys.getByRole('button', {name: 'Add API key'}).click();
+  await apiKeys.getByLabel('HTTP API key value 3', {exact: true}).fill('discarded-api-key');
+  await apiKeys.getByRole('button', {name: 'Remove HTTP API key 3'}).click();
+  await expect(apiKeys.getByLabel('HTTP API key value 3', {exact: true})).toHaveCount(0);
   await settingsEditor.getByLabel('proxy module override').fill('8');
   await settingsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(settingsEditor).not.toBeVisible();

@@ -583,6 +583,7 @@ export class SmithproxyApp extends LitElement {
   @state() private drawerError: string | undefined;
   @state() private dirtyDrawerKeys = new Set<string>();
   @state() private editingDrawerKeys = new Set<string>();
+  private settingsApiKeyDraft: string[] | undefined;
   @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
@@ -1812,6 +1813,7 @@ export class SmithproxyApp extends LitElement {
     this.drawerOrigins = [];
     this.dirtyDrawerKeys = new Set<string>();
     this.editingDrawerKeys = new Set<string>();
+    this.settingsApiKeyDraft = undefined;
     this.pendingCloseIndex = undefined;
     this.pendingReturnFocus = undefined;
     this.drawerHistoryDepth = 0;
@@ -4827,6 +4829,11 @@ export class SmithproxyApp extends LitElement {
     if (this.drawerStartsEditable(entry) || this.editingDrawerKeys.has(key)) return;
     const body = this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) .drawer-body');
     const scrollTop = body?.scrollTop ?? 0;
+    if (entry.kind === 'settings' && this.snapshot?.settings) {
+      this.settingsApiKeyDraft = [...this.persistentListValue(
+        'settings.http_api.keys', this.snapshot.settings.httpApi.keys, 'string',
+      )];
+    }
     this.editingDrawerKeys = new Set(this.editingDrawerKeys).add(key);
     void this.updateComplete.then(() => {
       const nextBody = this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) .drawer-body');
@@ -4906,6 +4913,7 @@ export class SmithproxyApp extends LitElement {
 
   protected updated(): void {
     this.syncDrawerEditLocks();
+    this.syncSensitiveConfigurationVisibility();
   }
 
   private draftScalarsEqual(left: DraftScalar, right: DraftScalar): boolean {
@@ -5010,6 +5018,9 @@ export class SmithproxyApp extends LitElement {
     const remainingDirty = new Set(this.dirtyDrawerKeys);
     const remainingEditors = new Set(this.editingDrawerKeys);
     const closingEntries = this.drawerStore.entries.slice(index);
+    if (closingEntries.some(entry => entry.kind === 'settings')) {
+      this.settingsApiKeyDraft = undefined;
+    }
     if (closingEntries.some(entry => this.drawerKey(entry) === this.drawerConsoleKey)) {
       this.drawerConsoleKey = undefined;
     }
@@ -7415,21 +7426,16 @@ export class SmithproxyApp extends LitElement {
     const loredMode = this.renderRoot.querySelector<HTMLSelectElement>('#settings-webhook-sift-lored-mode');
     if (!loredMode || !['disabled', 'optional', 'required'].includes(loredMode.value)) return undefined;
     changes.push({path: 'settings.webhook.sift_lored_mode', value: loredMode.value});
-    const apiKeysInput = this.renderRoot.querySelector<HTMLInputElement>('#settings-api-keys-value');
-    if (!apiKeysInput) return undefined;
-    let keys: unknown;
-    try {
-      keys = JSON.parse(apiKeysInput.value);
-    } catch {
-      keys = undefined;
-    }
-    if (!Array.isArray(keys) || keys.length > 256 ||
-        !keys.every(key => typeof key === 'string' && key.length > 0 &&
-          key.length <= 65536 && !key.includes('\0'))) {
-      this.draftError = 'API keys must be a JSON string array containing at most 256 values.';
+    const keys = this.settingsApiKeyDraft ??
+      this.persistentListValue('settings.http_api.keys', settings.httpApi.keys, 'string');
+    const uniqueKeys = new Set(keys);
+    if (keys.length > 256 || uniqueKeys.size !== keys.length ||
+        !keys.every(key => key.length > 0 && key.length <= 65536 &&
+          !/[\u0000-\u001f\u007f]/u.test(key))) {
+      this.draftError = 'API keys must be unique, non-empty, and contain only safe header characters.';
       return undefined;
     }
-    changes.push({path: 'settings.http_api.keys', value: keys as string[]});
+    changes.push({path: 'settings.http_api.keys', value: [...keys]});
     const writeOnlyFields = [
       ['webhook.url', 'webhook-url', 'url'], ['syslog_server', 'syslog-server', 'host'],
       ['write_payload_dir', 'payload-directory', 'path'], ['log_file', 'log-file', 'path'],
@@ -7635,10 +7641,50 @@ export class SmithproxyApp extends LitElement {
     const reveal = button.getAttribute('aria-pressed') !== 'true';
     button.setAttribute('aria-pressed', String(reveal));
     button.textContent = reveal ? 'Hide sensitive values' : 'Show sensitive values';
+    this.syncSensitiveConfigurationVisibility();
+  }
+
+  /** Preserves the reveal choice when a dynamic sensitive-value row rerenders. */
+  private syncSensitiveConfigurationVisibility(): void {
+    const reveal = this.renderRoot.querySelector<HTMLButtonElement>('[data-sensitive-toggle]')
+      ?.getAttribute('aria-pressed') === 'true';
     for (const input of this.renderRoot.querySelectorAll<HTMLInputElement>(
       'input[data-sensitive-configuration="true"]',
     )) {
       input.type = reveal ? 'text' : 'password';
+    }
+  }
+
+  /** Updates the temporary API-key list without exposing JSON syntax to administrators. */
+  private updateSettingsApiKey(index: number, value: string): void {
+    if (!this.settingsApiKeyDraft || index < 0 || index >= this.settingsApiKeyDraft.length) return;
+    this.settingsApiKeyDraft[index] = value;
+  }
+
+  /** Adds an empty API-key row that must be completed before the draft can be saved. */
+  private addSettingsApiKey(): void {
+    if (!this.settingsApiKeyDraft) return;
+    this.settingsApiKeyDraft = [...this.settingsApiKeyDraft, ''];
+    this.markSettingsApiKeysDirty();
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      const index = this.settingsApiKeyDraft?.length ?? 0;
+      this.renderRoot.querySelector<HTMLInputElement>(`#settings-api-key-${index - 1}`)?.focus();
+    });
+  }
+
+  /** Removes one API-key value from the temporary list. */
+  private removeSettingsApiKey(index: number): void {
+    if (!this.settingsApiKeyDraft || index < 0 || index >= this.settingsApiKeyDraft.length) return;
+    this.settingsApiKeyDraft = this.settingsApiKeyDraft.filter((_, candidate) => candidate !== index);
+    this.markSettingsApiKeysDirty();
+    this.requestUpdate();
+  }
+
+  private markSettingsApiKeysDirty(): void {
+    const key = this.drawerKey({kind: 'settings', id: 'settings'});
+    if (!this.dirtyDrawerKeys.has(key)) {
+      this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
     }
   }
 
@@ -14821,10 +14867,12 @@ export class SmithproxyApp extends LitElement {
     ].filter(group => !settings.presentGroups.includes(group as (typeof settings.presentGroups)[number]));
     const interfaceRoleRows = this.interfaceRoleRows();
     const interfaceRoleStructural = this.collectionTransactionsAvailable('settings.interfaces');
+    const apiKeys = this.settingsApiKeyDraft ??
+      strings('settings.http_api.keys', settings.httpApi.keys);
     return html`
       <div class="scope-note section">
         <span>All running configuration values are available to the authenticated administrator.</span>
-        <button class="secondary" type="button" aria-pressed="false"
+        <button class="secondary" type="button" aria-pressed="false" data-sensitive-toggle
           @click=${(event: Event) => this.toggleSensitiveConfiguration(event.currentTarget as HTMLButtonElement)}>
           Show sensitive values
         </button>
@@ -15052,11 +15100,31 @@ export class SmithproxyApp extends LitElement {
         ${booleanField('api-header', 'API header access', settings.httpApi.allowApiHeader)}
         ${administratorValueField('api-bind-address', 'API bind address', settings.httpApi.bindAddressConfigured)}
         ${administratorValueField('api-bind-interface', 'API bind interface', settings.httpApi.bindInterfaceConfigured)}
-        <label for="settings-api-keys-value">HTTP API keys</label>
-          <input id="settings-api-keys-value" type="text" autocomplete="off"
-            aria-label="HTTP API keys" placeholder='["api-key", "overlap-key"]'
-            .value=${JSON.stringify(strings('settings.http_api.keys', settings.httpApi.keys))}
-            .readOnly=${locked('settings.http_api.keys')} />
+        <label>HTTP API keys</label>
+        <div class="reference-list-editor" role="group" aria-label="HTTP API keys">
+          <div class="reference-list-values">
+            ${apiKeys.length === 0 ? html`
+              <span class="reference-list-empty">No API keys configured</span>
+            ` : apiKeys.map((key, index) => html`
+              <div class="reference-list-row">
+                <input id=${`settings-api-key-${index}`} type="password" autocomplete="new-password"
+                  data-sensitive-configuration="true" aria-label=${`HTTP API key value ${index + 1}`}
+                  maxlength="65536" .value=${key} .readOnly=${locked('settings.http_api.keys')}
+                  @input=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.updateSettingsApiKey(index, input.value);
+                  }} />
+                <button class="reference-list-remove" type="button" data-edit-control="true"
+                  aria-label=${`Remove HTTP API key ${index + 1}`}
+                  ?disabled=${locked('settings.http_api.keys')}
+                  @click=${() => this.removeSettingsApiKey(index)}>×</button>
+              </div>
+            `)}
+          </div>
+          <button class="secondary" type="button" data-edit-control="true"
+            ?disabled=${locked('settings.http_api.keys') || apiKeys.length >= 256}
+            @click=${() => this.addSettingsApiKey()}>Add API key</button>
+        </div>
         <label for="settings-api-allowed-ips">HTTP API allowed IPs</label>
         <input id="settings-api-allowed-ips"
           .value=${strings('settings.http_api.allowed_ips', settings.httpApi.allowedIps).join(', ')}
