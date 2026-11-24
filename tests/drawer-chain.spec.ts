@@ -1443,8 +1443,8 @@ test('loads authenticated runtime configuration and saves an atomic policy draft
   await tlsEditor.getByLabel('Override timeout', {exact: true}).fill('900');
   await tlsEditor.getByLabel('Override timeout behavior').selectOption('1');
   await tlsEditor.getByLabel('Alerts').selectOption('all');
-  await tlsEditor.getByLabel('SNI bypass list', {exact: true})
-    .fill('["internal.example", "*.private.example"]');
+  await tlsEditor.getByLabel('SNI bypass name 1', {exact: true}).fill('internal.example');
+  await tlsEditor.getByLabel('SNI bypass name 2', {exact: true}).fill('*.private.example');
   await tlsEditor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(tlsEditor).not.toBeVisible();
   await expect(page.getByText(/Draft: \d+ changes/u)).toBeVisible();
@@ -3322,7 +3322,8 @@ test('creates and reopens a complete fail-closed TLS profile', async ({page}) =>
   await editor.getByLabel('OCSP certificate checks').selectOption('2');
   await editor.getByLabel('Certificate warning ports').fill('443, 8443');
   await editor.getByLabel('Override timeout', {exact: true}).fill('900');
-  await editor.getByLabel('SNI bypass list', {exact: true}).fill('["private.example"]');
+  await editor.getByRole('button', {name: 'Add bypass name'}).click();
+  await editor.getByLabel('SNI bypass name 1', {exact: true}).fill('private.example');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
 
@@ -3359,8 +3360,12 @@ test('creates and reopens a complete fail-closed TLS profile', async ({page}) =>
   await expect(editor.getByLabel('Profile type')).toHaveValue('tls');
   await expect(editor.getByLabel('OCSP certificate checks')).toHaveValue('2');
   await expect(editor.getByLabel('Certificate warning ports')).toHaveValue('443, 8443');
-  await expect(editor.getByLabel('SNI bypass list', {exact: true})).toHaveValue('["private.example"]');
-  await editor.getByLabel('Name').fill('branch-tls-updated');
+  await expect(editor.getByLabel('SNI bypass name 1', {exact: true})).toHaveValue('private.example');
+  await editor.getByRole('button', {name: 'Remove SNI bypass name 1'}).click();
+  await expect(editor.getByText('No bypass names configured.')).toBeVisible();
+  await editor.getByRole('button', {name: 'Add bypass name'}).click();
+  await editor.getByLabel('SNI bypass name 1', {exact: true}).fill('private.example');
+  await editor.getByLabel('Name', {exact: true}).fill('branch-tls-updated');
   await editor.getByRole('button', {name: 'Save to draft'}).click();
   await expect(editor).not.toBeVisible();
   expect(state.structuralMutationRequests).toHaveLength(2);
@@ -3892,8 +3897,8 @@ test('prefills every remaining typed profile with complete administrator values'
 
   createEditor = await duplicate(/inspect tls/i, 'inspect');
   await expect(createEditor.getByLabel('Certificate warning ports')).toHaveValue('443, 44443');
-  await expect(createEditor.getByLabel('SNI bypass list', {exact: true}))
-    .toHaveValue('["private.example","*.internal.example"]');
+  await expect(createEditor.getByLabel('SNI bypass name 1', {exact: true})).toHaveValue('private.example');
+  await expect(createEditor.getByLabel('SNI bypass name 2', {exact: true})).toHaveValue('*.internal.example');
   await closePair(createEditor);
 
   createEditor = await duplicate(/resolver dns/i, 'resolver');

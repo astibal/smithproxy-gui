@@ -584,6 +584,7 @@ export class SmithproxyApp extends LitElement {
   @state() private dirtyDrawerKeys = new Set<string>();
   @state() private editingDrawerKeys = new Set<string>();
   private settingsApiKeyDraft: string[] | undefined;
+  private readonly tlsSniBypassDrafts = new Map<string, string[]>();
   @state() private pendingCloseIndex: number | undefined;
   @state() private configError: string | undefined;
   @state() private configRefreshDeferred = false;
@@ -4834,6 +4835,14 @@ export class SmithproxyApp extends LitElement {
         'settings.http_api.keys', this.snapshot.settings.httpApi.keys, 'string',
       )];
     }
+    if (entry.kind === 'profile') {
+      const profile = this.snapshot?.profiles.find(candidate => candidate.id === entry.id)?.tls;
+      if (profile) {
+        this.tlsSniBypassDrafts.set(key, [...this.persistentListValue(
+          `${this.originPrefix(entry) ?? ''}sni_filter_bypass`, profile.sniBypass, 'string',
+        )]);
+      }
+    }
     this.editingDrawerKeys = new Set(this.editingDrawerKeys).add(key);
     void this.updateComplete.then(() => {
       const nextBody = this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) .drawer-body');
@@ -5019,12 +5028,14 @@ export class SmithproxyApp extends LitElement {
     const remainingEditors = new Set(this.editingDrawerKeys);
     const closingEntries = this.drawerStore.entries.slice(index);
     if (closingEntries.some(entry => entry.kind === 'settings')) {
-      this.settingsApiKeyDraft = undefined;
+    this.settingsApiKeyDraft = undefined;
+    this.tlsSniBypassDrafts.clear();
     }
     if (closingEntries.some(entry => this.drawerKey(entry) === this.drawerConsoleKey)) {
       this.drawerConsoleKey = undefined;
     }
     for (const entry of closingEntries) {
+      this.tlsSniBypassDrafts.delete(this.drawerKey(entry));
       remainingDirty.delete(this.drawerKey(entry));
       remainingEditors.delete(this.drawerKey(entry));
       this.drawerInitialChanges.delete(this.drawerKey(entry));
@@ -6023,21 +6034,17 @@ export class SmithproxyApp extends LitElement {
       const handshakeTimeout = element<HTMLInputElement>('tls-handshake-timeout');
       const clientAction = element<HTMLSelectElement>('tls-client-action');
       const alerts = element<HTMLSelectElement>('tls-alerts');
-      const bypass = this.renderRoot.querySelector<HTMLTextAreaElement>(
-        `#profile-create-tls-bypass-${entry.id}`,
-      );
+      const parsedBypass = this.tlsSniBypassDrafts.get(this.drawerKey(entry));
       const ports = (warningPorts?.value ?? '').split(',').map(value => value.trim())
         .filter(Boolean).map(Number);
       const validPositiveInteger = (input: HTMLInputElement | null): input is HTMLInputElement =>
         input !== null && Number.isInteger(input.valueAsNumber) && input.valueAsNumber >= 1 &&
         input.valueAsNumber <= 2147483647;
-      let parsedBypass: unknown;
-      try { parsedBypass = JSON.parse(bypass?.value ?? ''); } catch { parsedBypass = undefined; }
       const validBypass = Array.isArray(parsedBypass) && parsedBypass.length <= 256 &&
-        parsedBypass.every(item => typeof item === 'string' && printable(item, 1024)) &&
+        parsedBypass.every(item => printable(item, 1024)) &&
         new Set(parsedBypass).size === parsedBypass.length;
       if (!ocspMode || !staplingMode || !warningPorts || !overrideTimeoutType || !clientAction || !alerts ||
-          !bypass || !validBypass || !['0', '1', '2'].includes(ocspMode.value) ||
+          !validBypass || !['0', '1', '2'].includes(ocspMode.value) ||
           !['0', '1', '2'].includes(staplingMode.value) || !['0', '1'].includes(overrideTimeoutType.value) ||
           !validPositiveInteger(overrideTimeout) || !validPositiveInteger(helloTimeout) ||
           !validPositiveInteger(handshakeTimeout) || ports.length > 256 ||
@@ -7096,14 +7103,14 @@ export class SmithproxyApp extends LitElement {
         );
         const clientAction = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-client-action-${entry.id}`);
         const alerts = this.renderRoot.querySelector<HTMLSelectElement>(`#tls-alerts-${entry.id}`);
-        const bypassInput = this.renderRoot.querySelector<HTMLTextAreaElement>(`#tls-write-sni-${entry.id}-value`);
+        const bypass = this.tlsSniBypassDrafts.get(this.drawerKey(entry));
         const helloValue = helloTimeout?.valueAsNumber ?? Number.NaN;
         const handshakeValue = handshakeTimeout?.valueAsNumber ?? Number.NaN;
         const overrideTimeoutValue = overrideTimeout?.valueAsNumber ?? Number.NaN;
         const warningPortValues = (warningPorts?.value ?? '').split(',')
           .map(value => value.trim()).filter(Boolean).map(Number);
         if (!helloTimeout || !handshakeTimeout || !ocspMode || !staplingMode || !warningPorts ||
-            !overrideTimeout || !overrideTimeoutType || !clientAction || !alerts || !bypassInput ||
+            !overrideTimeout || !overrideTimeoutType || !clientAction || !alerts || !bypass ||
             !Number.isInteger(helloValue) || helloValue < 1 || helloValue > 2147483647 ||
             !Number.isInteger(handshakeValue) || handshakeValue < 1 || handshakeValue > 2147483647 ||
             !['0', '1', '2'].includes(ocspMode.value) || !['0', '1', '2'].includes(staplingMode.value) ||
@@ -7116,20 +7123,13 @@ export class SmithproxyApp extends LitElement {
           this.draftError = 'TLS timeouts and policy selections are invalid.';
           return undefined;
         }
-        let parsedBypass: unknown;
-        try {
-          parsedBypass = JSON.parse(bypassInput.value);
-        } catch {
-          parsedBypass = undefined;
-        }
-        if (!Array.isArray(parsedBypass) || parsedBypass.length > 256 ||
-            !parsedBypass.every(item => typeof item === 'string' && item.length > 0 &&
+        if (bypass.length > 256 ||
+            !bypass.every(item => item.length > 0 &&
               item.length <= 1024 && !item.includes('\0')) ||
-            new Set(parsedBypass).size !== parsedBypass.length) {
-          this.draftError = 'SNI bypass must be a unique JSON string array with at most 256 entries.';
+            new Set(bypass).size !== bypass.length) {
+          this.draftError = 'SNI bypass names must be unique non-empty values with at most 256 entries.';
           return undefined;
         }
-        const bypass = parsedBypass as string[];
         return [
           {path: `tls_profiles.[${index}].name`, value: normalizedName},
           ...renameChanges,
@@ -7686,6 +7686,70 @@ export class SmithproxyApp extends LitElement {
     if (!this.dirtyDrawerKeys.has(key)) {
       this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
     }
+  }
+
+  /** Returns the editable SNI-bypass rows while preserving unsaved input across rerenders. */
+  private tlsSniBypassValues(entry: DrawerEntry, initial: ReadonlyArray<string>): string[] {
+    const key = this.drawerKey(entry);
+    const existing = this.tlsSniBypassDrafts.get(key);
+    if (existing) return existing;
+    const values = [...initial];
+    this.tlsSniBypassDrafts.set(key, values);
+    return values;
+  }
+
+  private updateTlsSniBypass(entry: DrawerEntry, index: number, value: string): void {
+    const values = this.tlsSniBypassDrafts.get(this.drawerKey(entry));
+    if (!values || index < 0 || index >= values.length) return;
+    values[index] = value;
+  }
+
+  private addTlsSniBypass(entry: DrawerEntry): void {
+    const key = this.drawerKey(entry);
+    const values = this.tlsSniBypassDrafts.get(key);
+    if (!values || values.length >= 256) return;
+    this.tlsSniBypassDrafts.set(key, [...values, '']);
+    this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLInputElement>(`#tls-sni-bypass-${entry.id}-${values.length}`)?.focus();
+    });
+  }
+
+  private removeTlsSniBypass(entry: DrawerEntry, index: number): void {
+    const key = this.drawerKey(entry);
+    const values = this.tlsSniBypassDrafts.get(key);
+    if (!values || index < 0 || index >= values.length) return;
+    this.tlsSniBypassDrafts.set(key, values.filter((_, candidate) => candidate !== index));
+    this.dirtyDrawerKeys = new Set(this.dirtyDrawerKeys).add(key);
+    this.requestUpdate();
+  }
+
+  /** Renders SNI bypasses as values, not as the archive's JSON representation. */
+  private renderTlsSniBypassEditor(
+      entry: DrawerEntry, initial: ReadonlyArray<string>, readOnly: boolean) {
+    const values = this.tlsSniBypassValues(entry, initial);
+    return html`
+      <div class="identity-editor" role="group" aria-label="SNI bypass list">
+        <div class="identity-list">
+          ${values.length === 0 ? html`<div class="reference-list-empty">No bypass names configured.</div>` : nothing}
+          ${values.map((value, index) => html`
+            <div class="reference-list-row">
+              <input id="tls-sni-bypass-${entry.id}-${index}" maxlength="1024" autocomplete="off"
+                aria-label="SNI bypass name ${index + 1}" placeholder="private.example"
+                .value=${value} .readOnly=${readOnly}
+                @input=${(event: InputEvent) => this.updateTlsSniBypass(
+                  entry, index, (event.currentTarget as HTMLInputElement).value,
+                )} />
+              <button class="reference-list-remove" type="button" aria-label="Remove SNI bypass name ${index + 1}"
+                ?disabled=${readOnly} @click=${() => this.removeTlsSniBypass(entry, index)}>×</button>
+            </div>
+          `)}
+        </div>
+        <button class="secondary" type="button" ?disabled=${readOnly || values.length >= 256}
+          @click=${() => this.addTlsSniBypass(entry)}>Add bypass name</button>
+      </div>
+    `;
   }
 
   private captureSettingsDraftChanges(): ReadonlyArray<DraftChange> | undefined {
@@ -13814,10 +13878,8 @@ export class SmithproxyApp extends LitElement {
             .value=${stringField('alerts', 'unusual')} ?disabled=${readOnly}>
             <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
           </select>
-          <label for="profile-create-tls-bypass-${entry.id}">SNI bypass list</label>
-          <textarea id="profile-create-tls-bypass-${entry.id}" maxlength="65536"
-            aria-label="SNI bypass list" autocomplete="off" placeholder='["private.example"]'
-            .value=${JSON.stringify(stringList('sni_filter_bypass'))} .readOnly=${readOnly}></textarea>
+          <span class="form-label">SNI bypass names</span>
+          ${this.renderTlsSniBypassEditor(entry, stringList('sni_filter_bypass'), readOnly)}
             </div>
           </fieldset>
         ` : type === 'detection' ? html`
@@ -14359,11 +14421,10 @@ export class SmithproxyApp extends LitElement {
             ?disabled=${fieldReadOnly('alerts')}>
             <option value="all">All</option><option value="unusual">Unusual</option><option value="mute">Mute</option>
           </select>
-          <label for="tls-write-sni-${entry.id}-value">SNI bypass list</label>
-          <textarea id="tls-write-sni-${entry.id}-value" aria-label="SNI bypass list"
-            placeholder="[]" autocomplete="off"
-            .value=${JSON.stringify(persistentStrings('sni_filter_bypass', tls.sniBypass))}
-            .readOnly=${mappedReadOnly}></textarea>
+          <span class="form-label">SNI bypass names</span>
+          ${this.renderTlsSniBypassEditor(
+            entry, persistentStrings('sni_filter_bypass', tls.sniBypass), mappedReadOnly,
+          )}
             </div>
           </fieldset>
         ` : detection ? html`
