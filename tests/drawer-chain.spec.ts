@@ -7281,6 +7281,10 @@ test('manages Core-owned administrators independently from GUI service settings'
     has: page.getByRole('heading', {name: 'Administrators'}),
   });
   await expect(card).toContainText('Core-owned management identities from admin.cfg');
+  await expect(card).toContainText(
+    'CLI enrollment is reserved for the initial bootstrap when no persistent administrator exists.',
+  );
+  await expect(card.getByRole('button', {name: 'Add administrator'})).toBeVisible();
   await expect(card).toContainText('security-admin');
   await expect(card.getByRole('button', {name: 'Disable security-admin'})).toBeDisabled();
   await expect(card.getByRole('button', {name: 'Remove security-admin'})).toBeDisabled();

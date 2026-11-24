@@ -12729,7 +12729,8 @@ export class SmithproxyApp extends LitElement {
               }}>
           </label>
           <p class="metric-note">Passwords require at least 14 characters. Smithproxy Core hashes and
-            publishes the verifier; the GUI never writes <code>admin.cfg</code>.</p>
+            publishes the verifier. This authenticated management action never exposes the verifier
+            or lets the GUI write <code>admin.cfg</code>.</p>
           <div class="archive-actions">
             <button class="primary" type="submit"
               ?disabled=${this.administratorInventoryBusy || !editorNameValid ||
@@ -12788,14 +12789,18 @@ export class SmithproxyApp extends LitElement {
             </span>`;
           })}
           ${inventory && inventory.administrators.length === 0 ? html`
-            <p>No persistent administrators are configured. Issue a single-use enrollment token
-              from a privilege-15 Smithproxy CLI session.</p>` : nothing}
+            <p>No persistent administrators are configured. Bootstrap the first identity with a
+              single-use token from a privilege-15 Smithproxy CLI session.</p>` : nothing}
           ${!inventory ? html`<p>Administrator inventory has not been loaded.</p>` : nothing}
         </div>
+        ${inventory && inventory.administrators.length > 0 ? html`
+          <p class="metric-note"><strong>Adding an administrator</strong> is authorized by your current
+            signed-in session. CLI enrollment is reserved for the initial bootstrap when no
+            persistent administrator exists.</p>` : nothing}
         <div class="archive-actions">
           <button class="primary" type="button"
             ?disabled=${this.administratorInventoryBusy || !inventory}
-            @click=${() => this.beginAdministratorEditor('create')}>Create administrator</button>
+            @click=${() => this.beginAdministratorEditor('create')}>Add administrator</button>
           <button class="secondary" type="button" ?disabled=${this.administratorInventoryBusy}
             @click=${() => { void this.loadAdministratorInventory(); }}>Refresh</button>
         </div>
