@@ -6,7 +6,7 @@ import sys
 
 
 EXPECTED_SECTIONS = {
-    "settings",
+    "settings", "networking", "gui",
     "debug",
     "address_objects",
     "port_objects",
@@ -27,8 +27,10 @@ EXPECTED_SECTIONS = {
 }
 READ_STATUSES = {"full", "partial", "metadata", "unsupported"}
 EDIT_STATUSES = {"typed", "partial", "none"}
-ORIGINS = {"reference_config", "api_extension"}
+ORIGINS = {"reference_config", "api_extension", "networkd_config", "gui_config"}
 API_EXTENSION_SECTIONS = {"captures", "script_profiles", "auth_profiles"}
+NETWORKD_CONFIG_SECTIONS = {"networking"}
+GUI_CONFIG_SECTIONS = {"gui"}
 SENSITIVITIES = {
     "configuration", "operational", "secret-bearing", "path-bearing",
     "rule-bearing", "security-critical", "code-bearing", "identity-bearing",
@@ -110,9 +112,35 @@ FULL_TYPED_FIELDS = {
         "flow", "type", "signature", "bytes_start", "bytes_max",
     },
     "auth_profiles": {"name", "authenticate", "resolve", "identity_count", "identities"},
+    "gui": {
+        "schema_version", "backend.bind_address", "backend.port", "backend.base_path",
+        "smithproxy.api_url", "smithproxy.ca_cert", "smithproxy.api_token_file",
+        "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file",
+    },
 }
 
-FULL_READ_FIELDS = {}
+FULL_READ_FIELDS = {
+    "networking": {
+        "table", "placement", "interfaces", "tenant_index", "tenant_ranges",
+        "tcp_all", "udp_all", "ipv6_udp", "tcp_ports", "tls_ports", "udp_ports",
+        "dtls_ports", "drop_udp_ports", "redirect_tcp_port", "redirect_tls_port",
+        "redirect_dns_port", "redirect_exempt_uids", "redirect_exempt_lan", "bypass",
+        "manage_routing", "manage_sysctls", "routing_table", "routing_priority",
+        "forwarding", "nonlocal_bind", "tcp_low_latency", "tcp_syn_retries",
+        "mark", "mask", "blackhole_max_ttl_ms",
+    },
+}
+
+PARTIAL_EDIT_FIELDS = {
+    "networking": {
+        "placement", "interfaces", "tcp_all", "udp_all", "ipv6_udp", "tcp_ports",
+        "tls_ports", "udp_ports", "dtls_ports", "drop_udp_ports", "redirect_tcp_port",
+        "redirect_tls_port", "redirect_dns_port", "redirect_exempt_uids",
+        "redirect_exempt_lan", "bypass", "manage_routing", "manage_sysctls",
+        "routing_table", "routing_priority", "forwarding", "nonlocal_bind",
+        "tcp_low_latency", "tcp_syn_retries", "mark", "mask", "blackhole_max_ttl_ms",
+    },
+}
 
 PARTIAL_FIELDS = {}
 
@@ -155,7 +183,12 @@ def main() -> None:
         name = section["name"]
         if section.get("origin") not in ORIGINS:
             fail(f"{name}: invalid origin")
-        expected_origin = "api_extension" if name in API_EXTENSION_SECTIONS else "reference_config"
+        expected_origin = (
+            "api_extension" if name in API_EXTENSION_SECTIONS else
+            "networkd_config" if name in NETWORKD_CONFIG_SECTIONS else
+            "gui_config" if name in GUI_CONFIG_SECTIONS else
+            "reference_config"
+        )
         if section["origin"] != expected_origin:
             fail(f"{name}: origin drifted from {expected_origin}")
         if section.get("sensitivity") not in SENSITIVITIES:
@@ -194,6 +227,17 @@ def main() -> None:
                 missing = sorted(expected_read_fields - actual_fields)
                 extra = sorted(actual_fields - expected_read_fields)
                 fail(f"{name}: audited read inventory drifted; missing={missing}, extra={extra}")
+        expected_edit_fields = PARTIAL_EDIT_FIELDS.get(name)
+        if expected_edit_fields is not None:
+            if not isinstance(section.get("editable_fields"), list):
+                fail(f"{name}: editable_fields must be a list")
+            actual_fields = set(section["editable_fields"])
+            if len(section["editable_fields"]) != len(actual_fields):
+                fail(f"{name}: editable_fields must be unique")
+            if actual_fields != expected_edit_fields:
+                missing = sorted(expected_edit_fields - actual_fields)
+                extra = sorted(actual_fields - expected_edit_fields)
+                fail(f"{name}: audited edit inventory drifted; missing={missing}, extra={extra}")
         expected_partial_fields = PARTIAL_FIELDS.get(name)
         if expected_partial_fields is not None:
             if section["read"] != "partial" or section["edit"] != "partial":

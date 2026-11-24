@@ -49,6 +49,44 @@
       "notes": "Global debug flags and the current per-module boolean, integer, and bounded string logging overrides are typed and editable. Module names are constrained to draft-path-safe identifiers."
     },
     {
+      "name": "networking",
+      "origin": "networkd_config",
+      "read": "full",
+      "edit": "partial",
+      "sensitivity": "security-critical",
+      "tracked_fields": [
+        "table", "placement", "interfaces", "tenant_index", "tenant_ranges",
+        "tcp_all", "udp_all", "ipv6_udp", "tcp_ports", "tls_ports", "udp_ports",
+        "dtls_ports", "drop_udp_ports", "redirect_tcp_port", "redirect_tls_port",
+        "redirect_dns_port", "redirect_exempt_uids", "redirect_exempt_lan", "bypass",
+        "manage_routing", "manage_sysctls", "routing_table", "routing_priority",
+        "forwarding", "nonlocal_bind", "tcp_low_latency", "tcp_syn_retries",
+        "mark", "mask", "blackhole_max_ttl_ms"
+      ],
+      "editable_fields": [
+        "placement", "interfaces", "tcp_all", "udp_all", "ipv6_udp", "tcp_ports",
+        "tls_ports", "udp_ports", "dtls_ports", "drop_udp_ports", "redirect_tcp_port",
+        "redirect_tls_port", "redirect_dns_port", "redirect_exempt_uids",
+        "redirect_exempt_lan", "bypass", "manage_routing", "manage_sysctls",
+        "routing_table", "routing_priority", "forwarding", "nonlocal_bind",
+        "tcp_low_latency", "tcp_syn_retries", "mark", "mask", "blackhole_max_ttl_ms"
+      ],
+      "notes": "The complete smithproxy-networkd networking.cfg contract is visible in the GUI. Live-editable interception, routing, sysctl, port, exemption, and bypass fields use typed drafts aligned to Networkd validation. Table name, tenant index, and registry-owned tenant ranges remain visible but read-only because the current Networkd transaction contract treats them as restart identity."
+    },
+    {
+      "name": "gui",
+      "origin": "gui_config",
+      "read": "full",
+      "edit": "typed",
+      "sensitivity": "security-critical",
+      "tracked_fields": [
+        "schema_version", "backend.bind_address", "backend.port", "backend.base_path",
+        "smithproxy.api_url", "smithproxy.ca_cert", "smithproxy.api_token_file",
+        "smithproxy.cli_endpoint", "gateway.secret_file", "gateway.previous_secret_file"
+      ],
+      "notes": "The complete persistent gui.cfg schema is visible and typed. The browser publishes it only through the authenticated Smithproxy core archive API with running-revision and archive-hash preconditions. CFtar stores credential paths, never token or gateway-secret values; those are protected boot-time files. Publication applies the same validation as service bootstrap and activation requires a controlled restart."
+    },
+    {
       "name": "address_objects",
       "origin": "reference_config",
       "read": "full",
