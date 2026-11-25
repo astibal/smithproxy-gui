@@ -1261,7 +1261,12 @@ describe('SystemClient', () => {
     })).toContain('absolute safe path');
     expect(validateGuiBootstrapConfiguration({
       ...valid, smithproxy: {...valid.smithproxy, administratorAuthSocket: 'relative.sock'},
-    })).toContain('absolute safe path');
+    })).toContain('bounded absolute Unix socket path');
+    expect(validateGuiBootstrapConfiguration({
+      ...valid, smithproxy: {
+        ...valid.smithproxy, administratorAuthSocket: `/${'a'.repeat(107)}`,
+      },
+    })).toContain('bounded absolute Unix socket path');
     expect(guiBootstrapConfigurationIssue({
       ...valid, smithproxy: {...valid.smithproxy, apiTokenFile: 'relative-token'},
     })).toEqual({

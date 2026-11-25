@@ -2713,6 +2713,12 @@ int main() {
         "gui = { schema_version = 5; smithproxy = { "
         "api_url = \"https://127.0.0.1:55555\"; ca_cert = \"/run/gui/ca.pem\"; "
         "administrator_auth_socket = \"relative-auth.sock\"; }; };\n").config);
+    const std::string oversized_administrator_socket = "/" + std::string(107U, 'a');
+    assert(!parse_gui_bootstrap(
+        "gui = { schema_version = 5; smithproxy = { "
+        "api_url = \"https://127.0.0.1:55555\"; ca_cert = \"/run/gui/ca.pem\"; "
+        "administrator_auth_socket = \"" + oversized_administrator_socket +
+        "\"; }; };\n").config);
     assert(!parse_gui_bootstrap(
         "gui = { schema_version = 1; administrators = (); };\n").config);
     assert(!parse_gui_bootstrap(

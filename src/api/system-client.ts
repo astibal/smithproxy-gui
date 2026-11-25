@@ -1675,6 +1675,10 @@ function validAbsolutePath(value: string): boolean {
   return value.startsWith('/') && value.length <= 4096 && !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
+function validUnixSocketPath(value: string): boolean {
+  return validAbsolutePath(value) && new TextEncoder().encode(value).length < 108;
+}
+
 function validCliEndpoint(value: string): boolean {
   if (value === '') return true;
   const match = value.match(/^([^:\s/\\?#@\[\]]+):(\d{1,5})$/u) ??
@@ -1732,10 +1736,10 @@ export function guiBootstrapConfigurationIssue(
     if (!validCliEndpoint(value.smithproxy.cliEndpoint)) {
       return issue('smithproxy.cliEndpoint', 'CLI broker endpoint is invalid.');
     }
-    if (!validAbsolutePath(value.smithproxy.administratorAuthSocket)) {
+    if (!validUnixSocketPath(value.smithproxy.administratorAuthSocket)) {
       return issue(
         'smithproxy.administratorAuthSocket',
-        'Administrator authentication socket must use an absolute safe path.',
+        'Administrator authentication socket must use a bounded absolute Unix socket path.',
       );
     }
   }

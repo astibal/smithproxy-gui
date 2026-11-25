@@ -4,10 +4,11 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <libconfig.h++>
 #include <openssl/crypto.h>
 #include <sys/stat.h>
-#include <grp.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -73,6 +74,12 @@ bool trusted_group(const gid_t group) {
 bool valid_bootstrap_path(const std::optional<std::string>& value) {
     if (!value || value->empty() || value->size() > 4096U || value->front() != '/') return false;
     return valid_header_value(*value);
+}
+
+bool valid_unix_socket_path(const std::string_view value) {
+    const bool absolute_path = !value.empty() && value.front() == '/';
+    const bool fits_socket_address = value.size() < sizeof(sockaddr_un::sun_path);
+    return absolute_path && fits_socket_address && valid_header_value(value);
 }
 
 // Rejects fields that this binary cannot preserve. An older GUI must fail
@@ -650,11 +657,13 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
             }
             if (!valid_bootstrap_path(config.ca_cert) ||
                 !valid_bootstrap_path(config.api_token_file) ||
-                !valid_bootstrap_path(config.previous_api_token_file) ||
-                !valid_bootstrap_path(
-                    std::optional<std::string>{config.administrator_auth_socket})) {
+                !valid_bootstrap_path(config.previous_api_token_file)) {
                 return bootstrap_failure(
-                    "gui.smithproxy credential and socket paths must be absolute and safe");
+                    "gui.smithproxy credential paths must be absolute and safe");
+            }
+            if(!valid_unix_socket_path(config.administrator_auth_socket)) {
+                return bootstrap_failure(
+                    "gui.smithproxy administrator auth socket path is invalid");
             }
             std::string cli_endpoint;
             if (upstream.lookupValue("cli_endpoint", cli_endpoint)) {
