@@ -7440,6 +7440,8 @@ test('blocks initial enrollment until the core publication preflight is ready', 
   await expect(page.getByRole('heading', {name: 'Administrator enrollment'})).toBeVisible();
   await expect(page.getByText('execute admin enrollment issue <administrator>')).toBeVisible();
   await expect(page.getByLabel('Enrollment token')).toBeVisible();
+  await expect(page.getByText('Paste the 64-character token exactly as issued by the CLI.')).toBeVisible();
+  await expect(page.getByText('Use 14 to 1024 characters for this managed administrator.')).toBeVisible();
 });
 
 test('submits short system-account passwords for Core authentication', async ({page}) => {

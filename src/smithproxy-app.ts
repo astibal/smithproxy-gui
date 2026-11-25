@@ -862,6 +862,7 @@ export class SmithproxyApp extends LitElement {
     .enrollment-card h1, .enrollment-card p { margin: 0; }
     .enrollment-card label { display: grid; gap: 7px; color: var(--app-muted); }
     .enrollment-card input { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .enrollment-card small { color: var(--app-muted); line-height: 1.45; }
     .enrollment-card code { color: var(--app-text); }
     .enrollment-card .error { color: var(--app-danger); }
     @keyframes config-attention { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
@@ -17699,19 +17700,23 @@ export class SmithproxyApp extends LitElement {
           <p><code>execute admin enrollment issue &lt;administrator&gt;</code></p>
           <label>Enrollment token
             <input type="password" autocomplete="one-time-code" spellcheck="false" maxlength="64"
+              aria-describedby="enrollment-token-help"
               .value=${this.enrollmentToken}
               @input=${(event: Event) => {
                 const input = event.currentTarget;
                 if (input instanceof HTMLInputElement) this.enrollmentToken = input.value;
               }}>
+            <small id="enrollment-token-help">Paste the 64-character token exactly as issued by the CLI.</small>
           </label>
           <label>Administrator password
             <input type="password" autocomplete="new-password" maxlength="1024"
+              aria-describedby="enrollment-password-help"
               .value=${this.enrollmentPassword}
               @input=${(event: Event) => {
                 const input = event.currentTarget;
                 if (input instanceof HTMLInputElement) this.enrollmentPassword = input.value;
               }}>
+            <small id="enrollment-password-help">Use 14 to 1024 characters for this managed administrator.</small>
           </label>
           <label>Confirm administrator password
             <input type="password" autocomplete="new-password" maxlength="1024"
