@@ -8261,7 +8261,9 @@ export class SmithproxyApp extends LitElement {
       {path: 'networking.drop_udp_ports', value: dropUdpPorts},
       {path: 'networking.redirect_exempt_uids', value: exemptUids},
     );
-    for (const [index] of networking.bypass.entries()) {
+    const deletedBypassIds = this.networkingDeletedBypassIds();
+    for (const [index, rule] of networking.bypass.entries()) {
+      if (deletedBypassIds.has(rule.id)) continue;
       const source = text(`bypass-${index}-source`);
       const destination = text(`bypass-${index}-destination`);
       const port = integer(`bypass-${index}-port`, 1, 65535);
@@ -8822,14 +8824,26 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
+  private networkingDeletedBypassIds(): ReadonlySet<string> {
+    return new Set((this.workspaceDraft?.structuralOperations ?? []).filter(
+      (operation): operation is DraftDeleteOperation =>
+        operation.collection === 'networking.bypass' && operation.op === 'delete',
+    ).map(operation => operation.entityId));
+  }
+
   /** Combines live and staged Networkd bypass rows in their effective order. */
   private networkingBypassRows(): Array<DraftOrderedRow<NetworkingBypassRule>> {
-    const operations = (this.workspaceDraft?.structuralOperations ?? []).filter(
+    const structuralOperations = this.workspaceDraft?.structuralOperations ?? [];
+    const deletedIds = this.networkingDeletedBypassIds();
+    const operations = structuralOperations.filter(
       (operation): operation is DraftCreateOperation | DraftMoveOperation =>
         operation.collection === 'networking.bypass' &&
         (operation.op === 'create' || operation.op === 'move'),
     );
-    return this.draftOrderedRows(this.snapshot?.networking?.bypass ?? [], operations);
+    const liveRules = (this.snapshot?.networking?.bypass ?? []).filter(
+      rule => !deletedIds.has(rule.id),
+    );
+    return this.draftOrderedRows(liveRules, operations);
   }
 
   /** Stages a new ordered Networkd bypass rule. */

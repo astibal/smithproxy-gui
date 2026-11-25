@@ -8145,6 +8145,40 @@ test('shows pending numeric Networkd lists when the persistent lists are empty',
   await expect(dtlsPorts.getByText('None configured')).toHaveCount(0);
 });
 
+test('keeps scalar Networkd edits independent from a pending bypass deletion', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', commitReady: true, draftMutationBatches: [],
+    structuralCollections: ['networking.bypass'], structuralMutationRequests: [],
+    configRevision: `sha256:${'1'.repeat(64)}`,
+  };
+  await mockSystemApi(page, state, true);
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Network', exact: true}).click();
+  await page.getByRole('button', {name: 'Interception', exact: true}).click();
+
+  const summary = page.getByRole('region', {name: 'Network interception'});
+  await summary.getByRole('button', {name: 'Edit interception'}).click();
+  const editor = page.getByRole('dialog', {name: 'Edit Network interception'});
+  await editor.getByRole('button', {name: 'Delete', exact: true}).click();
+  await editor.getByRole('button', {name: 'Confirm delete', exact: true}).click();
+
+  await expect.poll(() => state.structuralMutationRequests?.length).toBe(1);
+  expect(state.structuralMutationRequests![0]!.operation).toMatchObject({
+    op: 'delete', collection: 'networking.bypass', entity_id: 'network-bypass-0',
+  });
+  await expect(editor.locator('#networking-bypass-0-source')).toHaveCount(0);
+  await expect(editor.getByText('No interception bypass rules are configured.')).toBeVisible();
+
+  await editor.getByLabel('Routing priority').fill('9000');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches?.length).toBe(1);
+  expect(state.draftMutationBatches![0]).toContainEqual({
+    path: 'networking.routing_priority', value: 9000,
+  });
+  expect(state.draftMutationBatches![0]!.some(change =>
+    change.path.startsWith('networking.bypass.'))).toBe(false);
+});
+
 test('materializes absent nested settings groups through editable defaults', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready',
