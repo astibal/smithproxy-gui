@@ -7442,6 +7442,33 @@ test('blocks initial enrollment until the core publication preflight is ready', 
   await expect(page.getByLabel('Enrollment token')).toBeVisible();
 });
 
+test('submits short system-account passwords for Core authentication', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'standalone', gatewayAuthenticated: false,
+    administratorsConfigured: true,
+  };
+  let loginRequest: {administrator: string; password: string} | undefined;
+  await page.route('**/api/v1/auth/login', async route => {
+    loginRequest = route.request().postDataJSON() as typeof loginRequest;
+    state.gatewayAuthenticated = true;
+    state.gatewayAdministrator = loginRequest?.administrator;
+    await route.fulfill({json: {administrator: loginRequest?.administrator}});
+  });
+  await mockSystemApi(page, state);
+  await page.goto('/');
+
+  await page.getByLabel('Administrator').fill('pam-admin');
+  const signIn = page.getByRole('button', {name: 'Sign in'});
+  await expect(signIn).toBeDisabled();
+  await page.getByLabel('Password').fill('short-pam');
+  await expect(signIn).toBeEnabled();
+  await signIn.click();
+
+  await expect.poll(() => loginRequest).toEqual({
+    administrator: 'pam-admin', password: 'short-pam',
+  });
+});
+
 test('manages Core-owned administrators independently from GUI service settings', async ({page}) => {
   const revision = `sha256:${'2'.repeat(64)}`;
   const archiveHash = `sha256:${'a'.repeat(64)}`;

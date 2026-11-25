@@ -1925,7 +1925,7 @@ export class SystemClient {
 
   async loginAdministrator(administrator: string, password: string): Promise<{administrator: string}> {
     if (!/^[A-Za-z0-9._@-]{1,64}$/u.test(administrator) ||
-        password.length < 14 || password.length > 1024) {
+        password.length === 0 || password.length > 1024) {
       throw new Error('Invalid administrator credentials.');
     }
     const value = await this.#jsonMutation('/auth/login', {administrator, password}, 'Administrator login');

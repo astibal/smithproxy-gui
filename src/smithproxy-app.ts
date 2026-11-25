@@ -17632,6 +17632,7 @@ export class SmithproxyApp extends LitElement {
     if (this.gatewaySession?.mode === 'standalone' && !this.gatewaySession.authenticated) {
       if (this.gatewaySession.administratorsConfigured) {
         const validName = /^[A-Za-z0-9._@-]{1,64}$/u.test(this.loginAdministratorName.trim());
+        const validPassword = this.loginPassword.length > 0 && this.loginPassword.length <= 1024;
         return html`<main class="enrollment-shell">
           <form class="enrollment-card" @submit=${(event: SubmitEvent) => {
             event.preventDefault();
@@ -17661,7 +17662,7 @@ export class SmithproxyApp extends LitElement {
             </p>` : nothing}
             ${this.loginError ? html`<p class="error" role="alert">${this.loginError}</p>` : nothing}
             <button class="primary" type="submit"
-              ?disabled=${this.loginBusy || !validName || this.loginPassword.length < 14}>
+              ?disabled=${this.loginBusy || !validName || !validPassword}>
               ${this.loginBusy ? 'Signing in…' : 'Sign in'}
             </button>
           </form>

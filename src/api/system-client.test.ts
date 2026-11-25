@@ -229,12 +229,14 @@ describe('SystemClient', () => {
       ? jsonResponse({administrator: 'security-admin'})
       : jsonResponse({state: 'logged-out'}));
     const client = new SystemClient('/api/v1', '/', fetcher);
-    await expect(client.loginAdministrator('security-admin', 'correct horse battery staple'))
+    await expect(client.loginAdministrator('security-admin', 'short-pam'))
       .resolves.toEqual({administrator: 'security-admin'});
+    await expect(client.loginAdministrator('security-admin', ''))
+      .rejects.toThrow('Invalid administrator credentials.');
     await expect(client.logoutAdministrator()).resolves.toBeUndefined();
     expect(fetcher).toHaveBeenNthCalledWith(1, '/api/v1/auth/login', expect.objectContaining({
       method: 'POST', body: JSON.stringify({
-        administrator: 'security-admin', password: 'correct horse battery staple',
+        administrator: 'security-admin', password: 'short-pam',
       }), credentials: 'same-origin',
     }));
     expect(fetcher).toHaveBeenNthCalledWith(2, '/api/v1/auth/logout', expect.objectContaining({
