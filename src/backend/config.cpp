@@ -55,6 +55,11 @@ std::optional<std::string> consume_environment_secret(const char* name) {
     return value;
 }
 
+void cleanse_secret(std::optional<std::string>& value) noexcept {
+    if(value && !value->empty()) OPENSSL_cleanse(value->data(), value->size());
+    value.reset();
+}
+
 struct ProtectedFileResult {
     std::optional<std::string> value;
     std::string error;
@@ -287,6 +292,12 @@ RuntimeCredentialPair::RuntimeCredentialPair(
     : current_(std::move(current)), previous_(std::move(previous)),
       checked_at_(std::chrono::steady_clock::now()) {}
 
+RuntimeCredentialPair::~RuntimeCredentialPair() {
+    auto lock = std::scoped_lock(mutex_);
+    cleanse_secret(current_);
+    cleanse_secret(previous_);
+}
+
 bool RuntimeCredentialPair::refresh(const bool force) const {
     auto lock = std::scoped_lock(mutex_);
     if(current_path_.empty()) return current_.has_value();
@@ -300,16 +311,21 @@ bool RuntimeCredentialPair::refresh(const bool force) const {
         auto loaded = read_protected_file(path, label, 258U);
         const bool valid_size = loaded.value && loaded.value->size() >= 32U &&
             loaded.value->size() <= 256U;
-        if(!valid_size) loaded.value.reset();
+        if(!valid_size) cleanse_secret(loaded.value);
         return loaded.value;
     };
-    current_ = load_credential(current_path_, "GUI Smithproxy runtime credential");
-    previous_.reset();
+    auto current = load_credential(current_path_, "GUI Smithproxy runtime credential");
+    std::optional<std::string> previous;
     if(previous_path_) {
-        previous_ = load_credential(
+        previous = load_credential(
             *previous_path_, "Previous GUI Smithproxy runtime credential");
     }
-    if(previous_ && current_ && *previous_ == *current_) previous_.reset();
+    if(previous && current && *previous == *current) cleanse_secret(previous);
+
+    cleanse_secret(current_);
+    cleanse_secret(previous_);
+    current_ = std::move(current);
+    previous_ = std::move(previous);
     return current_.has_value();
 }
 

@@ -22,6 +22,7 @@ public:
     RuntimeCredentialPair(
         std::string current,
         std::optional<std::string> previous = std::nullopt);
+    ~RuntimeCredentialPair();
 
     // Polling is intentionally cheap and bounded. Authentication failures use
     // force=true so rotation convergence never waits for the normal interval.
