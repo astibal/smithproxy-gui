@@ -141,6 +141,22 @@ type EditableGuiConfiguration = {
   gateway: GuiConfiguration['gateway'];
 };
 
+const settingsEditorSections: ReadonlyArray<{group: SettingsGroup; label: string}> = [
+  {group: 'interfaces', label: 'Interfaces'},
+  {group: 'traffic', label: 'Traffic'},
+  {group: 'workers', label: 'Workers'},
+  {group: 'listeners', label: 'Listeners'},
+  {group: 'logging', label: 'Logging'},
+  {group: 'administration', label: 'Administration'},
+  {group: 'resolution', label: 'DNS'},
+  {group: 'certificates', label: 'Certificates'},
+  {group: 'assets', label: 'Resources'},
+  {group: 'tuning', label: 'Tuning'},
+  {group: 'management-api', label: 'Management API'},
+  {group: 'webhook', label: 'Webhook'},
+  {group: 'debug', label: 'Diagnostics'},
+];
+
 const objectNavigation: ReadonlyArray<{
   kind: ObjectKindFilter;
   label: string;
@@ -1241,6 +1257,14 @@ export class SmithproxyApp extends LitElement {
     .editor-group > summary { margin: -4px 0 12px; color: var(--app-text); font-weight: 700; }
     .editor-group > p { margin: 0 0 16px; color: var(--app-muted); }
     .editor-group .form-grid { max-width: none; }
+    .settings-section-nav { display: flex; flex-wrap: wrap; gap: 6px;
+      margin: 0 0 16px; padding: 10px 0; border-bottom: 1px solid var(--app-border); background: var(--app-surface); }
+    .settings-section-nav > span { align-self: center; margin-right: 3px; color: var(--app-muted); font-size: 11px;
+      font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .settings-section-nav button { padding: 5px 8px; border: 1px solid var(--app-border); border-radius: 3px;
+      background: var(--app-canvas); color: var(--app-muted); font: inherit; font-size: 11px; cursor: pointer; }
+    .settings-section-nav button:hover, .settings-section-nav button:focus-visible {
+      border-color: var(--app-brand); color: var(--app-text); }
     .form-span { grid-column: 1 / -1; margin: var(--sp-space-3, 1rem) 0 0; }
     .form-grid label { align-self: center; color: var(--app-muted); }
     .form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--app-border); border-radius: 3px; background: var(--app-input); color: var(--app-text); }
@@ -5126,6 +5150,19 @@ export class SmithproxyApp extends LitElement {
       const bodyTop = body.getBoundingClientRect().top;
       body.scrollTop += target.getBoundingClientRect().top - bodyTop - 12;
     }));
+  }
+
+  private scrollToSettingsGroup(group: SettingsGroup): void {
+    const body = this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) .drawer-body');
+    const target = body?.querySelector<HTMLElement>(`[data-settings-group="${group}"]`);
+    if (!body || !target) return;
+    const navigation = body.querySelector<HTMLElement>('.settings-section-nav');
+    const offset = (navigation?.getBoundingClientRect().height ?? 0) + 12;
+    const bodyTop = body.getBoundingClientRect().top;
+    body.scrollTo({
+      top: body.scrollTop + target.getBoundingClientRect().top - bodyTop - offset,
+      behavior: 'smooth',
+    });
   }
 
   private openObjectDrawer(entry: DrawerEntry, origin?: HTMLElement): void {
@@ -16110,6 +16147,14 @@ export class SmithproxyApp extends LitElement {
         Defaults are shown for absent settings groups. Saving any of their fields creates the group
         atomically with the change: ${missingGroups.join(', ')}.
       </div>` : nothing}
+      <nav class="settings-section-nav" aria-label="System settings sections">
+        <span>Jump to</span>
+        ${settingsEditorSections.map(section => html`
+          <button type="button" @click=${() => this.scrollToSettingsGroup(section.group)}>
+            ${section.label}
+          </button>
+        `)}
+      </nav>
       <div class="form-grid wide-form-grid">
         <fieldset class="editor-group" data-settings-group="interfaces">
           <legend>Interface roles</legend>

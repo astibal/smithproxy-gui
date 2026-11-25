@@ -8215,6 +8215,10 @@ test('shows and saves the complete typed system and capture configuration', asyn
   });
   await trafficCard.getByRole('button', {name: 'Open traffic settings'}).click();
   const settingsEditor = page.getByRole('dialog', {name: 'Edit System settings'});
+  const sectionNavigation = settingsEditor.getByRole('navigation', {name: 'System settings sections'});
+  await expect(sectionNavigation).toBeVisible();
+  await sectionNavigation.getByRole('button', {name: 'Management API'}).click();
+  await expect(settingsEditor.getByRole('group', {name: 'Management API'})).toBeInViewport();
   for (const group of [
     'Traffic admission', 'Worker capacity', 'Listener endpoints', 'Logging and payloads',
     'Local administration', 'Name resolution', 'Certificate resources', 'Supporting resources',
