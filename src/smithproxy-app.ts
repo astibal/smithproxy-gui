@@ -12977,13 +12977,13 @@ export class SmithproxyApp extends LitElement {
                 ${textField('smithproxy.caCert', 'Smithproxy API CA certificate', draft.smithproxy.caCert, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, caCert: next}};
                 }, '/run/smithproxy-gui/api-ca.pem')}
-                ${textField('smithproxy.apiTokenFile', 'Boot-time API token file', draft.smithproxy.apiTokenFile, next => {
+                ${textField('smithproxy.apiTokenFile', 'Current GUI API credential file', draft.smithproxy.apiTokenFile, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, apiTokenFile: next}};
                 }, '/run/smithproxy/gui-api.key')}
-                ${textField('smithproxy.previousApiTokenFile', 'Previous API token file', draft.smithproxy.previousApiTokenFile, next => {
+                ${textField('smithproxy.previousApiTokenFile', 'Previous GUI API credential file', draft.smithproxy.previousApiTokenFile, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, previousApiTokenFile: next}};
                 }, '/run/smithproxy/gui-api.previous.key')}
-                ${secondsField('Launcher seed freshness (seconds)', draft.smithproxy.bootstrapFreshnessSeconds, next => {
+                ${secondsField('Accepted launcher seed age (seconds)', draft.smithproxy.bootstrapFreshnessSeconds, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, bootstrapFreshnessSeconds: next}};
                 })}
                 ${secondsField('Credential rotation interval (seconds)', draft.smithproxy.rotationSeconds, next => {
@@ -13016,6 +13016,8 @@ export class SmithproxyApp extends LitElement {
                 ${textField('smithproxy.cliEndpoint', 'CLI broker endpoint', draft.smithproxy.cliEndpoint, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, cliEndpoint: next}};
                 }, '127.0.0.1:50000')}
+                <p class="metric-note">Smithproxy Core owns credential generation and rotation. The GUI
+                  only rereads the protected current and previous files during the bounded overlap.</p>
               ` : html`<p>After restart this GUI will not connect to Smithproxy core.</p>`}
             </div>
           </fieldset>
@@ -13099,7 +13101,7 @@ export class SmithproxyApp extends LitElement {
               ? value.smithproxy.administratorAuthSocket
               : 'Disabled'
             : 'Not configured'}</dd>
-          <dt>API credential this boot</dt><dd>${activeRuntime
+          <dt>Current API credential</dt><dd>${activeRuntime
             ? html`<span class="runtime-state ${activeRuntime.smithproxyApiCredentialLoaded ? 'success' : ''}">
                 ● ${activeRuntime.smithproxyApiCredentialLoaded ? 'Loaded' : 'Disabled'}
               </span>`

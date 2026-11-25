@@ -7253,7 +7253,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('/run/gui/api-ca.pem');
   await expect(gui.getByText('Saved previous gateway credential', {exact: true})
     .locator('xpath=following-sibling::dd[1]')).toHaveText('Not configured');
-  await expect(gui.getByText('API credential this boot', {exact: true})
+  await expect(gui.getByText('Current API credential', {exact: true})
     .locator('xpath=following-sibling::dd[1]')).toContainText('Loaded');
   await expect(gui.getByText('Previous API credential', {exact: true})
     .locator('xpath=following-sibling::dd[1]')).toContainText('Loaded for rotation overlap');
@@ -7266,6 +7266,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await expect(gui).toContainText('Active');
   await expect(gui).not.toContainText('boot-token-value');
   await gui.getByRole('button', {name: 'Edit GUI startup settings'}).click();
+  await expect(gui).toContainText('Smithproxy Core owns credential generation and rotation.');
   await gui.getByLabel('Override the packaged frontend asset directory').check();
   await gui.getByLabel('Frontend asset root').fill('/srv/smithproxy-gui/assets');
   await gui.getByLabel('Require a trusted frontend gateway for browser access').uncheck();
@@ -7288,7 +7289,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await gui.getByLabel('Public frontend base path').fill('/security');
   await gui.getByLabel('Smithproxy API URL').fill('https://127.0.0.1:56555');
   await gui.getByLabel('Smithproxy API CA certificate').fill('/run/gui/next-api-ca.pem');
-  await gui.getByLabel('Boot-time API token file').fill('/run/credentials/gui.next-api-token');
+  await gui.getByLabel('Current GUI API credential file')
+    .fill('/run/credentials/gui.next-api-token');
   await gui.getByLabel('Administrator authentication socket path')
     .fill('/run/smithproxy/admin-auth-next.sock');
   await gui.getByLabel('CLI broker endpoint').fill('[::1]:51000');
