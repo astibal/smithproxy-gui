@@ -710,6 +710,7 @@ export class SmithproxyApp extends LitElement {
   private nextCapabilityRefreshAt = 0;
   private monitoringAccessEpoch = 0;
   private configurationAccessEpoch = 0;
+  private administratorAccessEpoch = 0;
   private eventStreamEpoch = 0;
   private closeEventStream: (() => void) | undefined;
   private eventStreamDegradedTimer: number | undefined;
@@ -1971,7 +1972,6 @@ export class SmithproxyApp extends LitElement {
   }
 
   private clearPrivilegedConfigurationState(): void {
-    this.systemClient?.cancelPendingRequests();
     this.configClient?.cancelPendingRequests();
     if (this.snapshot?.source === 'live') this.snapshot = undefined;
     this.clearDraftSessionState();
@@ -1997,18 +1997,26 @@ export class SmithproxyApp extends LitElement {
     this.guiConfigurationDraft = undefined;
     this.guiConfigurationBusy = false;
     this.guiConfigurationError = undefined;
+    this.searchQuery = '';
+    if (this.activeSection === 'Search') this.activeSection = 'Dashboard';
+  }
+
+  private clearAdministratorState(): void {
     this.administratorInventory = undefined;
     this.administratorInventoryBusy = false;
     this.administratorEditor = undefined;
     this.administratorActionArmed = undefined;
     this.administratorError = undefined;
     this.administratorSuccess = undefined;
-    this.searchQuery = '';
-    if (this.activeSection === 'Search') this.activeSection = 'Dashboard';
   }
 
   private configurationAccessIsCurrent(epoch: number): boolean {
     return epoch === this.configurationAccessEpoch && this.configReadAvailable;
+  }
+
+  private administratorAccessIsCurrent(epoch: number): boolean {
+    return epoch === this.administratorAccessEpoch &&
+      this.gatewaySession?.authenticated === true;
   }
 
   private draftAccessIsCurrent(epoch: number): boolean {
@@ -2033,6 +2041,8 @@ export class SmithproxyApp extends LitElement {
     try {
       const systemClient = this.systemClient;
       if (!systemClient) throw new Error('System API client is unavailable.');
+      const previousAdministratorSession = this.gatewaySession?.authenticated === true
+        ? `${this.gatewaySession.mode}:${this.gatewaySession.administrator ?? ''}` : undefined;
       const [capabilitiesResult, sessionResult] = await Promise.allSettled([
         systemClient.capabilities(),
         systemClient.authSession(),
@@ -2046,6 +2056,12 @@ export class SmithproxyApp extends LitElement {
           sessionResult.reason instanceof Error
           ? sessionResult.reason.message
           : 'Gateway session diagnostics are unavailable.';
+      }
+      const currentAdministratorSession = this.gatewaySession?.authenticated === true
+        ? `${this.gatewaySession.mode}:${this.gatewaySession.administrator ?? ''}` : undefined;
+      if (currentAdministratorSession !== previousAdministratorSession) {
+        this.administratorAccessEpoch += 1;
+        this.clearAdministratorState();
       }
       if (capabilitiesResult.status === 'rejected') throw capabilitiesResult.reason;
       const capabilities = capabilitiesResult.value;
@@ -2374,13 +2390,14 @@ export class SmithproxyApp extends LitElement {
   }
 
   private async loadAdministratorInventory(): Promise<void> {
-    if (!this.systemClient || !this.configReadAvailable || this.administratorInventoryBusy) return;
+    if (!this.systemClient || this.gatewaySession?.authenticated !== true ||
+        this.administratorInventoryBusy) return;
     this.administratorInventoryBusy = true;
     this.administratorError = undefined;
-    const accessEpoch = this.configurationAccessEpoch;
+    const accessEpoch = this.administratorAccessEpoch;
     try {
       const inventory = await this.systemClient.administratorInventory();
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       this.administratorInventory = inventory;
       if (this.administratorActionArmed) {
         const armedName = this.administratorActionArmed.split(':', 2)[1];
@@ -2389,12 +2406,12 @@ export class SmithproxyApp extends LitElement {
         }
       }
     } catch (error) {
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       this.administratorInventory = undefined;
       this.administratorError = error instanceof Error
         ? error.message : 'Administrator inventory is unavailable.';
     } finally {
-      if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
+      if (accessEpoch === this.administratorAccessEpoch) this.administratorInventoryBusy = false;
     }
   }
 
@@ -2416,12 +2433,12 @@ export class SmithproxyApp extends LitElement {
     this.administratorActionArmed = undefined;
     try {
       const inventory = await this.systemClient.administratorInventory();
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       this.administratorInventory = inventory;
       this.administratorError =
         'Administrator configuration changed concurrently. Current state was reloaded; review it before applying another change.';
     } catch (reloadError) {
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       const detail = reloadError instanceof Error ? reloadError.message : 'authoritative state is unavailable';
       this.administratorError =
         `Administrator configuration changed concurrently, but current state could not be reloaded: ${detail}`;
@@ -2431,7 +2448,7 @@ export class SmithproxyApp extends LitElement {
   private async saveAdministratorEditor(): Promise<void> {
     const editor = this.administratorEditor;
     const inventory = this.administratorInventory;
-    if (!this.systemClient || !this.configReadAvailable || !editor || !inventory ||
+    if (!this.systemClient || this.gatewaySession?.authenticated !== true || !editor || !inventory ||
         this.administratorInventoryBusy) return;
     if (editor.password !== editor.confirmation) {
       this.administratorError = 'Administrator password confirmation does not match.';
@@ -2440,7 +2457,7 @@ export class SmithproxyApp extends LitElement {
     this.administratorInventoryBusy = true;
     this.administratorError = undefined;
     this.administratorSuccess = undefined;
-    const accessEpoch = this.configurationAccessEpoch;
+    const accessEpoch = this.administratorAccessEpoch;
     let reload = false;
     let reauthenticate = false;
     try {
@@ -2449,7 +2466,7 @@ export class SmithproxyApp extends LitElement {
           editor.name.trim(), editor.password, inventory.revision, inventory.contentHash)
         : await this.systemClient.changeAdministratorPassword(
           editor.name, editor.password, inventory.revision, inventory.contentHash);
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       this.administratorEditor = undefined;
       this.administratorSuccess = editor.mode === 'create'
         ? `${result.administrator} is available immediately.`
@@ -2458,12 +2475,12 @@ export class SmithproxyApp extends LitElement {
         result.administrator === this.gatewaySession?.administrator;
       reload = !reauthenticate;
     } catch (error) {
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       await this.handleAdministratorMutationFailure(
         error, 'Administrator change failed.', accessEpoch,
       );
     } finally {
-      if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
+      if (accessEpoch === this.administratorAccessEpoch) this.administratorInventoryBusy = false;
     }
     if (reauthenticate) {
       await this.logoutAdministrator('Password changed. Sign in again with the new password.');
@@ -2474,7 +2491,7 @@ export class SmithproxyApp extends LitElement {
 
   private async setCoreAdministratorEnabled(name: string, enabled: boolean): Promise<void> {
     const inventory = this.administratorInventory;
-    if (!this.systemClient || !this.configReadAvailable || !inventory ||
+    if (!this.systemClient || this.gatewaySession?.authenticated !== true || !inventory ||
         this.administratorInventoryBusy) return;
     const actionKey = `${enabled ? 'enable' : 'disable'}:${name}`;
     if (!enabled && this.administratorActionArmed !== actionKey) {
@@ -2486,31 +2503,31 @@ export class SmithproxyApp extends LitElement {
     this.administratorInventoryBusy = true;
     this.administratorError = undefined;
     this.administratorSuccess = undefined;
-    const accessEpoch = this.configurationAccessEpoch;
+    const accessEpoch = this.administratorAccessEpoch;
     let reload = false;
     try {
       const result = await this.systemClient.setAdministratorEnabled(
         name, enabled, inventory.revision, inventory.contentHash);
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       this.administratorActionArmed = undefined;
       this.administratorSuccess = result.changed
         ? `${name} was ${enabled ? 'enabled' : 'disabled'}; previous sessions were revoked.`
         : `${name} was already ${enabled ? 'enabled' : 'disabled'}.`;
       reload = true;
     } catch (error) {
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       await this.handleAdministratorMutationFailure(
         error, 'Administrator state change failed.', accessEpoch,
       );
     } finally {
-      if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
+      if (accessEpoch === this.administratorAccessEpoch) this.administratorInventoryBusy = false;
     }
     if (reload) await this.loadAdministratorInventory();
   }
 
   private async removeCoreAdministrator(name: string): Promise<void> {
     const inventory = this.administratorInventory;
-    if (!this.systemClient || !this.configReadAvailable || !inventory ||
+    if (!this.systemClient || this.gatewaySession?.authenticated !== true || !inventory ||
         this.administratorInventoryBusy) return;
     const actionKey = `remove:${name}`;
     if (this.administratorActionArmed !== actionKey) {
@@ -2522,22 +2539,22 @@ export class SmithproxyApp extends LitElement {
     this.administratorInventoryBusy = true;
     this.administratorError = undefined;
     this.administratorSuccess = undefined;
-    const accessEpoch = this.configurationAccessEpoch;
+    const accessEpoch = this.administratorAccessEpoch;
     let reload = false;
     try {
       await this.systemClient.removeAdministrator(
         name, inventory.revision, inventory.contentHash);
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       this.administratorActionArmed = undefined;
       this.administratorSuccess = `${name} was removed; previous sessions were revoked.`;
       reload = true;
     } catch (error) {
-      if (!this.configurationAccessIsCurrent(accessEpoch)) return;
+      if (!this.administratorAccessIsCurrent(accessEpoch)) return;
       await this.handleAdministratorMutationFailure(
         error, 'Administrator removal failed.', accessEpoch,
       );
     } finally {
-      if (accessEpoch === this.configurationAccessEpoch) this.administratorInventoryBusy = false;
+      if (accessEpoch === this.administratorAccessEpoch) this.administratorInventoryBusy = false;
     }
     if (reload) await this.loadAdministratorInventory();
   }
@@ -2885,6 +2902,8 @@ export class SmithproxyApp extends LitElement {
       await this.systemClient.logoutAdministrator();
     } finally {
       this.clearPrivilegedConfigurationState();
+      this.administratorAccessEpoch += 1;
+      this.clearAdministratorState();
       this.loginNotice = loginNotice;
       await this.refreshCapabilities();
     }
@@ -13301,17 +13320,18 @@ export class SmithproxyApp extends LitElement {
         ` : inventory ? html`
           <p>No persistent administrators are configured. Bootstrap the first identity with a
             single-use token from a privilege-15 Smithproxy CLI session.</p>
-        ` : html`<p>Administrator inventory is unavailable until configuration access is verified.</p>`}
+        ` : html`<p>Administrator inventory is unavailable from the authenticated Core admin API.</p>`}
         ${inventory && inventory.administrators.length > 0 ? html`
           <p class="metric-note"><strong>Adding an administrator</strong> is authorized by your current
             signed-in session. CLI enrollment is reserved for the initial bootstrap when no
             persistent administrator exists.</p>` : nothing}
         <div class="archive-actions">
           <button class="primary" type="button"
-            ?disabled=${this.administratorInventoryBusy || !inventory || !this.configReadAvailable}
+            ?disabled=${this.administratorInventoryBusy || !inventory ||
+              this.gatewaySession?.authenticated !== true}
             @click=${() => this.beginAdministratorEditor('create')}>Add administrator</button>
           <button class="secondary" type="button"
-            ?disabled=${this.administratorInventoryBusy || !this.configReadAvailable}
+            ?disabled=${this.administratorInventoryBusy || this.gatewaySession?.authenticated !== true}
             @click=${() => { void this.loadAdministratorInventory(); }}>Refresh</button>
         </div>
       `}
@@ -18058,7 +18078,8 @@ export class SmithproxyApp extends LitElement {
                             !this.guiConfiguration && !this.guiConfigurationBusy) {
                           void this.loadGuiConfiguration();
                         }
-                        if (category.kind === 'administrators' && this.configReadAvailable &&
+                        if (category.kind === 'administrators' &&
+                            this.gatewaySession?.authenticated === true &&
                             !this.administratorInventory &&
                             !this.administratorInventoryBusy) {
                           void this.loadAdministratorInventory();

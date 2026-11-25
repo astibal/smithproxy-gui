@@ -7630,6 +7630,50 @@ test('protects the final enabled administrator in gateway mode', async ({page}) 
   await expect(card.getByRole('button', {name: 'Remove security-admin'})).toBeDisabled();
 });
 
+test('keeps administrator management independent from configuration read access', async ({page}) => {
+  const revision = `sha256:${'2'.repeat(64)}`;
+  const archiveHash = `sha256:${'a'.repeat(64)}`;
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'standalone', gatewayAuthenticated: true,
+    gatewayAdministrator: 'security-admin', administratorsConfigured: true,
+  };
+  let createdAdministrator: {name: string; password: string} | undefined;
+  await mockSystemApi(page, state, false);
+  await page.route('**/api/v1/admin/administrators', async route => route.fulfill({json: {
+    state: 'ready', revision, content_hash: archiveHash,
+    restart_required: false,
+    administrators: [
+      {name: 'security-admin', enabled: true},
+      {name: 'operations-admin', enabled: true},
+    ],
+  }}));
+  await page.route('**/api/v1/admin/administrators/create', async route => {
+    createdAdministrator = route.request().postDataJSON() as typeof createdAdministrator;
+    await route.fulfill({json: {
+      state: 'created', administrator: createdAdministrator?.name, changed: true,
+      revision, content_hash: archiveHash, restart_required: false,
+    }});
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', {name: 'System', exact: true}).click();
+  await page.getByRole('button', {name: 'Administrators', exact: true}).click();
+
+  const card = page.getByRole('article').filter({
+    has: page.getByRole('heading', {name: 'Administrators'}),
+  });
+  await expect(card).toContainText('operations-admin');
+  await expect(card.getByRole('button', {name: 'Add administrator'})).toBeEnabled();
+  await card.getByRole('button', {name: 'Add administrator'}).click();
+  await card.getByLabel('Administrator name').fill('audit-admin');
+  await card.getByLabel('Password', {exact: true}).fill('audit-password-1234');
+  await card.getByLabel('Confirm password').fill('audit-password-1234');
+  await card.getByRole('button', {name: 'Create administrator'}).click();
+  await expect.poll(() => createdAdministrator).toEqual({
+    name: 'audit-admin', password: 'audit-password-1234',
+  });
+});
+
 test('reloads administrator inventory after a concurrent mutation conflict', async ({page}) => {
   const initialRevision = `sha256:${'2'.repeat(64)}`;
   const currentRevision = `sha256:${'3'.repeat(64)}`;
