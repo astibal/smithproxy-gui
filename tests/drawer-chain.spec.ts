@@ -1791,7 +1791,8 @@ test('creates and reorders interface-role rules through structural drafts', asyn
 test('requires confirmation before deleting an interface-role rule', async ({page}) => {
   const state: MockState = {
     smithproxy: 'ready', commitReady: true, structuralCollections: ['settings.interfaces'],
-    structuralMutationRequests: [], configRevision: `sha256:${'1'.repeat(64)}`,
+    structuralMutationRequests: [], draftMutationBatches: [],
+    configRevision: `sha256:${'1'.repeat(64)}`,
   };
   await mockSystemApi(page, state, true);
   await page.goto('/');
@@ -1813,6 +1814,16 @@ test('requires confirmation before deleting an interface-role rule', async ({pag
   expect(state.structuralMutationRequests![0]!.operation).toMatchObject({
     op: 'delete', collection: 'settings.interfaces', entity_id: 'interface-role-0',
   });
+  await expect(editor.getByRole('button', {name: 'Delete Inside interface role'})).toHaveCount(0);
+
+  await editor.getByLabel('Plaintext port').fill('51081');
+  await editor.getByRole('button', {name: 'Save to draft'}).click();
+  await expect.poll(() => state.draftMutationBatches?.length).toBe(1);
+  expect(state.draftMutationBatches![0]).toContainEqual({
+    path: 'settings.plaintext_port', value: 51081,
+  });
+  expect(state.draftMutationBatches![0]!.some(change =>
+    change.path.startsWith('settings.interfaces.[0].'))).toBe(false);
 });
 
 test('renames referenced configuration entities atomically across pending references', async ({page}) => {

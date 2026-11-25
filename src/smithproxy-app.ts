@@ -7849,7 +7849,10 @@ export class SmithproxyApp extends LitElement {
     const changes: DraftChange[] = [];
     const settings = this.snapshot?.settings;
     if (!settings) return undefined;
+    const deletedInterfaceRoles = this.structuralDeletedEntityIds('settings.interfaces');
     for (const [index] of settings.interfaceRoles.entries()) {
+      const liveRole = settings.interfaceRoles[index];
+      if (!liveRole || deletedInterfaceRoles.has(liveRole.id)) continue;
       const value = (field: string) => this.renderRoot.querySelector<HTMLInputElement>(
         `#settings-interface-role-${index}-${field}`,
       )?.value.trim();
@@ -8261,7 +8264,7 @@ export class SmithproxyApp extends LitElement {
       {path: 'networking.drop_udp_ports', value: dropUdpPorts},
       {path: 'networking.redirect_exempt_uids', value: exemptUids},
     );
-    const deletedBypassIds = this.networkingDeletedBypassIds();
+    const deletedBypassIds = this.structuralDeletedEntityIds('networking.bypass');
     for (const [index, rule] of networking.bypass.entries()) {
       if (deletedBypassIds.has(rule.id)) continue;
       const source = text(`bypass-${index}-source`);
@@ -8703,12 +8706,15 @@ export class SmithproxyApp extends LitElement {
   }
 
   private interfaceRoleRows(): Array<DraftOrderedRow<InterfaceRoleRule>> {
+    const deletedIds = this.structuralDeletedEntityIds('settings.interfaces');
     const operations = (this.workspaceDraft?.structuralOperations ?? []).filter(
       (operation): operation is DraftCreateOperation | DraftMoveOperation =>
         operation.collection === 'settings.interfaces' &&
         (operation.op === 'create' || operation.op === 'move'),
     );
-    return this.draftOrderedRows(this.snapshot?.settings?.interfaceRoles ?? [], operations);
+    const liveRoles = (this.snapshot?.settings?.interfaceRoles ?? [])
+      .filter(role => !deletedIds.has(role.id));
+    return this.draftOrderedRows(liveRoles, operations);
   }
 
   private async createInterfaceRole(): Promise<void> {
@@ -8824,17 +8830,19 @@ export class SmithproxyApp extends LitElement {
     }
   }
 
-  private networkingDeletedBypassIds(): ReadonlySet<string> {
+  private structuralDeletedEntityIds(
+    collection: DraftDeleteOperation['collection'],
+  ): ReadonlySet<string> {
     return new Set((this.workspaceDraft?.structuralOperations ?? []).filter(
       (operation): operation is DraftDeleteOperation =>
-        operation.collection === 'networking.bypass' && operation.op === 'delete',
+        operation.collection === collection && operation.op === 'delete',
     ).map(operation => operation.entityId));
   }
 
   /** Combines live and staged Networkd bypass rows in their effective order. */
   private networkingBypassRows(): Array<DraftOrderedRow<NetworkingBypassRule>> {
     const structuralOperations = this.workspaceDraft?.structuralOperations ?? [];
-    const deletedIds = this.networkingDeletedBypassIds();
+    const deletedIds = this.structuralDeletedEntityIds('networking.bypass');
     const operations = structuralOperations.filter(
       (operation): operation is DraftCreateOperation | DraftMoveOperation =>
         operation.collection === 'networking.bypass' &&
