@@ -5156,6 +5156,7 @@ export class SmithproxyApp extends LitElement {
     const body = this.renderRoot.querySelector<HTMLElement>('.drawer:not([inert]) .drawer-body');
     const target = body?.querySelector<HTMLElement>(`[data-settings-group="${group}"]`);
     if (!body || !target) return;
+    if (target instanceof HTMLDetailsElement) target.open = true;
     const navigation = body.querySelector<HTMLElement>('.settings-section-nav');
     const offset = (navigation?.getBoundingClientRect().height ?? 0) + 12;
     const bodyTop = body.getBoundingClientRect().top;
@@ -16149,11 +16150,13 @@ export class SmithproxyApp extends LitElement {
       </div>` : nothing}
       <nav class="settings-section-nav" aria-label="System settings sections">
         <span>Jump to</span>
-        ${settingsEditorSections.map(section => html`
+        ${settingsEditorSections
+          .filter(section => section.group !== 'debug' || this.snapshot?.debug)
+          .map(section => html`
           <button type="button" @click=${() => this.scrollToSettingsGroup(section.group)}>
             ${section.label}
           </button>
-        `)}
+          `)}
       </nav>
       <div class="form-grid wide-form-grid">
         <fieldset class="editor-group" data-settings-group="interfaces">

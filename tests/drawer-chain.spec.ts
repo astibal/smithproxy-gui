@@ -8228,7 +8228,9 @@ test('shows and saves the complete typed system and capture configuration', asyn
   }
   const diagnostics = settingsEditor.locator('details.editor-group').filter({hasText: 'Developer diagnostics'});
   await expect(diagnostics).not.toHaveAttribute('open', '');
-  await diagnostics.locator('summary').click();
+  await sectionNavigation.getByRole('button', {name: 'Diagnostics'}).click();
+  await expect(diagnostics).toHaveAttribute('open', '');
+  await expect(diagnostics).toBeInViewport();
   await expect(settingsEditor.getByLabel('Socket event logging')).toBeVisible();
   await expect(settingsEditor.getByLabel('Plaintext port')).toHaveAttribute('min', '1024');
   await expect(settingsEditor.getByLabel('QUIC port')).toHaveAttribute('min', '1');
