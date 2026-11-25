@@ -2531,6 +2531,8 @@ export class SmithproxyApp extends LitElement {
         bootstrapFreshnessSeconds: 300,
         rotationSeconds: 86400,
         overlapSeconds: 3600,
+        administratorAuthSocketEnabled: true,
+        administratorAuthSocket: '/run/smithproxy/admin-auth.sock',
         cliEndpoint: '127.0.0.1:50000',
       },
       gateway: current?.gateway ? {...current.gateway} : undefined,
@@ -12914,6 +12916,8 @@ export class SmithproxyApp extends LitElement {
                     bootstrapFreshnessSeconds: 300,
                     rotationSeconds: 86400,
                     overlapSeconds: 3600,
+                    administratorAuthSocketEnabled: true,
+                    administratorAuthSocket: '/run/smithproxy/admin-auth.sock',
                     cliEndpoint: '127.0.0.1:50000',
                   } : undefined};
                 }}><span>Enable authenticated Smithproxy management and configuration access</span></label>
@@ -12947,6 +12951,27 @@ export class SmithproxyApp extends LitElement {
                 ${secondsField('Previous credential overlap (seconds)', draft.smithproxy.overlapSeconds, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, overlapSeconds: next}};
                 })}
+                <label class="gui-config-toggle"><input type="checkbox"
+                  .checked=${draft.smithproxy.administratorAuthSocketEnabled}
+                  @change=${(event: Event) => {
+                    const input = event.currentTarget;
+                    if (input instanceof HTMLInputElement) this.guiConfigurationDraft = {
+                      ...draft, smithproxy: {
+                        ...draft.smithproxy!, administratorAuthSocketEnabled: input.checked,
+                      },
+                    };
+                  }}><span>Enable local administrator authentication socket</span></label>
+                ${textField(
+                  'smithproxy.administratorAuthSocket',
+                  'Administrator authentication socket path',
+                  draft.smithproxy.administratorAuthSocket,
+                  next => {
+                    this.guiConfigurationDraft = {...draft, smithproxy: {
+                      ...draft.smithproxy!, administratorAuthSocket: next,
+                    }};
+                  },
+                  '/run/smithproxy/admin-auth.sock',
+                )}
                 ${textField('smithproxy.cliEndpoint', 'CLI broker endpoint', draft.smithproxy.cliEndpoint, next => {
                   this.guiConfigurationDraft = {...draft, smithproxy: {...draft.smithproxy!, cliEndpoint: next}};
                 }, '127.0.0.1:50000')}
@@ -13028,6 +13053,11 @@ export class SmithproxyApp extends LitElement {
           <dt>Smithproxy API</dt><dd>${value?.smithproxy?.apiUrl ?? 'Not configured'}</dd>
           <dt>Smithproxy API CA certificate</dt><dd>${value?.smithproxy?.caCert || 'System trust store'}</dd>
           <dt>Saved API credential reference</dt><dd>${value?.smithproxy?.apiTokenFile ?? 'Not configured'}</dd>
+          <dt>Administrator authentication socket</dt><dd>${value?.smithproxy
+            ? value.smithproxy.administratorAuthSocketEnabled
+              ? value.smithproxy.administratorAuthSocket
+              : 'Disabled'
+            : 'Not configured'}</dd>
           <dt>API credential this boot</dt><dd>${activeRuntime
             ? html`<span class="runtime-state ${activeRuntime.smithproxyApiCredentialLoaded ? 'success' : ''}">
                 ● ${activeRuntime.smithproxyApiCredentialLoaded ? 'Loaded' : 'Disabled'}

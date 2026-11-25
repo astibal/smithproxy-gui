@@ -7286,6 +7286,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   await gui.getByLabel('Smithproxy API URL').fill('https://127.0.0.1:56555');
   await gui.getByLabel('Smithproxy API CA certificate').fill('/run/gui/next-api-ca.pem');
   await gui.getByLabel('Boot-time API token file').fill('/run/credentials/gui.next-api-token');
+  await gui.getByLabel('Administrator authentication socket path')
+    .fill('/run/smithproxy/admin-auth-next.sock');
   await gui.getByLabel('CLI broker endpoint').fill('[::1]:51000');
   await gui.getByRole('button', {name: 'Publish GUI startup settings'}).click();
   await expect.poll(() => published).toContain('"port":19082');
@@ -7294,10 +7296,13 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
   expect(published).toContain('"api_url":"https://127.0.0.1:56555"');
   expect(published).toContain('"ca_cert":"/run/gui/next-api-ca.pem"');
   expect(published).toContain('"api_token_file":"/run/credentials/gui.next-api-token"');
+  expect(published).toContain('"administrator_auth_socket_enabled":true');
+  expect(published).toContain(
+    '"administrator_auth_socket":"/run/smithproxy/admin-auth-next.sock"');
   expect(published).toContain('"cli_endpoint":"[::1]:51000"');
   expect(published).toContain('"frontend":{"asset_root":"/srv/smithproxy-gui/assets"}');
   expect(published).toContain('"gateway":{"secret_file":"/run/credentials/gui.gateway.next",' +
-    '"previous_secret_file":"/run/credentials/gui.gateway.current"}');
+    '"previous_secret_file":"/run/credentials/gui.gateway.current"');
   expect(published).not.toContain('boot-token-value');
   await expect.poll(() => guiConfigurationReads).toBeGreaterThanOrEqual(2);
   await expect(gui).toContainText('127.0.0.1:19083/smithproxy-gui');

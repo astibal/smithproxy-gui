@@ -29,7 +29,7 @@ the GUI can read Core's authoritative `admin.cfg` inventory and revision.
 
 ```libconfig
 gui = {
-  schema_version = 3;
+  schema_version = 5;
 
   backend = {
     bind_address = "127.0.0.1";
@@ -46,6 +46,13 @@ gui = {
     api_url = "https://127.0.0.1:55555";
     ca_cert = "/run/smithproxy-gui/api-ca.pem";
     api_token_file = "/run/credentials/smithproxy-gui.api-token";
+    previous_api_token_file = "/run/credentials/smithproxy-gui.api-token.previous";
+    credential_enabled = true;
+    credential_bootstrap_freshness_seconds = 300L;
+    credential_rotation_seconds = 86400L;
+    credential_overlap_seconds = 3600L;
+    administrator_auth_socket_enabled = true;
+    administrator_auth_socket = "/run/smithproxy/admin-auth.sock";
     cli_endpoint = "127.0.0.1:50000";
   };
 
@@ -53,13 +60,18 @@ gui = {
     secret_file = "/run/credentials/smithproxy-gui.gateway";
     # Optional bounded overlap while a trusted gateway rotates its credential.
     previous_secret_file = "/run/credentials/smithproxy-gui.gateway.previous";
+    credential_enabled = true;
+    credential_bootstrap_freshness_seconds = 300L;
+    credential_rotation_seconds = 86400L;
+    credential_overlap_seconds = 3600L;
   };
 
 };
 ```
 
-Versions 1 and 2 remain readable for existing bootstrap resources; the optional
-frontend asset override requires version 3. Unknown settings and unsupported
+Versions 1 through 4 remain readable for existing bootstrap resources; the optional
+frontend asset override requires version 3 and the administrator-authentication
+socket policy requires version 5. Unknown settings and unsupported
 schema versions are rejected. This prevents
 an older GUI from publishing a replacement that silently drops fields owned by
 a newer GUI schema. A legacy file without `schema_version` is read as version 1;

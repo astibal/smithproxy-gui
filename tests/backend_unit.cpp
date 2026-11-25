@@ -2597,13 +2597,15 @@ int main() {
         ca << "test-ca";
         std::ofstream gui(gui_config_path);
         gui << "gui = {\n"
-               "  schema_version = 3;\n"
+               "  schema_version = 5;\n"
                "  backend = { bind_address = \"0.0.0.0\"; port = 18443; base_path = \"/admin\"; };\n"
                "  frontend = { asset_root = \"" << gui_config_root.string() << "\"; };\n"
                "  smithproxy = { api_url = \"https://127.0.0.1:55555/\"; ca_cert = \""
             << ca_path.string() << "\"; api_token_file = \"" << api_token_path.string()
             << "\"; previous_api_token_file = \"" << previous_api_token_path.string()
-            << "\"; cli_endpoint = \"127.0.0.1:50000\"; };\n"
+            << "\"; administrator_auth_socket_enabled = true; "
+               "administrator_auth_socket = \"/run/smithproxy/admin-auth.sock\"; "
+               "cli_endpoint = \"127.0.0.1:50000\"; };\n"
                "  gateway = { secret_file = \"" << gateway_secret_path.string()
             << "\"; previous_secret_file = \"" << previous_gateway_secret_path.string()
             << "\"; };\n"
@@ -2625,6 +2627,10 @@ int main() {
     assert(gui_bootstrap.config->smithproxy->api_credential->current() ==
         "boot-api-token-0123456789abcdef0");
     assert(gui_bootstrap.config->smithproxy_cli);
+    assert(gui_bootstrap.config->startup_bootstrap);
+    assert(gui_bootstrap.config->startup_bootstrap->administrator_auth_socket_enabled);
+    assert(gui_bootstrap.config->startup_bootstrap->administrator_auth_socket ==
+        "/run/smithproxy/admin-auth.sock");
     assert(gui_bootstrap.config->gateway_credential->loaded());
     {
         const std::string rotated = "rotated-api-token-0123456789abcdef";
@@ -2647,11 +2653,16 @@ int main() {
         next_current.close();
         assert(gui_bootstrap.config->smithproxy->api_credential->accepts(next));
     }
-    assert(gui_bootstrap.config->startup_bootstrap);
     assert(!gui_bootstrap_restart_required(
         *gui_bootstrap.config, gui_bootstrap.config->startup_bootstrap));
     auto changed_gui_bootstrap = *gui_bootstrap.config->startup_bootstrap;
     changed_gui_bootstrap.port += 1U;
+    assert(gui_bootstrap_restart_required(*gui_bootstrap.config, changed_gui_bootstrap));
+    changed_gui_bootstrap = *gui_bootstrap.config->startup_bootstrap;
+    changed_gui_bootstrap.administrator_auth_socket_enabled = false;
+    assert(gui_bootstrap_restart_required(*gui_bootstrap.config, changed_gui_bootstrap));
+    changed_gui_bootstrap = *gui_bootstrap.config->startup_bootstrap;
+    changed_gui_bootstrap.administrator_auth_socket = "/run/smithproxy/alternate-auth.sock";
     assert(gui_bootstrap_restart_required(*gui_bootstrap.config, changed_gui_bootstrap));
     assert(gui_bootstrap_restart_required(*gui_bootstrap.config, std::nullopt));
     AppConfig command_line_bootstrap;
@@ -2684,11 +2695,24 @@ int main() {
     assert(frontend_bootstrap.config->asset_root == "/usr/share/smithproxy-gui");
     const auto serialized_frontend_bootstrap = serialize_gui_bootstrap(*frontend_bootstrap.config);
     assert(serialized_frontend_bootstrap);
-    assert(serialized_frontend_bootstrap->find("schema_version = 4") != std::string::npos);
+    assert(serialized_frontend_bootstrap->find("schema_version = 5") != std::string::npos);
     assert(!parse_gui_bootstrap(
         "gui = { schema_version = 2; frontend = { asset_root = \"/srv/gui\"; }; };\n").config);
     assert(!parse_gui_bootstrap(
         "gui = { schema_version = 3; frontend = { asset_root = \"relative\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { schema_version = 4; smithproxy = { "
+        "api_url = \"https://127.0.0.1:55555\"; ca_cert = \"/run/gui/ca.pem\"; "
+        "administrator_auth_socket = \"/run/smithproxy/admin-auth.sock\"; }; };\n").config);
+    assert(parse_gui_bootstrap(
+        "gui = { schema_version = 5; smithproxy = { "
+        "api_url = \"https://127.0.0.1:55555\"; ca_cert = \"/run/gui/ca.pem\"; "
+        "administrator_auth_socket_enabled = false; "
+        "administrator_auth_socket = \"/run/smithproxy/admin-auth.sock\"; }; };\n").config);
+    assert(!parse_gui_bootstrap(
+        "gui = { schema_version = 5; smithproxy = { "
+        "api_url = \"https://127.0.0.1:55555\"; ca_cert = \"/run/gui/ca.pem\"; "
+        "administrator_auth_socket = \"relative-auth.sock\"; }; };\n").config);
     assert(!parse_gui_bootstrap(
         "gui = { schema_version = 1; administrators = (); };\n").config);
     assert(!parse_gui_bootstrap(

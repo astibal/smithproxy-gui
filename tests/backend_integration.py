@@ -1513,6 +1513,9 @@ def main() -> int:
                     "credential_bootstrap_freshness_seconds": 300,
                     "credential_rotation_seconds": 86400,
                     "credential_overlap_seconds": 3600,
+                    "administrator_auth_socket_enabled": True,
+                    "administrator_auth_socket":
+                        "/run/smithproxy/admin-auth.sock",
                     "cli_endpoint": "127.0.0.1:50000",
                 },
                 "gateway": {
@@ -1531,6 +1534,10 @@ def main() -> int:
             assert json.loads(body)["state"] == "written"
             assert FakeSmithproxy.published_gui_resource is not None
             assert "api_token_file = \"/run/credentials/smithproxy-gui.api-token\"" in \
+                FakeSmithproxy.published_gui_resource
+            assert "administrator_auth_socket_enabled = true" in \
+                FakeSmithproxy.published_gui_resource
+            assert "administrator_auth_socket = \"/run/smithproxy/admin-auth.sock\"" in \
                 FakeSmithproxy.published_gui_resource
             assert secret not in FakeSmithproxy.published_gui_resource
             FakeSmithproxy.gui_resource_status = 200

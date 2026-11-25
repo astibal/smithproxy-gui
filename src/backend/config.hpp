@@ -70,6 +70,8 @@ struct GuiBootstrapConfig {
     std::uint32_t api_credential_bootstrap_freshness_seconds{300};
     std::uint32_t api_credential_rotation_seconds{86400};
     std::uint32_t api_credential_overlap_seconds{3600};
+    bool administrator_auth_socket_enabled{true};
+    std::string administrator_auth_socket{"/run/smithproxy/admin-auth.sock"};
     std::optional<std::string> cli_endpoint;
     std::optional<std::string> gateway_secret_file;
     std::optional<std::string> gateway_previous_secret_file;

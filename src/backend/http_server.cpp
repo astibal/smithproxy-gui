@@ -1554,6 +1554,9 @@ private:
                  value.api_credential_bootstrap_freshness_seconds},
                 {"credential_rotation_seconds", value.api_credential_rotation_seconds},
                 {"credential_overlap_seconds", value.api_credential_overlap_seconds},
+                {"administrator_auth_socket_enabled",
+                 value.administrator_auth_socket_enabled},
+                {"administrator_auth_socket", value.administrator_auth_socket},
                 {"cli_endpoint", value.cli_endpoint.value_or("")}}
             : nlohmann::json(nullptr);
         document["gateway"] = value.gateway_secret_file
@@ -1619,7 +1622,7 @@ private:
                     "{\"error\":\"current GUI configuration is unavailable\"}"};
         }
         GuiBootstrapConfig replacement = current;
-        replacement.schema_version = 4U;
+        replacement.schema_version = 5U;
         replacement.bind_address = document["backend"]["bind_address"].get<std::string>();
         const auto port = document["backend"]["port"].get<long long>();
         if(port < 1 || port > 65535) {
@@ -1643,7 +1646,9 @@ private:
                                      "credential_enabled",
                                      "credential_bootstrap_freshness_seconds",
                                      "credential_rotation_seconds",
-                                     "credential_overlap_seconds"}) ||
+                                     "credential_overlap_seconds",
+                                     "administrator_auth_socket_enabled",
+                                     "administrator_auth_socket"}) ||
                !upstream["api_url"].is_string() || !upstream["ca_cert"].is_string() ||
                !upstream["api_token_file"].is_string() ||
                !upstream["previous_api_token_file"].is_string() ||
@@ -1651,7 +1656,9 @@ private:
                !upstream["credential_enabled"].is_boolean() ||
                !valid_seconds(upstream["credential_bootstrap_freshness_seconds"]) ||
                !valid_seconds(upstream["credential_rotation_seconds"]) ||
-               !valid_seconds(upstream["credential_overlap_seconds"])) {
+               !valid_seconds(upstream["credential_overlap_seconds"]) ||
+               !upstream["administrator_auth_socket_enabled"].is_boolean() ||
+               !upstream["administrator_auth_socket"].is_string()) {
                 return {400, "application/json; charset=utf-8",
                         "{\"error\":\"invalid GUI Smithproxy configuration\"}"};
             }
@@ -1668,6 +1675,10 @@ private:
                 upstream["credential_rotation_seconds"].get<std::uint32_t>();
             replacement.api_credential_overlap_seconds =
                 upstream["credential_overlap_seconds"].get<std::uint32_t>();
+            replacement.administrator_auth_socket_enabled =
+                upstream["administrator_auth_socket_enabled"].get<bool>();
+            replacement.administrator_auth_socket =
+                upstream["administrator_auth_socket"].get<std::string>();
             const auto cli_endpoint = upstream["cli_endpoint"].get<std::string>();
             replacement.cli_endpoint = cli_endpoint.empty()
                 ? std::nullopt : std::optional<std::string>{cli_endpoint};

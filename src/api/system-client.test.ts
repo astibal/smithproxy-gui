@@ -1130,7 +1130,7 @@ describe('SystemClient', () => {
 
   it('loads and serializes typed GUI bootstrap configuration without credential values', async () => {
     const fetcher = vi.fn(async () => jsonResponse({
-      state: 'ready', schema_version: 4, restart_required: false,
+      state: 'ready', schema_version: 5, restart_required: false,
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       active_runtime: {
         smithproxy_api_credential_loaded: true,
@@ -1146,6 +1146,8 @@ describe('SystemClient', () => {
         previous_api_token_file: '/run/credentials/gui.api-token.previous',
         credential_enabled: true, credential_bootstrap_freshness_seconds: 300,
         credential_rotation_seconds: 86400, credential_overlap_seconds: 3600,
+        administrator_auth_socket_enabled: true,
+        administrator_auth_socket: '/run/smithproxy/admin-auth.sock',
       },
       gateway: {
         secret_file: '/run/credentials/gui.gateway',
@@ -1172,7 +1174,7 @@ describe('SystemClient', () => {
       backend: value.backend!, frontend: value.frontend,
       smithproxy: value.smithproxy, gateway: value.gateway,
     }));
-    expect(serialized).toContain('schema_version = 4;');
+    expect(serialized).toContain('schema_version = 5;');
     expect(serialized).toContain('asset_root = "/usr/share/smithproxy-gui";');
     expect(serialized).toContain('api_token_file = "/run/credentials/gui.api-token";');
     expect(serialized).not.toContain('api-token-value');
@@ -1216,7 +1218,7 @@ describe('SystemClient', () => {
     }));
     await expect(malformed.guiConfiguration()).rejects.toThrow('backend configuration');
     const future = new SystemClient('/api/v1', '/', async () => jsonResponse({
-      state: 'ready', schema_version: 5, restart_required: true,
+      state: 'ready', schema_version: 6, restart_required: true,
     }));
     await expect(future.guiConfiguration()).rejects.toThrow('Unsupported GUI configuration schema');
     const malformedRuntime = new SystemClient('/api/v1', '/', async () => jsonResponse({
@@ -1236,6 +1238,8 @@ describe('SystemClient', () => {
         previousApiTokenFile: '/run/credentials/gui.api-token.previous',
         credentialEnabled: true, bootstrapFreshnessSeconds: 300,
         rotationSeconds: 86400, overlapSeconds: 3600,
+        administratorAuthSocketEnabled: true,
+        administratorAuthSocket: '/run/smithproxy/admin-auth.sock',
         cliEndpoint: '127.0.0.1:50000',
       },
       gateway: {
@@ -1254,6 +1258,9 @@ describe('SystemClient', () => {
     })).toContain('IPv4');
     expect(validateGuiBootstrapConfiguration({
       ...valid, smithproxy: {...valid.smithproxy, apiTokenFile: 'relative-token'},
+    })).toContain('absolute safe path');
+    expect(validateGuiBootstrapConfiguration({
+      ...valid, smithproxy: {...valid.smithproxy, administratorAuthSocket: 'relative.sock'},
     })).toContain('absolute safe path');
     expect(guiBootstrapConfigurationIssue({
       ...valid, smithproxy: {...valid.smithproxy, apiTokenFile: 'relative-token'},

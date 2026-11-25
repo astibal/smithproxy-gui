@@ -542,7 +542,7 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
         }
         int schema_version = config.schema_version;
         gui.lookupValue("schema_version", schema_version);
-        if (schema_version < 1 || schema_version > 4) {
+        if (schema_version < 1 || schema_version > 5) {
             return bootstrap_failure("gui.schema_version is unsupported");
         }
         config.schema_version = static_cast<std::uint16_t>(schema_version);
@@ -596,7 +596,9 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
                                "credential_enabled",
                                "credential_bootstrap_freshness_seconds",
                                "credential_rotation_seconds",
-                               "credential_overlap_seconds"})) {
+                               "credential_overlap_seconds",
+                               "administrator_auth_socket_enabled",
+                               "administrator_auth_socket"})) {
                 return bootstrap_failure(
                     "gui.smithproxy contains unsupported setting: " + *member);
             }
@@ -633,11 +635,26 @@ GuiBootstrapParseResult parse_gui_bootstrap(const std::string_view source) {
                          config.api_credential_bootstrap_freshness_seconds);
             read_seconds("credential_rotation_seconds", config.api_credential_rotation_seconds);
             read_seconds("credential_overlap_seconds", config.api_credential_overlap_seconds);
+            upstream.lookupValue(
+                "administrator_auth_socket_enabled",
+                config.administrator_auth_socket_enabled);
+            upstream.lookupValue(
+                "administrator_auth_socket",
+                config.administrator_auth_socket);
+            const bool auth_socket_configured =
+                upstream.exists("administrator_auth_socket_enabled") ||
+                upstream.exists("administrator_auth_socket");
+            if(auth_socket_configured && schema_version < 5) {
+                return bootstrap_failure(
+                    "gui.smithproxy administrator auth socket requires schema_version 5");
+            }
             if (!valid_bootstrap_path(config.ca_cert) ||
                 !valid_bootstrap_path(config.api_token_file) ||
-                !valid_bootstrap_path(config.previous_api_token_file)) {
+                !valid_bootstrap_path(config.previous_api_token_file) ||
+                !valid_bootstrap_path(
+                    std::optional<std::string>{config.administrator_auth_socket})) {
                 return bootstrap_failure(
-                    "gui.smithproxy credential files must use absolute safe paths");
+                    "gui.smithproxy credential and socket paths must be absolute and safe");
             }
             std::string cli_endpoint;
             if (upstream.lookupValue("cli_endpoint", cli_endpoint)) {
@@ -730,7 +747,7 @@ std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& con
         output.push_back('"');
         return output;
     };
-    const auto schema_version = 4U;
+    const auto schema_version = 5U;
     std::string source = "gui = {\n  schema_version = " +
         std::to_string(schema_version) + ";\n\n";
     source += "  backend = {\n    bind_address = " + quote(config.bind_address) +
@@ -755,6 +772,11 @@ std::optional<std::string> serialize_gui_bootstrap(const GuiBootstrapConfig& con
             std::to_string(config.api_credential_rotation_seconds) + "L;\n";
         source += "    credential_overlap_seconds = " +
             std::to_string(config.api_credential_overlap_seconds) + "L;\n";
+        source += "    administrator_auth_socket_enabled = " +
+            std::string(config.administrator_auth_socket_enabled ? "true" : "false") +
+            ";\n";
+        source += "    administrator_auth_socket = " +
+            quote(config.administrator_auth_socket) + ";\n";
         if(config.cli_endpoint && !config.cli_endpoint->empty())
             source += "    cli_endpoint = " + quote(*config.cli_endpoint) + ";\n";
         source += "  };\n";
@@ -796,6 +818,9 @@ bool gui_bootstrap_restart_required(
             next.api_credential_bootstrap_freshness_seconds ||
         boot.api_credential_rotation_seconds != next.api_credential_rotation_seconds ||
         boot.api_credential_overlap_seconds != next.api_credential_overlap_seconds ||
+        boot.administrator_auth_socket_enabled !=
+            next.administrator_auth_socket_enabled ||
+        boot.administrator_auth_socket != next.administrator_auth_socket ||
         boot.cli_endpoint != next.cli_endpoint ||
         boot.gateway_secret_file != next.gateway_secret_file ||
         boot.gateway_previous_secret_file != next.gateway_previous_secret_file ||

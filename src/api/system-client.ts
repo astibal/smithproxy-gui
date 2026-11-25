@@ -123,7 +123,7 @@ export interface GuiConfiguration {
     previousBrowserGatewayCredentialLoaded: boolean;
     cliBrokerConfigured: boolean;
   };
-  schemaVersion?: 1 | 2 | 3 | 4;
+  schemaVersion?: 1 | 2 | 3 | 4 | 5;
   backend?: {
     bindAddress: string;
     port: number;
@@ -141,6 +141,8 @@ export interface GuiConfiguration {
     bootstrapFreshnessSeconds: number;
     rotationSeconds: number;
     overlapSeconds: number;
+    administratorAuthSocketEnabled: boolean;
+    administratorAuthSocket: string;
     cliEndpoint: string;
   };
   gateway?: {
@@ -187,6 +189,7 @@ export type GuiBootstrapConfigurationField =
   'smithproxy.apiTokenFile' | 'smithproxy.previousApiTokenFile' |
   'smithproxy.credentialEnabled' | 'smithproxy.bootstrapFreshnessSeconds' |
   'smithproxy.rotationSeconds' | 'smithproxy.overlapSeconds' | 'smithproxy.cliEndpoint' |
+  'smithproxy.administratorAuthSocket' |
   'gateway.enabled' | 'gateway.secretFile' | 'gateway.previousSecretFile' |
   'gateway.credentialEnabled' | 'gateway.bootstrapFreshnessSeconds' |
   'gateway.rotationSeconds' | 'gateway.overlapSeconds';
@@ -1553,7 +1556,8 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     ...(activeRuntime ? {activeRuntime} : {}),
   };
   if (value.schema_version !== 1 && value.schema_version !== 2 &&
-      value.schema_version !== 3 && value.schema_version !== 4) {
+      value.schema_version !== 3 && value.schema_version !== 4 &&
+      value.schema_version !== 5) {
     throw new Error('Unsupported GUI configuration schema.');
   }
   const backend = parseBackend(value.backend, 'backend');
@@ -1614,6 +1618,10 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
         smithproxy, 'credential_bootstrap_freshness_seconds', 300),
       rotationSeconds: integerMember(smithproxy, 'credential_rotation_seconds', 86400),
       overlapSeconds: integerMember(smithproxy, 'credential_overlap_seconds', 3600),
+      administratorAuthSocketEnabled: booleanMember(
+        smithproxy, 'administrator_auth_socket_enabled', true),
+      administratorAuthSocket: stringMember(
+        smithproxy, 'administrator_auth_socket', '/run/smithproxy/admin-auth.sock'),
       cliEndpoint: stringMember(smithproxy, 'cli_endpoint'),
     }} : {}),
     ...(isObject(gateway) ? {gateway: {
@@ -1724,6 +1732,12 @@ export function guiBootstrapConfigurationIssue(
     if (!validCliEndpoint(value.smithproxy.cliEndpoint)) {
       return issue('smithproxy.cliEndpoint', 'CLI broker endpoint is invalid.');
     }
+    if (!validAbsolutePath(value.smithproxy.administratorAuthSocket)) {
+      return issue(
+        'smithproxy.administratorAuthSocket',
+        'Administrator authentication socket must use an absolute safe path.',
+      );
+    }
   }
   if (value.gateway) {
     for (const timing of [value.gateway.bootstrapFreshnessSeconds,
@@ -1776,7 +1790,7 @@ export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): Arr
   if (validationError) throw new Error(validationError);
   const lines = [
     'gui = {',
-    '  schema_version = 4;',
+    '  schema_version = 5;',
     '',
     '  backend = {',
     `    bind_address = ${libconfigString(value.backend.bindAddress)};`,
@@ -1799,6 +1813,12 @@ export function serializeGuiConfiguration(value: GuiBootstrapConfiguration): Arr
       `    credential_bootstrap_freshness_seconds = ${value.smithproxy.bootstrapFreshnessSeconds}L;`,
       `    credential_rotation_seconds = ${value.smithproxy.rotationSeconds}L;`,
       `    credential_overlap_seconds = ${value.smithproxy.overlapSeconds}L;`);
+    lines.push(
+      `    administrator_auth_socket_enabled = ${
+        value.smithproxy.administratorAuthSocketEnabled ? 'true' : 'false'};`,
+      `    administrator_auth_socket = ${
+        libconfigString(value.smithproxy.administratorAuthSocket)};`,
+    );
     if (value.smithproxy.cliEndpoint) {
       lines.push(`    cli_endpoint = ${libconfigString(value.smithproxy.cliEndpoint)};`);
     }
@@ -1993,6 +2013,8 @@ export class SystemClient {
         credential_bootstrap_freshness_seconds: value.smithproxy.bootstrapFreshnessSeconds,
         credential_rotation_seconds: value.smithproxy.rotationSeconds,
         credential_overlap_seconds: value.smithproxy.overlapSeconds,
+        administrator_auth_socket_enabled: value.smithproxy.administratorAuthSocketEnabled,
+        administrator_auth_socket: value.smithproxy.administratorAuthSocket,
         cli_endpoint: value.smithproxy.cliEndpoint,
       } : null,
       gateway: value.gateway ? {
