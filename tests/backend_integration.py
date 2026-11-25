@@ -801,7 +801,8 @@ def main() -> int:
         assert status == 200
         assert json.loads(body) == {
             "mode": "standalone", "authenticated": False, "administrator": None,
-            "administrators_configured": False, "initial_enrollment_ready": False}
+            "administrators_configured": False, "enrollment_ready": False,
+            "initial_enrollment_ready": False}
         assert request(port, "/ws001/smithproxy-gui/api/v1/config/snapshot")[0] == 401
 
         status, headers, body = request(port, "/ws001/smithproxy-gui/")
@@ -881,6 +882,7 @@ def main() -> int:
             assert json.loads(body) == {
                 "mode": "standalone", "authenticated": False,
                 "administrators_configured": False,
+                "enrollment_ready": True,
                 "initial_enrollment_ready": True,
                 "administrator": None,
             }
@@ -933,6 +935,7 @@ def main() -> int:
             assert json.loads(body) == {
                 "mode": "standalone", "authenticated": True,
                 "administrators_configured": True,
+                "enrollment_ready": True,
                 "initial_enrollment_ready": False,
                 "administrator": "security-admin",
             }
@@ -952,6 +955,37 @@ def main() -> int:
             assert status == 200
             assert json.loads(body)["authenticated"] is False
 
+            # A privilege-15 CLI token is also the break-glass capability
+            # after every managed password is lost. It creates a new identity
+            # and never overwrites the existing administrator database.
+            recovery_password = "recovery administrator password"
+            FakeSmithproxy.enrollment_token = "f" * 64
+            FakeSmithproxy.enrollment_administrator = "recovery-admin"
+            status, recovery_headers, body = request(
+                enrollment_port, "/api/v1/auth/enroll", "POST", mutation_headers,
+                json.dumps({
+                    "token": FakeSmithproxy.enrollment_token,
+                    "password": recovery_password,
+                }))
+            assert status == 200, body
+            assert json.loads(body) == {
+                "administrator": "recovery-admin", "operation": "created"}
+            recovery_cookie = recovery_headers["Set-Cookie"].split(";", 1)[0]
+            assert FakeSmithproxy.administrators["security-admin"] == {
+                "password": enrollment_password, "enabled": True}
+            assert FakeSmithproxy.administrators["recovery-admin"] == {
+                "password": recovery_password, "enabled": True}
+            status, _, body = request(
+                enrollment_port, "/api/v1/auth/session",
+                headers={"Cookie": recovery_cookie})
+            assert status == 200
+            assert json.loads(body)["administrator"] == "recovery-admin"
+
+            status, _, body = request(
+                enrollment_port, "/api/v1/auth/logout", "POST",
+                {**mutation_headers, "Cookie": recovery_cookie}, "{}")
+            assert status == 200, body
+
             status, login_headers, body = request(
                 enrollment_port, "/api/v1/auth/login", "POST", mutation_headers,
                 json.dumps({
@@ -960,7 +994,7 @@ def main() -> int:
                 }))
             assert status == 200, body
             assert json.loads(body) == {"administrator": "security-admin"}
-            assert FakeSmithproxy.administrator_login_requests == 2
+            assert FakeSmithproxy.administrator_login_requests == 3
             enrollment_cookie = login_headers["Set-Cookie"].split(";", 1)[0]
             status, _, body = request(
                 enrollment_port, "/api/v1/auth/session",
@@ -969,7 +1003,9 @@ def main() -> int:
             assert json.loads(body)["authenticated"] is True
 
             assert FakeSmithproxy.administrators == {
-                "security-admin": {"password": enrollment_password, "enabled": True}}
+                "security-admin": {"password": enrollment_password, "enabled": True},
+                "recovery-admin": {"password": recovery_password, "enabled": True},
+            }
             assert FakeSmithproxy.published_gui_resource is None
 
             # The local browser session is only a handle for the Core session.
@@ -1425,13 +1461,15 @@ def main() -> int:
             assert status == 200
             assert json.loads(body) == {
                 "mode": "gateway", "authenticated": False, "administrator": None,
-                "administrators_configured": True, "initial_enrollment_ready": False}
+                "administrators_configured": True, "enrollment_ready": False,
+                "initial_enrollment_ready": False}
             status, _, body = request(
                 configured_port, "/api/v1/auth/session", headers=gateway_headers)
             assert status == 200
             assert json.loads(body) == {
                 "mode": "gateway", "authenticated": True, "administrator": None,
-                "administrators_configured": True, "initial_enrollment_ready": False}
+                "administrators_configured": True, "enrollment_ready": False,
+                "initial_enrollment_ready": False}
 
             status, _, body = request(
                 configured_port, "/api/v1/admin/administrators",

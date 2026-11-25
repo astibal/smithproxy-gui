@@ -105,6 +105,7 @@ type MockState = {
   gatewayAuthenticated?: boolean;
   gatewayAdministrator?: string | null;
   administratorsConfigured?: boolean;
+  enrollmentReady?: boolean;
   initialEnrollmentReady?: boolean;
   forceManagementCapabilities?: boolean;
   consoleReady?: boolean;
@@ -332,6 +333,7 @@ async function mockSystemApi(
       authenticated: state.gatewayAuthenticated ?? true,
       administrator: state.gatewayAdministrator ?? null,
       administrators_configured: state.administratorsConfigured ?? false,
+      enrollment_ready: state.enrollmentReady ?? state.initialEnrollmentReady ?? false,
       initial_enrollment_ready: state.initialEnrollmentReady ?? false,
     }});
   });
@@ -7459,6 +7461,36 @@ test('blocks initial enrollment until the core publication preflight is ready', 
   await expect(page.getByLabel('Enrollment token')).toBeVisible();
   await expect(page.getByText('Paste the 64-character token exactly as issued by the CLI.')).toBeVisible();
   await expect(page.getByText('Use 14 to 1024 characters for this managed administrator.')).toBeVisible();
+});
+
+test('recovers standalone access with a privilege-15 CLI enrollment token', async ({page}) => {
+  const state: MockState = {
+    smithproxy: 'ready', gatewayMode: 'standalone', gatewayAuthenticated: false,
+    administratorsConfigured: true, enrollmentReady: true,
+  };
+  let enrollmentRequest: {token: string; password: string} | undefined;
+  await page.route('**/api/v1/auth/enroll', async route => {
+    enrollmentRequest = route.request().postDataJSON() as typeof enrollmentRequest;
+    state.gatewayAuthenticated = true;
+    state.gatewayAdministrator = 'recovery-admin';
+    await route.fulfill({json: {administrator: 'recovery-admin', operation: 'created'}});
+  });
+  await mockSystemApi(page, state);
+  await page.goto('/');
+
+  await page.getByRole('button', {name: 'Recover access with CLI token'}).click();
+  await expect(page.getByRole('heading', {name: 'Administrator recovery'})).toBeVisible();
+  await expect(page.getByText(/CLI token is the recovery authorization/)).toBeVisible();
+  await page.getByLabel('Enrollment token').fill('a'.repeat(64));
+  await page.getByRole('textbox', {name: /^Administrator password Use 14/})
+    .fill('recovery-password-1234');
+  await page.getByLabel('Confirm administrator password').fill('recovery-password-1234');
+  await page.getByRole('button', {name: 'Create recovery administrator'}).click();
+
+  await expect.poll(() => enrollmentRequest).toEqual({
+    token: 'a'.repeat(64), password: 'recovery-password-1234',
+  });
+  await expect(page.getByRole('heading', {name: 'Dashboard'})).toBeVisible();
 });
 
 test('submits short system-account passwords for Core authentication', async ({page}) => {

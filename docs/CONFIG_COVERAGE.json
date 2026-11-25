@@ -104,7 +104,7 @@
       "edit": "typed",
       "sensitivity": "secret-bearing",
       "tracked_fields": ["name", "enabled", "password_write_only"],
-      "notes": "The complete admin.cfg identity inventory is visible through a bounded typed Core API. Password verifiers and password input never cross the read boundary. Authenticated administrators can create identities, replace passwords, enable, disable, and remove accounts through typed Core transactions with revision and archive-hash preconditions. The active identity cannot disable or remove itself. Initial bootstrap is a separate one-time privilege-15 CLI enrollment transaction; the GUI never writes admin.cfg."
+      "notes": "The complete admin.cfg identity inventory is visible through a bounded typed Core API. Password verifiers and password input never cross the read boundary. Authenticated administrators can create identities, replace passwords, enable, disable, and remove accounts through typed Core transactions with revision and archive-hash preconditions. The active identity cannot disable or remove itself. Initial bootstrap and break-glass recovery use a single-use privilege-15 CLI enrollment capability. Recovery creates a distinct administrator and never overwrites or removes existing identities; the GUI never writes admin.cfg."
     },
     {
       "name": "address_objects",

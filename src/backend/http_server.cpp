@@ -2001,12 +2001,15 @@ private:
         const bool authenticated = gateway_request || administrator.has_value();
         const auto preflight = enrollment_preflight();
         const bool administrator_exists = preflight && preflight->administrators_configured;
-        const bool initial_enrollment_ready = !gateway && !administrator_exists && preflight;
+        const bool enrollment_ready = !gateway && preflight.has_value();
+        const bool initial_enrollment_ready = enrollment_ready && !administrator_exists;
         return {200, "application/json; charset=utf-8",
                 "{\"mode\":" + json_string(gateway ? "gateway" : "standalone") +
                     ",\"authenticated\":" + (authenticated ? "true" : "false") +
                     ",\"administrators_configured\":" +
                     (administrator_exists ? "true" : "false") +
+                    ",\"enrollment_ready\":" +
+                    (enrollment_ready ? "true" : "false") +
                     ",\"initial_enrollment_ready\":" +
                     (initial_enrollment_ready ? "true" : "false") +
                     ",\"administrator\":" +
@@ -2041,10 +2044,6 @@ private:
         if(!preflight) {
             return {502, "application/json; charset=utf-8",
                     "{\"error\":\"Smithproxy administrator inventory is unavailable; enrollment token was not consumed\"}"};
-        }
-        if(preflight->administrators_configured && !current_administrator) {
-            return {409, "application/json; charset=utf-8",
-                    "{\"error\":\"administrator enrollment requires an authenticated session after initial setup\"}"};
         }
         const auto enrollment = monitor_.consume_gui_enrollment(
             request["token"].get<std::string>(), password,

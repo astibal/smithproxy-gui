@@ -72,6 +72,7 @@ export interface GatewaySession {
   authenticated: boolean;
   administrator: string | null;
   administratorsConfigured: boolean;
+  enrollmentReady: boolean;
   initialEnrollmentReady: boolean;
 }
 
@@ -710,6 +711,7 @@ function parseGatewaySession(value: unknown): GatewaySession {
   if (!isObject(value) || (value.mode !== 'gateway' && value.mode !== 'standalone') ||
       typeof value.authenticated !== 'boolean' ||
       typeof value.administrators_configured !== 'boolean' ||
+      typeof value.enrollment_ready !== 'boolean' ||
       typeof value.initial_enrollment_ready !== 'boolean' ||
       (value.administrator !== null &&
        (typeof value.administrator !== 'string' || value.administrator.length === 0 ||
@@ -722,6 +724,7 @@ function parseGatewaySession(value: unknown): GatewaySession {
     mode: value.mode, authenticated: value.authenticated,
     administrator: value.administrator,
     administratorsConfigured: value.administrators_configured,
+    enrollmentReady: value.enrollment_ready,
     initialEnrollmentReady: value.initial_enrollment_ready,
   };
 }

@@ -560,6 +560,7 @@ export class SmithproxyApp extends LitElement {
   @state() private enrollmentPasswordConfirmation = '';
   @state() private enrollmentError: string | undefined;
   @state() private enrollmentBusy = false;
+  @state() private recoveryEnrollmentRequested = false;
   @state() private administratorInventory: AdministratorInventory | undefined;
   @state() private administratorInventoryBusy = false;
   @state() private administratorError: string | undefined;
@@ -2867,6 +2868,7 @@ export class SmithproxyApp extends LitElement {
       this.enrollmentToken = '';
       this.enrollmentPassword = '';
       this.enrollmentPasswordConfirmation = '';
+      this.recoveryEnrollmentRequested = false;
       await this.refreshCapabilities();
     } catch (error) {
       this.enrollmentError = error instanceof Error ? error.message : 'Administrator enrollment failed.';
@@ -2886,6 +2888,7 @@ export class SmithproxyApp extends LitElement {
         this.loginAdministratorName.trim(), this.loginPassword,
       );
       this.loginPassword = '';
+      this.recoveryEnrollmentRequested = false;
       await this.refreshCapabilities();
     } catch (error) {
       this.loginPassword = '';
@@ -17694,7 +17697,9 @@ export class SmithproxyApp extends LitElement {
   protected render() {
     if (this.loadingError) return html`<div class="error" role="alert">${this.loadingError}</div>`;
     if (this.gatewaySession?.mode === 'standalone' && !this.gatewaySession.authenticated) {
-      if (this.gatewaySession.administratorsConfigured) {
+      const recoveryEnrollment = this.gatewaySession.administratorsConfigured &&
+        this.recoveryEnrollmentRequested;
+      if (this.gatewaySession.administratorsConfigured && !recoveryEnrollment) {
         const validName = /^[A-Za-z0-9._@-]{1,64}$/u.test(this.loginAdministratorName.trim());
         const validPassword = this.loginPassword.length > 0 && this.loginPassword.length <= 1024;
         return html`<main class="enrollment-shell">
@@ -17729,6 +17734,12 @@ export class SmithproxyApp extends LitElement {
               ?disabled=${this.loginBusy || !validName || !validPassword}>
               ${this.loginBusy ? 'Signing in…' : 'Sign in'}
             </button>
+            <button class="secondary" type="button"
+              @click=${() => {
+                this.loginPassword = '';
+                this.loginError = undefined;
+                this.recoveryEnrollmentRequested = true;
+              }}>Recover access with CLI token</button>
           </form>
         </main>`;
       }
@@ -17736,11 +17747,13 @@ export class SmithproxyApp extends LitElement {
       const validPassword = this.enrollmentPassword.length >= 14 &&
         this.enrollmentPassword.length <= 1024 &&
         this.enrollmentPassword === this.enrollmentPasswordConfirmation;
-      if (!this.gatewaySession.initialEnrollmentReady) {
+      if (!this.gatewaySession.enrollmentReady) {
         return html`<main class="enrollment-shell">
           <section class="enrollment-card" role="alert">
             <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
-            <h1>Administrator enrollment is not ready</h1>
+            <h1>${recoveryEnrollment
+              ? 'Administrator recovery is not ready'
+              : 'Administrator enrollment is not ready'}</h1>
             <p>The GUI core cannot currently read the administrator inventory and its
               <code>admin.cfg</code> revision boundary from Smithproxy.</p>
             <p>Restore the authenticated Core connection and administrator configuration access,
@@ -17749,6 +17762,10 @@ export class SmithproxyApp extends LitElement {
             <button class="primary" type="button" @click=${() => { void this.loadCapabilities(); }}>
               Retry readiness
             </button>
+            ${recoveryEnrollment ? html`<button class="secondary" type="button"
+              @click=${() => { this.recoveryEnrollmentRequested = false; }}>
+              Back to sign in
+            </button>` : nothing}
           </section>
         </main>`;
       }
@@ -17758,7 +17775,9 @@ export class SmithproxyApp extends LitElement {
           void this.enrollAdministrator();
         }}>
           <div class="brand"><span class="brand-mark">S</span><span>Smithproxy</span></div>
-          <h1>Administrator enrollment</h1>
+          <h1>${recoveryEnrollment ? 'Administrator recovery' : 'Administrator enrollment'}</h1>
+          ${recoveryEnrollment ? html`<p>Create a new administrator identity without changing or
+            removing existing accounts. The CLI token is the recovery authorization.</p>` : nothing}
           <p>Issue a single-use token from a privileged Smithproxy CLI session:</p>
           <p><code>execute admin enrollment issue &lt;administrator&gt;</code></p>
           <label>Enrollment token
@@ -17795,8 +17814,14 @@ export class SmithproxyApp extends LitElement {
           ${this.enrollmentError ? html`<p class="error" role="alert">${this.enrollmentError}</p>` : nothing}
           <button class="primary" type="submit"
             ?disabled=${this.enrollmentBusy || !validToken || !validPassword}>
-            ${this.enrollmentBusy ? 'Enrolling…' : 'Enroll securely'}
+            ${this.enrollmentBusy ? 'Enrolling…' : recoveryEnrollment
+              ? 'Create recovery administrator' : 'Enroll securely'}
           </button>
+          ${recoveryEnrollment ? html`<button class="secondary" type="button"
+            ?disabled=${this.enrollmentBusy}
+            @click=${() => { this.recoveryEnrollmentRequested = false; }}>
+            Back to sign in
+          </button>` : nothing}
           <p>The token expires after ten minutes and can be used once. Smithproxy stores only a salted,
             memory-hard password verifier in CFtar; the browser receives an HttpOnly runtime session.</p>
         </form>
