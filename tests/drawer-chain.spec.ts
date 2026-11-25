@@ -7544,6 +7544,10 @@ test('manages Core-owned administrators independently from GUI service settings'
     'CLI enrollment is reserved for the initial bootstrap when no persistent administrator exists.',
   );
   await expect(card.getByRole('button', {name: 'Add administrator'})).toBeVisible();
+  await card.getByRole('button', {name: 'Add administrator'}).click();
+  await expect(card.getByText(/Use 1 to 64 letters, digits/)).toBeVisible();
+  await expect(card.getByText(/Passwords require 14 to 1024 characters/)).toBeVisible();
+  await card.getByRole('button', {name: 'Cancel'}).click();
   await expect(card).toContainText('security-admin');
   await expect(card.getByRole('button', {name: 'Disable security-admin'})).toBeDisabled();
   await expect(card.getByRole('button', {name: 'Remove security-admin'})).toBeDisabled();
@@ -7566,6 +7570,9 @@ test('manages Core-owned administrators independently from GUI service settings'
 
   await card.getByRole('button', {name: 'Change password for security-admin'}).click();
   await card.getByLabel('New password').fill('replacement-security-password');
+  await card.getByLabel('Confirm password').fill('different-security-password');
+  await expect(card.getByRole('alert')).toContainText('Passwords do not match.');
+  await expect(card.getByRole('button', {name: 'Change password'})).toBeDisabled();
   await card.getByLabel('Confirm password').fill('replacement-security-password');
   await card.getByRole('button', {name: 'Change password'}).click();
   await expect.poll(() => mutations.at(-1)).toEqual({

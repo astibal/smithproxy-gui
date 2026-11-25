@@ -1141,6 +1141,8 @@ export class SmithproxyApp extends LitElement {
     .gui-config-editor { grid-template-columns: repeat(2, minmax(240px, 1fr)); align-items: end; }
     .gui-config-editor label { display: grid; gap: 6px; min-width: 0; }
     .gui-config-editor input { width: 100%; min-width: 0; }
+    .gui-config-editor > .metrics-message, .gui-config-editor > .metric-note,
+    .gui-config-editor > .archive-actions { grid-column: 1 / -1; }
     .gui-config-section { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--app-border); }
     .gui-config-section legend { padding: 0 6px; font-weight: 650; }
     .gui-config-fields { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; align-items: end; }
@@ -13143,6 +13145,8 @@ export class SmithproxyApp extends LitElement {
       /^[A-Za-z0-9._@-]{1,64}$/u.test(editor.name.trim());
     const editorPasswordValid = editor !== undefined && editor.password.length >= 14 &&
       editor.password.length <= 1024 && editor.password === editor.confirmation;
+    const editorConfirmationMismatch = editor !== undefined && editor.confirmation.length > 0 &&
+      editor.password !== editor.confirmation;
     return html`<article class="domain-card job-card" data-system-section="administrators">
       <header>
         <div><h3>Administrators</h3>
@@ -13160,6 +13164,8 @@ export class SmithproxyApp extends LitElement {
           }}>
           <label><span>Administrator name</span>
             <input type="text" autocomplete="username" maxlength="64"
+              aria-invalid=${editor.name.length > 0 && !editorNameValid ? 'true' : 'false'}
+              aria-describedby="administrator-name-help"
               ?readonly=${editor.mode === 'password'} .value=${editor.name}
               @input=${(event: Event) => {
                 const input = event.currentTarget;
@@ -13167,9 +13173,11 @@ export class SmithproxyApp extends LitElement {
                   this.administratorEditor = {...editor, name: input.value};
                 }
               }}>
+            <small id="administrator-name-help">Use 1 to 64 letters, digits, dots, underscores, hyphens, or @.</small>
           </label>
           <label><span>${editor.mode === 'create' ? 'Password' : 'New password'}</span>
             <input type="password" autocomplete="new-password" maxlength="1024"
+              aria-describedby="administrator-password-help"
               .value=${editor.password}
               @input=${(event: Event) => {
                 const input = event.currentTarget;
@@ -13180,6 +13188,8 @@ export class SmithproxyApp extends LitElement {
           </label>
           <label><span>Confirm password</span>
             <input type="password" autocomplete="new-password" maxlength="1024"
+              aria-invalid=${editorConfirmationMismatch ? 'true' : 'false'}
+              aria-describedby=${editorConfirmationMismatch ? 'administrator-confirmation-error' : nothing}
               .value=${editor.confirmation}
               @input=${(event: Event) => {
                 const input = event.currentTarget;
@@ -13188,7 +13198,12 @@ export class SmithproxyApp extends LitElement {
                 }
               }}>
           </label>
-          <p class="metric-note">Passwords require at least 14 characters. Smithproxy Core hashes and
+          ${editorConfirmationMismatch ? html`
+            <p id="administrator-confirmation-error" class="metrics-message danger" role="alert">
+              Passwords do not match.
+            </p>` : nothing}
+          <p id="administrator-password-help" class="metric-note">Passwords require 14 to 1024 characters.
+            Smithproxy Core hashes and
             publishes the verifier. This authenticated management action never exposes the verifier
             or lets the GUI write <code>admin.cfg</code>.</p>
           <div class="archive-actions">
