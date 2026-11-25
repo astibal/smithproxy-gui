@@ -13197,6 +13197,9 @@ export class SmithproxyApp extends LitElement {
       editor.password.length <= 1024 && editor.password === editor.confirmation;
     const editorConfirmationMismatch = editor !== undefined && editor.confirmation.length > 0 &&
       editor.password !== editor.confirmation;
+    const inventoryUnavailableMessage = this.gatewaySession?.authenticated === true
+      ? 'Administrator inventory is unavailable from the authenticated Core admin API.'
+      : 'Administrator inventory is unavailable until configuration access is verified.';
     return html`<article class="domain-card job-card" data-system-section="administrators">
       <header>
         <div><h3>Administrators</h3>
@@ -13323,7 +13326,7 @@ export class SmithproxyApp extends LitElement {
         ` : inventory ? html`
           <p>No persistent administrators are configured. Bootstrap the first identity with a
             single-use token from a privilege-15 Smithproxy CLI session.</p>
-        ` : html`<p>Administrator inventory is unavailable from the authenticated Core admin API.</p>`}
+        ` : html`<p>${inventoryUnavailableMessage}</p>`}
         ${inventory && inventory.administrators.length > 0 ? html`
           <p class="metric-note"><strong>Adding an administrator</strong> is authorized by your current
             signed-in session. CLI enrollment is reserved for the initial bootstrap when no

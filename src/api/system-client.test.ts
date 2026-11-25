@@ -1187,6 +1187,29 @@ describe('SystemClient', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/v1/config/gui', expect.any(Object));
   });
 
+  it('derives legacy previous credential files beside custom current files', async () => {
+    const client = new SystemClient('/api/v1', '/', async () => jsonResponse({
+      state: 'ready', schema_version: 1, restart_required: false,
+      backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/'},
+      smithproxy: {
+        api_url: 'https://127.0.0.1:55555', ca_cert: '/run/gui/api-ca.pem',
+        api_token_file: '/run/credentials/custom-api-token', cli_endpoint: '',
+      },
+      gateway: {secret_file: '/run/credentials/custom-gateway-token'},
+    }));
+
+    await expect(client.guiConfiguration()).resolves.toMatchObject({
+      smithproxy: {
+        apiTokenFile: '/run/credentials/custom-api-token',
+        previousApiTokenFile: '/run/credentials/custom-api-token.previous',
+      },
+      gateway: {
+        secretFile: '/run/credentials/custom-gateway-token',
+        previousSecretFile: '/run/credentials/custom-gateway-token.previous',
+      },
+    });
+  });
+
   it('publishes GUI boot settings through the administrator-preserving typed endpoint', async () => {
     const archiveHash = `sha256:${'a'.repeat(64)}`;
     const fetcher = vi.fn(async () => jsonResponse({

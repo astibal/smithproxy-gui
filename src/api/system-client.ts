@@ -1606,6 +1606,12 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     if (!Number.isSafeInteger(member)) throw new Error('Invalid GUI bootstrap configuration.');
     return member as number;
   };
+  const previousCredentialFile = (
+    group: Record<string, unknown>, currentKey: string, previousKey: string,
+  ): string => {
+    const current = stringMember(group, currentKey);
+    return stringMember(group, previousKey, `${current}.previous`);
+  };
   const parsed: GuiConfiguration = {
     state: 'ready',
     restartRequired: value.restart_required,
@@ -1618,8 +1624,8 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
       apiUrl: stringMember(smithproxy, 'api_url'),
       caCert: stringMember(smithproxy, 'ca_cert'),
       apiTokenFile: stringMember(smithproxy, 'api_token_file'),
-      previousApiTokenFile: stringMember(
-        smithproxy, 'previous_api_token_file', '/run/smithproxy/gui-api.previous.key'),
+      previousApiTokenFile: previousCredentialFile(
+        smithproxy, 'api_token_file', 'previous_api_token_file'),
       credentialEnabled: booleanMember(smithproxy, 'credential_enabled', true),
       bootstrapFreshnessSeconds: integerMember(
         smithproxy, 'credential_bootstrap_freshness_seconds', 300),
@@ -1633,8 +1639,8 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     }} : {}),
     ...(isObject(gateway) ? {gateway: {
       secretFile: stringMember(gateway, 'secret_file'),
-      previousSecretFile: stringMember(
-        gateway, 'previous_secret_file', '/run/smithproxy/gui-gateway.previous.key'),
+      previousSecretFile: previousCredentialFile(
+        gateway, 'secret_file', 'previous_secret_file'),
       credentialEnabled: booleanMember(gateway, 'credential_enabled', true),
       bootstrapFreshnessSeconds: integerMember(
         gateway, 'credential_bootstrap_freshness_seconds', 300),
