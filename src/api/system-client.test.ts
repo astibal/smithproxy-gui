@@ -1278,11 +1278,22 @@ describe('SystemClient', () => {
       message: 'Smithproxy API token file must use an absolute safe path.',
     });
     expect(validateGuiBootstrapConfiguration({
+      ...valid, smithproxy: {
+        ...valid.smithproxy,
+        previousApiTokenFile: '/var/lib/smithproxy/gui.api-token.previous',
+      },
+    })).toContain('share one directory');
+    expect(validateGuiBootstrapConfiguration({
       ...valid, backend: {...valid.backend, bindAddress: '0.0.0.0'}, gateway: undefined,
     })).toContain('gateway credential');
   expect(() => serializeGuiConfiguration({
     ...valid, gateway: {...valid.gateway, previousSecretFile: valid.gateway.secretFile},
   })).toThrow('must differ');
+  expect(() => serializeGuiConfiguration({
+    ...valid, gateway: {
+      ...valid.gateway, previousSecretFile: '/var/lib/smithproxy/gui.gateway.previous',
+    },
+  })).toThrow('share one directory');
   expect(() => serializeGuiConfiguration({
     ...valid, gateway: {...valid.gateway, secretFile: valid.smithproxy.apiTokenFile},
   })).toThrow('separate files');

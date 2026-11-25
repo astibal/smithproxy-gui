@@ -2749,6 +2749,18 @@ int main() {
         "gui = { gateway = { secret_file = \"/run/gui/secret\"; "
         "previous_secret_file = \"/run/gui/secret\"; }; };\n").config);
     assert(!parse_gui_bootstrap(
+        "gui = { gateway = { secret_file = \"/run/gui/secret\"; "
+        "previous_secret_file = \"/var/lib/gui/secret.previous\"; }; };\n").config);
+    const auto derived_previous_paths = parse_gui_bootstrap(
+        "gui = { smithproxy = { api_url = \"https://127.0.0.1:55555\"; "
+        "ca_cert = \"/run/gui/ca.pem\"; api_token_file = \"/srv/gui/token\"; }; "
+        "gateway = { secret_file = \"/srv/gui/gateway\"; }; };\n");
+    assert(derived_previous_paths.config);
+    assert(derived_previous_paths.config->previous_api_token_file ==
+           "/srv/gui/token.previous");
+    assert(derived_previous_paths.config->gateway_previous_secret_file ==
+           "/srv/gui/gateway.previous");
+    assert(!parse_gui_bootstrap(
         "gui = { smithproxy = { api_url = \"https://127.0.0.1:55555\"; "
         "ca_cert = \"/run/gui/ca.pem\"; api_token_file = \"/run/gui/credential\"; }; "
         "gateway = { secret_file = \"/run/gui/credential\"; }; };\n").config);

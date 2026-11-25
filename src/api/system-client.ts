@@ -1683,6 +1683,15 @@ function validUnixSocketPath(value: string): boolean {
   return validAbsolutePath(value) && new TextEncoder().encode(value).length < 108;
 }
 
+function credentialDirectory(value: string): string {
+  const separator = value.lastIndexOf('/');
+  return separator === 0 ? '/' : value.slice(0, separator);
+}
+
+function sharedCredentialDirectory(current: string, previous: string): boolean {
+  return credentialDirectory(current) === credentialDirectory(previous);
+}
+
 function validCliEndpoint(value: string): boolean {
   if (value === '') return true;
   const match = value.match(/^([^:\s/\\?#@\[\]]+):(\d{1,5})$/u) ??
@@ -1728,6 +1737,14 @@ export function guiBootstrapConfigurationIssue(
         'Current and previous Smithproxy API token files must differ.',
       );
     }
+    if (!sharedCredentialDirectory(
+      value.smithproxy.apiTokenFile, value.smithproxy.previousApiTokenFile,
+    )) {
+      return issue(
+        'smithproxy.previousApiTokenFile',
+        'Current and previous Smithproxy API token files must share one directory.',
+      );
+    }
     for (const [field, timing] of [
       ['smithproxy.bootstrapFreshnessSeconds', value.smithproxy.bootstrapFreshnessSeconds],
       ['smithproxy.rotationSeconds', value.smithproxy.rotationSeconds],
@@ -1766,6 +1783,13 @@ export function guiBootstrapConfigurationIssue(
     if (value.gateway.previousSecretFile === value.gateway.secretFile) {
       return issue(
         'gateway.previousSecretFile', 'Current and previous gateway credential files must differ.',
+      );
+    }
+    if (value.gateway.previousSecretFile &&
+        !sharedCredentialDirectory(value.gateway.secretFile, value.gateway.previousSecretFile)) {
+      return issue(
+        'gateway.previousSecretFile',
+        'Current and previous gateway credential files must share one directory.',
       );
     }
     if (value.smithproxy && value.smithproxy.apiTokenFile === value.gateway.secretFile) {
