@@ -1500,6 +1500,9 @@ private:
             {"smithproxy_api_credential_loaded",
              config_.smithproxy && config_.smithproxy->api_credential &&
                  config_.smithproxy->api_credential->loaded()},
+            {"previous_smithproxy_api_credential_loaded",
+             config_.smithproxy && config_.smithproxy->api_credential &&
+                 config_.smithproxy->api_credential->previous_loaded()},
             {"browser_gateway_credential_loaded",
              config_.gateway_credential && config_.gateway_credential->loaded()},
             {"previous_browser_gateway_credential_loaded",

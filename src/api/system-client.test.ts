@@ -1136,6 +1136,7 @@ describe('SystemClient', () => {
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       active_runtime: {
         smithproxy_api_credential_loaded: true,
+        previous_smithproxy_api_credential_loaded: true,
         browser_gateway_credential_loaded: true,
         previous_browser_gateway_credential_loaded: false,
         cli_broker_configured: true,
@@ -1165,6 +1166,7 @@ describe('SystemClient', () => {
       activeBackend: {port: 18082},
       activeRuntime: {
         smithproxyApiCredentialLoaded: true,
+        previousSmithproxyApiCredentialLoaded: true,
         browserGatewayCredentialLoaded: true,
         previousBrowserGatewayCredentialLoaded: false,
         cliBrokerConfigured: true,

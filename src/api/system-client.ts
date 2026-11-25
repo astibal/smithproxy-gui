@@ -119,6 +119,7 @@ export interface GuiConfiguration {
   };
   activeRuntime?: {
     smithproxyApiCredentialLoaded: boolean;
+    previousSmithproxyApiCredentialLoaded: boolean;
     browserGatewayCredentialLoaded: boolean;
     previousBrowserGatewayCredentialLoaded: boolean;
     cliBrokerConfigured: boolean;
@@ -1538,6 +1539,7 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     const runtime = value.active_runtime;
     if (!isObject(runtime) ||
         typeof runtime.smithproxy_api_credential_loaded !== 'boolean' ||
+        typeof runtime.previous_smithproxy_api_credential_loaded !== 'boolean' ||
         typeof runtime.browser_gateway_credential_loaded !== 'boolean' ||
         typeof runtime.previous_browser_gateway_credential_loaded !== 'boolean' ||
         typeof runtime.cli_broker_configured !== 'boolean') {
@@ -1545,6 +1547,8 @@ function parseGuiConfiguration(value: unknown): GuiConfiguration {
     }
     return {
       smithproxyApiCredentialLoaded: runtime.smithproxy_api_credential_loaded,
+      previousSmithproxyApiCredentialLoaded:
+        runtime.previous_smithproxy_api_credential_loaded,
       browserGatewayCredentialLoaded: runtime.browser_gateway_credential_loaded,
       previousBrowserGatewayCredentialLoaded: runtime.previous_browser_gateway_credential_loaded,
       cliBrokerConfigured: runtime.cli_broker_configured,

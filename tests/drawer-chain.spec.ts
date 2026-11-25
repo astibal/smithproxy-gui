@@ -7217,6 +7217,7 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
       active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
       active_runtime: {
         smithproxy_api_credential_loaded: true,
+        previous_smithproxy_api_credential_loaded: true,
         browser_gateway_credential_loaded: true,
         previous_browser_gateway_credential_loaded: false,
         cli_broker_configured: true,
@@ -7254,6 +7255,8 @@ test('edits gui.cfg through the core archive API without exposing boot credentia
     .locator('xpath=following-sibling::dd[1]')).toHaveText('Not configured');
   await expect(gui.getByText('API credential this boot', {exact: true})
     .locator('xpath=following-sibling::dd[1]')).toContainText('Loaded');
+  await expect(gui.getByText('Previous API credential', {exact: true})
+    .locator('xpath=following-sibling::dd[1]')).toContainText('Loaded for rotation overlap');
   await expect(gui.getByText('Gateway credential this boot', {exact: true})
     .locator('xpath=following-sibling::dd[1]')).toContainText('Loaded');
   await expect(gui).toContainText('Running listener');
@@ -7395,6 +7398,7 @@ test('keeps pending GUI startup activation visible in the global workflow', asyn
     active_backend: {bind_address: '127.0.0.1', port: 18082, base_path: '/smithproxy-gui'},
     active_runtime: {
       smithproxy_api_credential_loaded: true,
+      previous_smithproxy_api_credential_loaded: false,
       browser_gateway_credential_loaded: false,
       previous_browser_gateway_credential_loaded: false,
       cli_broker_configured: true,

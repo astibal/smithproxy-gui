@@ -13104,6 +13104,10 @@ export class SmithproxyApp extends LitElement {
                 ● ${activeRuntime.smithproxyApiCredentialLoaded ? 'Loaded' : 'Disabled'}
               </span>`
             : 'Not reported'}</dd>
+          <dt>Previous API credential</dt><dd>${activeRuntime
+            ? activeRuntime.previousSmithproxyApiCredentialLoaded
+              ? 'Loaded for rotation overlap' : 'Disabled'
+            : 'Not reported'}</dd>
           <dt>Saved CLI broker</dt><dd>${value?.smithproxy?.cliEndpoint || 'Disabled'}</dd>
           <dt>CLI broker this boot</dt><dd>${activeRuntime
             ? activeRuntime.cliBrokerConfigured ? 'Configured' : 'Disabled'
